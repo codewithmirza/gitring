@@ -193,9 +193,10 @@ export class HarborMaster extends DurableObject<Env> {
    *   empty   a README in one commit
    *   git     Artifacts imports a public https remote (history kept); main = the remote's default branch
    *   push    an empty repo; the owner pushes to it with plain git (Bearing adopts the pushed branch)
+   *   upload  the files of a folder from the owner's computer, in one commit
    * Imports run in the background: the project shows "importing" until Artifacts is done.
    */
-  async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string }): Promise<T.ProjectState> {
+  async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] }): Promise<T.ProjectState> {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
     const source: T.ProjectSource = opts.source ?? { kind: "sample" };
     const namespace = this.env.ARTIFACTS_NAMESPACE ?? "bearing";
@@ -242,10 +243,26 @@ export class HarborMaster extends DurableObject<Env> {
 
     const handle = await this.backend.ensureRepo(repoName, { description: `Bearing project ${opts.projectId}` });
     draft.repo.remote = handle.remote;
+
+    if (source.kind === "push") {
+      // An empty repo: the owner pushes an existing repository with plain git. Bearing adopts the push.
+      draft.importing = { url: "git push", startedAt: Date.now(), push: true, tokenIds: [] };
+      this.db.setMeta("project", draft);
+      this.addLog({ kind: "system", message: `Repository ready in Cloudflare Artifacts (${repoName}). Waiting for the first git push.` });
+      await this.ctx.storage.setAlarm(Date.now() + 15_000);
+      const state = await this.state();
+      this.emit({ type: "snapshot", state });
+      return state;
+    }
+
+    const uploaded = source.kind === "upload" ? seedChanges(opts.files ?? []) : [];
+    if (source.kind === "upload" && !uploaded.length) throw new Error("The folder has no files to upload.");
     const changes =
       source.kind === "sample"
-        ? Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }))
-        : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in Bearing. Agents declare intents before they change it.\n` }];
+        ? Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }) as { path: string; content: string | Uint8Array; mode?: string })
+        : source.kind === "upload"
+          ? uploaded
+          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in Bearing. Agents declare intents before they change it.\n` }];
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
@@ -254,7 +271,9 @@ export class HarborMaster extends DurableObject<Env> {
       message:
         source.kind === "sample"
           ? `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nBearing-Seed: sample`
-          : `Start ${draft.name}\n\nBearing-Seed: ${source.kind}`,
+          : source.kind === "upload"
+            ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nBearing-Seed: upload`
+            : `Start ${draft.name}\n\nBearing-Seed: ${source.kind}`,
       author: BEARING_AUTHOR,
     });
     draft.mainSha = seed.sha;
@@ -270,11 +289,27 @@ export class HarborMaster extends DurableObject<Env> {
     return state;
   }
 
-  /** Alarm step for an import: wait until Artifacts has the repo, then read main. */
+  /** Alarm step for an import: wait until Artifacts has the repo (or the owner's push), then read main. */
   private async continueImport(): Promise<void> {
     const p = this.project;
     if (!p?.importing || p.importing.error) return;
     const elapsed = Date.now() - p.importing.startedAt;
+    if (p.importing.push) {
+      const pushed = await this.pushedBranch();
+      if (!pushed) {
+        if (elapsed > 3 * 24 * 3600_000) {
+          p.importing = { ...p.importing, error: "No git push arrived in 3 days. Make a new project to try again." };
+          this.db.setMeta("project", p);
+          this.emit({ type: "snapshot", state: await this.state() });
+          return;
+        }
+        // Check often at first, then every 5 minutes. "Check now" in the UI does not wait.
+        await this.ctx.storage.setAlarm(Date.now() + Math.min(300_000, 15_000 + elapsed / 20));
+        return;
+      }
+      await this.adoptMain(pushed.branch, pushed.sha);
+      return;
+    }
     let ready = false;
     let remoteDefault = "";
     try {
@@ -316,19 +351,69 @@ export class HarborMaster extends DurableObject<Env> {
       this.emit({ type: "snapshot", state: await this.state() });
       return;
     }
+    await this.adoptMain(p.repo.defaultBranch, sha);
+  }
+
+  /** Main becomes `branch` at `sha` (after an import or the owner's first push). */
+  private async adoptMain(branch: string, sha: string): Promise<void> {
+    const p = this.requireProject();
     const commit = await this.backend.readCommit(p.repo.name, sha);
     if (!commit) throw new Error("The imported head commit cannot be read.");
+    p.repo.defaultBranch = branch;
     p.mainSha = sha;
     p.mainTree = commit.treeHash;
-    const url = p.importing.url;
+    const url = p.importing?.url ?? "";
+    // Push tokens open the canonical repo; after the adoption only Bearing writes to it.
+    for (const id of p.importing?.tokenIds ?? []) await this.backend.revokeToken(p.repo.name, id).catch(() => false);
     p.importing = undefined;
     this.db.setMeta("project", p);
     this.db.setMeta("mainSeq", [sha]);
     this.mainView = undefined;
     const main = await this.loadMain();
-    this.addLog({ kind: "system", message: `Import done: ${url} at ${sha.slice(0, 7)} on ${p.repo.defaultBranch} (${main.files.length} files). Open intents for agents.` });
+    this.addLog({ kind: "system", message: `${url === "git push" ? "Push received" : `Import done: ${url}`} at ${sha.slice(0, 7)} on ${branch} (${main.files.length} files). Open intents for agents.` });
     this.persistStats();
     this.emit({ type: "snapshot", state: await this.state() });
+  }
+
+  /** The branch the owner pushed: main, master, or the repo's default branch. */
+  private async pushedBranch(): Promise<{ branch: string; sha: string } | null> {
+    const p = this.requireProject();
+    let fallback = "";
+    try {
+      using repo = await this.env.ARTIFACTS.get(p.repo.name);
+      fallback = (await repo.info()).defaultBranch ?? "";
+    } catch {
+      return null;
+    }
+    for (const branch of [...new Set(["main", "master", fallback, "trunk", "develop"].filter(Boolean))]) {
+      const sha = await this.backend.resolve(p.repo.name, branch).catch(() => null);
+      if (sha) return { branch, sha };
+    }
+    return null;
+  }
+
+  /**
+   * A push project: a write token for the owner's first `git push` (24 hours). Bearing revokes it when
+   * it adopts the push.
+   */
+  async pushAccess(): Promise<{ remote: string; token: string; expiresAt: string }> {
+    const p = this.requireProject();
+    if (!p.importing?.push || p.importing.error) throw new Error("This project does not wait for a push.");
+    const t = await this.backend.createToken(p.repo.name, "write", 24 * 3600);
+    if (!t) throw new Error("Artifacts did not make a token. Try again.");
+    if (t.id) {
+      p.importing = { ...p.importing, tokenIds: [...(p.importing.tokenIds ?? []), t.id].slice(-10) };
+      this.db.setMeta("project", p);
+    }
+    const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name)) ?? "";
+    this.addLog({ kind: "system", message: "The owner took a push token (24 hours)." });
+    return { remote, token: t.token, expiresAt: t.expiresAt };
+  }
+
+  /** "Check now": look for the owner's push without waiting for the alarm. */
+  async checkImport(): Promise<T.ProjectState> {
+    await this.continueImport();
+    return this.state();
   }
 
   /** Sample projects only: wipe the state and start again from the sample's first commit. */
@@ -2576,6 +2661,36 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
       }));
   }
   return out;
+}
+
+/** A file of an uploaded folder: text, or bytes in base64. */
+export interface SeedFile {
+  path: string;
+  text?: string;
+  base64?: string;
+  executable?: boolean;
+}
+
+const MAX_UPLOAD_FILES = 5000;
+const MAX_UPLOAD_BYTES = 20_000_000;
+
+/** Uploaded files as commit changes: clean paths, no .git, size limits. */
+export function seedChanges(files: SeedFile[]): { path: string; content: string | Uint8Array; mode?: string }[] {
+  const out = new Map<string, { path: string; content: string | Uint8Array; mode?: string }>();
+  let bytes = 0;
+  for (const f of files.slice(0, MAX_UPLOAD_FILES + 1)) {
+    const path = String(f.path ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!path || path.split("/").some((seg) => seg === "" || seg === "." || seg === ".." || seg === ".git")) continue;
+    let content: string | Uint8Array;
+    if (typeof f.text === "string") content = f.text;
+    else if (typeof f.base64 === "string") content = Uint8Array.from(atob(f.base64), (ch) => ch.charCodeAt(0));
+    else continue;
+    bytes += typeof content === "string" ? new TextEncoder().encode(content).length : content.length;
+    if (bytes > MAX_UPLOAD_BYTES) throw new Error(`The folder is larger than ${MAX_UPLOAD_BYTES / 1_000_000} MB. Leave out build output and dependencies, or push it with git.`);
+    out.set(path, { path, content, ...(f.executable ? { mode: "100755" } : {}) });
+  }
+  if (out.size > MAX_UPLOAD_FILES) throw new Error(`The folder has more than ${MAX_UPLOAD_FILES} files. Push it with git instead.`);
+  return [...out.values()];
 }
 
 const BRIEF_EXT = /\.(js|mjs|cjs|jsx|ts|tsx|mts|json|md|css|scss|html|vue|svelte|py|go|rs|rb|java|kt|toml|ya?ml)$/;

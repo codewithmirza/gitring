@@ -301,3 +301,9 @@
   .c-cartouche__title { display: none; }
   .c-zoom { right: var(--s-3); bottom: var(--s-3); }
 }
+
+/* Push / import panel on an empty chart */
+.importpanel { display: grid; gap: var(--s-3); width: min(640px, calc(100% - 32px)); box-sizing: border-box; padding: var(--s-5); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); text-align: left; pointer-events: auto; }
+.importpanel__title { margin: 0; font-size: var(--t-lg); }
+.importpanel__text, .importpanel__note { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.importpanel .b-btn { justify-self: start; }

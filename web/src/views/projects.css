@@ -29,6 +29,7 @@
 
 .np { display: grid; gap: var(--s-4); }
 .np__help { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); margin: 0; max-width: 64ch; }
+.np__folder { font: inherit; font-size: var(--t-sm); color: var(--ink-2); }
 .np__error { display: flex; align-items: center; gap: var(--s-2); color: var(--danger); font-size: var(--t-sm); margin: 0; }
 
 .st-sec { display: grid; gap: var(--s-3); padding-top: var(--s-6); border-top: 1px solid var(--line); }

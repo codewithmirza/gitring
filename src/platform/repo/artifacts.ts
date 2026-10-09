@@ -450,12 +450,16 @@ export class ArtifactsBackend implements RepoBackend {
     await this.retrying(() => this.binding.delete(name));
   }
 
-  async createToken(repo: string, scope: "read" | "write", ttlSeconds: number): Promise<{ token: string; expiresAt: string }> {
+  async createToken(repo: string, scope: "read" | "write", ttlSeconds: number): Promise<{ token: string; expiresAt: string; id: string }> {
     const ttl = Math.min(31_536_000, Math.max(60, Math.floor(ttlSeconds)));
     return this.withRepo(repo, async (r) => {
       const res = await r.createToken(scope, ttl);
-      return { token: res.plaintext, expiresAt: res.expiresAt };
+      return { token: res.plaintext, expiresAt: res.expiresAt, id: res.id };
     });
+  }
+
+  async revokeToken(repo: string, tokenOrId: string): Promise<boolean> {
+    return this.withRepo(repo, (r) => r.revokeToken(tokenOrId));
   }
 
   async remoteUrl(repo: string): Promise<string> {

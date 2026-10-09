@@ -3,26 +3,34 @@ import { Button, Dialog, EmptyState, Field, Input, Segmented, toast } from "../d
 import { Icon, type IconName } from "../design/icons";
 import type { ProjectInfo, Visibility } from "../../../src/core/accounts";
 import type { ProjectSource } from "../../../src/core/types";
-import { createProject, loadProjects, openProject, useMe } from "../state/account";
+import { createProject, loadProjects, openProject, readUpload, uploadable, useMe } from "../state/account";
 import { useStore } from "../state/store";
 import { setSearchParam, useSearchParam } from "../app/router";
 import { setUi } from "../app/ui";
 import "./projects.css";
 
-type Kind = "sample" | "empty" | "git";
+type Kind = "sample" | "empty" | "git" | "push" | "upload";
 
 const KINDS: { value: Kind; label: string; icon: IconName; help: string }[] = [
   { value: "sample", label: "Sample", icon: "compass", help: "A small bookshop on Cloudflare Workers with five intents and checks. Your own copy, to try real AI agents." },
-  { value: "empty", label: "Empty", icon: "anchor", help: "A new repository with a README. Push code to it or let agents write it." },
-  { value: "git", label: "Import", icon: "fork", help: "Import a public repository from GitHub, GitLab, Bitbucket or any https git host. The history comes with it." },
+  { value: "git", label: "Import URL", icon: "fork", help: "Import a public repository from GitHub, GitLab, Bitbucket or any https git host. The history comes with it." },
+  { value: "push", label: "git push", icon: "launch", help: "For private repositories from any host: Bearing makes an empty repository, then you push yours to it with git. The history comes with it." },
+  { value: "upload", label: "Folder", icon: "grid", help: "Upload a folder from your computer, without git. Bearing leaves out .git, node_modules and build output." },
+  { value: "empty", label: "Empty", icon: "anchor", help: "A new repository with a README. Let agents write the code." },
 ];
+
+function mb(n: number): string {
+  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`;
+}
 
 function sourceLine(p: ProjectInfo): string {
   const s = p.source;
   if (s.kind === "git") return `Imported from ${s.url.replace(/^https:\/\//, "")}${s.branch ? ` (${s.branch})` : ""}`;
   if (s.kind === "sample") return "Sample project";
   if (s.kind === "empty") return "Started empty";
-  return s.kind;
+  if (s.kind === "upload") return `Uploaded folder (${s.files} files)`;
+  if (s.kind === "push") return "Pushed with git";
+  return "Project";
 }
 
 function repoName(url: string): string {
@@ -38,6 +46,8 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
   const [visibility, setVisibility] = useState<Visibility>("private");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<{ files: File[]; folder: string } | null>(null);
+  const plan = useMemo(() => (picked ? uploadable(picked.files) : null), [picked]);
 
   useEffect(() => {
     if (open) {
@@ -46,14 +56,29 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
     }
   }, [open, initial]);
 
-  const suggested = kind === "sample" ? "Saltmarsh Books" : kind === "git" ? repoName(url) : "";
+  const suggested = kind === "sample" ? "Saltmarsh Books" : kind === "git" ? repoName(url) : kind === "upload" ? (picked?.folder ?? "") : "";
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const source: ProjectSource = kind === "git" ? { kind: "git", url: url.trim(), ...(branch.trim() ? { branch: branch.trim() } : {}) } : { kind };
-      const p = await createProject({ name: (name.trim() || suggested || "New project").slice(0, 80), visibility, source });
-      toast({ tone: "info", title: "Project ready", text: kind === "git" ? "Artifacts imports the repository now. The chart fills when it is done." : `${p.name} is open.` });
+      const source: ProjectSource =
+        kind === "git"
+          ? { kind: "git", url: url.trim(), ...(branch.trim() ? { branch: branch.trim() } : {}) }
+          : kind === "upload"
+            ? { kind: "upload", files: plan?.keep.length ?? 0 }
+            : { kind };
+      const files = kind === "upload" && plan ? await readUpload(plan.keep) : undefined;
+      const p = await createProject({ name: (name.trim() || suggested || "New project").slice(0, 80), visibility, source, files });
+      toast({
+        tone: "info",
+        title: "Project ready",
+        text:
+          kind === "git"
+            ? "Artifacts imports the repository now. The chart fills when it is done."
+            : kind === "push"
+              ? "Push your repository now. The chart shows the commands."
+              : `${p.name} is open.`,
+      });
       openProject(p.id);
     } catch (e) {
       setError((e as Error).message);
@@ -74,7 +99,7 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" icon="plus" busy={busy} onClick={() => void submit()} disabled={kind === "git" && !url.trim()}>
+          <Button variant="primary" icon="plus" busy={busy} onClick={() => void submit()} disabled={(kind === "git" && !url.trim()) || (kind === "upload" && !plan?.keep.length)}>
             Create project
           </Button>
         </>
@@ -88,9 +113,31 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
           options={KINDS.map((k) => ({ value: k.value, label: k.label, icon: k.icon }))}
         />
         <p className="np__help">{KINDS.find((k) => k.value === kind)?.help}</p>
+        {kind === "upload" && (
+          <Field label="Folder" help="Bearing reads the files in your browser and sends them in one commit (at most 20 MB).">
+            <input
+              type="file"
+              className="np__folder"
+              // @ts-expect-error: webkitdirectory is a non-standard attribute that all current browsers support.
+              webkitdirectory=""
+              multiple
+              onChange={(e) => {
+                const list = [...(e.target.files ?? [])];
+                const first = (list[0] as (File & { webkitRelativePath?: string }) | undefined)?.webkitRelativePath?.split("/")[0] ?? "";
+                setPicked(list.length ? { files: list, folder: first } : null);
+              }}
+            />
+          </Field>
+        )}
+        {kind === "upload" && plan && (
+          <p className="np__help">
+            {plan.keep.length} files, {mb(plan.bytes)}.{plan.skipped ? ` ${plan.skipped} files stay out (dependencies, build output, .git, or larger than 5 MB).` : ""}
+            {plan.bytes > 20_000_000 ? " The folder is larger than 20 MB: use git push instead." : ""}
+          </p>
+        )}
         {kind === "git" && (
           <>
-            <Field label="Repository URL" help="An https URL, for example https://github.com/owner/repo. Private repositories come in the next release of Bearing.">
+            <Field label="Repository URL" help="An https URL, for example https://github.com/owner/repo. For a private repository, use git push.">
               <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo" inputMode="url" autoComplete="off" spellCheck={false} data-autofocus />
             </Field>
             <Field label="Branch" optional help="Leave it empty to use the default branch.">

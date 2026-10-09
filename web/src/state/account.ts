@@ -79,7 +79,7 @@ export function rememberedProject(): string | null {
   }
 }
 
-export async function createProject(input: { name: string; visibility: Visibility; source: ProjectSource }): Promise<ProjectInfo> {
+export async function createProject(input: { name: string; visibility: Visibility; source: ProjectSource; files?: UploadFile[] }): Promise<ProjectInfo> {
   const res = await call<{ project: ProjectInfo }>("POST", "/api/projects", input);
   await loadProjects().catch(() => undefined);
   return res.project;
@@ -98,6 +98,65 @@ export const addMember = (project: string, who: string, role: Role) =>
   call<MemberInfo[]>("POST", `/api/projects/${encodeURIComponent(project)}/members`, { who, role });
 export const removeMember = (project: string, who: string) =>
   call<MemberInfo[]>("DELETE", `/api/projects/${encodeURIComponent(project)}/members/${encodeURIComponent(who)}`);
+
+export const pushToken = (project: string) =>
+  call<{ remote: string; token: string; expiresAt: string }>("POST", `/api/projects/${encodeURIComponent(project)}/push-token`, {});
+export const checkImport = (project: string) =>
+  call<{ importing: { url: string; error?: string } | null; mainSha: string }>("POST", `/api/projects/${encodeURIComponent(project)}/import/check`, {});
+
+/** A file of a folder the person picked, ready for an upload project. */
+export interface UploadFile {
+  path: string;
+  text?: string;
+  base64?: string;
+  executable?: boolean;
+}
+
+const SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", "out", ".next", ".nuxt", ".svelte-kit", ".output", "coverage", ".turbo", ".cache", ".parcel-cache", ".vercel", ".wrangler", "__pycache__", ".venv", "venv", ".idea", ".DS_Store"]);
+const MAX_FILE_BYTES = 5_000_000;
+
+/** Which picked files go into the upload: no dependencies, build output, VCS data or files over 5 MB. */
+export function uploadable(files: File[]): { keep: { file: File; path: string }[]; skipped: number; bytes: number } {
+  const keep: { file: File; path: string }[] = [];
+  let skipped = 0;
+  let bytes = 0;
+  for (const file of files) {
+    const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+    const parts = rel.split("/");
+    const path = (parts.length > 1 ? parts.slice(1) : parts).join("/");
+    if (!path || parts.some((p) => SKIP_DIRS.has(p)) || file.size > MAX_FILE_BYTES) {
+      skipped++;
+      continue;
+    }
+    keep.push({ file, path });
+    bytes += file.size;
+  }
+  return { keep, skipped, bytes };
+}
+
+/** Read picked files: UTF-8 text when it decodes cleanly, else base64 bytes. */
+export async function readUpload(list: { file: File; path: string }[]): Promise<UploadFile[]> {
+  const dec = new TextDecoder("utf-8", { fatal: true });
+  const out: UploadFile[] = [];
+  for (const { file, path } of list) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let text: string | undefined;
+    if (!buf.includes(0)) {
+      try {
+        text = dec.decode(buf);
+      } catch {
+        text = undefined;
+      }
+    }
+    if (text !== undefined) out.push({ path, text, ...(/\.(sh|bash)$|(^|\/)bin\//.test(path) ? { executable: true } : {}) });
+    else {
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      out.push({ path, base64: btoa(bin) });
+    }
+  }
+  return out;
+}
 
 export const getSettings = (project: string) => call<ProjectSettings>("GET", `/api/projects/${encodeURIComponent(project)}/settings`);
 export const putSettings = (project: string, patch: Partial<ProjectSettings>) =>

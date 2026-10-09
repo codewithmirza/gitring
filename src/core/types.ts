@@ -119,8 +119,11 @@ export interface Project {
   source?: ProjectSource;
   /** The Directory user who created the project (budget and default owner). */
   ownerId?: string;
-  /** Set while Artifacts imports the repository; main is empty until it is done. */
-  importing?: { url: string; startedAt: Millis; error?: string };
+  /**
+   * Set while main is empty: Artifacts imports the repository (git), or Bearing waits for the owner's
+   * first `git push` (push). Main fills when it is done.
+   */
+  importing?: { url: string; startedAt: Millis; error?: string; push?: boolean; tokenIds?: string[] };
 }
 
 /* ───────────────────────────── intent ───────────────────────────── */

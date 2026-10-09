@@ -80,8 +80,7 @@ export interface RepoBackend {
 
   /** Create an empty repo. Idempotent: returns the existing repo if the name exists. */
   ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle>;
-  /** Fork `source` (default branch only) into a new repo named `name`. */
-  /** Fork the source's default branch (allBranches: every branch) into a new repo. */
+  /** Fork the source's default branch (allBranches: every branch) into a new repo named `name`. */
   fork(source: string, name: string, opts?: { description?: string; allBranches?: boolean }): Promise<ForkResult>;
   deleteRepo(name: string): Promise<void>;
 
@@ -100,6 +99,8 @@ export interface RepoBackend {
   readNote(repo: string, commitSha: string): Promise<string | null>;
 
   /** Scoped token for an external git client (test doubles may return undefined). */
-  createToken(repo: string, scope: "read" | "write", ttlSeconds: number): Promise<{ token: string; expiresAt: string } | undefined>;
+  createToken(repo: string, scope: "read" | "write", ttlSeconds: number): Promise<{ token: string; expiresAt: string; id?: string } | undefined>;
+  /** Revoke a token by plaintext or id. */
+  revokeToken(repo: string, tokenOrId: string): Promise<boolean>;
   remoteUrl(repo: string): Promise<string | undefined>;
 }

@@ -17,6 +17,7 @@ import { Button, EmptyState, IconButton } from "../design/components";
 import { openNewIntent } from "../app/ui";
 import { useCanAct } from "../state/account";
 import { launchAllNow } from "../app/actions";
+import { ImportPanel } from "../app/ImportPanel";
 import { ChartLegend } from "./ChartLegend";
 import "./chart.css";
 
@@ -667,7 +668,6 @@ export interface ChartProps {
 
 export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, focusRequest, projectName }: ChartProps) {
   const files = useStore((s) => s.state?.files ?? (EMPTY as FileNode[]));
-  const importing = useStore((s) => s.state?.project.importing ?? null);
   const canAct = useCanAct();
   const mainSha = useStore((s) => s.state?.project.mainSha ?? "");
   const vessels = useStore((s) => (s.state ? selectVessels(s.state) : (EMPTY as VesselModel[])));
@@ -865,16 +865,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
 
       {files.length === 0 && (
         <div className="c-empty" role="status">
-          <EmptyState
-            art={false}
-            text={
-              importing?.error
-                ? `The import failed. ${importing.error}`
-                : importing
-                  ? `Cloudflare Artifacts imports ${importing.url.replace(/^https:\/\//, "")}. The chart fills when the import is done. A large repository takes some minutes.`
-                  : "Main has no text files yet. Open an intent and let agents write the first files."
-            }
-          />
+          <ImportPanel />
         </div>
       )}
 

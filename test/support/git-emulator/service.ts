@@ -143,6 +143,10 @@ export class EmulatorBackend implements RepoBackend {
     return this.rpc().readNote(repo, commitSha);
   }
   /** The emulator has no git remote: no tokens. */
+  async revokeToken(_repo: string, _tokenOrId: string): Promise<boolean> {
+    return false;
+  }
+
   async createToken(_repo: string, _scope: "read" | "write", _ttlSeconds: number): Promise<undefined> {
     return undefined;
   }

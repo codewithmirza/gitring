@@ -21,6 +21,7 @@ import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, directory, resolvePrincipal, type Principal } from "./auth";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { normalizeGitUrl } from "../core/repo-rules";
+import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
@@ -152,10 +153,10 @@ app.post("/api/projects", async (c) => {
   const principal = c.get("principal");
   // People own their projects. The operator key (scripts) makes projects that no person owns.
   const user = principal.via === "operator" ? null : needUser(c);
-  const body = await c.req.json<{ name?: string; visibility?: A.Visibility; source?: T.ProjectSource }>().catch(() => ({}) as Record<string, never>);
+  const body = await c.req.json<{ name?: string; visibility?: A.Visibility; source?: T.ProjectSource; files?: SeedFile[] }>().catch(() => ({}) as Record<string, never>);
   let source: T.ProjectSource;
   try {
-    source = parseSource(body.source);
+    source = parseSource(body.source, body.files);
   } catch (e) {
     return err(c, e);
   }
@@ -167,7 +168,8 @@ app.post("/api/projects", async (c) => {
     return err(c, e);
   }
   try {
-    const st = await harbor(c.env, info.id).init({ projectId: info.id, name: info.name, source, ownerId: user?.id });
+    const files = source.kind === "upload" && Array.isArray(body.files) ? body.files : undefined;
+    const st = await harbor(c.env, info.id).init({ projectId: info.id, name: info.name, source, ownerId: user?.id, files });
     return c.json({ project: info, state: st }, 201);
   } catch (e) {
     await dir.dropProject(info.id).catch(() => undefined);
@@ -175,13 +177,19 @@ app.post("/api/projects", async (c) => {
   }
 });
 
-function parseSource(raw: unknown): T.ProjectSource {
+function parseSource(raw: unknown, files?: unknown): T.ProjectSource {
   const s = (raw ?? {}) as Record<string, unknown>;
   switch (s.kind) {
     case "sample":
       return { kind: "sample" };
     case "empty":
       return { kind: "empty" };
+    case "push":
+      return { kind: "push" };
+    case "upload": {
+      if (!Array.isArray(files) || !files.length) throw new HTTPError(400, "Send the files of the folder.");
+      return { kind: "upload", files: files.length };
+    }
     case "git": {
       const url = normalizeGitUrl(String(s.url ?? ""));
       const hostname = new URL(url).hostname;
@@ -190,7 +198,7 @@ function parseSource(raw: unknown): T.ProjectSource {
       return { kind: "git", url, host, ...(branch ? { branch } : {}) };
     }
     default:
-      throw new HTTPError(400, "Choose a source: sample, empty or git (an https URL).");
+      throw new HTTPError(400, "Choose a source: sample, empty, git (an https URL), push or upload.");
   }
 }
 
@@ -361,6 +369,27 @@ app.post("/api/projects/:p/reset", async (c) => {
     const h = await ready(c, c.req.param("p"), "owner");
     const st = (await h.reset()) as unknown as T.ProjectState;
     return c.json({ ok: true, main: st.project.mainSha });
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/** A push project: a 24-hour write token for the owner's first `git push`. */
+app.post("/api/projects/:p/push-token", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "owner");
+    return c.json(await h.pushAccess());
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/** Look for the push (or the end of an import) now. */
+app.post("/api/projects/:p/import/check", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "member");
+    const st = (await h.checkImport()) as unknown as T.ProjectState;
+    return c.json({ importing: st.project.importing ?? null, mainSha: st.project.mainSha });
   } catch (e) {
     return err(c, e);
   }
