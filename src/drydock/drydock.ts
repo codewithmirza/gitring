@@ -15,6 +15,8 @@ import { gzip, modeFor, tar } from "../platform/checks/tar";
 export const DRYDOCK_IMAGE = "cloudflare/debian-trixie";
 const CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
 const IDLE_MS = 8 * 60_000;
+/** 1 vCPU, 4 GiB memory, 8 GB disk: enough for npm installs of most projects. */
+const CHECK_INSTANCE: ContainerStartResources = { vcpu: 1, memoryMib: 4096, diskMb: 8000 };
 const LOG_TAIL = 8_000;
 
 /** Hosts that check containers may reach: package registries and source archives. */
@@ -115,11 +117,12 @@ export class Drydock extends DurableObject<Env> {
   }
 
   /** Start the container once, with outbound HTTP(S) through Seawall. */
-  private ensureRunning(): Promise<void> {
+  private ensureRunning(instance: ContainerStartupOptions["instance"] = CHECK_INSTANCE, internet = false): Promise<void> {
     if (this.ready && this.container.running) return this.ready;
     this.ready = (async () => {
       const c = this.container;
-      if (!c.running) c.start({ image: DRYDOCK_IMAGE, enableInternet: false, instance: "standard-1", labels: { app: "bearing-checks" } });
+      // The image's own command (node) exits at once without a terminal; a container lives as long as its main process.
+      if (!c.running) c.start({ image: DRYDOCK_IMAGE, entrypoint: ["sleep", "infinity"], enableInternet: internet, instance, labels: { app: "bearing-checks" } });
       const gate = (this.ctx.exports as unknown as { Seawall: (o: { props: Record<string, never> }) => Fetcher }).Seawall({ props: {} });
       await c.interceptOutboundHttps("*", gate);
       await c.interceptOutboundHttp("*", gate);
@@ -170,6 +173,35 @@ export class Drydock extends DurableObject<Env> {
     if (res.stage === "timeout") res.log = `${res.log}\nThe run took more than ${seconds} s. Bearing stopped it.`;
     if (!res.installMs && !res.testMs) res.testMs = Date.now() - started;
     return res;
+  }
+
+  /** Operator diagnostics: run a few read-only commands and report exit codes and output. */
+  async diag(opts: { instance?: string; internet?: boolean } = {}): Promise<{ running: boolean; results: { cmd: string; exitCode: number; out: string }[] }> {
+    const results: { cmd: string; exitCode: number; out: string }[] = [];
+    try {
+      const size = opts.instance?.startsWith("{") ? (JSON.parse(opts.instance) as ContainerStartResources) : ((opts.instance as ContainerStartupOptions["instance"]) ?? CHECK_INSTANCE);
+      await this.ensureRunning(size, Boolean(opts.internet));
+    } catch (e) {
+      return { running: false, results: [{ cmd: "start", exitCode: -1, out: String((e as Error).message ?? e) }] };
+    }
+    const cmds = [
+      ["sh", "-c", "id; uname -a; cat /etc/os-release | head -3"],
+      ["sh", "-c", "command -v bash tar gzip timeout node npm sha256sum date; node --version; npm --version"],
+      ["sh", "-c", "ls -la / /workspace 2>&1 | head -40; df -h / | tail -1; free -m 2>/dev/null | head -2"],
+      ["sh", "-c", "ls -la /etc/cloudflare/certs/ 2>&1"],
+      ["timeout", "20", "sh", "-c", "NODE_EXTRA_CA_CERTS=/etc/cloudflare/certs/cloudflare-containers-ca.crt node -e \"fetch('https://registry.npmjs.org/left-pad').then(r=>console.log('npm registry',r.status)).catch(e=>console.log('fetch failed',e.cause?.code||e.message))\""],
+      ["timeout", "20", "sh", "-c", "NODE_EXTRA_CA_CERTS=/etc/cloudflare/certs/cloudflare-containers-ca.crt node -e \"fetch('https://example.com/').then(r=>console.log('example.com',r.status)).catch(e=>console.log('fetch failed',e.cause?.code||e.message))\""],
+    ];
+    for (const cmd of cmds) {
+      try {
+        const p = await this.container.exec(cmd, { stderr: "combined" });
+        const o = await p.output();
+        results.push({ cmd: cmd.join(" ").slice(0, 120), exitCode: o.exitCode, out: new TextDecoder().decode(o.stdout).slice(0, 3000) });
+      } catch (e) {
+        results.push({ cmd: cmd.join(" ").slice(0, 120), exitCode: -1, out: `exec threw: ${String((e as Error).message ?? e)}` });
+      }
+    }
+    return { running: this.container.running, results };
   }
 
   /** Stop the container now (the attempt is closed). */

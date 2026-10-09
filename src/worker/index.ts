@@ -421,6 +421,13 @@ app.put("/api/projects/:p/settings", async (c) => {
   }
 });
 
+/** Operator only: diagnostics of a check container (name = "<project>:<attempt>"). */
+app.get("/api/ops/drydock", async (c) => {
+  if (c.get("principal").via !== "operator") return c.json({ error: "Operator key only." }, 403);
+  const name = c.req.query("name") ?? "diag";
+  return c.json(await c.env.DRYDOCK.get(c.env.DRYDOCK.idFromName(name)).diag({ instance: c.req.query("instance"), internet: c.req.query("internet") === "1" }));
+});
+
 /* ───────────── live events ───────────── */
 
 app.get("/ws/:p", async (c) => {
