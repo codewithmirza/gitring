@@ -15,7 +15,7 @@ import { chat, lastChatError, parseJsonLoose, type ChatMessage, type ToolDef } f
 import type { HarborMaster } from "../harbor/harbor";
 
 /** The HarborMaster RPC surface a vessel uses (typed as the class; RPC serializes tuples as arrays). */
-type HarborApi = Pick<HarborMaster, "declare" | "log" | "write" | "read" | "list" | "check" | "submit" | "ack" | "brief" | "attemptDiff">;
+type HarborApi = Pick<HarborMaster, "declare" | "log" | "write" | "read" | "list" | "check" | "submit" | "ack" | "brief" | "attemptDiff" | "giveUp">;
 
 export interface VesselConfig {
   projectId: string;
@@ -40,10 +40,14 @@ interface VesselState {
   checkSig?: string;
   sameChecks?: number;
   writesSinceCheck?: number;
+  /** Model calls that failed in a row. */
+  failStreak?: number;
 }
 
 const MAX_LLM_STEPS = 30;
 const MAX_SUBMITS = 5;
+/** Model calls that may fail in a row before the vessel stops. */
+const MAX_FAIL_STREAK = 6;
 
 export class Vessel extends DurableObject<Env> {
   private st?: VesselState;
@@ -102,7 +106,20 @@ export class Vessel extends DurableObject<Env> {
       delay = 4000;
       if (st.step > 60) st.phase = "done";
     }
+    if ((st.failStreak ?? 0) >= MAX_FAIL_STREAK) st.phase = "done";
     st.step += 1;
+    if ((st.phase as string) === "done") {
+      // Work that did not reach "ready" leaves the traffic; the attempt fails with the reason.
+      const why =
+        (st.failStreak ?? 0) >= MAX_FAIL_STREAK
+          ? `the model ${st.config.model} did not answer ${st.failStreak} times in a row (${st.lastError ?? "no answer"}).`
+          : st.submits >= MAX_SUBMITS
+            ? `${st.submits} submits, and the checks still fail.`
+            : `the agent finished after ${st.step} steps without work that passes the checks.`;
+      await this.harbor(st.config.projectId)
+        .giveUp(st.config.attemptId, why)
+        .catch(() => undefined);
+    }
     await this.save();
     if ((st.phase as string) !== "done" && (st.phase as string) !== "stopped") await this.ctx.storage.setAlarm(Date.now() + delay);
     void phase0;
@@ -126,7 +143,7 @@ export class Vessel extends DurableObject<Env> {
         }
       }
       st.messages = [
-        { role: "system", content: systemPrompt(c.callsign) },
+        { role: "system", content: systemPrompt(c.callsign, brief.runner) },
         { role: "user", content: briefPrompt(brief, prior) },
       ];
       const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
@@ -160,11 +177,13 @@ export class Vessel extends DurableObject<Env> {
       }
       const res = await chat(this.env.AI as never, c.model, trimMessages(st.messages), { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000 });
       if (!res) {
+        st.failStreak = (st.failStreak ?? 0) + 1;
         st.lastError = `model call failed: ${lastChatError ?? "no answer"}`;
         // Rate limits on paid models: wait longer before the next turn.
         if (/429|rate|capacity|busy|3040|5035/i.test(lastChatError ?? "")) await new Promise((r) => setTimeout(r, 12_000));
         return true;
       }
+      st.failStreak = 0;
       const msg = res.message;
       st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
       if (!msg.tool_calls?.length) {
@@ -283,7 +302,8 @@ const COURSE_REQUEST =
   "Declare your course before you write code. Reply with JSON only: " +
   '{"plan": ["short steps"], "files": ["paths you will change"], "symbols": ["path#name for functions you will add or change; add (params) if you change a signature"], "approach": "one sentence"}';
 
-function systemPrompt(callsign: string): string {
+function systemPrompt(callsign: string, runner?: T.CheckSettings): string {
+  const container = runner?.runner === "container";
   return [
     `You are ${callsign}, a coding agent inside Bearing. Many agents change this repository at the same time.`,
     "Bearing checks your course against all traffic. It never blocks you. It sends corrections.",
@@ -294,19 +314,34 @@ function systemPrompt(callsign: string): string {
     "4. Call log_progress after each meaningful step.",
     "5. The checks are the contract. Read the check files first. Make every assertion pass.",
     "6. Call run_checks after you write. Fix every failure. Then call submit with a one-line summary.",
-    "7. Plain ES modules only. No dependencies. Use relative links in HTML.",
+    container
+      ? "7. Follow the conventions of this repository: its language, style, test framework and folder layout. Use list_files and read_file to learn them. Add a dependency only when the intent needs it, in the manifest (for example package.json)."
+      : "7. Plain ES modules only. No dependencies. Use relative links in HTML.",
   ].join("\n");
 }
 
-function briefPrompt(brief: { intent: T.Intent; context: Record<string, string>; checks: { path: string; content: string }[]; constraints: string[]; traffic: T.TrafficVessel[] }, prior: string): string {
+function briefPrompt(
+  brief: { intent: T.Intent; context: Record<string, string>; checks: { path: string; content: string }[]; constraints: string[]; traffic: T.TrafficVessel[]; runner?: T.CheckSettings; files?: { path: string }[] },
+  prior: string,
+): string {
   const files = Object.entries(brief.context)
     .map(([p, t]) => `--- ${p}\n${t}`)
     .join("\n\n");
+  const r = brief.runner;
+  const how =
+    r?.runner === "container"
+      ? `HOW CHECKS RUN: in a Linux container with Node.js 24: ${r.install || "npm ci (or npm install)"}, then ${r.test || "npm test"}. The whole test suite must pass.` +
+        (brief.checks.length ? "" : " This intent has no check files: add tests for the intent next to the existing tests.")
+      : "";
+  const shown = new Set(Object.keys(brief.context));
+  const others = (brief.files ?? []).map((f) => f.path).filter((p) => !shown.has(p));
   return [
     `INTENT: ${brief.intent.title}`,
     brief.intent.goal,
     brief.constraints.length ? `CONSTRAINTS:\n${brief.constraints.map((c) => `- ${c}`).join("\n")}` : "",
-    `CHECKS (must pass): ${brief.checks.map((c) => c.path).join(", ")}`,
+    brief.checks.length ? `CHECKS (must pass): ${brief.checks.map((c) => c.path).join(", ")}` : "",
+    how,
+    others.length ? `OTHER FILES (read them with read_file when you need them):\n${others.slice(0, 300).join("\n")}${others.length > 300 ? `\n… and ${others.length - 300} more (list_files)` : ""}` : "",
     brief.traffic.length ? `TRAFFIC (other agents near your work):\n${brief.traffic.map((t) => `- ${t.callsign} on "${t.intentTitle}": ${t.approach} (files: ${t.files.join(", ")})`).join("\n")}` : "",
     prior ? `A PREVIOUS ATTEMPT made this diff on an older main. Re-apply its intent on the current files:\n${prior}` : "",
     `FILES:\n${files}`,

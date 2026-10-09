@@ -4,7 +4,7 @@
  */
 import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } from "../../../src/core/accounts";
 import { atLeast } from "../../../src/core/accounts";
-import type { ProjectSource } from "../../../src/core/types";
+import type { ProjectSettings, ProjectSource } from "../../../src/core/types";
 import { store, useStore } from "./store";
 
 export class AccountError extends Error {
@@ -98,6 +98,10 @@ export const addMember = (project: string, who: string, role: Role) =>
   call<MemberInfo[]>("POST", `/api/projects/${encodeURIComponent(project)}/members`, { who, role });
 export const removeMember = (project: string, who: string) =>
   call<MemberInfo[]>("DELETE", `/api/projects/${encodeURIComponent(project)}/members/${encodeURIComponent(who)}`);
+
+export const getSettings = (project: string) => call<ProjectSettings>("GET", `/api/projects/${encodeURIComponent(project)}/settings`);
+export const putSettings = (project: string, patch: Partial<ProjectSettings>) =>
+  call<ProjectSettings>("PUT", `/api/projects/${encodeURIComponent(project)}/settings`, patch);
 
 /** The caller's role on the open project. */
 export function useAccess(): Role | null {

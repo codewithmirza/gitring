@@ -26,6 +26,7 @@ export { HarborMaster } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
 export { Sector } from "../sim/sector";
 export { Directory } from "../directory/directory";
+export { Drydock, Seawall } from "../drydock/drydock";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
 type C = Context<HonoEnv>;

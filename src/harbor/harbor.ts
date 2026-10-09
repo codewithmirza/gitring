@@ -40,6 +40,7 @@ import { merge3 } from "../core/text/merge3";
 import { landingMessage, landingNote, intentFile } from "../core/logbook";
 import { MAX_TEXT_BYTES, MAX_TEXT_FILES, normalizeGitUrl, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
+import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
 import {
   ACTIVE,
@@ -103,6 +104,8 @@ export interface Brief {
   checks: { path: string; description: string; content: string }[];
   constraints: string[];
   traffic: T.TrafficVessel[];
+  /** How the checks run: the Bearing harness, or the project's install and test commands in a container. */
+  runner: T.CheckSettings;
 }
 
 export class HarborMaster extends DurableObject<Env> {
@@ -213,6 +216,8 @@ export class HarborMaster extends DurableObject<Env> {
         decisionModel: "clef-flash",
         agentModels: this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels,
         intentsInRepo: source.kind === "sample",
+        // The sample's checks use the Bearing harness; other repositories run their own tests in a container.
+        ...(source.kind === "sample" ? {} : { checks: { runner: "container" as const } }),
       },
     };
     this.project = draft;
@@ -949,6 +954,24 @@ export class HarborMaster extends DurableObject<Env> {
     };
   }
 
+  /**
+   * An agent stops without work that passes its checks: the attempt fails and leaves the traffic.
+   * Ready, landing and closed attempts do not change.
+   */
+  async giveUp(attemptId: string, reason: string): Promise<T.AttemptStatus> {
+    const a = this.mustAttempt(attemptId);
+    if (TERMINAL.has(a.status) || a.status === "ready" || a.status === "landing") return a.status;
+    a.status = "failed";
+    this.putAttempt(a);
+    this.addLog({ kind: "system", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${this.callsign(a.id)} stops: ${String(reason).slice(0, 240)}` });
+    const intent = this.intents.get(a.intentId);
+    if (intent && intent.status === "underway" && ![...this.attempts.values()].some((x) => x.intentId === intent.id && ACTIVE.has(x.status))) {
+      intent.status = "open";
+      this.putIntent(intent);
+    }
+    return a.status;
+  }
+
   async ack(attemptId: string, correctionId: string, note?: string): Promise<T.Clearance> {
     const a = this.mustAttempt(attemptId);
     const c = this.corrections.get(correctionId);
@@ -988,10 +1011,10 @@ export class HarborMaster extends DurableObject<Env> {
     const files = a ? (await this.attemptView(a)).files : main.text;
     const context: Record<string, string> = {};
     let budget = 60_000;
-    for (const [path, text] of [...files].sort()) {
-      if (path.startsWith("tests/") && !intent.checks.some((c) => c.path === path)) continue;
+    const wanted = new Set([...(intent.scope?.paths ?? []), ...(a?.course.files ?? [])].map(normPath));
+    for (const [path, text] of rankForBrief(files, intent, wanted)) {
+      if (/(^|\/)tests?\//.test(path) && !intent.checks.some((c) => c.path === path) && !wanted.has(path)) continue;
       if (text.length > 20_000 || budget - text.length < 0) continue;
-      if (!/\.(js|mjs|ts|json|md|css|html)$/.test(path)) continue;
       context[path] = text;
       budget -= text.length;
     }
@@ -1003,6 +1026,7 @@ export class HarborMaster extends DurableObject<Env> {
       checks: intent.checks.map((c) => ({ path: c.path, description: c.description, content: c.content })),
       constraints: intent.constraints,
       traffic: a ? this.trafficFor(a) : [],
+      runner: this.checkSettings(),
     };
   }
 
@@ -1366,11 +1390,38 @@ export class HarborMaster extends DurableObject<Env> {
     return [...files.keys()].filter((p) => /^tests\/.+\.test\.(js|mjs)$/.test(p)).sort();
   }
 
+  /** The project's check runner (absent settings: the Bearing harness in a Dynamic Worker). */
+  private checkSettings(): T.CheckSettings {
+    return this.requireProject().settings.checks ?? { runner: "worker" };
+  }
+
+  /**
+   * Run the checks on a tree: the Bearing harness in a Dynamic Worker, or the project's install and
+   * test commands in the attempt's check container.
+   */
+  private async runTreeChecks(files: Map<string, string>, scope: T.CheckRun["scope"], attemptId: string): Promise<T.CheckRun> {
+    const cs = this.checkSettings();
+    const key = await contentKey(files);
+    if (cs.runner !== "container") {
+      const run = await runChecks(this.env.LOADER, key, { files, testPaths: this.testPaths(files) }, { scope });
+      return { ...run, runner: "worker" };
+    }
+    const t0 = Date.now();
+    const p = this.requireProject();
+    const dock = this.env.DRYDOCK.get(this.env.DRYDOCK.idFromName(`${p.id}:${attemptId}`));
+    let res: DrydockResult;
+    try {
+      res = (await dock.run({ tree: await packTree(files), install: cs.install, test: cs.test, timeoutSec: cs.timeoutSec ?? 600 })) as DrydockResult;
+    } catch (e) {
+      res = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The check container did not answer: ${String((e as Error)?.message ?? e)}` };
+    }
+    return containerRun(res, { key, scope, cs, ms: Date.now() - t0 });
+  }
+
   async check(attemptId: string): Promise<T.CheckRun> {
     const a = this.mustAttempt(attemptId);
     const view = await this.attemptView(a);
-    const key = await contentKey(view.files);
-    const run = await runChecks(this.env.LOADER, key, { files: view.files, testPaths: this.testPaths(view.files) }, { scope: "attempt" });
+    const run = await this.runTreeChecks(view.files, "attempt", a.id);
     a.checks = run;
     this.putAttempt(a);
     this.addLog({
@@ -1517,8 +1568,7 @@ export class HarborMaster extends DurableObject<Env> {
       if (ch.content === null) composed.delete(ch.path);
       else composed.set(ch.path, typeof ch.content === "string" ? ch.content : utf8.decode(ch.content));
     }
-    const key = await contentKey(composed);
-    const run = await runChecks(this.env.LOADER, key, { files: composed, testPaths: this.testPaths(composed) }, { scope: "composed" });
+    const run = await this.runTreeChecks(composed, "composed", a.id);
     a.composedChecks = run;
     this.putAttempt(a);
     if (!run.ok) {
@@ -2502,6 +2552,17 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
     if (m !== undefined) t.minConfidence = m;
     out.thresholds = t as T.PolicyThresholds;
   }
+  if (raw.checks && typeof raw.checks === "object") {
+    const c = raw.checks as Partial<T.CheckSettings>;
+    const cmd = (v: unknown) => (typeof v === "string" ? v.replace(/\r/g, "").trim().slice(0, 500) : undefined);
+    const secs = num(c.timeoutSec, 60, 1800);
+    out.checks = {
+      runner: c.runner === "worker" ? "worker" : "container",
+      ...(cmd(c.install) ? { install: cmd(c.install) } : {}),
+      ...(cmd(c.test) ? { test: cmd(c.test) } : {}),
+      ...(secs !== undefined ? { timeoutSec: Math.round(secs) } : {}),
+    };
+  }
   if (Array.isArray(raw.webhooks)) {
     out.webhooks = raw.webhooks
       .filter((w) => w && typeof w.url === "string" && /^https:\/\/[^\s/]+\.[^\s]+$/.test(w.url))
@@ -2515,6 +2576,69 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
       }));
   }
   return out;
+}
+
+const BRIEF_EXT = /\.(js|mjs|cjs|jsx|ts|tsx|mts|json|md|css|scss|html|vue|svelte|py|go|rs|rb|java|kt|toml|ya?ml)$/;
+
+/**
+ * Files for an agent's first look, most useful first: the files of its course and of the intent's scope,
+ * the manifest and the README, then files whose path shares words with the intent.
+ */
+export function rankForBrief(files: Map<string, string>, intent: T.Intent, wanted: Set<string>): [string, string][] {
+  const words = new Set((`${intent.title} ${intent.goal}`.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const score = (path: string): number => {
+    let s = 0;
+    if (wanted.has(path)) s += 100;
+    if (/^(package\.json|readme\.md|tsconfig\.json|wrangler\.jsonc?|pyproject\.toml|go\.mod|cargo\.toml)$/i.test(path)) s += 40;
+    if (/(^|\/)(src|lib|app|pages|components|server|api)\//.test(path)) s += 5;
+    for (const part of path.toLowerCase().split(/[^a-z0-9]+/)) if (words.has(part) || words.has(part.replace(/s$/, ""))) s += 15;
+    if (/(^|\/)(dist|build|vendor|node_modules|\.next|coverage)\//.test(path) || /\.min\.|lock|\.snap$/.test(path)) s -= 200;
+    return s - path.split("/").length;
+  };
+  return [...files]
+    .filter(([path]) => BRIEF_EXT.test(path) || wanted.has(path))
+    .map(([path, text]) => ({ path, text, s: score(path) }))
+    .sort((x, y) => y.s - x.s || (x.path < y.path ? -1 : 1))
+    .map((x) => [x.path, x.text]);
+}
+
+const STOP_WORDS = new Set(["the", "and", "for", "with", "that", "this", "from", "into", "when", "add", "make", "show", "use", "can", "are", "not", "all", "one", "each", "new", "has", "have", "who", "its", "their", "them", "then", "than", "page"]);
+
+/** A check container's result as a CheckRun: one case for the install, one for the tests. */
+export function containerRun(res: DrydockResult, o: { key: string; scope: T.CheckRun["scope"]; cs: T.CheckSettings; ms: number }): T.CheckRun {
+  const installCmd = o.cs.install || "npm ci (or npm install)";
+  const testCmd = o.cs.test || "npm test";
+  const tail = (n: number) => (res.log.length > n ? `…${res.log.slice(-n)}` : res.log).trim();
+  const installed = res.stage !== "install" && res.stage !== "start";
+  const cases: T.CheckCaseResult[] = [];
+  if (res.stage !== "start") {
+    cases.push({ file: "install", name: installCmd, ok: installed, ms: res.installMs, ...(installed ? {} : { error: tail(3000) }) });
+  }
+  if (installed && res.stage !== "no-test") {
+    cases.push({ file: "test", name: testCmd, ok: res.ok, ms: res.testMs, ...(res.ok ? {} : { error: tail(3000) }) });
+  }
+  const error =
+    res.stage === "start"
+      ? res.log.slice(0, 500)
+      : res.stage === "no-test"
+        ? "No test command. The project has no package.json test script. An owner sets the test command in Project settings → Checks."
+        : res.stage === "timeout"
+          ? `The checks took more than ${o.cs.timeoutSec ?? 600} s. Bearing stopped them.`
+          : undefined;
+  return {
+    id: newId("cr"),
+    subject: o.key,
+    scope: o.scope,
+    ok: res.ok,
+    passed: cases.filter((c) => c.ok).length,
+    failed: cases.filter((c) => !c.ok).length + (res.stage === "no-test" || res.stage === "start" ? 1 : 0),
+    cases,
+    ms: o.ms,
+    at: Date.now(),
+    runner: "container",
+    log: res.log,
+    ...(error ? { error } : {}),
+  };
 }
 
 function round(x: number): number {

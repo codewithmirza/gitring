@@ -17,11 +17,21 @@ test("shows the new feature", async () => {
   expect(await res.text()).toContain("…");
 });`;
 
+/** For projects whose checks run in a container: a test in the style of node:test (Node.js 24). */
+const CONTAINER_PLACEHOLDER = `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { feature } from "../src/feature.js";
+
+test("does the new thing", () => {
+  assert.equal(feature("input"), "expected output");
+});`;
+
 export function NewIntentDialog() {
   const { newIntent: asked } = useUi();
   const canAct = useCanAct();
   const newIntent = asked && canAct;
   const available = useStore((s) => s.state?.project.settings.agentModels ?? []);
+  const container = useStore((s) => s.state?.project.settings.checks?.runner === "container");
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
   const [checkPath, setCheckPath] = useState("");
@@ -148,8 +158,16 @@ export function NewIntentDialog() {
             <span className="b-field__help">High priority stands on (rule R5).</span>
           </div>
         </div>
-        <Field label="Checks" optional help="JavaScript with the repo test harness. Without checks, Bearing runs the repo checks only.">
-          <Textarea voice="agent" rows={7} value={checkCode} onChange={(e) => setCheckCode(e.target.value)} placeholder={CHECK_PLACEHOLDER} spellCheck={false} />
+        <Field
+          label="Checks"
+          optional
+          help={
+            container
+              ? "A test in the framework of this repository. Bearing adds it to every attempt; the test command runs it with all other tests."
+              : "JavaScript with the repo test harness. Without checks, Bearing runs the repo checks only."
+          }
+        >
+          <Textarea voice="agent" rows={7} value={checkCode} onChange={(e) => setCheckCode(e.target.value)} placeholder={container ? CONTAINER_PLACEHOLDER : CHECK_PLACEHOLDER} spellCheck={false} />
         </Field>
         <fieldset className="newintent__launch">
           <legend className="b-field__label">Launch</legend>

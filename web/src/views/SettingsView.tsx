@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Button, CodeBlock, EmptyState, Field, Input, Segmented, toast } from "../design/components";
 import { Icon } from "../design/icons";
 import type { MemberInfo, Role, Visibility } from "../../../src/core/accounts";
-import { addMember, archiveProject, listMembers, loadProjects, removeMember, updateProject, useAccess } from "../state/account";
+import type { CheckSettings } from "../../../src/core/types";
+import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess } from "../state/account";
 import { useStore } from "../state/store";
 import { navigate } from "../app/router";
 import "./projects.css";
@@ -151,6 +152,8 @@ export function SettingsView() {
         )}
       </section>
 
+      <ChecksSection projectId={projectId} owner={owner} />
+
       {project?.repo.remote && (
         <section className="st-sec" aria-labelledby="st-repo">
           <h2 className="page__h2" id="st-repo">
@@ -188,5 +191,88 @@ export function SettingsView() {
         </section>
       )}
     </div>
+  );
+}
+
+/** How checks run: the Bearing harness (Dynamic Worker) or the project's own commands in a container. */
+function ChecksSection({ projectId, owner }: { projectId: string; owner: boolean }) {
+  const [cs, setCs] = useState<CheckSettings | null>(null);
+  const [install, setInstall] = useState("");
+  const [test, setTest] = useState("");
+  const [timeout, setTimeoutSec] = useState("600");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getSettings(projectId).then(
+      (s) => {
+        const c = s.checks ?? { runner: "worker" };
+        setCs(c);
+        setInstall(c.install ?? "");
+        setTest(c.test ?? "");
+        setTimeoutSec(String(c.timeoutSec ?? 600));
+      },
+      () => setCs(null),
+    );
+  }, [projectId]);
+
+  if (!cs) return null;
+  const save = async (next: CheckSettings) => {
+    setBusy(true);
+    try {
+      const s = await putSettings(projectId, { checks: next });
+      setCs(s.checks ?? next);
+      toast({ tone: "info", title: "Check settings saved", text: "The next check run uses them." });
+    } catch (e) {
+      toast({ tone: "danger", title: "The change did not save", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const container = cs.runner === "container";
+  return (
+    <section className="st-sec" aria-labelledby="st-checks">
+      <h2 className="page__h2" id="st-checks">
+        Checks
+      </h2>
+      <p className="np__help">
+        Bearing runs the checks before an attempt is ready and again on main plus the attempt before it lands. Work lands only when they pass.
+      </p>
+      <Segmented<CheckSettings["runner"]>
+        label="Where checks run"
+        value={cs.runner}
+        onChange={(runner) => owner && void save({ ...cs, runner })}
+        options={[
+          { value: "container", label: "Container", icon: "anchor" },
+          { value: "worker", label: "Bearing harness", icon: "compass" },
+        ]}
+      />
+      <p className="np__help">
+        {container
+          ? "A Linux container with Node.js 24 runs the install command, then the test command. The container reaches package registries only."
+          : "A Dynamic Worker runs tests/*.test.js with the Bearing test harness. No dependencies and no network. The sample uses it."}
+      </p>
+      {container && (
+        <>
+          <div className="st-row">
+            <Field label="Install command" optional help="Empty: npm ci with a package-lock.json, else npm install.">
+              <Input className="voice-agent" value={install} onChange={(e) => setInstall(e.target.value)} placeholder="npm ci" disabled={!owner} spellCheck={false} />
+            </Field>
+            <Field label="Test command" optional help="Empty: npm test. Exit code 0 means the checks pass.">
+              <Input className="voice-agent" value={test} onChange={(e) => setTest(e.target.value)} placeholder="npm test" disabled={!owner} spellCheck={false} />
+            </Field>
+            <Field label="Time limit (s)" help="60 to 1800.">
+              <Input value={timeout} onChange={(e) => setTimeoutSec(e.target.value)} inputMode="numeric" disabled={!owner} />
+            </Field>
+          </div>
+          {owner && (
+            <div>
+              <Button busy={busy} onClick={() => void save({ runner: "container", install: install.trim() || undefined, test: test.trim() || undefined, timeoutSec: Number(timeout) || 600 })}>
+                Save check commands
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }

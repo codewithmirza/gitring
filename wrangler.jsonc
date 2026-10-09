@@ -20,16 +20,22 @@
       { "name": "HARBOR", "class_name": "HarborMaster" },
       { "name": "VESSEL", "class_name": "Vessel" },
       { "name": "SECTOR", "class_name": "Sector" },
-      { "name": "DIRECTORY", "class_name": "Directory" }
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "DRYDOCK", "class_name": "Drydock" }
     ]
   },
+  // Check containers: each Drydock starts the Cloudflare-managed Node.js 24 image (cloudflare/debian-trixie)
+  // and picks its size at start, so there is no image to build.
+  "containers": [{ "class_name": "Drydock", "scheduling_policy": "durable_object" }],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["HarborMaster"] },
     { "tag": "v2", "new_sqlite_classes": ["Vessel", "Sector", "LocalArtifacts"] },
     // The local git emulator is gone from the product (it lives on as a test double).
     { "tag": "v3", "deleted_classes": ["LocalArtifacts"] },
     // People, sessions, API keys, projects, roles and sealed provider credentials.
-    { "tag": "v4", "new_sqlite_classes": ["Directory"] }
+    { "tag": "v4", "new_sqlite_classes": ["Directory"] },
+    // Check containers (one per attempt).
+    { "tag": "v5", "new_sqlite_classes": ["Drydock"] }
   ],
   "vars": {
     "ARTIFACTS_NAMESPACE": "bearing",

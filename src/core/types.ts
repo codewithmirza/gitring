@@ -59,6 +59,24 @@ export interface ProjectSettings {
   thresholds: PolicyThresholds;
   /** Outbound webhooks (Slack, CI, mirrors). */
   webhooks: WebhookTarget[];
+  /** How Bearing runs checks. Absent: the Bearing test harness in a Dynamic Worker (the sample). */
+  checks?: CheckSettings;
+}
+
+/**
+ * Check runners:
+ *   worker     Bearing's test harness in a Dynamic Worker: tests/*.test.js, no dependencies, no network (fast).
+ *   container  A Linux container (Cloudflare Containers, Node.js 24): the install command, then the test command.
+ *              Network in the container reaches package registries only.
+ */
+export interface CheckSettings {
+  runner: "worker" | "container";
+  /** Container: install dependencies. Empty: `npm ci` with a package-lock.json, else `npm install` with a package.json. */
+  install?: string;
+  /** Container: run the tests. Empty: `npm test` when package.json has a test script. */
+  test?: string;
+  /** Container: time limit for install + test, in seconds (60–1800). Default 600. */
+  timeoutSec?: number;
 }
 
 export interface PolicyThresholds {
@@ -270,6 +288,10 @@ export interface CheckRun {
   at: Millis;
   /** Runner error (syntax error, timeout). */
   error?: string;
+  /** "worker" (Dynamic Worker harness) or "container" (install + test commands). Absent: worker. */
+  runner?: "worker" | "container";
+  /** Container runs: the end of the combined output (at most 8 KB). */
+  log?: string;
 }
 
 export interface Attempt {
