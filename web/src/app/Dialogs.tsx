@@ -4,6 +4,7 @@ import { harbor } from "../state/api";
 import type { DiffResult } from "../state/api";
 import { kb, slugify } from "../state/format";
 import { useStore } from "../state/store";
+import { useCanAct } from "../state/account";
 import { FanoutPicker } from "./LaunchControl";
 import { navigate } from "./router";
 import { setUi, useUi } from "./ui";
@@ -17,7 +18,9 @@ test("shows the new feature", async () => {
 });`;
 
 export function NewIntentDialog() {
-  const { newIntent } = useUi();
+  const { newIntent: asked } = useUi();
+  const canAct = useCanAct();
+  const newIntent = asked && canAct;
   const available = useStore((s) => s.state?.project.settings.agentModels ?? []);
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");

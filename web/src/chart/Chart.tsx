@@ -15,7 +15,8 @@ import { HULL_PATHS, type HullName } from "../design/icons";
 import { ATTEMPT_STATUS_TEXT, kb, RANGE_TEXT, shortSha } from "../state/format";
 import { Button, EmptyState, IconButton } from "../design/components";
 import { openNewIntent } from "../app/ui";
-import { harborOrNull } from "../state/api";
+import { useCanAct } from "../state/account";
+import { launchAllNow } from "../app/actions";
 import { ChartLegend } from "./ChartLegend";
 import "./chart.css";
 
@@ -666,6 +667,8 @@ export interface ChartProps {
 
 export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, focusRequest, projectName }: ChartProps) {
   const files = useStore((s) => s.state?.files ?? (EMPTY as FileNode[]));
+  const importing = useStore((s) => s.state?.project.importing ?? null);
+  const canAct = useCanAct();
   const mainSha = useStore((s) => s.state?.project.mainSha ?? "");
   const vessels = useStore((s) => (s.state ? selectVessels(s.state) : (EMPTY as VesselModel[])));
   const rangeLines = useStore((s) => (s.state ? selectRangeLines(s.state) : (EMPTY as RangeLine[])));
@@ -860,20 +863,37 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
         {legendOpen && <ChartLegend />}
       </div>
 
+      {files.length === 0 && (
+        <div className="c-empty" role="status">
+          <EmptyState
+            art={false}
+            text={
+              importing?.error
+                ? `The import failed. ${importing.error}`
+                : importing
+                  ? `Cloudflare Artifacts imports ${importing.url.replace(/^https:\/\//, "")}. The chart fills when the import is done. A large repository takes some minutes.`
+                  : "Main has no text files yet. Open an intent and let agents write the first files."
+            }
+          />
+        </div>
+      )}
+
       {vessels.length === 0 && files.length > 0 && (
         <div className="c-empty">
           <EmptyState
             art={false}
-            text="No vessels at sea. Open an intent and launch attempts, or launch agents on every open intent."
+            text={canAct ? "No vessels at sea. Open an intent and launch attempts, or launch agents on every open intent." : "No vessels at sea now. Members launch agents on this project."}
             action={
-              <div className="c-empty__actions">
-                <Button variant="primary" icon="plus" onClick={openNewIntent}>
-                  New intent
-                </Button>
-                <Button icon="play" onClick={() => void harborOrNull()?.launchAll().catch(() => undefined)}>
-                  Launch all
-                </Button>
-              </div>
+              canAct ? (
+                <div className="c-empty__actions">
+                  <Button variant="primary" icon="plus" onClick={openNewIntent}>
+                    New intent
+                  </Button>
+                  <Button icon="play" onClick={() => void launchAllNow()}>
+                    Launch all
+                  </Button>
+                </div>
+              ) : undefined
             }
           />
         </div>

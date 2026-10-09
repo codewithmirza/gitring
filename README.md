@@ -41,14 +41,15 @@ R6 the smaller change gives way
 
 Symbol analysis and checks support JavaScript and TypeScript. Other languages fall back to file and line ranges.
 
-## Run it on your computer
+## Run it
 
-You do not need a Cloudflare account. Offline mode uses a local Artifacts emulator (same git objects and hashes), the rules of the road instead of the Clef model, and scripted agents.
+Bearing needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI and Dynamic Workers (Worker Loader). Local development uses the Artifacts and Workers AI of your account.
 
 ```bash
-npm install            # npm 11 or later (npx npm@11 install)
-npm run dev:offline
-# open http://localhost:5173, then: connection button (top right) → Run scripted
+npm install                      # npm 11 or later (npx npm@11 install)
+npx wrangler login
+cp .dev.vars.example .dev.vars   # then fill in the three values
+npm run dev                      # http://localhost:5173
 ```
 
 Tests:
@@ -56,63 +57,80 @@ Tests:
 ```bash
 npm test               # unit tests
 npm run typecheck
-npm run e2e:scenario   # five colliding intents, end to end (needs the dev server)
-npm run e2e:guard      # re-plot and the stale-write guard (needs the dev server)
+BEARING_URL=https://<your-worker> BEARING_KEY=bk_… npm run e2e:scenario   # real AI agents on a new sample project
+BEARING_URL=https://<your-worker> BEARING_KEY=bk_… npm run e2e:guard      # re-plot and the stale-write guard
 ```
 
 ## Deploy to Cloudflare
 
-Your account needs Workers (paid plan), Artifacts, Workers AI and Dynamic Workers (Worker Loader).
-
 ```bash
-npx wrangler login
-npm run deploy         # vite build + wrangler deploy
+npx wrangler secret put BEARING_SECRET        # seals sign-in credentials: openssl rand -base64 32
+npx wrangler secret put BEARING_SETUP_TOKEN   # opens /setup before an owner signs in: openssl rand -hex 16
+npx wrangler secret put BEARING_OWNERS        # github:your-login,google:you@example.com
+npm run deploy                                # vite build + wrangler deploy
 ```
 
-Optional secrets (`npx wrangler secret put <NAME>`):
+Then open `https://<your-worker>/setup?token=<BEARING_SETUP_TOKEN>`:
+
+1. **GitHub**: one click creates a GitHub App for your Worker (sign-in, issue webhooks). GitHub shows the app before it creates it.
+2. **Google**: create an OAuth client of type Web application, with the redirect URI that the page shows, and paste its ID and secret.
+
+Push to deploy with Workers Builds: production branch `main`, build command `npm run build`, deploy command `npx wrangler deploy`, root directory empty.
 
 | Secret | Use |
 |---|---|
-| `BEARING_KEY` | Closes MCP, hooks and write APIs. Clients send `Authorization: Bearer <key>`. |
-| `GITHUB_WEBHOOK_SECRET` | Verifies GitHub webhook signatures. |
-| `SLACK_SIGNING_SECRET` | Verifies Slack slash-command signatures. |
+| `BEARING_SECRET` | Required. Seals the GitHub App and Google credentials (AES-GCM). |
+| `BEARING_SETUP_TOKEN` | Opens `/setup` before an owner signs in. |
+| `BEARING_OWNERS` | Owners of the deployment: they open `/setup` and act on every project. |
+| `BEARING_KEY` | Optional operator key for scripts. It acts as an owner on every project. |
+| `GITHUB_WEBHOOK_SECRET` | Optional. A plain repository webhook (without the app): `/hooks/github?project=<id>`. |
+| `SLACK_SIGNING_SECRET` | Optional. The Slack slash command: `/hooks/slack?project=<id>`. |
 
-Guardrails for a public deployment: at most 40 built-in AI agents per hour for the whole deployment (after that, new built-in agents run scripted), agent models only from `AGENT_MODELS` in `wrangler.jsonc` and the defaults, and sanitized settings. Open `/?project=<name>` for a separate project.
+## Accounts and projects
+
+- People sign in with GitHub or Google. Roles per project: **owner** (settings, members), **member** (intents, agents, landings), **viewer** (watch).
+- A project starts from a copy of the sample, from an empty repository, or from an import of a public https git repository (GitHub, GitLab, Bitbucket or any host). Main lives in Cloudflare Artifacts.
+- Anyone can watch a public project. Only members act on it.
+- Personal API keys (Connect → API keys) let MCP clients, hooks and scripts act as you.
+- Built-in AI agents have an hourly budget: `AI_AGENTS_PER_USER_HOUR` per person and `AI_AGENTS_PER_HOUR` for the deployment (`wrangler.jsonc`). Over the budget, agents wait and start by themselves.
 
 ## Connect agents
 
-Bearing speaks MCP (streamable HTTP) at `/mcp`. Tools: `bearing_intents`, `bearing_declare`, `bearing_log`, `bearing_traffic`, `bearing_read`, `bearing_list`, `bearing_write`, `bearing_check`, `bearing_submit`, `bearing_ack`.
+Bearing speaks MCP (streamable HTTP) at `/mcp`. Tools: `bearing_intents`, `bearing_declare`, `bearing_log`, `bearing_traffic`, `bearing_read`, `bearing_list`, `bearing_write`, `bearing_check`, `bearing_submit`, `bearing_ack`. Every call needs a personal API key: `Authorization: Bearer bk_…`.
 
 ```bash
-claude mcp add --transport http bearing https://<your-worker>/mcp     # Claude Code
-codex mcp add bearing --url https://<your-worker>/mcp                 # Codex
+export BEARING_KEY=bk_…
+claude mcp add --transport http bearing https://<your-worker>/mcp --header "Authorization: Bearer $BEARING_KEY"   # Claude Code
 ```
 
-Cursor: `.cursor/mcp.json` → `{ "mcpServers": { "bearing": { "url": "https://<your-worker>/mcp" } } }`
+Codex: `~/.codex/config.toml` → `[mcp_servers.bearing]` with `url = "https://<your-worker>/mcp"` and `bearer_token_env_var = "BEARING_KEY"`.
+
+Cursor: `.cursor/mcp.json` → `{ "mcpServers": { "bearing": { "url": "https://<your-worker>/mcp", "headers": { "Authorization": "Bearer ${env:BEARING_KEY}" } } } }`
 
 Two modes:
 
 - **api mode** (default): the agent reads and writes files through Bearing. Bearing holds the working tree, re-plots it when main moves, and merges writes made from a stale copy.
 - **git mode**: `bearing_declare` returns an Artifacts fork remote and a short-lived token. The agent clones, commits and pushes with plain git, then calls `bearing_log` with the head SHA.
 
-Try an outside agent end to end: `BEARING_URL=https://<your-worker> npm run agent:external` (git mode). Add `-- --mode api` for api mode.
+Try an outside agent end to end: `BEARING_URL=https://<your-worker> BEARING_KEY=bk_… npm run agent:external` (git mode, on a new private sample project). Add `-- --mode api` for api mode.
 
 **Claude Code hook**: corrections can also arrive in the middle of a task, after each file edit. Add this to `.claude/settings.json` in the agent's repository, and pass `workdir` in `bearing_declare`:
 
 ```json
 { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command",
-  "command": "curl -s -X POST -H 'content-type: application/json' --data-binary @- 'https://<your-worker>/hooks/claude-code?project=demo'" } ] } ] } }
+  "command": "curl -s -X POST -H 'content-type: application/json' -H \"Authorization: Bearer $BEARING_KEY\" --data-binary @- 'https://<your-worker>/hooks/claude-code?project=<id>'" } ] } ] } }
 ```
 
-See it work: `BEARING_URL=https://<your-worker> npm run agent:hook`.
+See it work: `BEARING_URL=https://<your-worker> BEARING_KEY=bk_… npm run agent:hook`.
 
 ## Hooks: other apps in and out
 
 | In | |
 |---|---|
-| `POST /hooks/intents` | Any app: `{ title, goal, checks?, source?, launch? }` → a new intent |
-| `POST /hooks/github` | Issues opened or labeled `bearing` → intents |
-| `POST /hooks/slack` | Slash command `/bearing Add a dark mode — Readers can switch…` |
+| `POST /hooks/intents` | Any app with a member's API key: `{ project, title, goal, checks?, source?, launch? }` → a new intent |
+| `POST /hooks/github-app` | The Bearing GitHub App: an issue labeled `bearing` by a project member → an intent in each project imported from that repository |
+| `POST /hooks/github` | A plain repository webhook (`GITHUB_WEBHOOK_SECRET`, `?project=`) → the same |
+| `POST /hooks/slack` | Slash command `/bearing Add a dark mode — Readers can switch…` (`SLACK_SIGNING_SECRET`, `?project=`) |
 | **Out** | Project webhooks get `landing`, `correction` and `decision` events as JSON or Slack messages |
 
 ## Project layout
@@ -121,14 +139,15 @@ See it work: `BEARING_URL=https://<your-worker> npm run agent:hook`.
 src/core        pure logic: git objects, diffs, 3-way merge, JS symbol analysis, range,
                 course-check facts, rules of the road, Clef I/O, corrections, compose, logbook
 src/harbor      HarborMaster Durable Object (the coordinator for one project)
-src/vessel      Vessel Durable Object (built-in agents: Workers AI or scripted)
+src/vessel      Vessel Durable Object (built-in agents on Workers AI)
+src/directory   Directory Durable Object: people, sessions, API keys, projects, roles
 src/sim         Sector Durable Object (scale simulation)
-src/platform    Artifacts backend + emulator, Workers AI calls, Dynamic Worker checks and previews
-src/worker      routes, MCP server, hooks
+src/platform    Artifacts backend, Workers AI calls, Dynamic Worker checks and previews
+src/worker      routes, sign-in, MCP server, hooks
 web/src         React UI and its design system
-demo            Saltmarsh Books: seed app, intents with checks, reference solutions
+sample          the sample project: a small bookshop on Workers and its intents with checks
 scripts         outside agent (MCP, git or api mode), Claude Code hook demo, e2e runs
-test            unit tests (Vitest), worker tests, UI screenshot tools
+test            unit tests (Vitest); test/support holds an Artifacts test double
 ```
 
 ## License

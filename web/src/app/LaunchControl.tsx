@@ -4,6 +4,7 @@ import { Button, Checkbox, Popover, Segmented, toast } from "../design/component
 import { harbor } from "../state/api";
 import { modelShort } from "../state/format";
 import { useStore } from "../state/store";
+import { useCanAct } from "../state/account";
 
 const FANOUT = ["1", "2", "3", "4"] as const;
 
@@ -63,6 +64,7 @@ export function LaunchButton({ intent, size = "sm", variant = "secondary" }: { i
   const [busy, setBusy] = useState(false);
   const anchor = useRef<HTMLButtonElement | null>(null);
   const closed = intent.status === "landed" || intent.status === "parked" || intent.status === "merged-into";
+  const canAct = useCanAct();
 
   const launch = async () => {
     setBusy(true);
@@ -81,6 +83,7 @@ export function LaunchButton({ intent, size = "sm", variant = "secondary" }: { i
     }
   };
 
+  if (!canAct) return null;
   return (
     <>
       <Button

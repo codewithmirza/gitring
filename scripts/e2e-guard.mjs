@@ -3,7 +3,7 @@
  * End-to-end check of re-plot and the write guard, through MCP only (api mode), against a running
  * Bearing (local `npm run dev` or a deployed Worker). Exit code 1 when a check fails.
  *
- *   BEARING_URL=https://<your-worker> node scripts/e2e-guard.mjs
+ *   BEARING_URL=https://<your-worker> BEARING_KEY=bk_… node scripts/e2e-guard.mjs
  *
  * 1. A reads src/render.js. B changes the footer and lands. Bearing re-plots A onto the new main.
  *    A writes from its old copy: Bearing merges, so B's line stays. A writes again from the same copy:
@@ -14,10 +14,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const base = process.env.BEARING_URL ?? "http://127.0.0.1:5173";
-const project = process.env.BEARING_PROJECT ?? `guard-${Date.now().toString(36)}`;
+import { authHeaders, base, projectFor } from "./lib/bearing.mjs";
+
+const headers = authHeaders();
+const { id: project } = await projectFor("Guard check", headers);
 const client = new Client({ name: "e2e-guard", version: "0.1.0" });
-await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", base)));
+await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", base), { requestInit: { headers } }));
 let failed = 0;
 const ok = (cond, label) => {
   console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
@@ -43,15 +45,15 @@ const read = async (id) => (await call("bearing_read", { attemptId: id, path: "s
 const write = async (id, content) => (await call("bearing_write", { attemptId: id, files: [{ path: "src/render.js", content }] })).json;
 async function landed(id) {
   for (let i = 0; i < 40; i++) {
-    const st = await (await fetch(`${base}/api/projects/${project}/state`)).json();
+    const st = await (await fetch(`${base}/api/projects/${project}/state`, { headers })).json();
     if (st.landings.some((l) => l.attemptId === id)) return st;
     await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error(`${id} did not land`);
 }
-const fileOnMain = async () => (await fetch(`${base}/api/projects/${project}/file?ref=main&path=src/render.js`)).text();
+const fileOnMain = async () => (await fetch(`${base}/api/projects/${project}/file?ref=main&path=src/render.js`, { headers })).text();
 /** The attempt's file as Bearing holds it (not a read by the agent: the agent's copy does not change). */
-const fileOf = async (id) => (await fetch(`${base}/api/projects/${project}/file?ref=${id}&path=src/render.js`)).text();
+const fileOf = async (id) => (await fetch(`${base}/api/projects/${project}/file?ref=${id}&path=src/render.js`, { headers })).text();
 
 // ── 1. merge a write from a stale copy, twice ──
 const A = await declare("Footer: opening hours on Monday", "Say in the footer that the shop opens on Monday too.");
@@ -90,7 +92,7 @@ await write(D, dText);
 const subD = await call("bearing_submit", { attemptId: D, summary: "Bookseller line." });
 if (subD.json?.next !== "landing-queue") console.log("D submit:", subD.json?.next, subD.json?.message);
 await landed(D);
-const st = await (await fetch(`${base}/api/projects/${project}/state`)).json();
+const st = await (await fetch(`${base}/api/projects/${project}/state`, { headers })).json();
 const cAttempt = st.attempts.find((a) => a.id === C);
 ok(cAttempt.baseSha === st.project.mainSha, "C moved onto the new main (re-plot)");
 const corr = st.corrections.filter((x) => x.attemptId === C && x.constraints?.reapply?.length);

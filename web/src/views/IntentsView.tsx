@@ -26,6 +26,7 @@ import { useNow } from "../app/useNow";
 import { harbor, harborOrNull, onHarbor } from "../state/api";
 import { ago, modelShort, plural, shortSha } from "../state/format";
 import { useStore } from "../state/store";
+import { useCanAct } from "../state/account";
 import { byId, indexes, selectIntentGroups } from "../state/selectors";
 import "./intents.css";
 
@@ -255,10 +256,11 @@ interface LaneProps {
   rederivedFromName?: string;
   onLand: (a: Attempt) => void;
   onRederive: (a: Attempt) => void;
+  canAct: boolean;
   now: number;
 }
 
-function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, rederivedFromName, onLand, onRederive, now }: LaneProps) {
+function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, rederivedFromName, onLand, onRederive, canAct, now }: LaneProps) {
   const callsign = agent?.callsign ?? a.agentId;
   const alternate = a.status === "alternate" || a.status === "abandoned" || (a.status === "stale" && intent.status === "landed");
   const landed = a.status === "landed";
@@ -381,21 +383,25 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
       </section>
 
       <footer className="lane__actions">
-        <Button
-          variant="primary"
-          icon="anchor"
-          disabled={!canLand || closed}
-          onClick={() => onLand(a)}
-          title={canLand ? undefined : "Only a ready attempt can land."}
-        >
-          Land attempt
-        </Button>
+        {canAct && (
+          <Button
+            variant="primary"
+            icon="anchor"
+            disabled={!canLand || closed}
+            onClick={() => onLand(a)}
+            title={canLand ? undefined : "Only a ready attempt can land."}
+          >
+            Land attempt
+          </Button>
+        )}
         <Button icon="diff" onClick={() => openDiff(a.id, callsign)}>
           Open diff
         </Button>
-        <Button variant="ghost" icon="rederive" disabled={closed || landed} onClick={() => onRederive(a)}>
-          Re-derive
-        </Button>
+        {canAct && (
+          <Button variant="ghost" icon="rederive" disabled={closed || landed} onClick={() => onRederive(a)}>
+            Re-derive
+          </Button>
+        )}
       </footer>
     </article>
   );
@@ -411,6 +417,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
   const [park, setPark] = useState(false);
   const [landing, setLanding] = useState<Attempt | null>(null);
   const [rederive, setRederive] = useState<Attempt | null>(null);
+  const canAct = useCanAct();
 
   const attempts = useMemo(() => {
     const list = idx?.attemptsByIntent.get(intent.id) ?? [];
@@ -451,15 +458,17 @@ function IntentDetail({ intent }: { intent: Intent }) {
           {intent.title}
         </h1>
         <p className="intent__goal voice-human">{intent.goal.replace(/`/g, "")}</p>
-        <div className="intent__actions">
-          <LaunchButton intent={intent} size="md" variant={n === 0 ? "primary" : "secondary"} />
-          <Button icon="amend" onClick={() => setAmend(true)} disabled={intent.status === "landed" || intent.status === "parked"}>
-            Amend intent
-          </Button>
-          <Button variant="ghost" icon="park" onClick={() => setPark(true)} disabled={intent.status === "landed" || intent.status === "parked"}>
-            Park intent
-          </Button>
-        </div>
+        {canAct && (
+          <div className="intent__actions">
+            <LaunchButton intent={intent} size="md" variant={n === 0 ? "primary" : "secondary"} />
+            <Button icon="amend" onClick={() => setAmend(true)} disabled={intent.status === "landed" || intent.status === "parked"}>
+              Amend intent
+            </Button>
+            <Button variant="ghost" icon="park" onClick={() => setPark(true)} disabled={intent.status === "landed" || intent.status === "parked"}>
+              Park intent
+            </Button>
+          </div>
+        )}
       </header>
 
       <div className="intent__spec">
@@ -533,7 +542,10 @@ function IntentDetail({ intent }: { intent: Intent }) {
           </p>
         </div>
         {n === 0 ? (
-          <EmptyState text="Launch attempts to fill the lanes. Each attempt shows its checks, its live preview and its diff." action={<LaunchButton intent={intent} size="md" variant="primary" />} />
+          <EmptyState
+            text={canAct ? "Launch attempts to fill the lanes. Each attempt shows its checks, its live preview and its diff." : "No attempts yet. Members launch attempts for this intent."}
+            action={canAct ? <LaunchButton intent={intent} size="md" variant="primary" /> : undefined}
+          />
         ) : (
           <div className="lanes-scroll">
             <div className="lanes" style={{ "--n": n } as CSSProperties}>
@@ -550,6 +562,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
                   rederivedFromName={a.lineage.rederivedFrom ? names(a.lineage.rederivedFrom) : undefined}
                   onLand={setLanding}
                   onRederive={setRederive}
+                  canAct={canAct}
                   now={now}
                 />
               ))}

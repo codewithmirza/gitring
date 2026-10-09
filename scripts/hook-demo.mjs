@@ -9,18 +9,19 @@
  * This script plays Claude Code: it declares a course over MCP (with `workdir`), then posts two hook
  * events the way Claude Code does, and prints what the agent would read.
  *
- *   BEARING_URL=http://127.0.0.1:5173 node scripts/hook-demo.mjs
+ *   BEARING_URL=https://<your-worker> BEARING_KEY=bk_… node scripts/hook-demo.mjs
  *
- * Real setup (.claude/settings.json in the agent's repository):
+ * Real setup (.claude/settings.json in the agent's repository; BEARING_KEY in the environment):
  *   { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command",
- *     "command": "curl -s -X POST -H 'content-type: application/json' --data-binary @- '<BEARING_URL>/hooks/claude-code?project=demo'" } ] } ] } }
+ *     "command": "curl -s -X POST -H 'content-type: application/json' -H \"Authorization: Bearer $BEARING_KEY\" --data-binary @- '<BEARING_URL>/hooks/claude-code?project=<id>'" } ] } ] } }
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const base = process.env.BEARING_URL ?? "http://127.0.0.1:5173";
-const project = process.env.BEARING_PROJECT ?? "demo";
-const headers = process.env.BEARING_KEY ? { Authorization: `Bearer ${process.env.BEARING_KEY}` } : {};
+import { authHeaders, base, projectFor } from "./lib/bearing.mjs";
+
+const headers = authHeaders();
+const { id: project } = await projectFor("Hook demo", headers);
 const workdir = "/home/dev/saltmarsh-shop";
 const session = `cc-${Date.now().toString(36)}`;
 

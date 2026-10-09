@@ -8,6 +8,8 @@ export type Route =
   | { name: "connect" }
   | { name: "sim" }
   | { name: "design" }
+  | { name: "projects" }
+  | { name: "settings" }
   | { name: "notfound"; path: string };
 
 export function parseRoute(pathname: string): Route {
@@ -26,6 +28,10 @@ export function parseRoute(pathname: string): Route {
       return { name: "sim" };
     case "design":
       return { name: "design" };
+    case "projects":
+      return { name: "projects" };
+    case "settings":
+      return { name: "settings" };
     default:
       return { name: "notfound", path: pathname };
   }

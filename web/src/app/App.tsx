@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { ProgressRule, ToastHost, EmptyState, toast } from "../design/components";
+import { Button, ProgressRule, ToastHost, EmptyState, toast } from "../design/components";
 import { store, useStore } from "../state/store";
 import { selectJudgmentQueue } from "../state/selectors";
 import { TopBar } from "./TopBar";
+import { SignInDialog, WatchBanner } from "./Account";
 import { DiffDrawer, FileDrawer, NewIntentDialog, ShortcutsDialog } from "./Dialogs";
 import { Link, navigate, useRoute, type Route } from "./router";
-import { openNewIntent, openShortcuts } from "./ui";
+import { openNewIntent, openShortcuts, setUi } from "./ui";
 import { ChartView } from "../views/ChartView";
 
 const IntentsView = lazy(() => import("../views/IntentsView").then((m) => ({ default: m.IntentsView })));
@@ -13,6 +14,8 @@ const LogbookView = lazy(() => import("../views/LogbookView").then((m) => ({ def
 const ConnectView = lazy(() => import("../views/ConnectView").then((m) => ({ default: m.ConnectView })));
 const SimView = lazy(() => import("../views/SimView").then((m) => ({ default: m.SimView })));
 const DesignView = lazy(() => import("../views/DesignView").then((m) => ({ default: m.DesignView })));
+const ProjectsView = lazy(() => import("../views/ProjectsView").then((m) => ({ default: m.ProjectsView })));
+const SettingsView = lazy(() => import("../views/SettingsView").then((m) => ({ default: m.SettingsView })));
 
 const TITLES: Record<Route["name"], string> = {
   chart: "Chart",
@@ -21,6 +24,8 @@ const TITLES: Record<Route["name"], string> = {
   connect: "Connect",
   sim: "Simulation",
   design: "Design system",
+  projects: "Projects",
+  settings: "Project settings",
   notfound: "Not found",
 };
 
@@ -110,6 +115,10 @@ function View({ route }: { route: Route }) {
       return <SimView />;
     case "design":
       return <DesignView />;
+    case "projects":
+      return <ProjectsView />;
+    case "settings":
+      return <SettingsView />;
     default:
       return (
         <div className="page">
@@ -120,6 +129,38 @@ function View({ route }: { route: Route }) {
         </div>
       );
   }
+}
+
+/** Before the first project state: connect, or say why there is no project to show. */
+function Booting() {
+  const conn = useStore((s) => s.conn);
+  const error = useStore((s) => s.error);
+  const signedIn = useStore((s) => Boolean(s.me?.user));
+  if (conn === "offline" && error) {
+    return (
+      <div className="booting">
+        <EmptyState
+          text={error}
+          action={
+            <div className="c-empty__actions">
+              <Link to="/projects">Open the projects</Link>
+              {!signedIn && (
+                <Button variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
+                  Sign in
+                </Button>
+              )}
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="booting">
+      <ProgressRule label="Bearing connects to the harbor" />
+      <p>Bearing connects to the harbor.</p>
+    </div>
+  );
 }
 
 export function App() {
@@ -151,11 +192,9 @@ export function App() {
       </a>
       <TopBar route={route} />
       <main id="main" className={`app__main app__main--${route.name}`} tabIndex={-1}>
-        {!ready && route.name !== "design" ? (
-          <div className="booting">
-            <ProgressRule label="Bearing connects to the harbor" />
-            <p>Bearing connects to the harbor.</p>
-          </div>
+        <WatchBanner />
+        {!ready && route.name !== "design" && route.name !== "projects" ? (
+          <Booting />
         ) : (
           <Suspense fallback={<ProgressRule label="Loading the view" />}>
             <View key={key.startsWith("intents") || key.startsWith("logbook") ? route.name : key} route={route} />
@@ -163,6 +202,7 @@ export function App() {
         )}
       </main>
       <NewIntentDialog />
+      <SignInDialog />
       <ShortcutsDialog />
       <FileDrawer />
       <DiffDrawer />

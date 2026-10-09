@@ -519,3 +519,67 @@
   white-space: nowrap;
   text-decoration: none;
 }
+
+/* ───────────── accounts: project switcher, person menu, sign-in, watch banner ───────────── */
+.acct-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 2px var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  cursor: pointer;
+}
+.acct-switch:hover { background: var(--surface-2); }
+.acct-switch .b-icon { color: var(--ink-3); }
+.acct-list { display: grid; gap: 2px; width: 320px; max-width: calc(100vw - 32px); padding: var(--s-1); }
+.acct-list__head { padding: var(--s-2) var(--s-3) var(--s-1); font-size: var(--t-xs); color: var(--ink-3); margin: 0; }
+.acct-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.acct-list__item:hover { background: var(--surface-2); }
+.acct-list__item.is-current { background: var(--accent-tint); }
+.acct-list__item > .b-icon { color: var(--ink-3); flex: none; }
+.acct-list__all { border-top: 1px solid var(--line); border-radius: 0 0 var(--r-2) var(--r-2); margin-top: var(--s-1); }
+.acct-list__text { display: grid; flex: 1; min-width: 0; }
+.acct-list__name { font-size: var(--t-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-list__meta { font-size: var(--t-xs); color: var(--ink-3); }
+.acct-me { display: inline-grid; place-items: center; width: var(--control-md); height: var(--control-md); border: 1px solid var(--line); border-radius: 50%; background: var(--surface-1); color: var(--ink-2); padding: 0; cursor: pointer; overflow: hidden; }
+.acct-me:hover { border-color: var(--line-strong); }
+.acct-me__avatar { width: 100%; height: 100%; object-fit: cover; }
+.acct-menu { display: grid; gap: 2px; width: 280px; max-width: calc(100vw - 32px); padding: var(--s-2); }
+.acct-menu__name { margin: 0; padding: var(--s-1) var(--s-2) 0; font-weight: 600; }
+.acct-menu__meta { margin: 0 0 var(--s-2); padding: 0 var(--s-2) var(--s-2); font-size: var(--t-xs); color: var(--ink-3); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.acct-menu__item { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2); border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-1); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.acct-menu__item:hover { background: var(--surface-2); }
+.acct-menu__item .b-icon { color: var(--ink-3); }
+.acct-signin { display: grid; gap: var(--s-3); }
+.acct-signin__note { margin: 0; font-size: var(--t-sm); color: var(--ink-2); }
+.acct-watch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-tint);
+  font-size: var(--t-sm);
+  color: var(--ink-1);
+}
+.acct-watch > span { flex: 1 1 320px; }
+.acct-watch > .b-icon { color: var(--accent); }

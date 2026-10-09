@@ -5,7 +5,9 @@
  * the UI says so and tries again. There is no offline or fake data path.
  */
 import type { Attempt, Intent, Landing, ProjectState } from "../../../src/core/types";
+import type { Role } from "../../../src/core/accounts";
 import { store } from "./store";
+import { loadMe, loadProjects, rememberedProject } from "./account";
 
 export interface DiffFile {
   path: string;
@@ -184,7 +186,7 @@ export function defaultConnectInfo(projectId: string): ConnectInfo {
     mcpUrl: `${origin}/mcp`,
     hookUrl: `${origin}/hooks/claude-code?project=${encodeURIComponent(projectId)}`,
     gitRemoteExample: `https://<account-id>.artifacts.cloudflare.net/git/bearing/${projectId}--kestrel-7.git`,
-    projectKeyHint: "Set BEARING_KEY to the project key. The demo project needs no key.",
+    projectKeyHint: "Set BEARING_KEY to a personal API key (above).",
   };
 }
 
@@ -248,9 +250,22 @@ function setClient(c: HarborClient) {
 
 let bootTries = 0;
 
+/** Pick the project: ?project=, else the last one used (if the caller still sees it), else the public sample. */
+function chooseProject(params: URLSearchParams): string {
+  const asked = params.get("project");
+  if (asked) return asked;
+  const remembered = rememberedProject();
+  if (remembered && store.get().projects.some((p) => p.id === remembered)) return remembered;
+  const mine = store.get().projects.find((p) => p.role === "owner" && p.id !== "demo");
+  return mine?.id ?? "demo";
+}
+
 export async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
-  const projectId = params.get("project") || "demo";
+  if (!store.get().me) {
+    await Promise.all([loadMe(), loadProjects()]).catch(() => undefined);
+  }
+  const projectId = chooseProject(params);
   store.setProject(projectId);
   try {
     const st = await request<unknown>("GET", `/api/projects/${encodeURIComponent(projectId)}/state`, undefined, 8000);
@@ -258,11 +273,13 @@ export async function boot(): Promise<void> {
     bootTries = 0;
     setClient(new LiveHarbor(projectId));
     store.setMode("live");
+    store.setAccess((st as ProjectState & { access?: Role }).access ?? null);
     store.dispatch({ type: "snapshot", state: st });
     connectSocket(projectId);
   } catch (e) {
     const status = e instanceof ApiError ? e.status : 0;
-    if (status === 404 || status === 403) {
+    if (status === 400 || status === 401 || status === 403 || status === 404) {
+      store.setAccess(null);
       store.setConn("offline", (e as Error).message);
       return;
     }

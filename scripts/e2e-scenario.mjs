@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
  * End-to-end run of the sample project with real Workers AI agents, against a running Bearing
- * (local `npm run dev` or a deployed Worker). It resets a sample project, launches agents on every
- * open intent, waits until no agent is at work, lands the first ready dark mode attempt as a human
- * pick, and prints what happened. AI agents take 5 to 15 minutes.
+ * (local `npm run dev` or a deployed Worker). It makes a private copy of the sample (or resets
+ * BEARING_PROJECT), launches agents on every open intent, waits until no agent is at work, lands the
+ * first ready dark mode attempt as a human pick, and prints what happened. AI agents take 5 to 15 minutes.
  *
- *   BEARING_URL=https://<your-worker> node scripts/e2e-scenario.mjs
+ *   BEARING_URL=https://<your-worker> BEARING_KEY=bk_… node scripts/e2e-scenario.mjs
  *
  * Exit code 1 when an invariant fails (human merge fixes must stay 0; work must land).
  */
-const base = process.env.BEARING_URL ?? "http://127.0.0.1:5173";
-const project = process.env.BEARING_PROJECT ?? `scn-${Date.now().toString(36)}`;
-const headers = { "content-type": "application/json", ...(process.env.BEARING_KEY ? { authorization: `Bearer ${process.env.BEARING_KEY}` } : {}) };
+import { authHeaders, base, projectFor } from "./lib/bearing.mjs";
+
+const headers = { "content-type": "application/json", ...authHeaders() };
+const { id: project, fresh } = await projectFor("Scenario", headers);
+console.log(`project ${project} · ${base}/?project=${project}`);
 const api = (p, body) =>
   fetch(`${base}/api/projects/${project}${p}`, body ? { method: "POST", headers, body: JSON.stringify(body) } : { headers }).then((r) => r.json());
 const ACTIVE = new Set(["declared", "underway", "submitted", "checking", "landing", "rederiving"]);
@@ -20,7 +22,7 @@ const ok = (cond, label) => {
   console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
   if (!cond) failed += 1;
 };
-await api("/reset", {});
+if (!fresh) await api("/reset", {});
 const run = await api("/launch-all", {});
 ok(run.intents === 5, `launch-all starts agents on 5 sample intents (${run.launched} now, ${run.queued} wait for the AI budget)`);
 let st;

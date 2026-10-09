@@ -8,6 +8,7 @@ import { ATTEMPT_STATUS_TEXT, shortSha } from "../state/format";
 import { Link } from "./router";
 import { openNewIntent } from "./ui";
 import { LaunchButton } from "./LaunchControl";
+import { useCanAct } from "../state/account";
 
 const EMPTY_GROUPS: IntentGroup[] = [];
 const EMPTY_ATTEMPTS: Attempt[] = [];
@@ -106,6 +107,7 @@ export function IntentsRail({ selectedId }: { selectedId?: string }) {
   const byIntent = useStore((s) => (s.state ? indexes(s.state).attemptsByIntent : null));
   const agents = useStore((s) => (s.state ? byId(s.state.agents) : null));
   const total = groups.reduce((n, g) => n + g.intents.length, 0);
+  const canAct = useCanAct();
   return (
     <Panel
       title="Intents"
@@ -113,13 +115,19 @@ export function IntentsRail({ selectedId }: { selectedId?: string }) {
       headingId="intents-rail-title"
       className="rail rail--intents"
       action={
-        <Button size="sm" variant="ghost" icon="plus" onClick={openNewIntent} title="New intent (N)">
-          New intent
-        </Button>
+        canAct ? (
+          <Button size="sm" variant="ghost" icon="plus" onClick={openNewIntent} title="New intent (N)">
+            New intent
+          </Button>
+        ) : undefined
       }
     >
       {total === 0 ? (
-        <EmptyState text="No intents yet. Write the goal and the checks for your first intent." action={<Button variant="primary" icon="plus" onClick={openNewIntent}>New intent</Button>} />
+        canAct ? (
+          <EmptyState text="No intents yet. Write the goal and the checks for your first intent." action={<Button variant="primary" icon="plus" onClick={openNewIntent}>New intent</Button>} />
+        ) : (
+          <EmptyState text="No intents yet. Members open intents here." />
+        )
       ) : (
         groups.map((g) => (
           <div key={g.id} className="igroup">

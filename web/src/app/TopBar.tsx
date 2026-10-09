@@ -7,6 +7,9 @@ import { useStore } from "../state/store";
 import { selectJudgmentQueue, type JudgmentItem } from "../state/selectors";
 import { int, shortSha } from "../state/format";
 import { Link, navigate, type Route } from "./router";
+import { ProjectSwitcher, UserMenu } from "./Account";
+import { useCanAct, useIsOwner } from "../state/account";
+import { launchAllNow } from "./actions";
 
 const NAV: { to: string; label: string; icon: IconName; match: Route["name"]; key: string }[] = [
   { to: "/", label: "Chart", icon: "compass", match: "chart", key: "c" },
@@ -54,7 +57,9 @@ function Connection() {
   const mode = useStore((s) => s.mode);
   const conn = useStore((s) => s.conn);
   const error = useStore((s) => s.error);
-  const sample = useStore((s) => s.state?.project.source?.kind === "sample");
+  const sample = useStore((s) => (s.state?.project.source?.kind ?? "sample") === "sample");
+  const canAct = useCanAct();
+  const owner = useIsOwner();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"run" | "reset" | null>(null);
   const btn = useRef<HTMLButtonElement | null>(null);
@@ -74,19 +79,14 @@ function Connection() {
     setBusy(kind);
     try {
       if (kind === "run") {
-        const r = await harbor().launchAll();
-        toast({
-          tone: "info",
-          title: r.launched ? `${r.launched} AI ${r.launched === 1 ? "agent starts" : "agents start"}` : "No agents start now",
-          text: r.queued ? `${r.queued} more wait for the hourly AI budget. Watch the radio log.` : "Watch the chart. AI agents take 5 to 8 minutes.",
-        });
-      } else {
-        await harbor().resetSample();
-        toast({ tone: "info", title: "Sample project reset", text: "Main is back at the first commit." });
+        if (await launchAllNow()) setOpen(false);
+        return;
       }
+      await harbor().resetSample();
+      toast({ tone: "info", title: "Sample project reset", text: "Main is back at the first commit." });
       setOpen(false);
     } catch (e) {
-      toast({ tone: "danger", title: kind === "run" ? "The agents did not start" : "The reset did not finish", text: (e as Error).message });
+      toast({ tone: "danger", title: "The reset did not finish", text: (e as Error).message });
     } finally {
       setBusy(null);
     }
@@ -111,17 +111,23 @@ function Connection() {
             <span className={`topbar__dot topbar__conn--${tone}`} aria-hidden="true" /> {text}
           </p>
           <p className="harborpop__help">{help}</p>
-          <div className="harborpop__actions">
-            <Button size="sm" variant="primary" icon="play" busy={busy === "run"} onClick={() => act("run")}>
-              Launch all open intents
-            </Button>
-            {sample && (
-              <Button size="sm" icon="reload" busy={busy === "reset"} onClick={() => act("reset")}>
-                Reset sample
-              </Button>
-            )}
-          </div>
-          <p className="harborpop__note">Built-in agents use Workers AI models and take 5 to 8 minutes. Over the hourly AI budget, launches wait in a queue and start by themselves.</p>
+          {canAct ? (
+            <>
+              <div className="harborpop__actions">
+                <Button size="sm" variant="primary" icon="play" busy={busy === "run"} onClick={() => act("run")}>
+                  Launch all open intents
+                </Button>
+                {sample && owner && (
+                  <Button size="sm" icon="reload" busy={busy === "reset"} onClick={() => act("reset")}>
+                    Reset sample
+                  </Button>
+                )}
+              </div>
+              <p className="harborpop__note">Built-in agents use Workers AI models and take 5 to 8 minutes. Over the hourly AI budget, launches wait in a queue and start by themselves.</p>
+            </>
+          ) : (
+            <p className="harborpop__note">You watch this project. Members can launch agents here.</p>
+          )}
         </div>
       </Popover>
     </>
@@ -195,7 +201,6 @@ function StatsStrip() {
 
 export function TopBar({ route }: { route: Route }) {
   const theme = useTheme();
-  const name = useStore((s) => s.state?.project.name ?? "Bearing");
   const sha = useStore((s) => s.state?.project.mainSha);
   const p50 = useStore((s) => s.state?.stats.medianCheckLatencyMs ?? 0);
   return (
@@ -214,7 +219,7 @@ export function TopBar({ route }: { route: Route }) {
           <span className="topbar__wordmark">bearing</span>
         </a>
         <div className="topbar__project">
-          <span className="topbar__projname">{name}</span>
+          <ProjectSwitcher />
           <span className="topbar__sha voice-agent" title="main">
             main {shortSha(sha)}
           </span>
@@ -223,6 +228,7 @@ export function TopBar({ route }: { route: Route }) {
         <div className="topbar__right">
           <Connection />
           <JudgmentQueue />
+          <UserMenu />
           <IconButton
             className="topbar__themecycle"
             icon={theme}

@@ -8,7 +8,7 @@
     "directory": "./dist/client",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/preview/*", "/ws/*", "/hooks/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/preview/*", "/ws/*", "/hooks/*", "/auth/*", "/setup", "/setup/*"]
   },
   // Real services everywhere: Cloudflare Artifacts (git) and Workers AI (Clef + agent models).
   // Local development (`npm run dev`) uses the remote Artifacts and AI bindings of your account.
@@ -19,19 +19,25 @@
     "bindings": [
       { "name": "HARBOR", "class_name": "HarborMaster" },
       { "name": "VESSEL", "class_name": "Vessel" },
-      { "name": "SECTOR", "class_name": "Sector" }
+      { "name": "SECTOR", "class_name": "Sector" },
+      { "name": "DIRECTORY", "class_name": "Directory" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["HarborMaster"] },
     { "tag": "v2", "new_sqlite_classes": ["Vessel", "Sector", "LocalArtifacts"] },
     // The local git emulator is gone from the product (it lives on as a test double).
-    { "tag": "v3", "deleted_classes": ["LocalArtifacts"] }
+    { "tag": "v3", "deleted_classes": ["LocalArtifacts"] },
+    // People, sessions, API keys, projects, roles and sealed provider credentials.
+    { "tag": "v4", "new_sqlite_classes": ["Directory"] }
   ],
   "vars": {
     "ARTIFACTS_NAMESPACE": "bearing",
     "AGENT_MODELS": "@cf/moonshotai/kimi-k2.7-code,@cf/openai/gpt-oss-120b,@cf/qwen/qwen3.8-27b",
-    "AI_AGENTS_PER_HOUR": "40"
+    "AI_AGENTS_PER_HOUR": "40",
+    "AI_AGENTS_PER_USER_HOUR": "12"
   },
+  // Imports read many git objects from Artifacts in one request.
+  "limits": { "subrequests": 100000 },
   "observability": { "enabled": true }
 }

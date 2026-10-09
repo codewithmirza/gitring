@@ -38,6 +38,7 @@ import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
 import { merge3 } from "../core/text/merge3";
 import { landingMessage, landingNote, intentFile } from "../core/logbook";
+import { MAX_TEXT_BYTES, MAX_TEXT_FILES, normalizeGitUrl, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { callClef, chat } from "../platform/ai/models";
 import {
@@ -69,8 +70,8 @@ const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
 /** Default built-in AI agent starts per hour for the whole deployment (AI_AGENTS_PER_HOUR overrides). */
 const LLM_STARTS_PER_HOUR = 40;
-/** The Durable Object (HarborMaster namespace) that holds the deployment-wide AI agent budget. */
-const BUDGET_OBJECT = "__bearing_budget__";
+/** Default built-in AI agent starts per hour and person (AI_AGENTS_PER_USER_HOUR overrides). */
+const LLM_STARTS_PER_USER_HOUR = 12;
 
 interface DemoIntent {
   slug: string;
@@ -170,16 +171,30 @@ export class HarborMaster extends DurableObject<Env> {
     return this.project;
   }
 
-  /** Create the project on first use (the demo project seeds itself). */
+  /** The branch that holds main in the canonical repo (an import keeps the remote's default branch). */
+  private get branch(): string {
+    return this.project?.repo.defaultBranch || "main";
+  }
+
+  /** The project, created on first use only for the deployment's public sample ("demo"). */
   async ensure(projectId: string): Promise<T.Project> {
     if (this.project) return this.project;
-    await this.init({ projectId });
+    if (projectId !== "demo") throw new Error("Unknown project. Create it first.");
+    await this.init({ projectId, name: `${SAMPLE.name ?? "Saltmarsh Books"} (sample)`, source: { kind: "sample" } });
     return this.requireProject();
   }
 
-  async init(opts: { projectId: string; name?: string }): Promise<T.ProjectState> {
+  /**
+   * Create the canonical repo in Artifacts from a source:
+   *   sample  the sample codebase and its intents (one seed commit)
+   *   empty   a README in one commit
+   *   git     Artifacts imports a public https remote (history kept); main = the remote's default branch
+   *   push    an empty repo; the owner pushes to it with plain git (Bearing adopts the pushed branch)
+   * Imports run in the background: the project shows "importing" until Artifacts is done.
+   */
+  async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string }): Promise<T.ProjectState> {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
-    const kind: T.RepoBackendKind = "artifacts";
+    const source: T.ProjectSource = opts.source ?? { kind: "sample" };
     const namespace = this.env.ARTIFACTS_NAMESPACE ?? "bearing";
     this.project = undefined;
     this.backendCache = undefined;
@@ -187,41 +202,114 @@ export class HarborMaster extends DurableObject<Env> {
     const draft: T.Project = {
       id: opts.projectId,
       name: opts.name ?? SAMPLE.name ?? "Saltmarsh Books",
-      repo: { backend: kind, namespace, name: repoName, defaultBranch: "main" },
+      repo: { backend: "artifacts", namespace, name: repoName, defaultBranch: "main" },
       mainSha: "",
       mainTree: "",
       createdAt: Date.now(),
-      source: { kind: "sample" },
+      source,
+      ownerId: opts.ownerId,
       settings: {
         ...DEFAULT_SETTINGS,
         decisionModel: "clef-flash",
-        agentModels: (this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels),
+        agentModels: this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels,
+        intentsInRepo: source.kind === "sample",
       },
     };
     this.project = draft;
+    this.db.setMeta("generation", generation);
+
+    if (source.kind === "git") {
+      const url = normalizeGitUrl(source.url);
+      const res = await this.env.ARTIFACTS.import({
+        source: { url, ...(source.branch ? { branch: source.branch } : {}), depth: 200 },
+        target: { name: repoName, opts: { description: `Bearing project ${opts.projectId} (import of ${url})` } },
+      });
+      draft.repo.remote = res.remote;
+      draft.repo.defaultBranch = source.branch || res.defaultBranch || "main";
+      draft.importing = { url, startedAt: Date.now() };
+      this.db.setMeta("project", draft);
+      this.addLog({ kind: "system", message: `Import starts: ${url} into Cloudflare Artifacts (${repoName}).` });
+      await this.ctx.storage.setAlarm(Date.now() + 2000);
+      const state = await this.state();
+      this.emit({ type: "snapshot", state });
+      return state;
+    }
+
     const handle = await this.backend.ensureRepo(repoName, { description: `Bearing project ${opts.projectId}` });
-    const changes = Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }));
+    draft.repo.remote = handle.remote;
+    const changes =
+      source.kind === "sample"
+        ? Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }))
+        : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in Bearing. Agents declare intents before they change it.\n` }];
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
       parent: "",
       changes,
-      message: `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nBearing-Seed: sample`,
+      message:
+        source.kind === "sample"
+          ? `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nBearing-Seed: sample`
+          : `Start ${draft.name}\n\nBearing-Seed: ${source.kind}`,
       author: BEARING_AUTHOR,
     });
-    draft.repo.remote = handle.remote;
     draft.mainSha = seed.sha;
     draft.mainTree = seed.tree;
-    this.db.setMeta("generation", generation);
     this.db.setMeta("project", draft);
     this.db.setMeta("mainSeq", [seed.sha]);
-    for (const di of SAMPLE.intents) this.seedIntent(di);
+    if (source.kind === "sample") for (const di of SAMPLE.intents) this.seedIntent(di);
     this.addLog({ kind: "system", message: `Project ready. Main is ${seed.sha.slice(0, 7)} in Cloudflare Artifacts (${repoName}).` });
     await this.loadMain();
     this.persistStats();
     const state = await this.state();
     this.emit({ type: "snapshot", state });
     return state;
+  }
+
+  /** Alarm step for an import: wait until Artifacts has the repo, then read main. */
+  private async continueImport(): Promise<void> {
+    const p = this.project;
+    if (!p?.importing || p.importing.error) return;
+    const elapsed = Date.now() - p.importing.startedAt;
+    let ready = false;
+    try {
+      using repo = await this.env.ARTIFACTS.get(p.repo.name);
+      const info = await repo.info();
+      ready = !("status" in info) || (info as { status?: string }).status !== "importing";
+    } catch {
+      ready = false;
+    }
+    if (!ready) {
+      if (elapsed > 20 * 60_000) {
+        p.importing = { ...p.importing, error: "The import took more than 20 minutes. Try a smaller repository or a shallower branch." };
+        this.db.setMeta("project", p);
+        this.addLog({ kind: "system", message: `Import failed: ${p.importing.error}` });
+        this.emit({ type: "snapshot", state: await this.state() });
+        return;
+      }
+      await this.ctx.storage.setAlarm(Date.now() + Math.min(15_000, 2000 + elapsed / 10));
+      return;
+    }
+    const sha = await this.backend.resolve(p.repo.name, p.repo.defaultBranch);
+    if (!sha) {
+      p.importing = { ...p.importing, error: `The repository has no branch "${p.repo.defaultBranch}".` };
+      this.db.setMeta("project", p);
+      this.addLog({ kind: "system", message: `Import failed: ${p.importing.error}` });
+      this.emit({ type: "snapshot", state: await this.state() });
+      return;
+    }
+    const commit = await this.backend.readCommit(p.repo.name, sha);
+    if (!commit) throw new Error("The imported head commit cannot be read.");
+    p.mainSha = sha;
+    p.mainTree = commit.treeHash;
+    const url = p.importing.url;
+    p.importing = undefined;
+    this.db.setMeta("project", p);
+    this.db.setMeta("mainSeq", [sha]);
+    this.mainView = undefined;
+    const main = await this.loadMain();
+    this.addLog({ kind: "system", message: `Import done: ${url} at ${sha.slice(0, 7)} on ${p.repo.defaultBranch} (${main.files.length} files). Open intents for agents.` });
+    this.persistStats();
+    this.emit({ type: "snapshot", state: await this.state() });
   }
 
   /** Sample projects only: wipe the state and start again from the sample's first commit. */
@@ -252,7 +340,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.forks.clear();
     this.treeTexts.clear();
     this.sim = undefined;
-    return this.init({ projectId: id });
+    return this.init({ projectId: id, name: this.project?.name, source: { kind: "sample" }, ownerId: this.project?.ownerId });
   }
 
   private seedIntent(di: DemoIntent): T.Intent {
@@ -285,7 +373,8 @@ export class HarborMaster extends DurableObject<Env> {
     if (cached) return cached.text;
     const bytes = await this.backend.readBlob(repo, sha);
     if (!bytes) return null;
-    const text = isProbablyText(bytes) ? utf8.decode(bytes) : null;
+    // Very large files stay opaque: agents do not edit them through Bearing, and SQLite rows stay small.
+    const text = bytes.length <= MAX_TEXT_BYTES && isProbablyText(bytes) ? utf8.decode(bytes) : null;
     this.db.putBlobText(sha, text);
     return text;
   }
@@ -297,10 +386,10 @@ export class HarborMaster extends DurableObject<Env> {
       p = (async () => {
         const snapshot = await readSnapshot(this.backend, repo, tree, this.treeCache);
         const text = new Map<string, string>();
-        const entries = [...snapshot.entries()];
-        for (let i = 0; i < entries.length; i += 12) {
+        const entries = [...snapshot.entries()].filter(([path]) => textEligible(path)).slice(0, MAX_TEXT_FILES);
+        for (let i = 0; i < entries.length; i += 24) {
           await Promise.all(
-            entries.slice(i, i + 12).map(async ([path, e]) => {
+            entries.slice(i, i + 24).map(async ([path, e]) => {
               const t = await this.readText(repo, e.sha);
               if (t !== null) text.set(path, t);
             }),
@@ -317,6 +406,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   private async loadMain(): Promise<MainView> {
     const p = this.requireProject();
+    if (p.importing) throw new Error(p.importing.error ? `The import failed: ${p.importing.error}` : "The repository is still importing. Try again in a minute.");
     if (this.mainView && this.mainView.sha === p.mainSha) return this.mainView;
     if (this.mainLoading) return this.mainLoading;
     this.mainLoading = (async () => {
@@ -469,7 +559,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async state(): Promise<T.ProjectState> {
     const project = this.requireProject();
-    const main = await this.loadMain();
+    const main = project.mainTree ? await this.loadMain() : { files: [], imports: [] as [string, string][] };
     return {
       project,
       intents: [...this.intents.values()],
@@ -674,10 +764,10 @@ export class HarborMaster extends DurableObject<Env> {
       a.fork.remote = fork.remote ?? (await this.backend.remoteUrl(a.fork.repo));
       if (a.mode === "git" && intent.checks.length) {
         // Put the intent's checks into the fork so a git client sees them after clone.
-        const tip = (await this.backend.resolve(a.fork.repo, "main")) ?? a.baseSha;
+        const tip = (await this.backend.resolve(a.fork.repo, this.branch)) ?? a.baseSha;
         const res = await this.backend.commit({
           repo: a.fork.repo,
-          branch: "main",
+          branch: this.branch,
           parent: tip,
           changes: intent.checks.map((c) => ({ path: c.path, content: c.content })),
           message: `Add checks for "${intent.title}"\n\nBearing-Intent: ${intent.id}\nBearing-Attempt: ${a.id}`,
@@ -1336,7 +1426,7 @@ export class HarborMaster extends DurableObject<Env> {
     await this.ensureFork(a, intent);
     const overlay = this.db.worktree(a.id);
     if (!overlay.size) return;
-    const tip = (await this.backend.resolve(a.fork.repo, "main")) ?? a.baseSha;
+    const tip = (await this.backend.resolve(a.fork.repo, this.branch)) ?? a.baseSha;
     const view = await this.attemptView(a);
     const forkTip = tip === a.baseSha ? undefined : await this.backend.readCommit(a.fork.repo, tip);
     const forkFiles = forkTip ? (await this.treeText(a.fork.repo, forkTip.treeHash)).text : (await this.treeText(this.requireProject().repo.name, a.baseTree)).text;
@@ -1346,7 +1436,7 @@ export class HarborMaster extends DurableObject<Env> {
     const agent = this.agents.get(a.agentId);
     const res = await this.backend.commit({
       repo: a.fork.repo,
-      branch: "main",
+      branch: this.branch,
       parent: tip,
       changes,
       message: `${intent.title}\n\nWork by ${agent?.callsign ?? a.agentId} (${agent?.model ?? agent?.client ?? "agent"}).\n\nBearing-Intent: ${intent.id}\nBearing-Attempt: ${a.id}\nBearing-Base: ${a.baseSha}`,
@@ -1434,7 +1524,7 @@ export class HarborMaster extends DurableObject<Env> {
     const note = landingNote({ intent, attempt: a, agent, method, corrections: applied, courseChecks, checks: run, decision });
     let committed: { sha: string; tree: string };
     try {
-      committed = await this.backend.commit({ repo: p.repo.name, branch: "main", parent: main.sha, changes, message, note, author: BEARING_AUTHOR });
+      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes, message, note, author: BEARING_AUTHOR });
     } catch (err) {
       if (err instanceof RepoConflictError || String(err).includes("RepoConflict")) {
         if (attempt < 2) return this.landOne(a, attempt + 1);
@@ -1711,7 +1801,7 @@ export class HarborMaster extends DurableObject<Env> {
     const asked = (input.models ?? []).filter((m) => typeof m === "string" && ok(m));
     const models = asked.length ? asked : p.settings.agentModels.filter(ok);
     if (!models.length) throw new Error("No agent model is set for this project. Add one in the settings.");
-    const budget = await this.takeLlmBudget(fanout);
+    const budget = await this.takeLlmBudget(fanout, by);
     const created: T.Attempt[] = [];
     const first = asked.length ? 0 : this.agents.size;
     for (let i = 0; i < fanout; i++) {
@@ -1774,33 +1864,21 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /**
-   * Guardrail for AI spend: at most AI_AGENTS_PER_HOUR built-in agent starts per hour for the whole
-   * deployment. Over the budget, an agent waits and starts when a slot frees. Bearing never fakes the work.
+   * Guardrail for AI spend: built-in agent starts per hour, per person (AI_AGENTS_PER_USER_HOUR) and for
+   * the whole deployment (AI_AGENTS_PER_HOUR). Over the budget, an agent waits and starts when a slot frees.
+   * Bearing never fakes the work.
    */
-  private async takeLlmBudget(n: number): Promise<{ granted: number; retryAt: number }> {
-    const limit = Math.max(1, Math.round(Number(this.env.AI_AGENTS_PER_HOUR) || LLM_STARTS_PER_HOUR));
-    // One budget for the whole deployment, kept in its own Durable Object (a project reset or a new
-    // project id does not refill it).
-    const res = await this.env.HARBOR.get(this.env.HARBOR.idFromName(BUDGET_OBJECT))
-      .budgetTake(n, limit)
+  private async takeLlmBudget(n: number, by?: T.Actor): Promise<{ granted: number; retryAt: number }> {
+    const global = Math.max(1, Math.round(Number(this.env.AI_AGENTS_PER_HOUR) || LLM_STARTS_PER_HOUR));
+    const perUser = Math.max(1, Math.round(Number(this.env.AI_AGENTS_PER_USER_HOUR) || LLM_STARTS_PER_USER_HOUR));
+    const charge = by?.kind === "human" ? by.id : (this.project?.ownerId ?? null);
+    const res = await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"))
+      .budgetTake(charge, n, perUser, global)
       .catch(() => ({ granted: 0, retryAt: Date.now() + 60_000 }));
     if (res.granted < n) {
-      this.addLog({ kind: "system", message: `The AI agent budget for this hour is used (${limit} agents). ${n - res.granted} agent${n - res.granted === 1 ? "" : "s"} start at ${clock(res.retryAt)} UTC.` });
+      this.addLog({ kind: "system", message: `The AI agent budget for this hour is used. ${n - res.granted} agent${n - res.granted === 1 ? "" : "s"} start at ${clock(res.retryAt)} UTC.` });
     }
     return res;
-  }
-
-  /** Budget object only: take up to n starts from a rolling one-hour window of `limit` starts. */
-  async budgetTake(n: number, limit: number): Promise<{ granted: number; retryAt: number }> {
-    const count = Math.max(0, Math.min(16, Math.round(Number(n) || 0)));
-    const now = Date.now();
-    const starts = (this.db.getMeta<number[]>("llmStarts") ?? []).filter((t) => now - t < 3_600_000).sort((a, b) => a - b);
-    const granted = Math.max(0, Math.min(count, limit - starts.length));
-    const next = [...starts, ...Array.from({ length: granted }, () => now)];
-    this.db.setMeta("llmStarts", next);
-    // The next slot frees when the oldest start leaves the one-hour window.
-    const retryAt = next.length >= limit ? next[0] + 3_600_000 + 1000 : now + 1000;
-    return { granted, retryAt };
   }
 
   private async scheduleBudgetRetry(at: number): Promise<void> {
@@ -1808,9 +1886,13 @@ export class HarborMaster extends DurableObject<Env> {
     if (current === null || current > at) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, at));
   }
 
-  /** Alarm: start the built-in agents that waited for the AI budget. */
+  /** Alarm: finish an import, then start the built-in agents that waited for the AI budget. */
   async alarm(): Promise<void> {
     if (!this.project) return;
+    if (this.project.importing) {
+      await this.continueImport();
+      if (this.project.importing) return;
+    }
     const waiting = () => [...this.attempts.values()].filter((a) => a.waitsForBudget && !TERMINAL.has(a.status)).sort((a, b) => a.createdAt - b.createdAt);
     const due = waiting().filter((a) => (a.waitsForBudget ?? 0) <= Date.now());
     if (due.length) {
@@ -1915,7 +1997,7 @@ export class HarborMaster extends DurableObject<Env> {
     const oldAgent = this.agents.get(old.agentId);
     const builtin = oldAgent?.kind === "builtin";
     const agent = builtin ? oldAgent! : this.upsertAgent({ kind: "builtin", model: p.settings.agentModels[0] });
-    const budget = await this.takeLlmBudget(1);
+    const budget = await this.takeLlmBudget(1, by);
     const id = newId("a");
     const now = Date.now();
     const a: T.Attempt = {
@@ -2023,7 +2105,7 @@ export class HarborMaster extends DurableObject<Env> {
       mcpUrl: `${origin}/mcp`,
       hookUrl: `${origin}/hooks/claude-code?project=${encodeURIComponent(p.id)}`,
       gitRemoteExample: p.repo.remote ? p.repo.remote.replace(/\/[^/]+\.git$/, `/${p.repo.name}-a_xxxxxx.git`) : undefined,
-      projectKeyHint: this.env.BEARING_KEY ? "Set BEARING_KEY in your shell. Bearing checks it." : "This demo runs without a key.",
+      projectKeyHint: `Set BEARING_KEY to a personal API key (above). Project id: ${this.project?.id ?? ""}.`,
       artifacts: { namespace: p.repo.namespace, repo: p.repo.name, remote: p.repo.remote, backend: p.repo.backend },
     };
   }

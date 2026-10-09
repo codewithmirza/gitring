@@ -1,5 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CodeBlock, Tabs, TabPanel } from "../design/components";
+import { Button, CodeBlock, Field, Input, Tabs, TabPanel, toast } from "../design/components";
+import type { ApiKeyInfo } from "../../../src/core/accounts";
+import { createKey, listKeys, revokeKey, useMe } from "../state/account";
+import { setUi } from "../app/ui";
 import { Icon, Mark, type IconName } from "../design/icons";
 import { harborOrNull, onHarbor, defaultConnectInfo, type ConnectInfo } from "../state/api";
 import { useStore } from "../state/store";
@@ -230,6 +233,102 @@ function Section({ id, title, children, aside }: { id: string; title: string; ch
 
 type Client = "claude" | "codex" | "cursor" | "other";
 
+/** Personal API keys: MCP clients, hooks and scripts send one as `Authorization: Bearer bk_…`. */
+function KeysSection() {
+  const me = useMe();
+  const [keys, setKeys] = useState<ApiKeyInfo[] | null>(null);
+  const [name, setName] = useState("my laptop");
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const signedIn = Boolean(me?.user);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    listKeys().then(setKeys, () => setKeys([]));
+  }, [signedIn]);
+
+  if (!signedIn) {
+    return (
+      <Section
+        id="cx-keys"
+        title="API keys"
+        aside={<p>Agents and scripts need a personal API key. Sign in to create one.</p>}
+      >
+        <Button variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
+          Sign in
+        </Button>
+      </Section>
+    );
+  }
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const res = await createKey(name.trim() || "key");
+      setFresh(res.key);
+      setKeys(await listKeys());
+    } catch (e) {
+      toast({ tone: "danger", title: "The key was not created", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const revoke = async (k: ApiKeyInfo) => {
+    try {
+      await revokeKey(k.id);
+      setKeys(await listKeys());
+      toast({ tone: "info", title: "Key revoked", text: `${k.name} (${k.prefix}…) stops working now.` });
+    } catch (e) {
+      toast({ tone: "danger", title: "The key was not revoked", text: (e as Error).message });
+    }
+  };
+
+  return (
+    <Section
+      id="cx-keys"
+      title="API keys"
+      aside={
+        <>
+          <p>A key acts as you: it can do what your roles allow on each project. Bearing shows a new key once. Keep it in an environment variable.</p>
+          <p className="cx__note">
+            <Icon name="info" size={12} /> Revoke a key at once if it leaks.
+          </p>
+        </>
+      }
+    >
+      <div className="keys">
+        <div className="keys__new">
+          <Field label="Key name" help="Where the key lives, for example “my laptop” or “CI”.">
+            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+          </Field>
+          <Button variant="primary" icon="plus" busy={busy} onClick={() => void create()}>
+            Create key
+          </Button>
+        </div>
+        {fresh && (
+          <div className="keys__fresh" role="status">
+            <p>Copy the key now. Bearing does not show it again.</p>
+            <CodeBlock shell label="Terminal" code={`export BEARING_KEY=${fresh}`} copyLabel="Copy key" />
+          </div>
+        )}
+        <ul className="keys__list" aria-label="Your API keys">
+          {(keys ?? []).map((k) => (
+            <li key={k.id}>
+              <span className="keys__name">{k.name}</span>
+              <span className="voice-agent keys__prefix">{k.prefix}…</span>
+              <span className="keys__meta">{k.lastUsed ? `used ${new Date(k.lastUsed).toLocaleDateString()}` : "not used yet"}</span>
+              <Button size="sm" variant="ghost" icon="close" onClick={() => void revoke(k)}>
+                Revoke
+              </Button>
+            </li>
+          ))}
+          {keys && !keys.length && <li className="keys__empty">No keys yet.</li>}
+        </ul>
+      </div>
+    </Section>
+  );
+}
+
 export function ConnectView() {
   const projectId = useStore((s) => s.projectId);
   const [info, setInfo] = useState<ConnectInfo>(() => defaultConnectInfo(projectId));
@@ -295,6 +394,8 @@ export function ConnectView() {
         <FlowDiagram vertical={narrow} />
       </figure>
 
+      <KeysSection />
+
       <Section
         id="cx-agents"
         title="Connect a coding agent"
@@ -320,7 +421,7 @@ export function ConnectView() {
           ]}
         />
         <TabPanel idPrefix="cx" id="claude" active={client === "claude"} className="cx__panel">
-          <CodeBlock shell label="Terminal" code={`claude mcp add --transport http bearing ${info.mcpUrl}`} />
+          <CodeBlock shell label="Terminal" code={`claude mcp add --transport http bearing ${info.mcpUrl} --header "Authorization: Bearer $BEARING_KEY"`} />
           <p className="cx__step">
             Optional: get corrections in the middle of a task. Add this hook to <span className="code-inline">.claude/settings.json</span>. Claude Code sends
             each tool result to Bearing; Bearing answers with the corrections that wait for this agent.
@@ -328,7 +429,7 @@ export function ConnectView() {
           <CodeBlock label=".claude/settings.json" code={hook} copyLabel="Copy hook" />
         </TabPanel>
         <TabPanel idPrefix="cx" id="codex" active={client === "codex"} className="cx__panel">
-          <CodeBlock shell label="Terminal" code={`codex mcp add bearing --url ${info.mcpUrl}`} />
+          <CodeBlock label="~/.codex/config.toml" code={`[mcp_servers.bearing]\nurl = "${info.mcpUrl}"\nbearer_token_env_var = "BEARING_KEY"`} copyLabel="Copy config" />
           <p className="cx__step">Codex reads the corrections in each tool result and continues its work.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="cursor" active={client === "cursor"} className="cx__panel">
@@ -336,7 +437,7 @@ export function ConnectView() {
           <p className="cx__step">Restart Cursor. The Bearing tools show in the MCP list.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="other" active={client === "other"} className="cx__panel">
-          <CodeBlock label="MCP endpoint (streamable HTTP)" code={info.mcpUrl} copyLabel="Copy URL" />
+          <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
           <ul className="tools">
             {[
               ["bearing_intents", "Read the open intents and a traffic summary."],

@@ -6,6 +6,7 @@
  */
 import { useRef, useSyncExternalStore } from "react";
 import type { BearingEvent, ProjectState, RadarPair } from "../../../src/core/types";
+import type { MeInfo, ProjectInfo, Role } from "../../../src/core/accounts";
 
 export type DataMode = "boot" | "live";
 export type ConnState = "connecting" | "open" | "reconnecting" | "offline";
@@ -36,6 +37,12 @@ export interface StoreState {
   pulses: Pulse[];
   events: number;
   lastEventAt: number;
+  /** Who is signed in, and which sign-in providers exist (null until /api/me answers). */
+  me: MeInfo | null;
+  /** Projects the caller can see. */
+  projects: ProjectInfo[];
+  /** The caller's role on the open project (null: unknown or no access). */
+  access: Role | null;
 }
 
 const LOG_CAP = 500;
@@ -52,6 +59,9 @@ let snap: StoreState = {
   pulses: [],
   events: 0,
   lastEventAt: 0,
+  me: null,
+  projects: [],
+  access: null,
 };
 
 const listeners = new Set<() => void>();
@@ -180,6 +190,15 @@ export const store = {
   },
   setProject(projectId: string) {
     set({ projectId });
+  },
+  setMe(me: MeInfo) {
+    set({ me });
+  },
+  setProjects(projects: ProjectInfo[]) {
+    set({ projects });
+  },
+  setAccess(access: Role | null) {
+    set({ access });
   },
 };
 

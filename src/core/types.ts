@@ -97,6 +97,10 @@ export interface Project {
   settings: ProjectSettings;
   /** Absent on projects created before sources existed: those are samples. */
   source?: ProjectSource;
+  /** The Directory user who created the project (budget and default owner). */
+  ownerId?: string;
+  /** Set while Artifacts imports the repository; main is empty until it is done. */
+  importing?: { url: string; startedAt: Millis; error?: string };
 }
 
 /* ───────────────────────────── intent ───────────────────────────── */

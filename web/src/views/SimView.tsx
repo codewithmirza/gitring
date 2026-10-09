@@ -6,6 +6,7 @@ import { useTheme } from "../design/theme";
 import { harbor } from "../state/api";
 import { compact, duration, int } from "../state/format";
 import { useStore } from "../state/store";
+import { useIsOwner } from "../state/account";
 import "./sim.css";
 
 const SECTOR_CAPACITY = 2400; // course checks per second per sector (Clef-flash, batched)
@@ -174,6 +175,7 @@ export function SimView() {
   const [x, setX] = useState(fromAgents(sim?.agents ?? 10_000));
   const [sectors, setSectors] = useState(sim?.sectors ?? 16);
   const [busy, setBusy] = useState(false);
+  const owner = useIsOwner();
   const agents = toAgents(x);
   const running = Boolean(sim?.running);
   const shown: SimStats | undefined = sim;
@@ -268,7 +270,9 @@ export function SimView() {
             <span className="voice-agent">{Math.round(rho * 100)}%</span>
             {rho > 1 ? ". Add sectors: checks queue up." : "."}
           </p>
-          {running ? (
+          {!owner ? (
+            <p className="sim__note">{running ? "A simulation runs now. Its owner stops it." : "Owners of this project start the simulation."}</p>
+          ) : running ? (
             <Button variant="danger" icon="stop" busy={busy} onClick={stop}>
               Stop simulation
             </Button>

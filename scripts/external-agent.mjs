@@ -7,10 +7,10 @@
  *   → bearing_log → bearing_check → bearing_submit → wait for the landing
  *
  * Usage:
- *   BEARING_URL=https://bearing.<you>.workers.dev node scripts/external-agent.mjs          # git mode
- *   BEARING_URL=http://127.0.0.1:5173 node scripts/external-agent.mjs --mode api           # offline dev
- * Options: --mode git|api   --title "..." --project demo
- * Env: BEARING_KEY (when the server needs a bearer key). The fork token is never printed.
+ *   BEARING_URL=https://bearing.<you>.workers.dev BEARING_KEY=bk_… node scripts/external-agent.mjs   # git mode
+ *   … node scripts/external-agent.mjs --mode api                                                     # api mode
+ * Options: --mode git|api   --title "..." --project <id> (default: BEARING_PROJECT, else a new private sample)
+ * Env: BEARING_KEY, a personal API key (Bearing → Connect → API keys). The fork token is never printed.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -18,17 +18,18 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { authHeaders, base, projectFor } from "./lib/bearing.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
-const base = process.env.BEARING_URL ?? "http://127.0.0.1:5173";
 const mode = opt("mode", "git");
-const project = opt("project", "demo");
 const title = opt("title", "Say that gift wrapping is free");
-const headers = process.env.BEARING_KEY ? { Authorization: `Bearer ${process.env.BEARING_KEY}` } : {};
+const headers = authHeaders();
+if (opt("project", "")) process.env.BEARING_PROJECT = opt("project", "");
+const { id: project } = await projectFor("Outside agent", headers);
 
 const t0 = Date.now();
 const say = (who, line) => console.log(`${String(((Date.now() - t0) / 1000).toFixed(1)).padStart(6)}s  ${who.padEnd(8)} ${line}`);
