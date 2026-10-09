@@ -14,7 +14,7 @@
 .flow__via { font-family: var(--font-agent); font-size: 11px; fill: var(--ink-3); }
 .flow__title { font-family: var(--font-system); font-size: 15px; font-weight: 600; fill: var(--ink-1); }
 .flow__frame { fill: none; stroke: var(--ink-2); stroke-width: 1; }
-.flow__bearing > .flow__frame:first-child { fill: var(--bg); }
+.flow__gitring > .flow__frame:first-child { fill: var(--bg); }
 .flow__stage rect { fill: var(--surface-1); stroke: var(--line); stroke-width: 1; }
 .flow__stage .flow__icon { color: var(--ink-2); }
 .flow__wire { fill: none; stroke: var(--line-strong); stroke-width: 1; }

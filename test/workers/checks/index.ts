@@ -107,6 +107,6 @@ export default {
       return servePreview(env.LOADER, await contentKey(files), files, request, `/preview/${match[1]}`);
     }
 
-    return new Response("bearing-checks-probe: try /scenarios, /run-checks?scenario=landed or /preview/landed/", { status: 404 });
+    return new Response("gitring-checks-probe: try /scenarios, /run-checks?scenario=landed or /preview/landed/", { status: 404 });
   },
 } satisfies ExportedHandler<Env>;

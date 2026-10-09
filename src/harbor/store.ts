@@ -20,7 +20,7 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS hooks (key TEXT PRIMARY KEY, attempt_id TEXT NOT NULL)`,
   // The last version of each file that an agent read or wrote (to merge writes made from a stale copy).
   `CREATE TABLE IF NOT EXISTS seen (attempt_id TEXT NOT NULL, path TEXT NOT NULL, content TEXT, PRIMARY KEY (attempt_id, path))`,
-  // Files that Bearing reset to the main version in a re-plot: the agent must read them before it writes them.
+  // Files that Gitring reset to the main version in a re-plot: the agent must read them before it writes them.
   `CREATE TABLE IF NOT EXISTS mustread (attempt_id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (attempt_id, path))`,
 ];
 

@@ -1,8 +1,8 @@
 {
-  "name": "bearing",
-  "version": "0.4.0",
+  "name": "gitring",
+  "version": "0.5.0",
   "private": true,
-  "description": "Bearing: collision avoidance for coding agents. Agents declare a course, Bearing checks it against all traffic, and steers instead of stopping. Built on Cloudflare Workers + Artifacts.",
+  "description": "Gitring: collision avoidance for coding agents. Agents declare a course, Gitring checks it against all traffic, and steers instead of stopping. Built on Cloudflare Workers + Artifacts.",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -21,7 +21,7 @@ interface Env {
 
 type Check = { name: string; ok: boolean; detail?: unknown };
 
-const author = { name: "Probe", email: "probe@bearing.dev" };
+const author = { name: "Probe", email: "probe@gitring.dev" };
 
 async function scenario(backend: EmulatorBackend): Promise<{ ok: boolean; checks: Check[] }> {
   const checks: Check[] = [];
@@ -49,13 +49,13 @@ async function scenario(backend: EmulatorBackend): Promise<{ ok: boolean; checks
     message: "Second",
     author,
     changes: [{ path: "src/index.js", content: "export default { ok: true };\n" }, { path: "data.bin", content: null }],
-    note: '{"schema":"bearing.logbook/v1"}',
+    note: '{"schema":"gitring.logbook/v1"}',
   });
   check("resolve main", (await backend.resolve(canon, "main")) === c2.sha);
   check("resolve HEAD", (await backend.resolve(canon, "HEAD")) === c2.sha);
   const log = await backend.log(canon, "main");
   check("log first-parent newest first", log.map((c) => c.hash).join() === [c2.sha, c1.sha].join(), log.map((c) => c.message));
-  check("readNote", (await backend.readNote(canon, c2.sha)) === '{"schema":"bearing.logbook/v1"}');
+  check("readNote", (await backend.readNote(canon, c2.sha)) === '{"schema":"gitring.logbook/v1"}');
   check("readNote absent", (await backend.readNote(canon, c1.sha)) === null);
 
   const root = (await backend.readTree(canon, c2.tree)) ?? [];
@@ -210,7 +210,7 @@ async function artifactsScenario(rpc: string): Promise<{ ok: boolean; checks: Ch
     message: "Second from workerd",
     author,
     changes: [{ path: "src/index.js", content: "export default { ok: true };\n" }, { path: "img.bin", content: null }],
-    note: '{"schema":"bearing.logbook/v1","from":"workerd"}',
+    note: '{"schema":"gitring.logbook/v1","from":"workerd"}',
   };
   const c2 = await backend.commit(second);
   const e2 = await emu.commit({ ...second, parent: e1.sha });

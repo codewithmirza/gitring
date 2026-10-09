@@ -43,7 +43,7 @@ function fakeNamespace() {
   return { ns: ns as unknown as DurableObjectNamespace<never>, instances, calls };
 }
 
-const author = { name: "Vessel", email: "v@bearing.dev" };
+const author = { name: "Vessel", email: "v@gitring.dev" };
 
 describe("EmulatorBackend", () => {
   it("talks to one DO per namespace and implements RepoBackend", async () => {

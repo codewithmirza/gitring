@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "bearing",
+  "name": "gitring",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -12,7 +12,7 @@
   },
   // Real services everywhere: Cloudflare Artifacts (git) and Workers AI (Clef + agent models).
   // Local development (`npm run dev`) uses the remote Artifacts and AI bindings of your account.
-  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "bearing", "remote": true }],
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "gitring", "remote": true }],
   "ai": { "binding": "AI", "remote": true },
   "worker_loaders": [{ "binding": "LOADER" }],
   "durable_objects": {
@@ -38,7 +38,7 @@
     { "tag": "v5", "new_sqlite_classes": ["Drydock"] }
   ],
   "vars": {
-    "ARTIFACTS_NAMESPACE": "bearing",
+    "ARTIFACTS_NAMESPACE": "gitring",
     "AGENT_MODELS": "@cf/moonshotai/kimi-k2.7-code,@cf/openai/gpt-oss-120b,@cf/qwen/qwen3.8-27b",
     "AI_AGENTS_PER_HOUR": "40",
     "AI_AGENTS_PER_USER_HOUR": "12",

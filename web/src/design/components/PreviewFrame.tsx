@@ -23,7 +23,7 @@ export function PreviewFrame({ title, src, height = 280, path: initialPath = "/"
     const onMsg = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow) return;
       const d = e.data as { type?: string; path?: string; status?: number };
-      if (d?.type === "bearing-preview" && typeof d.path === "string") {
+      if (d?.type === "gitring-preview" && typeof d.path === "string") {
         setPath(d.path);
         setDraft(d.path);
         setStatus(typeof d.status === "number" ? d.status : null);

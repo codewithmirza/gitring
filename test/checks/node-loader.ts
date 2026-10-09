@@ -173,7 +173,7 @@ export function nodeLoader(): NodeLoader {
 
 async function writeModules(code: WorkerLoaderWorkerCode): Promise<string> {
   if (!(code.mainModule in code.modules)) throw new Error(`mainModule ${code.mainModule} is not in modules`);
-  const dir = await mkdtemp(path.join(tmpdir(), "bearing-node-loader-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "gitring-node-loader-"));
   await writeFile(path.join(dir, "package.json"), '{ "type": "module" }\n');
   for (const [name, mod] of Object.entries(code.modules)) {
     let source: string | undefined;

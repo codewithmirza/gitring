@@ -13,8 +13,8 @@ import { App } from "./app/App";
 initTheme();
 void boot();
 
-// Development aid: read the store from the console (window.__bearing.store.get()).
-if (import.meta.env.DEV) (window as unknown as { __bearing: unknown }).__bearing = { store };
+// Development aid: read the store from the console (window.__gitring.store.get()).
+if (import.meta.env.DEV) (window as unknown as { __gitring: unknown }).__gitring = { store };
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

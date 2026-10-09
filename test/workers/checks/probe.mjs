@@ -41,7 +41,7 @@ const landed = await checks("landed");
 check(`landed tree (validated order): all 6 files, 39 tests pass (${summary(landed)})`, landed.ok && landed.passed === 39 && landed.testPaths.length === 6, JSON.stringify(failing(landed)));
 
 const noHarness = await checks("no-harness");
-check(`no harness/test.js: Bearing injects its harness (${summary(noHarness)})`, noHarness.ok && noHarness.passed === 6);
+check(`no harness/test.js: Gitring injects its harness (${summary(noHarness)})`, noHarness.ok && noHarness.passed === 6);
 
 const brokenTest = await checks("broken-test");
 check(
@@ -69,7 +69,7 @@ async function preview(path, init) {
 }
 
 const home = await preview("/preview/seed/");
-check(`preview seed: 200 HTML page with the shop name, x-bearing-preview set`, home.status === 200 && home.text.includes("Saltmarsh Books") && /text\/html/.test(home.headers.get("content-type")) && !!home.headers.get("x-bearing-preview"));
+check(`preview seed: 200 HTML page with the shop name, x-gitring-preview set`, home.status === 200 && home.text.includes("Saltmarsh Books") && /text\/html/.test(home.headers.get("content-type")) && !!home.headers.get("x-gitring-preview"));
 
 const searched = await preview("/preview/landed/?q=tide&currency=EUR");
 check(`preview landed ?q=tide&currency=EUR: filtered list in euros`, searched.text.includes("€18.39") && searched.text.includes("A Small Book of Tides") && !searched.text.includes("Knots for Small Boats"));

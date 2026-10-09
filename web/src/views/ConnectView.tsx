@@ -24,7 +24,7 @@ const INPUTS: Node[] = [
   { label: "Any git client", via: "git push to a fork", icon: "fork", group: "git" },
   { label: "GitHub issue", via: "webhook", icon: "plug", group: "app" },
   { label: "Any app", via: "JSON to /hooks/intents", icon: "plug", group: "app" },
-  { label: "Slack /bearing", via: "webhook", icon: "plug", group: "app" },
+  { label: "Slack /gitring", via: "webhook", icon: "plug", group: "app" },
 ];
 
 const OUTPUTS: { label: string; via: string; icon: IconName }[] = [
@@ -78,7 +78,7 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
           <NodeBox key={n.label} x={0} y={inY(i)} w={W} h={nodeH} label={n.label} via={n.via} icon={n.icon} side="in" />
         ))}
         <path className="flow__wire" d={`M${W / 2} ${inY(INPUTS.length) - 4} V${midTop}`} markerEnd="url(#flow-arrow)" />
-        <BearingBox x={0} y={midTop} w={W} h={midH} />
+        <GitringBox x={0} y={midTop} w={W} h={midH} />
         <path className="flow__wire" d={`M${W / 2} ${midTop + midH} V${midTop + midH + 40}`} markerEnd="url(#flow-arrow)" />
         <text x={0} y={midTop + midH + 32} className="flow__col">
           Out
@@ -111,7 +111,7 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
         In: agents and apps send work
       </text>
       <text x={outX} y={18} className="flow__col">
-        Out: Bearing sends results
+        Out: Gitring sends results
       </text>
       {INPUTS.map((n, i) => {
         const y = inY(i) + nodeH / 2;
@@ -140,7 +140,7 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
       {INPUTS.map((n, i) => (
         <NodeBox key={n.label} x={0} y={inY(i)} w={nodeW} h={nodeH} label={n.label} via={n.via} icon={n.icon} side="in" />
       ))}
-      <BearingBox x={bx} y={by} w={bw} h={bh} />
+      <GitringBox x={bx} y={by} w={bw} h={bh} />
       {OUTPUTS.map((n, i) => {
         const y = outY(i) + nodeH / 2;
         const sy = by + 60 + i * ((bh - 120) / (OUTPUTS.length - 1));
@@ -167,17 +167,17 @@ function Defs() {
   );
 }
 
-function BearingBox({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+function GitringBox({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   const step = (h - 76) / STAGES.length;
   return (
-    <g className="flow__bearing" transform={`translate(${x} ${y})`}>
+    <g className="flow__gitring" transform={`translate(${x} ${y})`}>
       <rect className="flow__frame" width={w} height={h} />
       <rect className="flow__frame" x={4} y={4} width={w - 8} height={h - 8} />
       <g transform="translate(16 16)">
-        <Mark size={24} title="Bearing" />
+        <Mark size={24} title="Gitring" />
       </g>
       <text x={48} y={34} className="flow__title">
-        Bearing
+        Gitring
       </text>
       <text x={w - 16} y={34} className="flow__via" textAnchor="end">
         one coordinator per project
@@ -233,7 +233,7 @@ function Section({ id, title, children, aside }: { id: string; title: string; ch
 
 type Client = "claude" | "codex" | "cursor" | "other";
 
-/** Personal API keys: MCP clients, hooks and scripts send one as `Authorization: Bearer bk_…`. */
+/** Personal API keys: MCP clients, hooks and scripts send one as `Authorization: Bearer gk_…`. */
 function KeysSection() {
   const me = useMe();
   const [keys, setKeys] = useState<ApiKeyInfo[] | null>(null);
@@ -289,7 +289,7 @@ function KeysSection() {
       title="API keys"
       aside={
         <>
-          <p>A key acts as you: it can do what your roles allow on each project. Bearing shows a new key once. Keep it in an environment variable.</p>
+          <p>A key acts as you: it can do what your roles allow on each project. Gitring shows a new key once. Keep it in an environment variable.</p>
           <p className="cx__note">
             <Icon name="info" size={12} /> Revoke a key at once if it leaks.
           </p>
@@ -307,8 +307,8 @@ function KeysSection() {
         </div>
         {fresh && (
           <div className="keys__fresh" role="status">
-            <p>Copy the key now. Bearing does not show it again.</p>
-            <CodeBlock shell label="Terminal" code={`export BEARING_KEY=${fresh}`} copyLabel="Copy key" />
+            <p>Copy the key now. Gitring does not show it again.</p>
+            <CodeBlock shell label="Terminal" code={`export GITRING_KEY=${fresh}`} copyLabel="Copy key" />
           </div>
         )}
         <ul className="keys__list" aria-label="Your API keys">
@@ -356,7 +356,7 @@ export function ConnectView() {
             hooks: [
               {
                 type: "command",
-                command: `curl -s -X POST '${info.hookUrl}' -H 'content-type: application/json' -H "authorization: Bearer $BEARING_KEY" --data-binary @-`,
+                command: `curl -s -X POST '${info.hookUrl}' -H 'content-type: application/json' -H "authorization: Bearer $GITRING_KEY" --data-binary @-`,
               },
             ],
           },
@@ -366,8 +366,8 @@ export function ConnectView() {
     null,
     2,
   );
-  const cursor = JSON.stringify({ mcpServers: { bearing: { url: info.mcpUrl, headers: { Authorization: "Bearer ${env:BEARING_KEY}" } } } }, null, 2);
-  const remote = info.gitRemoteExample ?? `https://<account-id>.artifacts.cloudflare.net/git/bearing/${projectId}--kestrel-7.git`;
+  const cursor = JSON.stringify({ mcpServers: { gitring: { url: info.mcpUrl, headers: { Authorization: "Bearer ${env:GITRING_KEY}" } } } }, null, 2);
+  const remote = info.gitRemoteExample ?? `https://<account-id>.artifacts.cloudflare.net/git/gitring/${projectId}--kestrel-7.git`;
 
   return (
     <div className="page connect">
@@ -378,16 +378,16 @@ export function ConnectView() {
         Connect other apps
       </h1>
       <p className="page__lede">
-        Agents and apps send work to Bearing through MCP, git and webhooks. Bearing checks every course, sends corrections back to the agents, lands the work
+        Agents and apps send work to Gitring through MCP, git and webhooks. Gitring checks every course, sends corrections back to the agents, lands the work
         on main and sends the results out.
       </p>
 
       <figure className="flowfig">
         <span className="vh" id="flow-title">
-          How inputs and outputs connect to Bearing
+          How inputs and outputs connect to Gitring
         </span>
         <span className="vh" id="flow-desc">
-          In: Claude Code, Codex and Cursor connect through MCP; any git client pushes to a fork; GitHub issues, Slack and any app send webhooks. Bearing runs
+          In: Claude Code, Codex and Cursor connect through MCP; any git client pushes to a fork; GitHub issues, Slack and any app send webhooks. Gitring runs
           the course check, sends corrections back to the agents, re-plots work in progress onto each new main, lands work through the landing ladder and
           writes the logbook. Out: main in Cloudflare Artifacts, Slack messages, webhook JSON, CI or deploy hooks, and live events for the browser UI.
         </span>
@@ -401,7 +401,7 @@ export function ConnectView() {
         title="Connect a coding agent"
         aside={
           <>
-            <p>Add the Bearing MCP server to your agent. The agent then declares its course before it writes code, and it gets corrections in every tool result.</p>
+            <p>Add the Gitring MCP server to your agent. The agent then declares its course before it writes code, and it gets corrections in every tool result.</p>
             <p className="cx__note">
               <Icon name="info" size={12} /> {info.projectKeyHint}
             </p>
@@ -421,34 +421,34 @@ export function ConnectView() {
           ]}
         />
         <TabPanel idPrefix="cx" id="claude" active={client === "claude"} className="cx__panel">
-          <CodeBlock shell label="Terminal" code={`claude mcp add --transport http bearing ${info.mcpUrl} --header "Authorization: Bearer $BEARING_KEY"`} />
+          <CodeBlock shell label="Terminal" code={`claude mcp add --transport http gitring ${info.mcpUrl} --header "Authorization: Bearer $GITRING_KEY"`} />
           <p className="cx__step">
             Optional: get corrections in the middle of a task. Add this hook to <span className="code-inline">.claude/settings.json</span>. Claude Code sends
-            each tool result to Bearing; Bearing answers with the corrections that wait for this agent.
+            each tool result to Gitring; Gitring answers with the corrections that wait for this agent.
           </p>
           <CodeBlock label=".claude/settings.json" code={hook} copyLabel="Copy hook" />
         </TabPanel>
         <TabPanel idPrefix="cx" id="codex" active={client === "codex"} className="cx__panel">
-          <CodeBlock label="~/.codex/config.toml" code={`[mcp_servers.bearing]\nurl = "${info.mcpUrl}"\nbearer_token_env_var = "BEARING_KEY"`} copyLabel="Copy config" />
+          <CodeBlock label="~/.codex/config.toml" code={`[mcp_servers.gitring]\nurl = "${info.mcpUrl}"\nbearer_token_env_var = "GITRING_KEY"`} copyLabel="Copy config" />
           <p className="cx__step">Codex reads the corrections in each tool result and continues its work.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="cursor" active={client === "cursor"} className="cx__panel">
           <CodeBlock label=".cursor/mcp.json" code={cursor} copyLabel="Copy config" />
-          <p className="cx__step">Restart Cursor. The Bearing tools show in the MCP list.</p>
+          <p className="cx__step">Restart Cursor. The Gitring tools show in the MCP list.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="other" active={client === "other"} className="cx__panel">
           <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
           <ul className="tools">
             {[
-              ["bearing_intents", "Read the open intents and a traffic summary."],
-              ["bearing_declare", "Declare your course: plan, files, symbols. Get a clearance."],
-              ["bearing_log", "Log a step. Other agents see it as traffic."],
-              ["bearing_traffic", "Read the vessels near your course."],
-              ["bearing_read · bearing_list", "Read files of your working tree."],
-              ["bearing_write", "Write files. Bearing checks the course again."],
-              ["bearing_check", "Run the intent checks in an isolate."],
-              ["bearing_submit", "Submit the attempt for landing."],
-              ["bearing_ack", "Acknowledge a correction."],
+              ["gitring_intents", "Read the open intents and a traffic summary."],
+              ["gitring_declare", "Declare your course: plan, files, symbols. Get a clearance."],
+              ["gitring_log", "Log a step. Other agents see it as traffic."],
+              ["gitring_traffic", "Read the vessels near your course."],
+              ["gitring_read · gitring_list", "Read files of your working tree."],
+              ["gitring_write", "Write files. Gitring checks the course again."],
+              ["gitring_check", "Run the intent checks in an isolate."],
+              ["gitring_submit", "Submit the attempt for landing."],
+              ["gitring_ack", "Acknowledge a correction."],
             ].map(([t, d]) => (
               <li key={t}>
                 <span className="voice-agent">{t}</span>
@@ -464,19 +464,19 @@ export function ConnectView() {
         title="Push with git"
         aside={
           <p>
-            Declare a course in git mode. The clearance has a fork remote and a short-lived token. Push to the fork; Bearing checks the course on every push.
-            You never push to main: Bearing lands the work.
+            Declare a course in git mode. The clearance has a fork remote and a short-lived token. Push to the fork; Gitring checks the course on every push.
+            You never push to main: Gitring lands the work.
           </p>
         }
       >
         <CodeBlock
           shell
           label="Terminal"
-          code={`# 1. Declare a course with mode "git" (bearing_declare). Keep the token from the clearance.
-git remote add bearing "https://x:$BEARING_FORK_TOKEN@${remote.replace(/^https:\/\//, "")}"
+          code={`# 1. Declare a course with mode "git" (gitring_declare). Keep the token from the clearance.
+git remote add gitring "https://x:$GITRING_FORK_TOKEN@${remote.replace(/^https:\/\//, "")}"
 # 2. Push your work to the fork. Each push runs a course check.
-git push bearing HEAD:main
-# 3. Submit through MCP (bearing_submit). Bearing lands it on main.`}
+git push gitring HEAD:main
+# 3. Submit through MCP (gitring_submit). Gitring lands it on main.`}
         />
       </Section>
 
@@ -485,8 +485,8 @@ git push bearing HEAD:main
         title="Send intents from other apps"
         aside={
           <>
-            <p>Any app can open an intent with one HTTP call. GitHub issues with the label <span className="code-inline">bearing</span> and the Slack command{" "}
-              <span className="code-inline">/bearing</span> open intents too.</p>
+            <p>Any app can open an intent with one HTTP call. GitHub issues with the label <span className="code-inline">gitring</span> and the Slack command{" "}
+              <span className="code-inline">/gitring</span> open intents too.</p>
           </>
         }
       >
@@ -495,7 +495,7 @@ git push bearing HEAD:main
           label="Terminal"
           code={`curl -X POST ${origin}/hooks/intents \\
   -H 'content-type: application/json' \\
-  -H "authorization: Bearer $BEARING_KEY" \\
+  -H "authorization: Bearer $GITRING_KEY" \\
   -d '{"project":"${projectId}","title":"Show the stock count","goal":"Show In stock or Sold out under each price."}'`}
         />
       </Section>
@@ -505,7 +505,7 @@ git push bearing HEAD:main
         title="Get events out"
         aside={
           <p>
-            Add a webhook target to the project. Bearing posts <span className="code-inline">landing</span>, <span className="code-inline">correction</span> and{" "}
+            Add a webhook target to the project. Gitring posts <span className="code-inline">landing</span>, <span className="code-inline">correction</span> and{" "}
             <span className="code-inline">decision</span> events as JSON, or as Slack messages. Every landing links to its why trail.
           </p>
         }

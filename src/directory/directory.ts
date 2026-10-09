@@ -17,7 +17,7 @@ import type * as A from "../core/accounts";
 import { PROJECT_ID } from "../core/accounts";
 import type { ProjectSource } from "../core/types";
 import { rand } from "../harbor/ids";
-import { randomToken, seal, sha256B64url, unseal } from "./crypto";
+import { githubAppJwt, randomToken, seal, sha256B64url, unseal } from "./crypto";
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, avatar TEXT, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL)`,
@@ -40,7 +40,7 @@ const MAX_KEYS_PER_USER = 20;
 const HOUR = 3_600_000;
 
 export const GITHUB_HEADERS = {
-  "User-Agent": "bearing",
+  "User-Agent": "gitring",
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
 } as const;
@@ -54,6 +54,18 @@ export interface GithubAppConfig {
   pem: string;
   htmlUrl: string;
   owner?: string;
+}
+
+/** GitHub's answer to POST /app-manifests/{code}/conversions. */
+export interface ManifestConversion {
+  id: number;
+  slug: string;
+  client_id: string;
+  client_secret: string;
+  webhook_secret: string;
+  pem: string;
+  html_url: string;
+  owner?: { login?: string };
 }
 
 export interface GoogleConfig {
@@ -120,8 +132,8 @@ export class Directory extends DurableObject<Env> {
   /* ════════════════════ sealed config ════════════════════ */
 
   private secret(): string {
-    const s = this.env.BEARING_SECRET;
-    if (!s) throw new Error("BEARING_SECRET is not set. Set it with: npx wrangler secret put BEARING_SECRET");
+    const s = this.env.GITRING_SECRET;
+    if (!s) throw new Error("GITRING_SECRET is not set. Set it with: npx wrangler secret put GITRING_SECRET");
     return s;
   }
 
@@ -166,6 +178,13 @@ export class Directory extends DurableObject<Env> {
     return state;
   }
 
+  /** Read a one-time state without using it up. */
+  private peekState(state: string): StateData {
+    const row = this.sql.exec<{ data: string; expires_at: number }>("SELECT data, expires_at FROM states WHERE state = ?", String(state ?? "")).toArray()[0];
+    if (!row || row.expires_at < Date.now()) throw new Error("The setup link expired or was used already. Start again.");
+    return JSON.parse(row.data) as StateData;
+  }
+
   private takeState(state: string): StateData {
     const row = this.sql.exec<{ data: string; expires_at: number }>("SELECT data, expires_at FROM states WHERE state = ?", String(state ?? "")).toArray()[0];
     this.sql.exec("DELETE FROM states WHERE state = ?", String(state ?? ""));
@@ -181,14 +200,14 @@ export class Directory extends DurableObject<Env> {
     const host = new URL(origin).hostname;
     const tag = host.endsWith(".workers.dev") ? host.split(".").slice(-3, -2)[0] : host.split(".")[0];
     const manifest = {
-      name: `Bearing ${tag}`.slice(0, 34),
+      name: `Gitring ${tag}`.slice(0, 34),
       url: origin,
       hook_attributes: { url: `${origin}/hooks/github-app`, active: true },
       redirect_url: `${origin}/setup/github/callback`,
       callback_urls: [`${origin}/auth/github/callback`],
       setup_url: `${origin}/setup/github/installed`,
       setup_on_update: true,
-      description: "Bearing: many coding agents change one codebase at the same time. Sign in, import repositories, mirror landings.",
+      description: "Gitring: many coding agents change one codebase at the same time. Sign in, import repositories, mirror landings.",
       public: true,
       default_permissions: { contents: "write", issues: "read", metadata: "read" },
       default_events: ["issues", "push"],
@@ -197,13 +216,39 @@ export class Directory extends DurableObject<Env> {
     return { postUrl: `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`, manifest: JSON.stringify(manifest) };
   }
 
-  /** GitHub redirects back with a one-time code: convert it into the app's credentials. */
-  async githubManifestDone(code: string, state: string): Promise<{ slug: string; htmlUrl: string }> {
-    const st = this.takeState(state);
+  /**
+   * GitHub redirects back with a one-time code: convert it into the app's credentials.
+   * The conversion is an unauthenticated GitHub API call, and Workers share outbound addresses, so
+   * GitHub can answer 403 or 429. Then the setup page converts the code in the owner's browser and
+   * sends the result to githubAppSave (the state stays valid for that).
+   */
+  async githubManifestDone(code: string, state: string): Promise<{ slug: string; htmlUrl: string } | { browser: true }> {
+    const st = this.peekState(state);
     if (st.kind !== "manifest") throw new Error("This link is not a GitHub App setup link.");
     const res = await fetch(`https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`, { method: "POST", headers: GITHUB_HEADERS });
+    if (res.status === 403 || res.status === 429) return { browser: true };
+    this.takeState(state);
     if (!res.ok) throw new Error(`GitHub did not create the app credentials (status ${res.status}). Start again.`);
-    const j = await res.json<{ id: number; slug: string; client_id: string; client_secret: string; webhook_secret: string; pem: string; html_url: string; owner?: { login?: string } }>();
+    return this.saveGithubApp(await res.json<ManifestConversion>());
+  }
+
+  /** The browser converted the manifest code: check the credentials with GitHub, then seal them. */
+  async githubAppSave(state: string, app: ManifestConversion): Promise<{ slug: string; htmlUrl: string }> {
+    const st = this.takeState(state);
+    if (st.kind !== "manifest") throw new Error("This link is not a GitHub App setup link.");
+    if (!app || typeof app.id !== "number" || !app.slug || !app.client_id || !app.client_secret || !app.pem || !app.webhook_secret) {
+      throw new Error("GitHub did not send complete app credentials. Start again.");
+    }
+    // The private key must belong to the app: GitHub answers GET /app only to a JWT signed with it.
+    const jwt = await githubAppJwt(app.id, app.pem);
+    const check = await fetch("https://api.github.com/app", { headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${jwt}` } });
+    if (!check.ok) throw new Error(`GitHub did not accept the app key (status ${check.status}). Start again.`);
+    const me = await check.json<{ id: number; slug: string }>();
+    if (me.id !== app.id) throw new Error("The app key belongs to another app. Start again.");
+    return this.saveGithubApp(app);
+  }
+
+  private async saveGithubApp(j: ManifestConversion): Promise<{ slug: string; htmlUrl: string }> {
     await this.putSealed("github_app", {
       id: j.id,
       slug: j.slug,
@@ -223,13 +268,13 @@ export class Directory extends DurableObject<Env> {
     const back = safeReturn(returnTo);
     if (provider === "github") {
       const gh = await this.getSealed<GithubAppConfig>("github_app");
-      if (!gh) throw new Error("GitHub sign-in is not set up on this Bearing yet.");
+      if (!gh) throw new Error("GitHub sign-in is not set up on this Gitring yet.");
       const state = this.putState({ kind: "signin", provider, origin, returnTo: back });
       const q = new URLSearchParams({ client_id: gh.clientId, redirect_uri: `${origin}/auth/github/callback`, state, allow_signup: "true" });
       return `https://github.com/login/oauth/authorize?${q}`;
     }
     const gg = await this.getSealed<GoogleConfig>("google");
-    if (!gg) throw new Error("Google sign-in is not set up on this Bearing yet.");
+    if (!gg) throw new Error("Google sign-in is not set up on this Gitring yet.");
     const verifier = randomToken(48);
     const nonce = randomToken(16);
     const state = this.putState({ kind: "signin", provider, origin, returnTo: back, verifier, nonce });
@@ -265,7 +310,7 @@ export class Directory extends DurableObject<Env> {
     if (!gh) throw new Error("GitHub sign-in is not set up.");
     const tok = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "bearing" },
+      headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "gitring" },
       body: JSON.stringify({ client_id: gh.clientId, client_secret: gh.clientSecret, code, redirect_uri: `${origin}/auth/github/callback` }),
     });
     const t = await tok.json<{ access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string }>();
@@ -339,7 +384,7 @@ export class Directory extends DurableObject<Env> {
   /* ════════════════════ people ════════════════════ */
 
   private owners(): string[] {
-    return (this.env.BEARING_OWNERS ?? "")
+    return (this.env.GITRING_OWNERS ?? "")
       .split(",")
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean);
@@ -382,7 +427,7 @@ export class Directory extends DurableObject<Env> {
     if (!this.userInfo(userId)) throw new Error("Unknown user.");
     const n = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM api_keys WHERE user_id = ?", userId).one().n;
     if (n >= MAX_KEYS_PER_USER) throw new Error(`You have ${MAX_KEYS_PER_USER} keys. Revoke one first.`);
-    const key = `bk_${randomToken(30)}`;
+    const key = `gk_${randomToken(30)}`;
     const info: A.ApiKeyInfo = { id: `key_${rand(8)}`, name: String(name || "key").slice(0, 60), prefix: key.slice(0, 10), createdAt: Date.now() };
     this.sql.exec("INSERT INTO api_keys (id, user_id, name, prefix, hash, created_at) VALUES (?, ?, ?, ?, ?, ?)", info.id, userId, info.name, info.prefix, await sha256B64url(key), info.createdAt);
     return { key, info };
@@ -402,7 +447,7 @@ export class Directory extends DurableObject<Env> {
   }
 
   async keyUser(key: string): Promise<A.UserInfo | null> {
-    if (!key?.startsWith("bk_")) return null;
+    if (!key?.startsWith("gk_")) return null;
     const hash = await sha256B64url(key);
     const row = this.sql.exec<{ id: string; user_id: string; last_used: number | null }>("SELECT id, user_id, last_used FROM api_keys WHERE hash = ?", hash).toArray()[0];
     if (!row) return null;
@@ -427,7 +472,7 @@ export class Directory extends DurableObject<Env> {
   }
 
   private info(row: ProjectRow, userId: string | null): A.ProjectInfo {
-    const owner = row.owner_id ? this.sql.exec<{ name: string }>("SELECT name FROM users WHERE id = ?", row.owner_id).toArray()[0]?.name : "Bearing";
+    const owner = row.owner_id ? this.sql.exec<{ name: string }>("SELECT name FROM users WHERE id = ?", row.owner_id).toArray()[0]?.name : "Gitring";
     return {
       id: row.id,
       name: row.name,
@@ -494,7 +539,7 @@ export class Directory extends DurableObject<Env> {
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "project";
     let id = `${base}-${rand(4)}`;
     while (this.projectRow(id)) id = `${base}-${rand(4)}`;
-    if (!PROJECT_ID.test(id)) throw new Error("Bearing could not make an id for this name. Use letters and digits.");
+    if (!PROJECT_ID.test(id)) throw new Error("Gitring could not make an id for this name. Use letters and digits.");
     const now = Date.now();
     this.sql.exec(
       "INSERT INTO projects (id, name, owner_id, visibility, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",

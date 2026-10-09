@@ -237,7 +237,7 @@ export class Vessel extends DurableObject<Env> {
         if (res.written.length) st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
         const notes = [
           `Written: ${res.written.join(", ") || "nothing"}.`,
-          res.merged?.length ? `Main moved after your last read: Bearing merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
+          res.merged?.length ? `Main moved after your last read: Gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
           ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
           res.written.length || res.refused?.length ? "" : "The path is protected or not valid.",
           res.clearance.advice,
@@ -305,12 +305,12 @@ const COURSE_REQUEST =
 function systemPrompt(callsign: string, runner?: T.CheckSettings): string {
   const container = runner?.runner === "container";
   return [
-    `You are ${callsign}, a coding agent inside Bearing. Many agents change this repository at the same time.`,
-    "Bearing checks your course against all traffic. It never blocks you. It sends corrections.",
+    `You are ${callsign}, a coding agent inside Gitring. Many agents change this repository at the same time.`,
+    "Gitring checks your course against all traffic. It never blocks you. It sends corrections.",
     "Rules:",
-    "1. Read every BEARING COURSE CORRECTION. Apply it in your next edits. Continue your work.",
+    "1. Read every GITRING COURSE CORRECTION. Apply it in your next edits. Continue your work.",
     "2. Write complete file contents with write_file. Keep unrelated code unchanged.",
-    "3. Do not edit test files of other intents. Do not edit .bearing/.",
+    "3. Do not edit test files of other intents. Do not edit .gitring/.",
     "4. Call log_progress after each meaningful step.",
     "5. The checks are the contract. Read the check files first. Make every assertion pass.",
     "6. Call run_checks after you write. Fix every failure. Then call submit with a one-line summary.",
@@ -351,14 +351,14 @@ function briefPrompt(
 }
 
 function clearanceText(clr: T.Clearance): string {
-  const parts = [`Bearing course check: ${clr.verdict}. ${clr.advice}`];
+  const parts = [`Gitring course check: ${clr.verdict}. ${clr.advice}`];
   if (clr.corrections.length) parts.push(correctionsText(clr.corrections));
   if (clr.traffic.length) parts.push(`Traffic: ${clr.traffic.map((t) => `${t.callsign} (R${t.range}${t.closing ? ", closing" : ""}) on "${t.intentTitle}"`).join("; ")}.`);
   return parts.join("\n");
 }
 
 function correctionsText(cs: T.CorrectionNotice[]): string {
-  return `BEARING COURSE CORRECTION:\n${cs.map((c) => `- [${c.id}] ${c.message}`).join("\n")}\nApply these corrections in your next edits. Continue your work.`;
+  return `GITRING COURSE CORRECTION:\n${cs.map((c) => `- [${c.id}] ${c.message}`).join("\n")}\nApply these corrections in your next edits. Continue your work.`;
 }
 
 function safeArgs(raw: string): Record<string, unknown> {
@@ -387,7 +387,7 @@ const TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "write_file",
-      description: "Write the COMPLETE new content of one file. Bearing checks your course after each write.",
+      description: "Write the COMPLETE new content of one file. Gitring checks your course after each write.",
       parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" }, note: { type: "string", description: "One line: what changed and why." } }, required: ["path", "content"] },
     },
   },
@@ -396,7 +396,7 @@ const TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "log_progress",
-      description: "Tell Bearing and the other agents what you did and which files you touched.",
+      description: "Tell Gitring and the other agents what you did and which files you touched.",
       parameters: { type: "object", properties: { message: { type: "string" }, files: { type: "array", items: { type: "string" } } }, required: ["message"] },
     },
   },

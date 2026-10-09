@@ -16,7 +16,7 @@ const FILTERS: Record<Filter, (l: LogEntry) => boolean> = {
 
 function readPref(): boolean {
   try {
-    return localStorage.getItem("bearing.radio") !== "closed";
+    return localStorage.getItem("gitring.radio") !== "closed";
   } catch {
     return true;
   }
@@ -36,7 +36,7 @@ export function RadioLog() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("bearing.radio", open ? "open" : "closed");
+      localStorage.setItem("gitring.radio", open ? "open" : "closed");
     } catch {
       /* storage blocked */
     }

@@ -26,7 +26,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       credentials: "same-origin",
     });
   } catch {
-    throw new AccountError(0, "Bearing did not answer. Check the connection and try again.");
+    throw new AccountError(0, "Gitring did not answer. Check the connection and try again.");
   }
   if (res.status === 204) return undefined as T;
   const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -64,7 +64,7 @@ export async function signOut() {
 /** Open another project (a full load: the live socket and the store start clean). */
 export function openProject(id: string, path = "/") {
   try {
-    localStorage.setItem("bearing.project", id);
+    localStorage.setItem("gitring.project", id);
   } catch {
     /* storage off */
   }
@@ -73,7 +73,7 @@ export function openProject(id: string, path = "/") {
 
 export function rememberedProject(): string | null {
   try {
-    return localStorage.getItem("bearing.project");
+    return localStorage.getItem("gitring.project");
   } catch {
     return null;
   }

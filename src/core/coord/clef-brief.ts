@@ -69,7 +69,7 @@ export function buildBriefClefRequest(
 ): ClefRequest {
   const listCands = cands.slice(0, CLEF_MAX_CANDIDATES);
   const lines: string[] = [
-    "Bearing course check. Many coding agents change one repository at the same time.",
+    "Gitring course check. Many coding agents change one repository at the same time.",
     "Decide for each traffic vessel: will its work and the incoming work collide if both continue unchanged? A collision is a text conflict or a broken interface.",
     `Incoming agent ${incoming.agent.callsign} (${incoming.state}), intent "${cut(incoming.intent.title, 120)}": ${cut(incoming.intent.goal, MAX_GOAL)}`,
     `Incoming work: ${workLine(incoming)}. Size ${incoming.footprintSize}. Declared at ${new Date(incoming.attempt.course.declaredAt).toISOString()}.`,

@@ -1,5 +1,5 @@
 /**
- * The chart: Bearing's home. A nautical chart of the repo with every vessel (agent),
+ * The chart: Gitring's home. A nautical chart of the repo with every vessel (agent),
  * its course, wake, range to others and every correction (buoy).
  *
  * Geometry lives in world units; strokes are non-scaling hairlines; glyphs and labels

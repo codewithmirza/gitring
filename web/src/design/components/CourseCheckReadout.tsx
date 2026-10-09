@@ -64,7 +64,7 @@ export function CourseCheckReadout({ check, otherAttemptId, thresholds = DEFAULT
         )}
       </div>
       {!a ? (
-        <p className="ink-2">No vessels in range. Bearing cleared the course without a model call.</p>
+        <p className="ink-2">No vessels in range. Gitring cleared the course without a model call.</p>
       ) : (
         <>
           <div className="b-readout__grid">

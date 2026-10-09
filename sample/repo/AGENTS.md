@@ -1,18 +1,18 @@
 # Rules for agents
 
-Many agents change this repo at the same time. Bearing coordinates them. Obey these rules.
+Many agents change this repo at the same time. Gitring coordinates them. Obey these rules.
 
-## Work with Bearing
+## Work with Gitring
 
-1. Declare your course first with `bearing_declare`. Name the plan, the files and the symbols that you will change.
+1. Declare your course first with `gitring_declare`. Name the plan, the files and the symbols that you will change.
 2. Write code only after you declare your course.
-3. Log after each meaningful step with `bearing_log`. Write one short sentence: what you did, and why.
+3. Log after each meaningful step with `gitring_log`. Write one short sentence: what you did, and why.
 4. Read each correction that you receive. Apply it, then continue your work.
-5. Tell Bearing that you applied the correction. Use `bearing_ack`.
+5. Tell Gitring that you applied the correction. Use `gitring_ack`.
 6. A correction does not stop your work. It changes your course.
-7. Look at the traffic with `bearing_traffic` before you change a file that other agents change.
-8. Run `bearing_check` before `bearing_submit`. If a check fails, fix the cause. Then run `bearing_check` again.
-9. Submit with `bearing_submit` and a summary of one sentence.
+7. Look at the traffic with `gitring_traffic` before you change a file that other agents change.
+8. Run `gitring_check` before `gitring_submit`. If a check fails, fix the cause. Then run `gitring_check` again.
+9. Submit with `gitring_submit` and a summary of one sentence.
 
 ## Change the code
 
@@ -29,6 +29,6 @@ Many agents change this repo at the same time. Bearing coordinates them. Obey th
 ## Test your work
 
 - Run all tests with `node tests/run.mjs`. Run one file with `node tests/run.mjs tests/app.test.js`.
-- Bearing writes the test files of your intent into your workspace. Make them pass.
+- Gitring writes the test files of your intent into your workspace. Make them pass.
 - Write tests with the API in `harness/test.js`: `test`, `expect`, `toBe`, `toEqual`, `toContain`, `toMatch`, `toBeTruthy`, `toBeFalsy`, `toThrow` and `.not`.
 - Keep `tests/app.test.js` green. All intents share it.

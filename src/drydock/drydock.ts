@@ -61,7 +61,7 @@ export interface DrydockResult {
   log: string;
 }
 
-/** Shell script of one run. Bearing's markers on stdout tell the stages apart. */
+/** Shell script of one run. Gitring's markers on stdout tell the stages apart. */
 export function runScript(): string {
   return String.raw`set -u
 W=/workspace
@@ -69,22 +69,22 @@ cd "$W" || exit 90
 FP=$(cat package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock package.json 2>/dev/null | sha256sum | cut -c1-16)
 REUSED=0
 if [ -d "/cache/nm-$FP" ] && [ ! -e node_modules ]; then mv "/cache/nm-$FP" node_modules && REUSED=1; fi
-echo "@@bearing reused=$REUSED"
-echo "@@bearing stage=install"
+echo "@@gitring reused=$REUSED"
+echo "@@gitring stage=install"
 T0=$(date +%s%3N)
 if [ "$REUSED" = "1" ]; then :
-elif [ -n "$BEARING_INSTALL" ]; then bash -lc "$BEARING_INSTALL" || { echo "@@bearing install-failed=$?"; exit 91; }
-elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci --no-audit --no-fund --loglevel=error || { echo "@@bearing install-failed=$?"; exit 91; }
-elif [ -f package.json ]; then npm install --no-audit --no-fund --loglevel=error || { echo "@@bearing install-failed=$?"; exit 91; }
+elif [ -n "$GITRING_INSTALL" ]; then bash -lc "$GITRING_INSTALL" || { echo "@@gitring install-failed=$?"; exit 91; }
+elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci --no-audit --no-fund --loglevel=error || { echo "@@gitring install-failed=$?"; exit 91; }
+elif [ -f package.json ]; then npm install --no-audit --no-fund --loglevel=error || { echo "@@gitring install-failed=$?"; exit 91; }
 fi
 T1=$(date +%s%3N)
-echo "@@bearing install-ms=$((T1-T0))"
-echo "@@bearing stage=test"
-if [ -n "$BEARING_TEST" ]; then bash -lc "$BEARING_TEST"; CODE=$?
+echo "@@gitring install-ms=$((T1-T0))"
+echo "@@gitring stage=test"
+if [ -n "$GITRING_TEST" ]; then bash -lc "$GITRING_TEST"; CODE=$?
 elif [ -f package.json ] && node -e 'process.exit(require("./package.json").scripts?.test ? 0 : 1)'; then npm test; CODE=$?
-else echo "@@bearing no-test"; exit 92; fi
+else echo "@@gitring no-test"; exit 92; fi
 T2=$(date +%s%3N)
-echo "@@bearing test-ms=$((T2-T1))"
+echo "@@gitring test-ms=$((T2-T1))"
 mkdir -p /cache && rm -rf /cache/nm-* 2>/dev/null
 if [ -d node_modules ]; then mv node_modules "/cache/nm-$FP"; fi
 exit $CODE
@@ -93,11 +93,11 @@ exit $CODE
 
 /** Parse a run's combined output into a result. */
 export function parseRun(output: string, exitCode: number): DrydockResult {
-  const marker = (k: string) => new RegExp(`^@@bearing ${k}=(\\d+)$`, "m").exec(output)?.[1];
+  const marker = (k: string) => new RegExp(`^@@gitring ${k}=(\\d+)$`, "m").exec(output)?.[1];
   const reused = marker("reused") === "1";
   const installMs = Number(marker("install-ms") ?? 0);
   const testMs = Number(marker("test-ms") ?? 0);
-  const cleaned = output.replace(/^@@bearing .*\n?/gm, "");
+  const cleaned = output.replace(/^@@gitring .*\n?/gm, "");
   const log = cleaned.length > LOG_TAIL ? `…${cleaned.slice(-LOG_TAIL)}` : cleaned;
   let stage: DrydockResult["stage"] = "done";
   if (exitCode === 124 || exitCode === 137) stage = "timeout";
@@ -122,7 +122,7 @@ export class Drydock extends DurableObject<Env> {
     this.ready = (async () => {
       const c = this.container;
       // The image's own command (node) exits at once without a terminal; a container lives as long as its main process.
-      if (!c.running) c.start({ image: DRYDOCK_IMAGE, entrypoint: ["sleep", "infinity"], enableInternet: internet, instance, labels: { app: "bearing-checks" } });
+      if (!c.running) c.start({ image: DRYDOCK_IMAGE, entrypoint: ["sleep", "infinity"], enableInternet: internet, instance, labels: { app: "gitring-checks" } });
       const gate = (this.ctx.exports as unknown as { Seawall: (o: { props: Record<string, never> }) => Fetcher }).Seawall({ props: {} });
       await c.interceptOutboundHttps("*", gate);
       await c.interceptOutboundHttp("*", gate);
@@ -153,8 +153,8 @@ export class Drydock extends DurableObject<Env> {
       PIP_CERT: CA,
       GIT_SSL_CAINFO: CA,
       npm_config_update_notifier: "false",
-      BEARING_INSTALL: input.install ?? "",
-      BEARING_TEST: input.test ?? "",
+      GITRING_INSTALL: input.install ?? "",
+      GITRING_TEST: input.test ?? "",
     };
     // A fresh tree each run; node_modules waits in /cache between runs.
     const prep = await c.exec(["bash", "-c", "if [ -d /workspace/node_modules ]; then mkdir -p /cache && mv /workspace/node_modules /cache/nm-orphan; fi; rm -rf /workspace && mkdir -p /workspace"], { env });
@@ -163,14 +163,14 @@ export class Drydock extends DurableObject<Env> {
     const untar = await c.exec(["tar", "-xzf", "-", "-C", "/workspace", "--no-same-owner"], { env, stdin });
     const unpacked = await untar.output();
     if (unpacked.exitCode !== 0) {
-      return { ok: false, stage: "start", exitCode: unpacked.exitCode, installMs: 0, testMs: 0, reused: false, log: `Bearing could not copy the tree into the container: ${new TextDecoder().decode(unpacked.stderr).slice(0, 2000)}` };
+      return { ok: false, stage: "start", exitCode: unpacked.exitCode, installMs: 0, testMs: 0, reused: false, log: `Gitring could not copy the tree into the container: ${new TextDecoder().decode(unpacked.stderr).slice(0, 2000)}` };
     }
     const seconds = Math.max(60, Math.min(1800, Math.round(input.timeoutSec)));
     const proc = await c.exec(["timeout", "--kill-after=10", String(seconds), "bash", "-c", runScript()], { env, cwd: "/workspace", stderr: "combined" });
     const out = await proc.output();
     const text = new TextDecoder().decode(out.stdout);
     const res = parseRun(text, out.exitCode);
-    if (res.stage === "timeout") res.log = `${res.log}\nThe run took more than ${seconds} s. Bearing stopped it.`;
+    if (res.stage === "timeout") res.log = `${res.log}\nThe run took more than ${seconds} s. Gitring stopped it.`;
     if (!res.installMs && !res.testMs) res.testMs = Date.now() - started;
     return res;
   }
@@ -216,7 +216,7 @@ export class Seawall extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (!registryAllowed(url.hostname)) {
-      return new Response(`Bearing check containers reach package registries only. ${url.hostname} is not one of them.\n`, { status: 403 });
+      return new Response(`Gitring check containers reach package registries only. ${url.hostname} is not one of them.\n`, { status: 403 });
     }
     return fetch(request);
   }

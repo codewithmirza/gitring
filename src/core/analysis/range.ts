@@ -17,7 +17,7 @@
 import type { Course, FileTouch, Footprint, LineRange, Range, SymbolKey } from "../types";
 import type { ImportGraph } from "./graph";
 
-/** Known signatures of one symbol (Bearing extension; optional everywhere). */
+/** Known signatures of one symbol (Gitring extension; optional everywhere). */
 export interface SignatureInfo {
   /** Signature on the base, for example "formatPrice(cents)". */
   before?: string;

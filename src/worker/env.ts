@@ -28,13 +28,13 @@ export interface Env {
   CHECK_RUNS_PER_HOUR?: string;
   CHECK_RUNS_PER_OWNER_HOUR?: string;
   /** Secret: 32 random bytes (base64). Seals provider credentials in the Directory. */
-  BEARING_SECRET?: string;
+  GITRING_SECRET?: string;
   /** Secret: opens /setup before any owner can sign in (create the GitHub App, add Google). */
-  BEARING_SETUP_TOKEN?: string;
+  GITRING_SETUP_TOKEN?: string;
   /** Secret: deployment owners, comma-separated: "github:<login>", "google:<email>" or "<email>". */
-  BEARING_OWNERS?: string;
-  /** Optional operator key for scripts: `Authorization: Bearer <BEARING_KEY>` acts as the deployment. */
-  BEARING_KEY?: string;
+  GITRING_OWNERS?: string;
+  /** Optional operator key for scripts: `Authorization: Bearer <GITRING_KEY>` acts as the deployment. */
+  GITRING_KEY?: string;
   /** Optional: verify signatures of a plain GitHub repository webhook (X-Hub-Signature-256) on /hooks/github. */
   GITHUB_WEBHOOK_SECRET?: string;
   /** Optional: verify Slack request signatures (X-Slack-Signature). */

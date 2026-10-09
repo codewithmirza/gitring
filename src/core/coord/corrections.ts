@@ -178,7 +178,7 @@ function regionParts(receiver: VesselView, standOn: VesselView, facts: PairFacts
     parts.push(`${X} also ${landed ? "changed" : "changes"} ${joinWith(names, "and")} in ${path}`);
     parts.push(`Do not rewrite ${joinWith(names, "or")}`);
     parts.push(`Keep your change to ${names.length > 1 ? "them" : names[0]} small and in a separate block`);
-    parts.push(`Read bearing_traffic before you edit ${path}`);
+    parts.push(`Read gitring_traffic before you edit ${path}`);
     pushNote(c, `Do not rewrite ${joinWith(names, "or")} in ${path}; keep a separate block (${X})`);
     return parts;
   }
@@ -309,9 +309,9 @@ export function draftUpstreamCorrection(
 }
 
 /**
- * Main moved under `v`, and Bearing moved the work of `v` onto the new main (a re-plot).
- * `merged`: files where Bearing merged the landed change into the agent's copy.
- * `reapply`: files where the two changes overlap; Bearing kept the main version and the agent
+ * Main moved under `v`, and Gitring moved the work of `v` onto the new main (a re-plot).
+ * `merged`: files where Gitring merged the landed change into the agent's copy.
+ * `reapply`: files where the two changes overlap; Gitring kept the main version and the agent
  * makes its change again (the diff shows the earlier change). The diffs follow the sentences.
  */
 export function draftReplotCorrection(
@@ -321,7 +321,7 @@ export function draftReplotCorrection(
 ): DraftedCorrection {
   const c: Constraints = {};
   const parts: string[] = [`The intent ${quoteTitle(landed.intentTitle)} landed on main`];
-  parts.push(`Bearing moved your work onto the new main (${moved.mainSha.slice(0, 7)})`);
+  parts.push(`Gitring moved your work onto the new main (${moved.mainSha.slice(0, 7)})`);
   if (moved.merged.length) parts.push(`Your copies of ${listFiles(moved.merged)} now include the landed change`);
   const myCode = v.shape.files.filter(isCodePath);
   const mine = [...v.shape.referenced, ...v.shape.changed];
@@ -336,7 +336,7 @@ export function draftReplotCorrection(
   const again = moved.reapply.map((r) => r.path);
   if (again.length) {
     parts.push(`Your change to ${listFiles(again)} overlaps the landed change`);
-    parts.push(`Bearing kept the main version of ${again.length > 1 ? "these files" : again[0]}`);
+    parts.push(`Gitring kept the main version of ${again.length > 1 ? "these files" : again[0]}`);
     parts.push(`Make your change again on the new text`);
     pushNote(c, `Make the change to ${listFiles(again)} again on the new main`);
   }
@@ -370,7 +370,7 @@ export function draftDuplicateCorrection(v: VesselView, other: VesselView): Draf
   return finish("duplicate", parts, c);
 }
 
-/** A human (or Bearing) amended the intent of `v` (addition: kind "intent-amended"). */
+/** A human (or Gitring) amended the intent of `v` (addition: kind "intent-amended"). */
 export function draftIntentAmendedCorrection(v: VesselView, amendment: Amendment): DraftedCorrection {
   const c: Constraints = {};
   const who = amendment.by?.kind === "human" ? "A human" : amendment.by?.kind === "agent" ? `Agent ${amendment.by.name || amendment.by.id}` : "The system";

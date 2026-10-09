@@ -1,14 +1,15 @@
 /**
- * Who is calling: a browser session (cookie), a personal API key (`Authorization: Bearer bk_…`), or the
- * operator key (BEARING_KEY, for scripts). Plus the sign-in and setup routes.
+ * Who is calling: a browser session (cookie), a personal API key (`Authorization: Bearer gk_…`), or the
+ * operator key (GITRING_KEY, for scripts). Plus the sign-in and setup routes.
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
 import type * as A from "../core/accounts";
 import type * as T from "../core/types";
 import { sameString } from "../directory/crypto";
+import type { ManifestConversion } from "../directory/directory";
 
-export const SESSION_COOKIE = "__Host-bearing";
+export const SESSION_COOKIE = "__Host-gitring";
 const SESSION_MAX_AGE_S = 30 * 24 * 3600;
 
 export interface Principal {
@@ -37,8 +38,8 @@ export async function resolvePrincipal(env: Env, req: Request): Promise<Principa
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "");
   if (m) {
     const token = m[1].trim();
-    if (env.BEARING_KEY && sameString(token, env.BEARING_KEY)) return { user: null, via: "operator" };
-    if (token.startsWith("bk_")) {
+    if (env.GITRING_KEY && sameString(token, env.GITRING_KEY)) return { user: null, via: "operator" };
+    if (token.startsWith("gk_")) {
       const user = await directory(env).keyUser(token);
       if (user) return { user, via: "key" };
     }
@@ -72,7 +73,7 @@ function origin(c: C): string {
 function setupAllowed(c: C, token?: string | null): boolean {
   const p = c.get("principal");
   if (p.user?.admin) return true;
-  const want = c.env.BEARING_SETUP_TOKEN;
+  const want = c.env.GITRING_SETUP_TOKEN;
   return Boolean(want && token && sameString(String(token), want));
 }
 
@@ -80,7 +81,7 @@ function setupAllowed(c: C, token?: string | null): boolean {
 
 function page(title: string, body: string, status = 200): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} · Bearing</title><meta name="robots" content="noindex">
+<title>${esc(title)} · Gitring</title><meta name="robots" content="noindex">
 <style>
 :root{color-scheme:light dark;--bg:#f8fbfd;--ink:#17202c;--muted:#5b6672;--line:#d5dde3;--card:#fff;--accent:#0e6f7a;--ok:#1d7a46;--warn:#9a5b00}
 @media (prefers-color-scheme:dark){:root{--bg:#090f16;--ink:#e0e5e9;--muted:#98a4ae;--line:#24303b;--card:#0f1721;--accent:#5fb7c2;--ok:#5cc28a;--warn:#e0a64b}}
@@ -97,6 +98,47 @@ ol{padding-left:20px}li{margin:4px 0}
   return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } });
 }
 
+function appReadyPage(slug: string): Response {
+  const safe = /^[a-z0-9-]{1,80}$/.test(slug) ? slug : "";
+  return page(
+    "GitHub App ready",
+    `<h1>The GitHub App is ready</h1>${safe ? `<p class="ok">${esc(safe)}</p>` : ""}
+<p>Next: sign in with GitHub as an owner, then install the app on the repositories that Gitring may import.</p>
+<p><a class="btn" href="/auth/github/start?return=%2Fsetup">Sign in with GitHub</a>${safe ? ` <a class="btn secondary" href="https://github.com/apps/${esc(safe)}/installations/new">Install on repositories</a>` : ""}</p>`,
+  );
+}
+
+/**
+ * GitHub limits unauthenticated API calls per address, and Workers share addresses. This page asks
+ * GitHub for the app credentials from the owner's browser instead, then sends them to Gitring, which
+ * checks them with GitHub before it seals them.
+ */
+function browserConversionPage(code: string, state: string): Response {
+  const data = JSON.stringify({ code, state }).replace(/</g, "\\u003c");
+  return page(
+    "GitHub App",
+    `<h1>Saving the GitHub App</h1><p id="msg" class="muted">Your browser gets the app credentials from GitHub. Keep this page open.</p>
+<script>
+(async () => {
+  const { code, state } = ${data};
+  const msg = document.getElementById("msg");
+  try {
+    const gh = await fetch("https://api.github.com/app-manifests/" + encodeURIComponent(code) + "/conversions", { method: "POST", headers: { Accept: "application/vnd.github+json" } });
+    if (!gh.ok) throw new Error("GitHub answered " + gh.status + ". Start again from the setup page.");
+    const app = await gh.json();
+    const res = await fetch("/setup/github/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ state, app }) });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || "Gitring did not save the app.");
+    location.replace("/setup/github/ready?slug=" + encodeURIComponent(out.slug));
+  } catch (e) {
+    msg.className = "warn";
+    msg.textContent = "The GitHub App was not saved. " + (e && e.message ? e.message : e);
+  }
+})();
+</script>`,
+  );
+}
+
 function esc(s: string): string {
   return String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
 }
@@ -105,7 +147,7 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
   const dir = directory(c.env);
   const providers = await dir.providers();
   const o = origin(c);
-  const owners = (c.env.BEARING_OWNERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const owners = (c.env.GITRING_OWNERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const tokenField = token ? `<input type="hidden" name="token" value="${esc(token)}">` : "";
   let gh: string;
   if (providers.github) {
@@ -115,29 +157,29 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
   } else {
     const m = await dir.githubManifest(o);
     gh = `<p class="warn">Not set up.</p>
-<p>One click creates a GitHub App for this Bearing with the right callback URLs, webhook and permissions (contents write, issues read, metadata read). GitHub shows it to you before it creates it.</p>
-<form method="post" action="${esc(m.postUrl)}"><input type="hidden" name="manifest" value="${esc(m.manifest)}"><button type="submit">Create the Bearing GitHub App</button></form>`;
+<p>One click creates a GitHub App for this Gitring with the right callback URLs, webhook and permissions (contents write, issues read, metadata read). GitHub shows it to you before it creates it.</p>
+<form method="post" action="${esc(m.postUrl)}"><input type="hidden" name="manifest" value="${esc(m.manifest)}"><button type="submit">Create the Gitring GitHub App</button></form>`;
   }
   const gg = providers.google
     ? `<p class="ok">Connected: <code>${esc(providers.google.clientId)}</code></p><p class="muted">Paste a new client below to replace it.</p>`
     : `<p class="warn">Not set up.</p>`;
   return page(
-    "Set up Bearing",
-    `<h1>Set up Bearing</h1><p class="muted">${esc(o)}</p>${note ? `<div class="card"><p>${note}</p></div>` : ""}
+    "Set up Gitring",
+    `<h1>Set up Gitring</h1><p class="muted">${esc(o)}</p>${note ? `<div class="card"><p>${note}</p></div>` : ""}
 <div class="card"><h2>1. Sign in with GitHub</h2>${gh}</div>
 <div class="card"><h2>2. Sign in with Google</h2>${gg}
 <ol><li>Open <a href="https://console.cloud.google.com/apis/credentials">Google Cloud console → Credentials</a>. Create an <b>OAuth client ID</b> of type <b>Web application</b>.</li>
 <li>Authorized JavaScript origin: <code>${esc(o)}</code></li>
 <li>Authorized redirect URI: <code>${esc(o)}/auth/google/callback</code></li>
-<li>Paste the client ID and the client secret here. Bearing seals them; nobody can read them back.</li></ol>
+<li>Paste the client ID and the client secret here. Gitring seals them; nobody can read them back.</li></ol>
 <form method="post" action="/setup/google">${tokenField}<label for="cid">Client ID</label><input id="cid" name="clientId" required autocomplete="off" placeholder="…apps.googleusercontent.com">
 <label for="cs">Client secret</label><input id="cs" name="clientSecret" required autocomplete="off" type="password"><p><button type="submit">Save Google sign-in</button></p></form></div>
 <div class="card"><h2>3. Owners</h2>${
       owners.length
-        ? `<p>These people own this Bearing (they may open this page after they sign in):</p><ul>${owners.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>`
-        : `<p class="warn">No owner is set. Set the secret BEARING_OWNERS, for example <code>github:your-login,google:you@example.com</code>.</p>`
+        ? `<p>These people own this Gitring (they may open this page after they sign in):</p><ul>${owners.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>`
+        : `<p class="warn">No owner is set. Set the secret GITRING_OWNERS, for example <code>github:your-login,google:you@example.com</code>.</p>`
     }
-<p><a class="btn" href="/">Open Bearing</a></p></div>`,
+<p><a class="btn" href="/">Open Gitring</a></p></div>`,
   );
 }
 
@@ -146,7 +188,7 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
 export function authRoutes(app: Hono<HonoEnv>): void {
   app.get("/setup", async (c) => {
     const token = c.req.query("token") ?? null;
-    if (!setupAllowed(c, token)) return page("Setup", `<h1>Setup is closed</h1><p>Open the setup link with its token, or sign in as an owner of this Bearing.</p><p><a class="btn" href="/">Open Bearing</a></p>`, 403);
+    if (!setupAllowed(c, token)) return page("Setup", `<h1>Setup is closed</h1><p>Open the setup link with its token, or sign in as an owner of this Gitring.</p><p><a class="btn" href="/">Open Gitring</a></p>`, 403);
     return setupPage(c, token);
   });
 
@@ -167,20 +209,29 @@ export function authRoutes(app: Hono<HonoEnv>): void {
     const state = c.req.query("state");
     if (!code || !state) return page("GitHub App", `<h1>GitHub did not send a code</h1><p>Start again from the setup page.</p>`, 400);
     try {
-      const app = await directory(c.env).githubManifestDone(code, state);
-      return page(
-        "GitHub App ready",
-        `<h1>The GitHub App is ready</h1><p class="ok">${esc(app.slug)}</p>
-<p>Next: sign in with GitHub as an owner, then install the app on the repositories that Bearing may import or mirror.</p>
-<p><a class="btn" href="/auth/github/start?return=%2Fsetup">Sign in with GitHub</a> <a class="btn secondary" href="https://github.com/apps/${esc(app.slug)}/installations/new">Install on repositories</a></p>`,
-      );
+      const res = await directory(c.env).githubManifestDone(code, state);
+      if ("browser" in res) return browserConversionPage(code, state);
+      return appReadyPage(res.slug);
     } catch (e) {
       return page("GitHub App", `<h1>The GitHub App was not saved</h1><p>${esc((e as Error).message)}</p>`, 400);
     }
   });
 
+  /** The owner's browser converted the manifest code (GitHub refused the Worker's call). */
+  app.post("/setup/github/save", async (c) => {
+    const body = await c.req.json<{ state?: string; app?: ManifestConversion }>().catch(() => ({}) as { state?: string; app?: ManifestConversion });
+    try {
+      const saved = await directory(c.env).githubAppSave(String(body.state ?? ""), body.app as ManifestConversion);
+      return c.json(saved);
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400);
+    }
+  });
+
+  app.get("/setup/github/ready", (c) => appReadyPage(c.req.query("slug") ?? ""));
+
   app.get("/setup/github/installed", (c) =>
-    page("Installed", `<h1>Bearing can see these repositories now</h1><p>Go back to Bearing to import one.</p><p><a class="btn" href="/projects?new=github">Open Bearing</a></p>`),
+    page("Installed", `<h1>Gitring can see these repositories now</h1><p>Go back to Gitring to import one.</p><p><a class="btn" href="/projects?new=github">Open Gitring</a></p>`),
   );
 
   app.get("/auth/:provider/start", async (c) => {
@@ -190,7 +241,7 @@ export function authRoutes(app: Hono<HonoEnv>): void {
       const url = await directory(c.env).signInUrl(provider, origin(c), c.req.query("return") ?? "/");
       return c.redirect(url, 302);
     } catch (e) {
-      return page("Sign in", `<h1>Sign-in is not ready</h1><p>${esc((e as Error).message)}</p><p><a class="btn" href="/">Open Bearing</a></p>`, 503);
+      return page("Sign in", `<h1>Sign-in is not ready</h1><p>${esc((e as Error).message)}</p><p><a class="btn" href="/">Open Gitring</a></p>`, 503);
     }
   });
 
@@ -198,12 +249,12 @@ export function authRoutes(app: Hono<HonoEnv>): void {
     const provider = c.req.param("provider");
     if (provider !== "github" && provider !== "google") return c.text("Unknown provider.", 404);
     const error = c.req.query("error");
-    if (error) return page("Sign in", `<h1>Sign-in stopped</h1><p>${esc(c.req.query("error_description") ?? error)}</p><p><a class="btn" href="/">Open Bearing</a></p>`, 400);
+    if (error) return page("Sign in", `<h1>Sign-in stopped</h1><p>${esc(c.req.query("error_description") ?? error)}</p><p><a class="btn" href="/">Open Gitring</a></p>`, 400);
     try {
       const res = await directory(c.env).finishSignIn(provider, c.req.query("code") ?? "", c.req.query("state") ?? "");
       return new Response(null, { status: 302, headers: { location: res.returnTo, "set-cookie": sessionCookie(res.token), "cache-control": "no-store" } });
     } catch (e) {
-      return page("Sign in", `<h1>Sign-in did not finish</h1><p>${esc((e as Error).message)}</p><p><a class="btn" href="/">Open Bearing</a></p>`, 400);
+      return page("Sign in", `<h1>Sign-in did not finish</h1><p>${esc((e as Error).message)}</p><p><a class="btn" href="/">Open Gitring</a></p>`, 400);
     }
   });
 

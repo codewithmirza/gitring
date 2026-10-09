@@ -1,5 +1,5 @@
 /**
- * Bearing Worker — routes:
+ * Gitring Worker — routes:
  *   /mcp                       MCP server for external agents (personal API key)
  *   /api/*                     REST for the UI and other apps (session cookie or API key)
  *   /ws/:p                     WebSocket → HarborMaster live events
@@ -57,16 +57,16 @@ function harbor(env: Env, project: string) {
 app.onError((e, c) => {
   if (e instanceof HTTPError) return c.json({ error: e.message }, e.status);
   console.error("unhandled", e);
-  return c.json({ error: "Bearing could not finish the request. Try again." }, 500);
+  return c.json({ error: "Gitring could not finish the request. Try again." }, 500);
 });
 
 /* ───────────── who is calling ───────────── */
 
 app.use("*", async (c, next) => {
   const p = await resolvePrincipal(c.env, c.req.raw);
-  if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in Bearing (Connect → API keys)." }, 401);
+  if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in Gitring (Connect → API keys)." }, 401);
   c.set("principal", p);
-  // A browser session may only change state from Bearing's own pages (no cross-site requests).
+  // A browser session may only change state from Gitring's own pages (no cross-site requests).
   const m = c.req.method;
   if (p.via === "session" && m !== "GET" && m !== "HEAD" && m !== "OPTIONS") {
     const origin = c.req.header("origin");
@@ -488,7 +488,7 @@ async function preview(c: C): Promise<Response> {
       previewCache.set(pf.key, entry);
       if (previewCache.size > 64) previewCache.delete(previewCache.keys().next().value!);
     }
-    // Agent code runs in an opaque origin: it never sees Bearing's cookies or storage.
+    // Agent code runs in an opaque origin: it never sees Gitring's cookies or storage.
     return servePreview(c.env.LOADER, entry.key, entry.files, c.req.raw, base, { sandbox: true });
   } catch (e) {
     const status = e instanceof HTTPError ? e.status : 500;
@@ -498,7 +498,7 @@ async function preview(c: C): Promise<Response> {
 
 /* ───────────── inbound hooks (other apps send input) ───────────── */
 
-/** Any app: a member's API key (Authorization: Bearer bk_…) opens an intent, and can launch agents. */
+/** Any app: a member's API key (Authorization: Bearer gk_…) opens an intent, and can launch agents. */
 app.post("/hooks/intents", async (c) => {
   try {
     const body = await c.req.json<{ project?: string; title: string; goal?: string; checks?: { path: string; content: string; description?: string }[]; source?: string; launch?: number }>();
@@ -521,15 +521,15 @@ interface GithubIssueEvent {
   sender?: { login?: string };
 }
 
-function bearingIssue(event: string | undefined, body: GithubIssueEvent | null): string | null {
+function gitringIssue(event: string | undefined, body: GithubIssueEvent | null): string | null {
   if (event !== "issues" || !body?.issue) return null;
-  const labeled = body.issue.labels?.some((l) => l.name.toLowerCase() === "bearing");
-  if (!labeled || !["opened", "labeled", "reopened"].includes(body.action ?? "")) return 'Add the label "bearing" to the issue.';
+  const labeled = body.issue.labels?.some((l) => l.name.toLowerCase() === "gitring");
+  if (!labeled || !["opened", "labeled", "reopened"].includes(body.action ?? "")) return 'Add the label "gitring" to the issue.';
   return "";
 }
 
 /**
- * GitHub App webhook: an issue labeled "bearing" becomes an intent in each project imported from that
+ * GitHub App webhook: an issue labeled "gitring" becomes an intent in each project imported from that
  * repository, when the person who labeled it is a member of the project.
  */
 app.post("/hooks/github-app", async (c) => {
@@ -546,7 +546,7 @@ app.post("/hooks/github-app", async (c) => {
   } catch {
     return c.json({ error: "Bad JSON." }, 400);
   }
-  const why = bearingIssue(event, body);
+  const why = gitringIssue(event, body);
   if (why === null) return c.json({ ignored: true });
   if (why) return c.json({ ignored: true, reason: why });
   const repo = body!.repository?.full_name ?? "";
@@ -567,7 +567,7 @@ app.post("/hooks/github-app", async (c) => {
 app.post("/hooks/github", async (c) => {
   const event = c.req.header("x-github-event");
   const raw = await c.req.text();
-  if (!c.env.GITHUB_WEBHOOK_SECRET) return c.json({ error: "Set GITHUB_WEBHOOK_SECRET, or use the Bearing GitHub App." }, 404);
+  if (!c.env.GITHUB_WEBHOOK_SECRET) return c.json({ error: "Set GITHUB_WEBHOOK_SECRET, or use the Gitring GitHub App." }, 404);
   const sig = (c.req.header("x-hub-signature-256") ?? "").replace(/^sha256=/, "");
   if (!sameString(sig, await hmacSha256Hex(c.env.GITHUB_WEBHOOK_SECRET, raw))) return c.json({ error: "Bad signature." }, 401);
   if (event === "ping") return c.json({ ok: true });
@@ -577,7 +577,7 @@ app.post("/hooks/github", async (c) => {
   } catch {
     body = null;
   }
-  const why = bearingIssue(event, body);
+  const why = gitringIssue(event, body);
   if (why === null) return c.json({ ignored: true });
   if (why) return c.json({ ignored: true, reason: why });
   const id = projectId(c.req.query("project"));
@@ -591,7 +591,7 @@ app.post("/hooks/github", async (c) => {
   return c.json({ intent: intent.id }, 201);
 });
 
-/** Slack slash command: /bearing <intent title> — <goal>. Needs SLACK_SIGNING_SECRET and ?project=. */
+/** Slack slash command: /gitring <intent title> — <goal>. Needs SLACK_SIGNING_SECRET and ?project=. */
 app.post("/hooks/slack", async (c) => {
   const raw = await c.req.text();
   if (!c.env.SLACK_SIGNING_SECRET) return c.json({ error: "Set SLACK_SIGNING_SECRET to use the Slack command." }, 404);
@@ -602,7 +602,7 @@ app.post("/hooks/slack", async (c) => {
   const form = Object.fromEntries(new URLSearchParams(raw)) as Record<string, unknown>;
   const text = String(form.text ?? "").trim();
   const user = String(form.user_name ?? "slack");
-  if (!text) return c.json({ response_type: "ephemeral", text: "Write the intent after the command: /bearing Add a dark mode — Readers can switch to a dark theme." });
+  if (!text) return c.json({ response_type: "ephemeral", text: "Write the intent after the command: /gitring Add a dark mode — Readers can switch to a dark theme." });
   const [titleRaw, ...rest] = text.split(/\s+[—-]{1,2}\s+/);
   const title = titleRaw ?? text;
   const id = projectId(c.req.query("project"));
@@ -635,9 +635,9 @@ export default {
       if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null })(request, env, ctx);
       const p = await resolvePrincipal(env, request);
       if (!p.user && p.via !== "operator") {
-        return new Response(JSON.stringify({ error: "Send a personal API key: Authorization: Bearer bk_… (create one in Bearing → Connect)." }), {
+        return new Response(JSON.stringify({ error: "Send a personal API key: Authorization: Bearer gk_… (create one in Gitring → Connect)." }), {
           status: 401,
-          headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="bearing"' },
+          headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="gitring"' },
         });
       }
       return createMcp(env, p)(request, env, ctx);

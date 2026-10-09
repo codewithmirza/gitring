@@ -14,7 +14,7 @@ import { FakeArtifacts, type GitHttpServer, gitIn, startGitHttpServer } from "./
 import { git, gitAsync, hasGitHttpBackend, tempDir } from "./helpers";
 
 const FIXED_NOW = 1_760_000_000_000;
-const author = { name: "Kestrel-7", email: "kestrel@bearing.dev" };
+const author = { name: "Kestrel-7", email: "kestrel@gitring.dev" };
 
 let tmp: ReturnType<typeof tempDir>;
 let server: GitHttpServer;
@@ -37,7 +37,7 @@ function bare(repo: string): string {
 
 describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http-backend)", () => {
   beforeAll(async () => {
-    tmp = tempDir("bearing-artifacts-");
+    tmp = tempDir("gitring-artifacts-");
     server = await startGitHttpServer(join(tmp.path, "repos"));
     binding = new FakeArtifacts({ root: join(tmp.path, "repos"), baseUrl: server.url });
     server.authorize = (repo, password, service) => binding.checkToken(repo, password, service);
@@ -90,7 +90,7 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
       repo: "demo",
       branch: "main",
       parent: c1.sha,
-      message: "Add currency to formatPrice\n\nBearing-Intent: int_42\n",
+      message: "Add currency to formatPrice\n\nGitring-Intent: int_42\n",
       author,
       changes: [
         { path: "src/products.js", content: "export const formatPrice = (cents, currency = 'USD') => `${currency} ${(cents / 100).toFixed(2)}`;\n" },
@@ -113,7 +113,7 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     // Reads through the binding.
     const log = await be.log("demo", "main");
     expect(log.map((c) => c.hash)).toEqual([c2.sha, c1.sha]);
-    expect(log[0]).toMatchObject({ treeHash: c2.tree, parents: [c1.sha], message: "Add currency to formatPrice\n\nBearing-Intent: int_42", author, committer: author, authoredAt: FIXED_NOW / 1000 });
+    expect(log[0]).toMatchObject({ treeHash: c2.tree, parents: [c1.sha], message: "Add currency to formatPrice\n\nGitring-Intent: int_42", author, committer: author, authoredAt: FIXED_NOW / 1000 });
     for (const ref of ["main", "refs/heads/main", "HEAD", c2.sha]) expect(await be.resolve("demo", ref)).toBe(c2.sha);
     expect(await be.resolve("demo", "nope")).toBeNull();
     expect(await be.resolve("demo", "0".repeat(40))).toBeNull();
@@ -172,15 +172,15 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
   it("notes: pushed with the commit, appended by later commits, readable via the binding and via git", async () => {
     const be = backend();
     const tip = (await be.resolve("demo", "main"))!;
-    const n1 = JSON.stringify({ schema: "bearing.logbook/v1", intent: "int_1" }, null, 2);
+    const n1 = JSON.stringify({ schema: "gitring.logbook/v1", intent: "int_1" }, null, 2);
     const c3 = await be.commit({ repo: "demo", branch: "main", parent: tip, message: "Land 1", author, changes: [{ path: "a.txt", content: "a" }], note: n1 });
     const c4 = await be.commit({ repo: "demo", branch: "main", parent: c3.sha, message: "Land 2", author, changes: [{ path: "b.txt", content: "b" }], note: "second note\n" });
     expect(await be.readNote("demo", c3.sha)).toBe(n1);
     expect(await be.readNote("demo", c4.sha)).toBe("second note\n");
     expect(await be.readNote("demo", tip)).toBeNull();
     // Real git reads our notes ref.
-    expect(gitIn(binding, "demo", ["notes", "--ref=bearing", "show", c3.sha])).toBe(n1);
-    expect(gitIn(binding, "demo", ["rev-list", "--count", "refs/notes/bearing"])).toBe("2");
+    expect(gitIn(binding, "demo", ["notes", "--ref=gitring", "show", c3.sha])).toBe(n1);
+    expect(gitIn(binding, "demo", ["rev-list", "--count", "refs/notes/gitring"])).toBe("2");
     git(["fsck", "--strict", "--no-dangling"], { cwd: bare("demo") });
 
     // Fallback path: a binding whose log() cannot resolve full refs → fetch the notes ref over git.
@@ -203,32 +203,32 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     const be = backend();
     await be.ensureRepo("fan");
     const c1 = await be.commit({ repo: "fan", branch: "main", parent: "", message: "1", author, changes: [{ path: "a", content: "1" }] });
-    // Another tool wrote refs/notes/bearing with a fanout layout.
+    // Another tool wrote refs/notes/gitring with a fanout layout.
     const noteBlob = git(["hash-object", "-w", "--stdin"], { cwd: bare("fan"), input: "fanned note\n" });
     const sub = git(["mktree"], { cwd: bare("fan"), input: `100644 blob ${noteBlob}\t${c1.sha.slice(2)}\n` });
     const root = git(["mktree"], { cwd: bare("fan"), input: `040000 tree ${sub}\t${c1.sha.slice(0, 2)}\n` });
     const env = { GIT_AUTHOR_NAME: "Tool", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "Tool", GIT_COMMITTER_EMAIL: "t@x" };
     const notesCommit = git(["commit-tree", root, "-m", "notes"], { cwd: bare("fan"), env });
-    git(["update-ref", "refs/notes/bearing", notesCommit], { cwd: bare("fan") });
-    expect(gitIn(binding, "fan", ["notes", "--ref=bearing", "show", c1.sha])).toBe("fanned note");
+    git(["update-ref", "refs/notes/gitring", notesCommit], { cwd: bare("fan") });
+    expect(gitIn(binding, "fan", ["notes", "--ref=gitring", "show", c1.sha])).toBe("fanned note");
 
     expect(await be.readNote("fan", c1.sha)).toBe("fanned note\n");
     const c2 = await be.commit({ repo: "fan", branch: "main", parent: c1.sha, message: "2", author, changes: [{ path: "b", content: "2" }], note: "new note" });
     expect(await be.readNote("fan", c2.sha)).toBe("new note");
-    expect(gitIn(binding, "fan", ["notes", "--ref=bearing", "show", c2.sha])).toBe("new note");
+    expect(gitIn(binding, "fan", ["notes", "--ref=gitring", "show", c2.sha])).toBe("new note");
     // The new note went into the fanout layout, and the old one is still there.
-    const layout = gitIn(binding, "fan", ["ls-tree", "-r", "--name-only", "refs/notes/bearing"]).split("\n");
+    const layout = gitIn(binding, "fan", ["ls-tree", "-r", "--name-only", "refs/notes/gitring"]).split("\n");
     expect(layout).toContain(`${c2.sha.slice(0, 2)}/${c2.sha.slice(2)}`);
     expect(layout).toContain(`${c1.sha.slice(0, 2)}/${c1.sha.slice(2)}`);
-    expect(gitIn(binding, "fan", ["rev-parse", "refs/notes/bearing^"])).toBe(notesCommit);
+    expect(gitIn(binding, "fan", ["rev-parse", "refs/notes/gitring^"])).toBe(notesCommit);
   });
 
   it("a root commit can start a new branch in a non-empty repo", async () => {
     const be = backend();
     const main = (await be.resolve("demo", "main"))!;
-    const side = await be.commit({ repo: "demo", branch: "bearing/scratch", parent: "", message: "scratch", author, changes: [{ path: "notes.md", content: "x\n" }] });
-    expect(await be.resolve("demo", "bearing/scratch")).toBe(side.sha);
-    expect(await be.resolve("demo", "refs/heads/bearing/scratch")).toBe(side.sha);
+    const side = await be.commit({ repo: "demo", branch: "gitring/scratch", parent: "", message: "scratch", author, changes: [{ path: "notes.md", content: "x\n" }] });
+    expect(await be.resolve("demo", "gitring/scratch")).toBe(side.sha);
+    expect(await be.resolve("demo", "refs/heads/gitring/scratch")).toBe(side.sha);
     expect(await be.resolve("demo", "main")).toBe(main);
     expect((await be.readCommit("demo", side.sha))?.parents).toEqual([]);
   });

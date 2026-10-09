@@ -1,16 +1,16 @@
 /**
  * Logbook: the "why" record of every landing.
  *
- *  - landingMessage: commit message = subject (intent title) + short body + Bearing-* trailers.
- *  - landingNote:    git note (refs/notes/bearing) = pretty JSON, schema "bearing.logbook/v1".
- *  - intentFile:     `.bearing/intents/<slug>.md` with YAML front matter (optional in-repo copy).
+ *  - landingMessage: commit message = subject (intent title) + short body + Gitring-* trailers.
+ *  - landingNote:    git note (refs/notes/gitring) = pretty JSON, schema "gitring.logbook/v1".
+ *  - intentFile:     `.gitring/intents/<slug>.md` with YAML front matter (optional in-repo copy).
  *  - parseTrailers:  read the trailers back from any commit message.
  *
  * Pure module.
  */
 import type { AgentInfo, Attempt, CheckRun, Correction, CourseCheck, Decision, Intent, LandingMethod } from "./types";
 
-export const LOGBOOK_SCHEMA = "bearing.logbook/v1";
+export const LOGBOOK_SCHEMA = "gitring.logbook/v1";
 export const SUBJECT_MAX = 72;
 const BODY_WIDTH = 72;
 
@@ -75,7 +75,7 @@ function checksTotal(checks: CheckRun): { passed: number; total: number } {
   return { passed, total };
 }
 
-/** Commit message: subject, blank line, short body, blank line, Bearing-* trailers. */
+/** Commit message: subject, blank line, short body, blank line, Gitring-* trailers. */
 export function landingMessage(args: {
   intent: Intent;
   attempt: Attempt;
@@ -98,14 +98,14 @@ export function landingMessage(args: {
     ].join("\n"),
   );
   const trailers = [
-    `Bearing-Intent: ${oneLine(intent.id)}`,
-    `Bearing-Attempt: ${oneLine(attempt.id)}`,
-    `Bearing-Agent: ${oneLine(agent.callsign)} (${oneLine(agent.id)})`,
-    `Bearing-Model: ${modelOf(agent)}`,
-    `Bearing-Method: ${method}`,
-    `Bearing-Corrections: ${corrections.length}`,
-    `Bearing-Checks: ${passed}/${total} pass`,
-    `Bearing-Generation: ${generation}`,
+    `Gitring-Intent: ${oneLine(intent.id)}`,
+    `Gitring-Attempt: ${oneLine(attempt.id)}`,
+    `Gitring-Agent: ${oneLine(agent.callsign)} (${oneLine(agent.id)})`,
+    `Gitring-Model: ${modelOf(agent)}`,
+    `Gitring-Method: ${method}`,
+    `Gitring-Corrections: ${corrections.length}`,
+    `Gitring-Checks: ${passed}/${total} pass`,
+    `Gitring-Generation: ${generation}`,
   ];
   return `${subjectOf(intent.title)}\n\n${body.join("\n\n")}\n\n${trailers.join("\n")}\n`;
 }
@@ -193,7 +193,7 @@ export function landingNote(args: {
 /** YAML double-quoted scalar (JSON escapes are valid YAML escapes). */
 const yq = (s: string): string => JSON.stringify(s ?? "");
 
-/** `.bearing/intents/<slug>.md`: the intent as it landed, with YAML front matter. */
+/** `.gitring/intents/<slug>.md`: the intent as it landed, with YAML front matter. */
 export function intentFile(
   intent: Intent,
   landing: { sha?: string; attemptId: string; agent: AgentInfo; method: LandingMethod },
@@ -226,7 +226,7 @@ export function intentFile(
       lines.push(`- v${a.version} · ${oneLine(a.by?.name || a.by?.id || "unknown")} (${a.by?.kind ?? "unknown"})${when ? ` · ${when}` : ""}: ${oneLine(a.reason)} — ${oneLine(a.text)}`);
     }
   } else lines.push("_None._");
-  return { path: `.bearing/intents/${slug}.md`, content: `${lines.join("\n")}\n` };
+  return { path: `.gitring/intents/${slug}.md`, content: `${lines.join("\n")}\n` };
 }
 
 const TRAILER = /^([A-Za-z0-9][A-Za-z0-9-]*):\s?(.*)$/;

@@ -152,7 +152,7 @@ export function buildClefRequest(
   const list = cands.slice(0, CLEF_MAX_CANDIDATES);
   const state = {
     task:
-      "Bearing course check. Many coding agents (vessels) change one repository at the same time. " +
+      "Gitring course check. Many coding agents (vessels) change one repository at the same time. " +
       "Judge whether the incoming vessel's work collides with each traffic vessel v<i>. " +
       "Range: 0 same lines or symbol, 1 interface use, 2 same file, 3 one import apart, 4 two imports apart, 5 unrelated. " +
       "Hunks are [first, last] base line ranges. Size is changed lines plus files.",

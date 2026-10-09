@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * End-to-end run of the sample project with real Workers AI agents, against a running Bearing
+ * End-to-end run of the sample project with real Workers AI agents, against a running Gitring
  * (local `npm run dev` or a deployed Worker). It makes a private copy of the sample (or resets
- * BEARING_PROJECT), launches agents on every open intent, waits until no agent is at work, lands the
+ * GITRING_PROJECT), launches agents on every open intent, waits until no agent is at work, lands the
  * first ready dark mode attempt as a human pick, and prints what happened. AI agents take 5 to 15 minutes.
  *
- *   BEARING_URL=https://<your-worker> BEARING_KEY=bk_… node scripts/e2e-scenario.mjs
+ *   GITRING_URL=https://<your-worker> GITRING_KEY=gk_… node scripts/e2e-scenario.mjs
  *
  * Exit code 1 when an invariant fails (human merge fixes must stay 0; work must land).
  */
-import { authHeaders, base, projectFor } from "./lib/bearing.mjs";
+import { authHeaders, base, projectFor } from "./lib/gitring.mjs";
 
 const headers = { "content-type": "application/json", ...authHeaders() };
 const { id: project, fresh } = await projectFor("Scenario", headers);

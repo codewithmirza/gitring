@@ -64,8 +64,8 @@ import {
 } from "./views";
 import bundle from "../../sample/bundle.json";
 
-const BEARING_AUTHOR = { name: "Bearing", email: "harbor@bearing.dev" };
-export const BUILD_ID = "0.4.0+20261009f";
+const GITRING_AUTHOR = { name: "Gitring", email: "harbor@gitring.dev" };
+export const BUILD_ID = "0.5.0+20261009g";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
@@ -104,7 +104,7 @@ export interface Brief {
   checks: { path: string; description: string; content: string }[];
   constraints: string[];
   traffic: T.TrafficVessel[];
-  /** How the checks run: the Bearing harness, or the project's install and test commands in a container. */
+  /** How the checks run: the Gitring harness, or the project's install and test commands in a container. */
   runner: T.CheckSettings;
 }
 
@@ -133,7 +133,7 @@ export class HarborMaster extends DurableObject<Env> {
   private attemptVersion = new Map<string, number>();
   private forks = new Map<string, Promise<void>>();
   private landingChain: Promise<unknown> = Promise.resolve();
-  private outbox: T.BearingEvent[] = [];
+  private outbox: T.GitringEvent[] = [];
   private flushScheduled = false;
   private seq = 0;
 
@@ -165,7 +165,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   private get backend(): RepoBackend {
     if (this.backendCache) return this.backendCache;
-    this.backendCache = new ArtifactsBackend(this.env.ARTIFACTS, { author: BEARING_AUTHOR, treeCache: this.treeCache });
+    this.backendCache = new ArtifactsBackend(this.env.ARTIFACTS, { author: GITRING_AUTHOR, treeCache: this.treeCache });
     return this.backendCache;
   }
 
@@ -192,14 +192,14 @@ export class HarborMaster extends DurableObject<Env> {
    *   sample  the sample codebase and its intents (one seed commit)
    *   empty   a README in one commit
    *   git     Artifacts imports a public https remote (history kept); main = the remote's default branch
-   *   push    an empty repo; the owner pushes to it with plain git (Bearing adopts the pushed branch)
+   *   push    an empty repo; the owner pushes to it with plain git (Gitring adopts the pushed branch)
    *   upload  the files of a folder from the owner's computer, in one commit
    * Imports run in the background: the project shows "importing" until Artifacts is done.
    */
   async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] }): Promise<T.ProjectState> {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
     const source: T.ProjectSource = opts.source ?? { kind: "sample" };
-    const namespace = this.env.ARTIFACTS_NAMESPACE ?? "bearing";
+    const namespace = this.env.ARTIFACTS_NAMESPACE ?? "gitring";
     this.project = undefined;
     this.backendCache = undefined;
     const repoName = repoSafe(`${opts.projectId}-g${generation}-${Date.now().toString(36)}`);
@@ -217,7 +217,7 @@ export class HarborMaster extends DurableObject<Env> {
         decisionModel: "clef-flash",
         agentModels: this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels,
         intentsInRepo: source.kind === "sample",
-        // The sample's checks use the Bearing harness; other repositories run their own tests in a container.
+        // The sample's checks use the Gitring harness; other repositories run their own tests in a container.
         ...(source.kind === "sample" ? {} : { checks: { runner: "container" as const } }),
       },
     };
@@ -228,7 +228,7 @@ export class HarborMaster extends DurableObject<Env> {
       const url = normalizeGitUrl(source.url);
       const res = await this.env.ARTIFACTS.import({
         source: { url, ...(source.branch ? { branch: source.branch } : {}), depth: 200 },
-        target: { name: repoName, opts: { description: `Bearing project ${opts.projectId} (import of ${url})` } },
+        target: { name: repoName, opts: { description: `Gitring project ${opts.projectId} (import of ${url})` } },
       });
       draft.repo.remote = res.remote;
       draft.repo.defaultBranch = source.branch || res.defaultBranch || "main";
@@ -241,11 +241,11 @@ export class HarborMaster extends DurableObject<Env> {
       return state;
     }
 
-    const handle = await this.backend.ensureRepo(repoName, { description: `Bearing project ${opts.projectId}` });
+    const handle = await this.backend.ensureRepo(repoName, { description: `Gitring project ${opts.projectId}` });
     draft.repo.remote = handle.remote;
 
     if (source.kind === "push") {
-      // An empty repo: the owner pushes an existing repository with plain git. Bearing adopts the push.
+      // An empty repo: the owner pushes an existing repository with plain git. Gitring adopts the push.
       draft.importing = { url: "git push", startedAt: Date.now(), push: true, tokenIds: [] };
       this.db.setMeta("project", draft);
       this.addLog({ kind: "system", message: `Repository ready in Cloudflare Artifacts (${repoName}). Waiting for the first git push.` });
@@ -262,7 +262,7 @@ export class HarborMaster extends DurableObject<Env> {
         ? Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }) as { path: string; content: string | Uint8Array; mode?: string })
         : source.kind === "upload"
           ? uploaded
-          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in Bearing. Agents declare intents before they change it.\n` }];
+          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in Gitring. Agents declare intents before they change it.\n` }];
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
@@ -270,11 +270,11 @@ export class HarborMaster extends DurableObject<Env> {
       changes,
       message:
         source.kind === "sample"
-          ? `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nBearing-Seed: sample`
+          ? `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nGitring-Seed: sample`
           : source.kind === "upload"
-            ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nBearing-Seed: upload`
-            : `Start ${draft.name}\n\nBearing-Seed: ${source.kind}`,
-      author: BEARING_AUTHOR,
+            ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nGitring-Seed: upload`
+            : `Start ${draft.name}\n\nGitring-Seed: ${source.kind}`,
+      author: GITRING_AUTHOR,
     });
     draft.mainSha = seed.sha;
     draft.mainTree = seed.tree;
@@ -345,7 +345,7 @@ export class HarborMaster extends DurableObject<Env> {
       }
     }
     if (!sha) {
-      p.importing = { ...p.importing, error: asked ? `The repository has no branch "${asked}".` : "Bearing did not find the default branch of the repository. Import it again and name the branch." };
+      p.importing = { ...p.importing, error: asked ? `The repository has no branch "${asked}".` : "Gitring did not find the default branch of the repository. Import it again and name the branch." };
       this.db.setMeta("project", p);
       this.addLog({ kind: "system", message: `Import failed: ${p.importing.error}` });
       this.emit({ type: "snapshot", state: await this.state() });
@@ -363,7 +363,7 @@ export class HarborMaster extends DurableObject<Env> {
     p.mainSha = sha;
     p.mainTree = commit.treeHash;
     const url = p.importing?.url ?? "";
-    // Push tokens open the canonical repo; after the adoption only Bearing writes to it.
+    // Push tokens open the canonical repo; after the adoption only Gitring writes to it.
     for (const id of p.importing?.tokenIds ?? []) await this.backend.revokeToken(p.repo.name, id).catch(() => false);
     p.importing = undefined;
     this.db.setMeta("project", p);
@@ -393,7 +393,7 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /**
-   * A push project: a write token for the owner's first `git push` (24 hours). Bearing revokes it when
+   * A push project: a write token for the owner's first `git push` (24 hours). Gitring revokes it when
    * it adopts the push.
    */
   async pushAccess(): Promise<{ remote: string; token: string; expiresAt: string }> {
@@ -477,7 +477,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (cached) return cached.text;
     const bytes = await this.backend.readBlob(repo, sha);
     if (!bytes) return null;
-    // Very large files stay opaque: agents do not edit them through Bearing, and SQLite rows stay small.
+    // Very large files stay opaque: agents do not edit them through Gitring, and SQLite rows stay small.
     const text = bytes.length <= MAX_TEXT_BYTES && isProbablyText(bytes) ? utf8.decode(bytes) : null;
     this.db.putBlobText(sha, text);
     return text;
@@ -565,7 +565,7 @@ export class HarborMaster extends DurableObject<Env> {
     return view;
   }
 
-  /** Check files are written by Bearing, not by agents: they never count as a collision. */
+  /** Check files are written by Gitring, not by agents: they never count as a collision. */
   private checkPaths(): Set<string> {
     return new Set([...this.intents.values()].flatMap((i) => i.checks.map((c) => c.path)));
   }
@@ -588,7 +588,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   /* ════════════════════════════ events, logs, stats ════════════════════════════ */
 
-  private emit(ev: T.BearingEvent): void {
+  private emit(ev: T.GitringEvent): void {
     this.outbox.push(ev);
     if (this.flushScheduled) return;
     this.flushScheduled = true;
@@ -692,7 +692,7 @@ export class HarborMaster extends DurableObject<Env> {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       this.ctx.acceptWebSocket(server);
-      server.send(JSON.stringify({ type: "snapshot", state: await this.state() } satisfies T.BearingEvent));
+      server.send(JSON.stringify({ type: "snapshot", state: await this.state() } satisfies T.GitringEvent));
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response("Not found", { status: 404 });
@@ -753,7 +753,7 @@ export class HarborMaster extends DurableObject<Env> {
       );
       createdIntent = true;
     }
-    if (!intent) throw new Error("Unknown intent. Give intentId from bearing_intents, or give newIntent.");
+    if (!intent) throw new Error("Unknown intent. Give intentId from gitring_intents, or give newIntent.");
     if (intent.status === "landed" || intent.status === "parked") {
       throw new Error(`Intent "${intent.title}" is ${intent.status}. Choose an open intent.`);
     }
@@ -874,8 +874,8 @@ export class HarborMaster extends DurableObject<Env> {
           branch: this.branch,
           parent: tip,
           changes: intent.checks.map((c) => ({ path: c.path, content: c.content })),
-          message: `Add checks for "${intent.title}"\n\nBearing-Intent: ${intent.id}\nBearing-Attempt: ${a.id}`,
-          author: BEARING_AUTHOR,
+          message: `Add checks for "${intent.title}"\n\nGitring-Intent: ${intent.id}\nGitring-Attempt: ${a.id}`,
+          author: GITRING_AUTHOR,
         });
         a.headSha = res.sha;
         this.bump(a.id);
@@ -923,7 +923,7 @@ export class HarborMaster extends DurableObject<Env> {
   async write(input: T.WriteInput): Promise<T.WriteResult> {
     const a = this.mustAttempt(input.attemptId);
     if (TERMINAL.has(a.status)) throw new Error(`Attempt ${a.id} is ${a.status}. Declare a new course to continue.`);
-    if (a.mode === "git") throw new Error("This attempt uses git mode. Push to your fork, then call bearing_log with headSha.");
+    if (a.mode === "git") throw new Error("This attempt uses git mode. Push to your fork, then call gitring_log with headSha.");
     const intent = this.intents.get(a.intentId);
     const protectedPaths = new Set(
       [...this.intents.values()].filter((i) => i.id !== a.intentId).flatMap((i) => i.checks.map((c) => c.path)),
@@ -936,7 +936,7 @@ export class HarborMaster extends DurableObject<Env> {
       const path = normPath(f.path);
       if (!path || path.startsWith("../")) continue;
       if (protectedPaths.has(path)) continue; // checks of other intents are not yours to edit
-      if (path.startsWith(".bearing/")) continue;
+      if (path.startsWith(".gitring/")) continue;
       const content: string | null = f.delete ? null : String(f.content ?? "");
       const g = this.guardWrite(a, path, content, before.files.get(path) ?? null);
       if (g.refused) {
@@ -962,8 +962,8 @@ export class HarborMaster extends DurableObject<Env> {
       intentId: a.intentId,
       message:
         `${agent?.callsign ?? a.agentId} writes ${written.join(", ") || "nothing"}${input.message ? `: ${String(input.message).slice(0, 200)}` : ""}` +
-        (merged.length ? ` Bearing merged the write with main changes in ${merged.join(", ")}.` : "") +
-        (refused.length ? ` Bearing did not write ${refused.map((r) => r.path).join(", ")}: the file changed after the last read.` : ""),
+        (merged.length ? ` Gitring merged the write with main changes in ${merged.join(", ")}.` : "") +
+        (refused.length ? ` Gitring did not write ${refused.map((r) => r.path).join(", ")}: the file changed after the last read.` : ""),
       files: written,
     });
     void intent;
@@ -995,13 +995,13 @@ export class HarborMaster extends DurableObject<Env> {
 
   /**
    * A write against what the agent last saw of the file. Main can move a file under an API-mode
-   * agent (a re-plot): a write from the older copy merges 3-way with the landed change, or Bearing
+   * agent (a re-plot): a write from the older copy merges 3-way with the landed change, or Gitring
    * refuses it ("read again") when the two overlap, or when one side deleted the file. A file that
-   * Bearing reset to the main version must be read before the agent writes it.
+   * Gitring reset to the main version must be read before the agent writes it.
    */
   private guardWrite(a: T.Attempt, path: string, content: string | null, current: string | null): { content: string | null; merged?: boolean; refused?: string } {
     if (this.db.mustRead(a.id, path)) {
-      return { content, refused: `Bearing kept the main version of ${path}. Read ${path}, then make your change again on the new text.` };
+      return { content, refused: `Gitring kept the main version of ${path}. Read ${path}, then make your change again on the new text.` };
     }
     const seen = this.db.seen(a.id, path);
     if (seen === undefined || seen === current || content === current) return { content };
@@ -1458,7 +1458,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.bump(a.id);
     this.putAttempt(a);
     const msg =
-      `Your intent "${newIntent.title}" duplicates "${target.title}". Bearing joins your attempt to that intent. ` +
+      `Your intent "${newIntent.title}" duplicates "${target.title}". Gitring joins your attempt to that intent. ` +
       `Follow its goal and checks. Your work is compared with the other attempts. Continue your work.`;
     if (dupCorr) {
       dupCorr.message = msg;
@@ -1475,13 +1475,13 @@ export class HarborMaster extends DurableObject<Env> {
     return [...files.keys()].filter((p) => /^tests\/.+\.test\.(js|mjs)$/.test(p)).sort();
   }
 
-  /** The project's check runner (absent settings: the Bearing harness in a Dynamic Worker). */
+  /** The project's check runner (absent settings: the Gitring harness in a Dynamic Worker). */
   private checkSettings(): T.CheckSettings {
     return this.requireProject().settings.checks ?? { runner: "worker" };
   }
 
   /**
-   * Run the checks on a tree: the Bearing harness in a Dynamic Worker, or the project's install and
+   * Run the checks on a tree: the Gitring harness in a Dynamic Worker, or the project's install and
    * test commands in the attempt's check container.
    */
   private async runTreeChecks(files: Map<string, string>, scope: T.CheckRun["scope"], attemptId: string): Promise<T.CheckRun> {
@@ -1599,8 +1599,8 @@ export class HarborMaster extends DurableObject<Env> {
       branch: this.branch,
       parent: tip,
       changes,
-      message: `${intent.title}\n\nWork by ${agent?.callsign ?? a.agentId} (${agent?.model ?? agent?.client ?? "agent"}).\n\nBearing-Intent: ${intent.id}\nBearing-Attempt: ${a.id}\nBearing-Base: ${a.baseSha}`,
-      author: { name: agent?.callsign ?? "agent", email: `${(agent?.callsign ?? "agent").toLowerCase()}@agents.bearing.dev` },
+      message: `${intent.title}\n\nWork by ${agent?.callsign ?? a.agentId} (${agent?.model ?? agent?.client ?? "agent"}).\n\nGitring-Intent: ${intent.id}\nGitring-Attempt: ${a.id}\nGitring-Base: ${a.baseSha}`,
+      author: { name: agent?.callsign ?? "agent", email: `${(agent?.callsign ?? "agent").toLowerCase()}@agents.gitring.dev` },
     });
     a.headSha = res.sha;
     this.addLog({ kind: "push", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${agent?.callsign} work is in fork ${a.fork.repo} at ${res.sha.slice(0, 7)}.`, files: changes.map((c) => c.path) });
@@ -1683,7 +1683,7 @@ export class HarborMaster extends DurableObject<Env> {
     const note = landingNote({ intent, attempt: a, agent, method, corrections: applied, courseChecks, checks: run, decision });
     let committed: { sha: string; tree: string };
     try {
-      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes, message, note, author: BEARING_AUTHOR });
+      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes, message, note, author: GITRING_AUTHOR });
     } catch (err) {
       if (err instanceof RepoConflictError || String(err).includes("RepoConflict")) {
         if (attempt < 2) return this.landOne(a, attempt + 1);
@@ -1789,7 +1789,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (quiet.length) {
       this.addLog({
         kind: "replot",
-        message: `Bearing moves the work of ${quiet.join(", ")} onto main ${main.sha.slice(0, 7)}. Their files do not overlap the landed change.`,
+        message: `Gitring moves the work of ${quiet.join(", ")} onto main ${main.sha.slice(0, 7)}. Their files do not overlap the landed change.`,
       });
     }
   }
@@ -1860,7 +1860,7 @@ export class HarborMaster extends DurableObject<Env> {
         agentId: a.agentId,
         intentId: a.intentId,
         message:
-          `Bearing moves ${callsign}'s work from ${from.slice(0, 7)} onto main ${main.sha.slice(0, 7)}.` +
+          `Gitring moves ${callsign}'s work from ${from.slice(0, 7)} onto main ${main.sha.slice(0, 7)}.` +
           (merged.length ? ` Merged: ${merged.join(", ")}.` : "") +
           (reapply.length ? ` ${callsign} makes the change to ${reapply.map((r) => r.path).join(", ")} again.` : ""),
         files: result.touched,
@@ -1875,7 +1875,7 @@ export class HarborMaster extends DurableObject<Env> {
     const intent = this.intents.get(a.intentId)!;
     intent.status = "underway";
     this.putIntent(intent);
-    this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${this.callsign(a.id)} cannot land: ${reason} Bearing re-derives the intent on the new main.` });
+    this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${this.callsign(a.id)} cannot land: ${reason} Gitring re-derives the intent on the new main.` });
     if (a.lineage.generation >= 3) {
       this.stats.escalations += 1;
       this.persistStats();
@@ -2025,7 +2025,7 @@ export class HarborMaster extends DurableObject<Env> {
   /**
    * Guardrail for AI spend: built-in agent starts per hour, per person (AI_AGENTS_PER_USER_HOUR) and for
    * the whole deployment (AI_AGENTS_PER_HOUR). Over the budget, an agent waits and starts when a slot frees.
-   * Bearing never fakes the work.
+   * Gitring never fakes the work.
    */
   private async takeLlmBudget(n: number, by?: T.Actor): Promise<{ granted: number; retryAt: number }> {
     const global = Math.max(1, Math.round(Number(this.env.AI_AGENTS_PER_HOUR) || LLM_STARTS_PER_HOUR));
@@ -2129,7 +2129,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (TERMINAL.has(a.status)) return { status: a.status, message: `The attempt is ${a.status}. Re-derive it first.` };
     if (!a.checks?.ok) {
       const run = await this.check(a.id);
-      if (!run.ok) return { status: a.status, message: `${failureSummary(run.cases)} Bearing cannot land a failed attempt.` };
+      if (!run.ok) return { status: a.status, message: `${failureSummary(run.cases)} Gitring cannot land a failed attempt.` };
     }
     this.recordDecision({ kind: "pick", intentId: a.intentId, attemptIds: [a.id], by, rationale });
     a.status = "ready";
@@ -2141,7 +2141,7 @@ export class HarborMaster extends DurableObject<Env> {
     return {
       status: now.status,
       landing,
-      message: landing ? `Landed by ${landing.method} at ${landing.mainAfter.slice(0, 7)}.` : `The attempt did not land (${now.status}). Bearing re-derives it.`,
+      message: landing ? `Landed by ${landing.method} at ${landing.mainAfter.slice(0, 7)}.` : `The attempt did not land (${now.status}). Gitring re-derives it.`,
     };
   }
 
@@ -2186,7 +2186,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (by.kind === "human") this.recordDecision({ kind: "rederive", intentId: a.intentId, attemptIds: [old.id, a.id], by, rationale: reason });
     this.addLog({ kind: "rederive", attemptId: a.id, agentId: agent.id, intentId: a.intentId, message: `Re-derive "${this.intents.get(a.intentId)?.title}" on main ${main.sha.slice(0, 7)} (generation ${a.lineage.generation}). Reason: ${reason}` });
     if (!builtin && oldAgent) {
-      this.issueCorrection(old.id, undefined, { kind: "upstream", message: `Your attempt cannot land on the new main. Bearing re-derives it as ${a.id}. Stop work on ${old.id}.`, constraints: {} }, "R1-landed-has-way", "rederive");
+      this.issueCorrection(old.id, undefined, { kind: "upstream", message: `Your attempt cannot land on the new main. Gitring re-derives it as ${a.id}. Stop work on ${old.id}.`, constraints: {} }, "R1-landed-has-way", "rederive");
     }
     if (a.waitsForBudget) await this.scheduleBudgetRetry(a.waitsForBudget);
     else await this.startVessel(a, agent, old.id);
@@ -2264,7 +2264,7 @@ export class HarborMaster extends DurableObject<Env> {
       mcpUrl: `${origin}/mcp`,
       hookUrl: `${origin}/hooks/claude-code?project=${encodeURIComponent(p.id)}`,
       gitRemoteExample: p.repo.remote ? p.repo.remote.replace(/\/[^/]+\.git$/, `/${p.repo.name}-a_xxxxxx.git`) : undefined,
-      projectKeyHint: `Set BEARING_KEY to a personal API key (above). Project id: ${this.project?.id ?? ""}.`,
+      projectKeyHint: `Set GITRING_KEY to a personal API key (above). Project id: ${this.project?.id ?? ""}.`,
       artifacts: { namespace: p.repo.namespace, repo: p.repo.name, remote: p.repo.remote, backend: p.repo.backend },
     };
   }
@@ -2273,7 +2273,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   /**
    * PostToolUse hook from Claude Code. The agent's checkout identifies its attempt by the fork remote
-   * (git mode) or by an attempt id the agent wrote into BEARING_ATTEMPT. Returns pending corrections
+   * (git mode) or by an attempt id the agent wrote into GITRING_ATTEMPT. Returns pending corrections
    * as additional context, so the agent sees them mid-task without a stop.
    */
   async claudeHook(input: {
@@ -2317,14 +2317,14 @@ export class HarborMaster extends DurableObject<Env> {
       }
       let refused: string | undefined;
       if (next !== undefined && attempt.mode === "api" && input.tool_name === "Write") {
-        // A full-file write from the agent's own copy: guard it like bearing_write (main may have moved).
+        // A full-file write from the agent's own copy: guard it like gitring_write (main may have moved).
         const g = this.guardWrite(attempt, rel, next, view.files.get(rel) ?? null);
         if (g.refused) refused = g.refused;
         else this.db.writeWorktree(attempt.id, rel, g.content);
         this.db.setSeen(attempt.id, rel, next);
       } else if (next !== undefined) this.db.writeWorktree(attempt.id, rel, next);
       if (refused) {
-        return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: `BEARING: ${refused}` } };
+        return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: `GITRING: ${refused}` } };
       }
       if (!attempt.course.files.includes(rel)) attempt.course.files = [...attempt.course.files, rel];
       if (attempt.status === "declared") attempt.status = "underway";
@@ -2339,7 +2339,7 @@ export class HarborMaster extends DurableObject<Env> {
       hookSpecificOutput: {
         hookEventName: "PostToolUse",
         additionalContext: [
-          "BEARING COURSE CORRECTION — apply it in your next edits, then call bearing_ack. Continue your work.",
+          "GITRING COURSE CORRECTION — apply it in your next edits, then call gitring_ack. Continue your work.",
           ...clr.corrections.map((c) => `- [${c.id}] ${c.message}`),
         ].join("\n"),
       },
@@ -2501,7 +2501,7 @@ export class HarborMaster extends DurableObject<Env> {
         this.emit({ type: "sim", sim: this.sim });
         this.addLog({
           kind: "system",
-          message: `Simulation ends: ${totals.checks.toLocaleString("en-US")} course checks, ${totals.landings.toLocaleString("en-US")} landings. Conflicts at landing: ${pctText(this.sim.conflictRate)} with Bearing, ${pctText(this.sim.baselineConflictRate)} without.`,
+          message: `Simulation ends: ${totals.checks.toLocaleString("en-US")} course checks, ${totals.landings.toLocaleString("en-US")} landings. Conflicts at landing: ${pctText(this.sim.conflictRate)} with Gitring, ${pctText(this.sim.baselineConflictRate)} without.`,
         });
         this.simRun = undefined;
       }
@@ -2528,7 +2528,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   private mustAttempt(id: string): T.Attempt {
     const a = this.attempts.get(id);
-    if (!a) throw new Error(`Unknown attempt ${id}. Call bearing_declare first.`);
+    if (!a) throw new Error(`Unknown attempt ${id}. Call gitring_declare first.`);
     return a;
   }
 
@@ -2549,7 +2549,7 @@ function clock(at: number): string {
   return new Date(at).toISOString().slice(11, 16);
 }
 
-const SYSTEM: T.Actor = { kind: "system", id: "bearing", name: "Bearing" };
+const SYSTEM: T.Actor = { kind: "system", id: "gitring", name: "Gitring" };
 const HUMAN: T.Actor = { kind: "human", id: "human", name: "Human" };
 
 function emptyStats(): T.HarborStats {
@@ -2665,7 +2665,7 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
       .map((w, n) => ({
         id: typeof w.id === "string" ? w.id.slice(0, 40) : `wh_${n + 1}`,
         url: w.url.slice(0, 500),
-        events: Array.isArray(w.events) ? w.events.filter((e): e is T.BearingEventType => typeof e === "string").slice(0, 12) : [],
+        events: Array.isArray(w.events) ? w.events.filter((e): e is T.GitringEventType => typeof e === "string").slice(0, 12) : [],
         format: w.format === "slack" ? "slack" : "json",
         enabled: w.enabled !== false,
       }));
@@ -2748,7 +2748,7 @@ export function containerRun(res: DrydockResult, o: { key: string; scope: T.Chec
       : res.stage === "no-test"
         ? "No test command. The project has no package.json test script. An owner sets the test command in Project settings → Checks."
         : res.stage === "timeout"
-          ? `The checks took more than ${o.cs.timeoutSec ?? 600} s. Bearing stopped them.`
+          ? `The checks took more than ${o.cs.timeoutSec ?? 600} s. Gitring stopped them.`
           : undefined;
   return {
     id: newId("cr"),

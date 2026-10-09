@@ -163,7 +163,7 @@ async function readTree(dir) {
 /** sample/bundle.json: the seed repo and the intents of the sample project, in one importable file. */
 export async function buildBundle(dir = SAMPLE_DIR, intents) {
   return {
-    schema: "bearing.sample/v1",
+    schema: "gitring.sample/v1",
     name: "Saltmarsh Books",
     repo: await readTree(path.join(dir, "repo")),
     intents,

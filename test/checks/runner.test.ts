@@ -33,7 +33,7 @@ describe("buildCheckModules", () => {
   });
 
   it("includes every .js/.mjs file under its repo path, and nothing else", () => {
-    const repoModules = Object.keys(built.modules).filter((name) => !name.startsWith("__bearing__/")).sort();
+    const repoModules = Object.keys(built.modules).filter((name) => !name.startsWith("__gitring__/")).sort();
     expect(repoModules).toEqual(["harness/test.js", "src/index.js", "src/products.js", "src/render.js", "src/styles.js", "tests/app.test.js", "tests/run.mjs"]);
     expect(built.modules["src/render.js"]).toBe(demo.seed["src/render.js"]);
   });
@@ -51,14 +51,14 @@ describe("buildCheckModules", () => {
       'import "./file-2.js";',
       'import "../tests/a.test.js";',
     ]);
-    expect(modules["__bearing__/file-0.js"]).toBe('import { __setFile } from "../harness/test.js";\n__setFile("tests/b.test.js");\n');
-    expect(modules["__bearing__/file-2.js"]).toContain('__setFile("tests/a.test.js")');
+    expect(modules["__gitring__/file-0.js"]).toBe('import { __setFile } from "../harness/test.js";\n__setFile("tests/b.test.js");\n');
+    expect(modules["__gitring__/file-2.js"]).toContain('__setFile("tests/a.test.js")');
   });
 
   it("skips absent test paths and duplicates", () => {
     const { modules } = buildCheckModules({ files: seed, testPaths: ["tests/app.test.js", "tests/nope.test.js", "tests/app.test.js"] });
     expect(modules[RUNNER_MODULE].match(/^import "\.\.\/tests\//gm)).toHaveLength(1);
-    expect(modules["__bearing__/file-1.js"]).toBeUndefined();
+    expect(modules["__gitring__/file-1.js"]).toBeUndefined();
   });
 
   it("injects the harness when the tree has none", () => {

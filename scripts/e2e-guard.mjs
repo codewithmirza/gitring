@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
  * End-to-end check of re-plot and the write guard, through MCP only (api mode), against a running
- * Bearing (local `npm run dev` or a deployed Worker). Exit code 1 when a check fails.
+ * Gitring (local `npm run dev` or a deployed Worker). Exit code 1 when a check fails.
  *
- *   BEARING_URL=https://<your-worker> BEARING_KEY=bk_… node scripts/e2e-guard.mjs
+ *   GITRING_URL=https://<your-worker> GITRING_KEY=gk_… node scripts/e2e-guard.mjs
  *
- * 1. A reads src/render.js. B changes the footer and lands. Bearing re-plots A onto the new main.
- *    A writes from its old copy: Bearing merges, so B's line stays. A writes again from the same copy:
+ * 1. A reads src/render.js. B changes the footer and lands. Gitring re-plots A onto the new main.
+ *    A writes from its old copy: Gitring merges, so B's line stays. A writes again from the same copy:
  *    B's line still stays. A write on the line next to B's line overlaps it: refused, read again.
- * 2. C and D change the same footer line. D lands. Bearing resets C's file to main (must read).
+ * 2. C and D change the same footer line. D lands. Gitring resets C's file to main (must read).
  *    C writes its old text: refused. C reads, writes again: accepted, and D's line stays.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import { authHeaders, base, projectFor } from "./lib/bearing.mjs";
+import { authHeaders, base, projectFor } from "./lib/gitring.mjs";
 
 const headers = authHeaders();
 const { id: project } = await projectFor("Guard check", headers);
@@ -38,11 +38,11 @@ async function call(name, args) {
 }
 const FOOT = "Ask at the counter for books that are not on the shelf.";
 async function declare(title, goal) {
-  const d = await call("bearing_declare", { newIntent: { title, goal }, plan: ["Edit the footer"], files: ["src/render.js"], approach: "One line in renderFooter.", mode: "api", agent: { client: "e2e" } });
+  const d = await call("gitring_declare", { newIntent: { title, goal }, plan: ["Edit the footer"], files: ["src/render.js"], approach: "One line in renderFooter.", mode: "api", agent: { client: "e2e" } });
   return d.json.attemptId;
 }
-const read = async (id) => (await call("bearing_read", { attemptId: id, path: "src/render.js" })).text;
-const write = async (id, content) => (await call("bearing_write", { attemptId: id, files: [{ path: "src/render.js", content }] })).json;
+const read = async (id) => (await call("gitring_read", { attemptId: id, path: "src/render.js" })).text;
+const write = async (id, content) => (await call("gitring_write", { attemptId: id, files: [{ path: "src/render.js", content }] })).json;
 async function landed(id) {
   for (let i = 0; i < 40; i++) {
     const st = await (await fetch(`${base}/api/projects/${project}/state`, { headers })).json();
@@ -52,7 +52,7 @@ async function landed(id) {
   throw new Error(`${id} did not land`);
 }
 const fileOnMain = async () => (await fetch(`${base}/api/projects/${project}/file?ref=main&path=src/render.js`, { headers })).text();
-/** The attempt's file as Bearing holds it (not a read by the agent: the agent's copy does not change). */
+/** The attempt's file as Gitring holds it (not a read by the agent: the agent's copy does not change). */
 const fileOf = async (id) => (await fetch(`${base}/api/projects/${project}/file?ref=${id}&path=src/render.js`, { headers })).text();
 
 // ── 1. merge a write from a stale copy, twice ──
@@ -61,7 +61,7 @@ const B = await declare("Footer: gift wrapping", "Say in the footer that gift wr
 const aCopy = await read(A);
 const bText = (await read(B)).replace(`<p>${FOOT}</p>`, `<p>${FOOT}</p>\n  <p>Gift wrapping is free.</p>`);
 await write(B, bText);
-await call("bearing_submit", { attemptId: B, summary: "Gift wrapping line." });
+await call("gitring_submit", { attemptId: B, summary: "Gift wrapping line." });
 await landed(B);
 ok((await fileOnMain()).includes("Gift wrapping is free."), "B landed its footer line on main");
 const aV1 = aCopy.replace("Open Tuesday to Sunday", "Open every day");
@@ -76,7 +76,7 @@ await write(A, aV2);
 now = await fileOf(A);
 ok(now.includes("since 1987, on the quay"), "A's second write applies");
 ok(now.includes("Gift wrapping is free."), "A's second write from its old copy keeps B's landed line");
-// A change on the line next to B's landed line overlaps it: Bearing refuses it and asks for a read.
+// A change on the line next to B's landed line overlaps it: Gitring refuses it and asks for a read.
 const aV3 = aV2.replace("Ask at the counter", "Please ask at the counter");
 const w3 = await write(A, aV3);
 ok(w3.refused?.length === 1 && (await fileOf(A)).includes("Gift wrapping is free."), "A's write next to B's line is refused (read again), B's line stays");
@@ -89,7 +89,7 @@ const cText = cCopy.replace("for books that are not on the shelf", "for any book
 await write(C, cText);
 const dText = (await read(D)).replace("for books that are not on the shelf", "and the bookseller orders it for you");
 await write(D, dText);
-const subD = await call("bearing_submit", { attemptId: D, summary: "Bookseller line." });
+const subD = await call("gitring_submit", { attemptId: D, summary: "Bookseller line." });
 if (subD.json?.next !== "landing-queue") console.log("D submit:", subD.json?.next, subD.json?.message);
 await landed(D);
 const st = await (await fetch(`${base}/api/projects/${project}/state`, { headers })).json();

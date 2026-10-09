@@ -1,11 +1,11 @@
 /**
- * The harbor store: one reducer over the BearingEvent stream from the live WebSocket.
+ * The harbor store: one reducer over the GitringEvent stream from the live WebSocket.
  *
  * Components read slices with useStore(selector). The reducer keeps references of
  * unchanged slices, so a component re-renders only when its slice changes.
  */
 import { useRef, useSyncExternalStore } from "react";
-import type { BearingEvent, ProjectState, RadarPair } from "../../../src/core/types";
+import type { GitringEvent, ProjectState, RadarPair } from "../../../src/core/types";
 import type { MeInfo, ProjectInfo, Role } from "../../../src/core/accounts";
 
 export type DataMode = "boot" | "live";
@@ -95,8 +95,8 @@ function capTail<T>(arr: T[], cap: number): T[] {
 
 const pairKey = (p: { a: string; b: string }) => (p.a < p.b ? `${p.a}|${p.b}` : `${p.b}|${p.a}`);
 
-/** Pure reducer: BearingEvent → ProjectState. Unchanged slices keep their references. */
-export function reduce(st: ProjectState, ev: BearingEvent): ProjectState {
+/** Pure reducer: GitringEvent → ProjectState. Unchanged slices keep their references. */
+export function reduce(st: ProjectState, ev: GitringEvent): ProjectState {
   switch (ev.type) {
     case "snapshot":
       return ev.state;
@@ -150,7 +150,7 @@ export const store = {
       listeners.delete(cb);
     };
   },
-  dispatch(ev: BearingEvent) {
+  dispatch(ev: GitringEvent) {
     const now = Date.now();
     if (ev.type === "snapshot") {
       set({ state: ev.state, events: snap.events + 1, lastEventAt: now, ripples: [], pulses: [] });

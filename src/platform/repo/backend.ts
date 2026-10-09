@@ -1,5 +1,5 @@
 /**
- * RepoBackend — the only way Bearing touches git storage.
+ * RepoBackend — the only way Gitring touches git storage.
  *
  * ArtifactsBackend is the implementation: the Cloudflare Artifacts binding for control-plane +
  * reads, isomorphic-git (in-memory, shallow) for writes, because `git push` is the only write path.
@@ -55,7 +55,7 @@ export interface CommitInput {
   changes: FileChange[];
   message: string;
   author: { name: string; email: string };
-  /** Optional git note attached to the new commit under refs/notes/bearing. */
+  /** Optional git note attached to the new commit under refs/notes/gitring. */
   note?: string;
 }
 
@@ -95,7 +95,7 @@ export interface RepoBackend {
 
   /** Create one commit on `branch` from `parent` plus `changes`. Compare-and-swap on the branch tip. */
   commit(input: CommitInput): Promise<CommitResult>;
-  /** Read the note for a commit under refs/notes/bearing, if any. */
+  /** Read the note for a commit under refs/notes/gitring, if any. */
   readNote(repo: string, commitSha: string): Promise<string | null>;
 
   /** Scoped token for an external git client (test doubles may return undefined). */

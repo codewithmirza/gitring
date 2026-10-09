@@ -1,5 +1,5 @@
 /**
- * Bearing icons. Drawn for Bearing: 16px grid, 1.5px stroke,
+ * Gitring icons. Drawn for Gitring: 16px grid, 1.5px stroke,
  * square caps, currentColor. No icon library.
  */
 import type { CSSProperties, ReactNode } from "react";
@@ -291,10 +291,10 @@ export function Hull({ hull, size = 16, heading = 0, color = "currentColor", tit
 /* ───────────── logo mark: compass rose ───────────── */
 
 /**
- * The Bearing mark. A four-point compass rose; each point has a filled half and an
+ * The Gitring mark. A four-point compass rose; each point has a filled half and an
  * open half, like the rose on a printed chart. The north half carries the accent.
  */
-export function Mark({ size = 20, title = "Bearing", accent = true }: { size?: number; title?: string; accent?: boolean }) {
+export function Mark({ size = 20, title = "Gitring", accent = true }: { size?: number; title?: string; accent?: boolean }) {
   const c = 16;
   const tip = 14.5;
   const w = 2.4;

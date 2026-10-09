@@ -21,7 +21,7 @@ describe("tar writer", () => {
       ["scripts/run.sh", "#!/bin/sh\necho ok\n"],
       ["empty.txt", ""],
     ]);
-    const dir = mkdtempSync(join(tmpdir(), "bearing-tar-"));
+    const dir = mkdtempSync(join(tmpdir(), "gitring-tar-"));
     const file = join(dir, "tree.tgz");
     writeFileSync(file, await packTree(files));
     const out = join(dir, "out");
@@ -40,7 +40,7 @@ describe("tar writer", () => {
       { path: "a//b.js", content: "x" },
       { path: "ok.js", content: "y" },
     ]);
-    const dir = mkdtempSync(join(tmpdir(), "bearing-tar-"));
+    const dir = mkdtempSync(join(tmpdir(), "gitring-tar-"));
     writeFileSync(join(dir, "t.tar"), bytes);
     expect(execFileSync("tar", ["-tf", join(dir, "t.tar")], { encoding: "utf8" }).trim()).toBe("ok.js");
   });
@@ -59,14 +59,14 @@ describe("tar writer", () => {
 
 describe("run script and result", () => {
   it("runs install then test, with markers, under bash", () => {
-    const dir = mkdtempSync(join(tmpdir(), "bearing-run-"));
+    const dir = mkdtempSync(join(tmpdir(), "gitring-run-"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "t", version: "1.0.0", scripts: { test: "node -e \"console.log('tests ran'); process.exit(0)\"" } }));
     // No lockfile and no dependencies: npm install is quick and offline.
     const script = runScript().replace("W=/workspace", `W=${dir}`).replaceAll("/cache", join(dir, ".cache"));
     let output = "";
     let code = 0;
     try {
-      output = execFileSync("bash", ["-c", script], { cwd: dir, encoding: "utf8", env: { ...process.env, BEARING_INSTALL: "true", BEARING_TEST: "" } });
+      output = execFileSync("bash", ["-c", script], { cwd: dir, encoding: "utf8", env: { ...process.env, GITRING_INSTALL: "true", GITRING_TEST: "" } });
     } catch (e) {
       const err = e as { status: number; stdout: string };
       code = err.status;
@@ -76,14 +76,14 @@ describe("run script and result", () => {
     expect(res.ok).toBe(true);
     expect(res.stage).toBe("done");
     expect(res.log).toContain("tests ran");
-    expect(res.log).not.toContain("@@bearing");
+    expect(res.log).not.toContain("@@gitring");
   });
 
   it("tells install failures, missing tests and timeouts apart", () => {
-    expect(parseRun("@@bearing stage=install\nnpm ERR! 404\n@@bearing install-failed=1\n", 91).stage).toBe("install");
-    expect(parseRun("@@bearing no-test\n", 92).stage).toBe("no-test");
+    expect(parseRun("@@gitring stage=install\nnpm ERR! 404\n@@gitring install-failed=1\n", 91).stage).toBe("install");
+    expect(parseRun("@@gitring no-test\n", 92).stage).toBe("no-test");
     expect(parseRun("…", 124).stage).toBe("timeout");
-    const failed = parseRun("@@bearing reused=1\n@@bearing install-ms=5\n✗ adds numbers\n@@bearing test-ms=40\n", 1);
+    const failed = parseRun("@@gitring reused=1\n@@gitring install-ms=5\n✗ adds numbers\n@@gitring test-ms=40\n", 1);
     expect(failed).toMatchObject({ ok: false, stage: "test", reused: true, installMs: 5, testMs: 40 });
     expect(failed.log).toContain("✗ adds numbers");
   });

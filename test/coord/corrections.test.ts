@@ -168,7 +168,7 @@ describe("draftCorrection", () => {
     const facts = buildPairFacts(se, dt, graph);
     const d = draftCorrection(se, dt, facts, "R4-first-declared-stands-on", "incoming");
     expect(d.message).toContain(
-      "SKUA-9 also changes header in src/render.js. Do not rewrite header. Keep your change to header small and in a separate block. Read bearing_traffic before you edit src/render.js.",
+      "SKUA-9 also changes header in src/render.js. Do not rewrite header. Keep your change to header small and in a separate block. Read gitring_traffic before you edit src/render.js.",
     );
     expectSTE(d.message);
   });
@@ -225,7 +225,7 @@ describe("other corrections", () => {
     expectSTE(d.message);
   });
 
-  it("re-plot: Bearing moved the work onto the new main and merged the landed change", () => {
+  it("re-plot: Gitring moved the work onto the new main and merged the landed change", () => {
     const d = draftReplotCorrection(
       staffPicksVessel(),
       {
@@ -237,7 +237,7 @@ describe("other corrections", () => {
     );
     expect(d.kind).toBe("upstream");
     expect(d.message).toBe(
-      'The intent "Add currency support" landed on main. Bearing moved your work onto the new main (8df749b). ' +
+      'The intent "Add currency support" landed on main. Gitring moved your work onto the new main (8df749b). ' +
         "Your copies of src/products.js now include the landed change. " +
         "formatPrice in src/products.js is now formatPrice(cents, currency). Call formatPrice(cents, currency) in src/render.js. " +
         "Read src/products.js again before your next edit. Continue your work.",
@@ -256,8 +256,8 @@ describe("other corrections", () => {
     );
     const [sentences, rest] = d.message.split("\n\n");
     expect(sentences).toBe(
-      'The intent "Mark staff picks" landed on main. Bearing moved your work onto the new main (c57540a). ' +
-        "Your change to src/render.js overlaps the landed change. Bearing kept the main version of src/render.js. " +
+      'The intent "Mark staff picks" landed on main. Gitring moved your work onto the new main (c57540a). ' +
+        "Your change to src/render.js overlaps the landed change. Gitring kept the main version of src/render.js. " +
         "Make your change again on the new text. Read src/render.js again before your next edit. Continue your work.",
     );
     expectSTE(sentences);

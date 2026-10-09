@@ -198,7 +198,7 @@ describe("prepareCommit", () => {
       base: new Map(),
       changes: [{ path: "README.md", content: "# hi\n" }, { path: "src/a.js", content: "a\n" }],
       parents: [],
-      author: { name: "Vessel", email: "v@bearing.dev" },
+      author: { name: "Vessel", email: "v@gitring.dev" },
       message: "First",
       timestamp: 1_760_000_000,
     });
@@ -207,10 +207,10 @@ describe("prepareCommit", () => {
     for (const body of p.trees.values()) git(["hash-object", "-w", "-t", "tree", "--stdin"], { cwd: work, input: body });
     const env = {
       GIT_AUTHOR_NAME: "Vessel",
-      GIT_AUTHOR_EMAIL: "v@bearing.dev",
+      GIT_AUTHOR_EMAIL: "v@gitring.dev",
       GIT_AUTHOR_DATE: "1760000000 +0000",
       GIT_COMMITTER_NAME: "Vessel",
-      GIT_COMMITTER_EMAIL: "v@bearing.dev",
+      GIT_COMMITTER_EMAIL: "v@gitring.dev",
       GIT_COMMITTER_DATE: "1760000000 +0000",
     };
     expect(git(["commit-tree", p.tree, "-m", "First"], { cwd: work, env })).toBe(p.sha);

@@ -6,7 +6,7 @@
   // ArtifactsBackend inside workerd: first start fake-artifacts-server.ts (see its header), then
   //   curl "localhost:8791/artifacts?rpc=http://127.0.0.1:8792"
   "$schema": "../../../node_modules/wrangler/config-schema.json",
-  "name": "bearing-emulator-probe",
+  "name": "gitring-emulator-probe",
   "main": "./index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],

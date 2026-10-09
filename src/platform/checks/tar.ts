@@ -1,5 +1,5 @@
 /**
- * A small tar writer (POSIX ustar + PAX for long or non-ASCII paths), so that Bearing can copy a tree
+ * A small tar writer (POSIX ustar + PAX for long or non-ASCII paths), so that Gitring can copy a tree
  * into a check container through `tar -x` on standard input. No dependencies; runs in Workers and Node.
  */
 
@@ -35,8 +35,8 @@ function header(name: string, size: number, mode: number, type: "0" | "x", mtime
   put(h, 156, type, 1);
   put(h, 257, "ustar\u0000", 6);
   put(h, 263, "00", 2);
-  put(h, 265, "bearing", 32);
-  put(h, 297, "bearing", 32);
+  put(h, 265, "gitring", 32);
+  put(h, 297, "gitring", 32);
   let sum = 0;
   for (const b of h) sum += b;
   put(h, 148, octal(sum, 7) + " ", 8);

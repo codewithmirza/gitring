@@ -1,12 +1,12 @@
 /**
- * Bearing — core domain types.
+ * Gitring — core domain types.
  *
  * Vocabulary:
  *   Intent      the source: a goal plus executable checks. Replaces issue + pull request.
  *   Attempt     one agent's work on one intent, in its own Artifacts fork. Replaces branch / worktree.
  *   Course      what an agent declares BEFORE it writes code: plan, files, symbols.
  *   Footprint   what an agent actually touched (from real diffs).
- *   Course check  Bearing's collision assessment of a course against all traffic.
+ *   Course check  Gitring's collision assessment of a course against all traffic.
  *   Correction  an amendment to an agent's brief. The agent keeps working. Replaces "rejected / conflict".
  *   Landing     integration into main via the landing ladder (fast-forward → merge → re-derive).
  *   Logbook     the "why" record: intent, course, corrections, checks, decision (git notes).
@@ -22,7 +22,7 @@ export type ActorKind = "human" | "agent" | "system";
 
 export interface Actor {
   kind: ActorKind;
-  /** Human: a display name. Agent: the agent id. System: "bearing". */
+  /** Human: a display name. Agent: the agent id. System: "gitring". */
   id: string;
   name: string;
 }
@@ -53,19 +53,19 @@ export interface ProjectSettings {
   decisionModel: "clef" | "clef-flash" | "rules";
   /** Models for built-in agents, used round-robin. */
   agentModels: string[];
-  /** Write `.bearing/intents/<slug>.md` into the repo when an intent lands. */
+  /** Write `.gitring/intents/<slug>.md` into the repo when an intent lands. */
   intentsInRepo: boolean;
   /** Probability thresholds for the course-check policy. */
   thresholds: PolicyThresholds;
   /** Outbound webhooks (Slack, CI, mirrors). */
   webhooks: WebhookTarget[];
-  /** How Bearing runs checks. Absent: the Bearing test harness in a Dynamic Worker (the sample). */
+  /** How Gitring runs checks. Absent: the Gitring test harness in a Dynamic Worker (the sample). */
   checks?: CheckSettings;
 }
 
 /**
  * Check runners:
- *   worker     Bearing's test harness in a Dynamic Worker: tests/*.test.js, no dependencies, no network (fast).
+ *   worker     Gitring's test harness in a Dynamic Worker: tests/*.test.js, no dependencies, no network (fast).
  *   container  A Linux container (Cloudflare Containers, Node.js 24): the install command, then the test command.
  *              Network in the container reaches package registries only.
  */
@@ -93,7 +93,7 @@ export interface PolicyThresholds {
 export interface WebhookTarget {
   id: string;
   url: string;
-  events: BearingEventType[];
+  events: GitringEventType[];
   /** "slack" formats a Slack message; "json" posts the raw event. */
   format: "json" | "slack";
   enabled: boolean;
@@ -120,7 +120,7 @@ export interface Project {
   /** The Directory user who created the project (budget and default owner). */
   ownerId?: string;
   /**
-   * Set while main is empty: Artifacts imports the repository (git), or Bearing waits for the owner's
+   * Set while main is empty: Artifacts imports the repository (git), or Gitring waits for the owner's
    * first `git push` (push). Main fills when it is done.
    */
   importing?: { url: string; startedAt: Millis; error?: string; push?: boolean; tokenIds?: string[] };
@@ -142,7 +142,7 @@ export interface CheckSpec {
   id: string;
   /** Repo-relative path of the test file, for example `tests/dark-mode.test.js`. */
   path: string;
-  /** Test source. Bearing writes it into each attempt's working tree. */
+  /** Test source. Gitring writes it into each attempt's working tree. */
   content: string;
   description: string;
 }
@@ -302,7 +302,7 @@ export interface Attempt {
   intentId: string;
   agentId: string;
   fork: { repo: string; remote?: string };
-  /** "api": Bearing holds the working tree (MCP read/write). "git": the agent pushes to the fork. */
+  /** "api": Gitring holds the working tree (MCP read/write). "git": the agent pushes to the fork. */
   mode: "api" | "git";
   baseSha: string;
   baseTree: string;
@@ -317,7 +317,7 @@ export interface Attempt {
   lineage: { generation: number; rederivedFrom?: string };
   /** Set when main moved and some files of a waiting attempt overlap the landed change: landing re-derives them. */
   drift?: { mainSha: string; overlaps: string[] };
-  /** Built-in agents only: the hourly AI budget is used, so the agent starts at this time (Bearing retries then). */
+  /** Built-in agents only: the hourly AI budget is used, so the agent starts at this time (Gitring retries then). */
   waitsForBudget?: Millis;
   summary?: string;
   stats: { filesChanged: number; additions: number; deletions: number; steps: number; tokens?: number };
@@ -422,14 +422,14 @@ export interface Correction {
     avoidRegions?: { path: string; lines: LineRange }[];
     useSignatures?: { symbol: SymbolKey; signature: string }[];
     notes?: string[];
-    /** Files to change again on the new main: Bearing kept the main version; the diff is the agent's earlier change. */
+    /** Files to change again on the new main: Gitring kept the main version; the diff is the agent's earlier change. */
     reapply?: { path: string; diff: string }[];
-    /** Set when Bearing moved the work onto a new main (re-plot). */
+    /** Set when Gitring moved the work onto a new main (re-plot). */
     replot?: { mainSha: string };
   };
   checkId: string;
   status: "pending" | "delivered" | "acknowledged" | "superseded";
-  /** Severity of the situation when issued (higher = closer / more overlap). Bearing re-sends only when it grows. */
+  /** Severity of the situation when issued (higher = closer / more overlap). Gitring re-sends only when it grows. */
   severity?: number;
   /** How many times the advice was refreshed in place without a new delivery. */
   refreshes?: number;
@@ -483,7 +483,7 @@ export interface Landing {
   checks: CheckRun;
   correctionsApplied: number;
   at: Millis;
-  /** Commit message (with Bearing trailers). */
+  /** Commit message (with Gitring trailers). */
   message: string;
 }
 
@@ -571,7 +571,7 @@ export interface HarborStats {
   landings: number;
   landedByMethod: Record<LandingMethod, number>;
   rederives: number;
-  /** Times Bearing moved in-flight work onto a new main (re-plot). */
+  /** Times Gitring moved in-flight work onto a new main (re-plot). */
   replots?: number;
   humanMergeFixes: number; // the number we keep at zero
   medianCheckLatencyMs: number;
@@ -592,9 +592,9 @@ export interface SimStats {
   p99CheckMs: number;
   startedAt?: Millis;
   elapsedMs: number;
-  /** Course checks on (Bearing) or off (baseline). */
+  /** Course checks on (Gitring) or off (baseline). */
   coordinate?: boolean;
-  /** Conflicts at landing per landing, with Bearing. */
+  /** Conflicts at landing per landing, with Gitring. */
   conflictRate?: number;
   /** Conflicts at landing per landing in a baseline shard with no course checks. */
   baselineConflictRate?: number;
@@ -605,7 +605,7 @@ export interface SimStats {
   totalLandings?: number;
 }
 
-export type BearingEventType =
+export type GitringEventType =
   | "snapshot"
   | "intent"
   | "attempt"
@@ -620,7 +620,7 @@ export type BearingEventType =
   | "stats"
   | "sim";
 
-export type BearingEvent =
+export type GitringEvent =
   | { type: "snapshot"; state: ProjectState }
   | { type: "intent"; intent: Intent }
   | { type: "attempt"; attempt: Attempt }
@@ -638,7 +638,7 @@ export type BearingEvent =
 /* ───────────────────────────── agent protocol (MCP + built-in vessels) ───────────────────────────── */
 
 export interface AgentIdentity {
-  /** Stable id from the client if it has one; Bearing creates one if absent. */
+  /** Stable id from the client if it has one; Gitring creates one if absent. */
   id?: string;
   name?: string;
   client?: string;
@@ -650,13 +650,13 @@ export interface DeclareInput {
   agent: AgentIdentity;
   /** Join an existing intent… */
   intentId?: string;
-  /** …or bring a new intent (Bearing creates it, then checks for duplicates). */
+  /** …or bring a new intent (Gitring creates it, then checks for duplicates). */
   newIntent?: { title: string; goal: string };
   plan: string[];
   files: string[];
   symbols: string[];
   approach: string;
-  /** "git" asks for a fork remote + token; "api" uses bearing_read / bearing_write. */
+  /** "git" asks for a fork remote + token; "api" uses gitring_read / gitring_write. */
   mode?: "api" | "git";
 }
 
@@ -692,7 +692,7 @@ export interface DeclareResult {
     tokenExpiresAt?: string;
   };
   clearance: Clearance;
-  /** How to work with Bearing (short protocol reminder). */
+  /** How to work with Gitring (short protocol reminder). */
   protocol: string[];
 }
 
@@ -713,9 +713,9 @@ export interface WriteInput {
 
 export interface WriteResult {
   written: string[];
-  /** Files that changed under the agent after its last read (main moved). Bearing merged the write with those changes. */
+  /** Files that changed under the agent after its last read (main moved). Gitring merged the write with those changes. */
   merged?: string[];
-  /** Files that Bearing did not write: the write overlaps changes that the agent did not read yet. */
+  /** Files that Gitring did not write: the write overlaps changes that the agent did not read yet. */
   refused?: { path: string; reason: string }[];
   footprint: { files: string[]; symbols: SymbolKey[] };
   clearance: Clearance;

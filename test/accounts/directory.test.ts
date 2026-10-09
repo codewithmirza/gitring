@@ -8,7 +8,7 @@ import { Directory } from "../../src/directory/directory";
 import type { Env } from "../../src/worker/env";
 import { sqliteCtx } from "../support/sqlite-storage";
 
-const ORIGIN = "https://bearing.example.workers.dev";
+const ORIGIN = "https://gitring.example.workers.dev";
 
 type Fake = { status?: number; json: unknown };
 let routes: Record<string, Fake | ((init?: RequestInit) => Fake)> = {};
@@ -31,7 +31,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function make(env: Partial<Env> = {}) {
   const ctx = sqliteCtx();
-  const dir = new Directory(ctx as never, { BEARING_SECRET: "test-secret-0123456789abcdef", ...env } as Env);
+  const dir = new Directory(ctx as never, { GITRING_SECRET: "test-secret-0123456789abcdef", ...env } as Env);
   return dir;
 }
 
@@ -41,7 +41,7 @@ function stateOf(url: string): string {
 
 async function withGithubApp(dir: Directory) {
   routes["https://api.github.com/app-manifests/"] = {
-    json: { id: 42, slug: "bearing-test", client_id: "Iv1.abc", client_secret: "shh", webhook_secret: "whsec", pem: "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----", html_url: "https://github.com/apps/bearing-test", owner: { login: "robin" } },
+    json: { id: 42, slug: "gitring-test", client_id: "Iv1.abc", client_secret: "shh", webhook_secret: "whsec", pem: "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----", html_url: "https://github.com/apps/gitring-test", owner: { login: "robin" } },
   };
   const m = await dir.githubManifest(ORIGIN);
   await dir.githubManifestDone("code-1", stateOf(m.postUrl));
@@ -62,7 +62,7 @@ async function googleSignIn(dir: Directory, p: { sub: string; email: string; ver
 }
 
 describe("GitHub App setup and sign-in", () => {
-  it("creates the app from a manifest with Bearing's URLs and seals the credentials", async () => {
+  it("creates the app from a manifest with Gitring's URLs and seals the credentials", async () => {
     const dir = make();
     const m = await dir.githubManifest(ORIGIN);
     const manifest = JSON.parse(m.manifest);
@@ -73,13 +73,37 @@ describe("GitHub App setup and sign-in", () => {
     expect(manifest.default_permissions).toEqual({ contents: "write", issues: "read", metadata: "read" });
     expect((await dir.providers()).github).toBeNull();
 
-    routes["https://api.github.com/app-manifests/"] = { json: { id: 7, slug: "bearing-x", client_id: "Iv1.c", client_secret: "s", webhook_secret: "w", pem: "p", html_url: "https://github.com/apps/bearing-x" } };
+    routes["https://api.github.com/app-manifests/"] = { json: { id: 7, slug: "gitring-x", client_id: "Iv1.c", client_secret: "s", webhook_secret: "w", pem: "p", html_url: "https://github.com/apps/gitring-x" } };
     await dir.githubManifestDone("abc", stateOf(m.postUrl));
     expect(calls.at(-1)!.url).toBe("https://api.github.com/app-manifests/abc/conversions");
     const providers = await dir.providers();
-    expect(providers.github).toEqual({ slug: "bearing-x", appId: 7, htmlUrl: "https://github.com/apps/bearing-x", installUrl: "https://github.com/apps/bearing-x/installations/new" });
+    expect(providers.github).toEqual({ slug: "gitring-x", appId: 7, htmlUrl: "https://github.com/apps/gitring-x", installUrl: "https://github.com/apps/gitring-x/installations/new" });
     // A state works once.
     await expect(dir.githubManifestDone("abc", stateOf(m.postUrl))).rejects.toThrow(/expired or was used/);
+  });
+
+  it("lets the browser convert the code when GitHub refuses the Worker (429), and checks the key", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const pem = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs1", format: "pem" }).toString();
+    const dir = make();
+    const m = await dir.githubManifest(ORIGIN);
+    const state = stateOf(m.postUrl);
+    routes["https://api.github.com/app-manifests/"] = { status: 429, json: { message: "rate limited" } };
+    expect(await dir.githubManifestDone("code-x", state)).toEqual({ browser: true });
+
+    const app = { id: 99, slug: "gitring-x", client_id: "Iv1.z", client_secret: "s", webhook_secret: "w", pem, html_url: "https://github.com/apps/gitring-x" };
+    // A key of another app is refused.
+    routes["https://api.github.com/app"] = { json: { id: 7, slug: "other" } };
+    await expect(dir.githubAppSave(state, app)).rejects.toThrow(/another app/);
+    // The state is used up by a save attempt: start again from the setup page.
+    const m2 = await dir.githubManifest(ORIGIN);
+    routes["https://api.github.com/app"] = (init) => {
+      const auth = String((init?.headers as Record<string, string>)?.Authorization ?? "");
+      return auth.startsWith("Bearer ey") ? { json: { id: 99, slug: "gitring-x" } } : { status: 401, json: {} };
+    };
+    expect(await dir.githubAppSave(stateOf(m2.postUrl), app)).toEqual({ slug: "gitring-x", htmlUrl: "https://github.com/apps/gitring-x" });
+    expect((await dir.providers()).github?.slug).toBe("gitring-x");
+    await expect(dir.githubAppSave(stateOf(m2.postUrl), app)).rejects.toThrow(/expired or was used/);
   });
 
   it("signs in with GitHub, opens a session and ends it", async () => {
@@ -146,10 +170,10 @@ describe("API keys", () => {
     await withGithubApp(dir);
     const { user } = await githubSignIn(dir, { id: 3, login: "kim" });
     const { key, info } = await dir.createKey(user.id, "claude code");
-    expect(key).toMatch(/^bk_[A-Za-z0-9_-]{40}$/);
+    expect(key).toMatch(/^gk_[A-Za-z0-9_-]{40}$/);
     expect(info.prefix).toBe(key.slice(0, 10));
     expect((await dir.keyUser(key))?.id).toBe(user.id);
-    expect(await dir.keyUser("bk_wrong")).toBeNull();
+    expect(await dir.keyUser("gk_wrong")).toBeNull();
     expect((await dir.listKeys(user.id)).map((k) => k.name)).toEqual(["claude code"]);
     const raw = JSON.stringify((dir as unknown as { sql: { exec(q: string): { toArray(): unknown[] } } }).sql.exec("SELECT * FROM api_keys").toArray());
     expect(raw).not.toContain(key);
@@ -208,8 +232,8 @@ describe("projects and roles", () => {
     expect(await dir.role(p.id, sam.id)).toBeNull();
   });
 
-  it("gives deployment owners (BEARING_OWNERS) the owner role everywhere", async () => {
-    const dir = make({ BEARING_OWNERS: "github:Boss, google:admin@example.com" });
+  it("gives deployment owners (GITRING_OWNERS) the owner role everywhere", async () => {
+    const dir = make({ GITRING_OWNERS: "github:Boss, google:admin@example.com" });
     await withGithubApp(dir);
     const { user: robin } = await githubSignIn(dir, { id: 30, login: "robin" });
     const { user: boss } = await githubSignIn(dir, { id: 31, login: "boss" });
@@ -220,11 +244,11 @@ describe("projects and roles", () => {
   });
 
   it("lets the operator key make projects that no person owns", async () => {
-    const dir = make({ BEARING_OWNERS: "github:boss" });
+    const dir = make({ GITRING_OWNERS: "github:boss" });
     await withGithubApp(dir);
     const p = await dir.createProject({ name: "Scenario run", source: { kind: "sample" }, ownerId: null });
     expect(p.role).toBe("owner");
-    expect(p.ownerName).toBe("Bearing");
+    expect(p.ownerName).toBe("Gitring");
     const { user: robin } = await githubSignIn(dir, { id: 60, login: "robin" });
     const { user: boss } = await githubSignIn(dir, { id: 61, login: "boss" });
     expect(await dir.role(p.id, robin.id)).toBeNull();

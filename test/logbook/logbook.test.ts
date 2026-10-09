@@ -65,16 +65,16 @@ describe("landingMessage", () => {
     expect(subject).toBe("Add currency support");
     expect(blank).toBe("");
     expect(msg).toContain("formatPrice takes a currency code. The list shows prices in USD by\ndefault.");
-    expect(msg).toContain("\n\nLanded by HERON-3 with merge. Generation 1.\nCorrections: 1. Checks: 7/7 pass.\n\nBearing-Intent:");
+    expect(msg).toContain("\n\nLanded by HERON-3 with merge. Generation 1.\nCorrections: 1. Checks: 7/7 pass.\n\nGitring-Intent:");
     expect(parseTrailers(msg)).toEqual({
-      "Bearing-Intent": "int_currency",
-      "Bearing-Attempt": "att_currency",
-      "Bearing-Agent": "HERON-3 (agt_heron)",
-      "Bearing-Model": "@cf/zai-org/glm-5.3-flash",
-      "Bearing-Method": "merge",
-      "Bearing-Corrections": "1",
-      "Bearing-Checks": "7/7 pass",
-      "Bearing-Generation": "1",
+      "Gitring-Intent": "int_currency",
+      "Gitring-Attempt": "att_currency",
+      "Gitring-Agent": "HERON-3 (agt_heron)",
+      "Gitring-Model": "@cf/zai-org/glm-5.3-flash",
+      "Gitring-Method": "merge",
+      "Gitring-Corrections": "1",
+      "Gitring-Checks": "7/7 pass",
+      "Gitring-Generation": "1",
     });
     for (const line of msg.split("\n")) expect(line.length).toBeLessThanOrEqual(72);
   });
@@ -90,11 +90,11 @@ describe("landingMessage", () => {
     expect(msg).toContain("Generation 2 (re-derived from att_old).");
     expect(msg).not.toContain("Second paragraph");
     const t = parseTrailers(msg);
-    expect(t["Bearing-Generation"]).toBe("2");
-    expect(t["Bearing-Method"]).toBe("rederive");
-    expect(t["Bearing-Model"]).toBe("claude-code");
-    expect(t["Bearing-Checks"]).toBe("5/7 pass");
-    expect(t["Bearing-Corrections"]).toBe("0");
+    expect(t["Gitring-Generation"]).toBe("2");
+    expect(t["Gitring-Method"]).toBe("rederive");
+    expect(t["Gitring-Model"]).toBe("claude-code");
+    expect(t["Gitring-Checks"]).toBe("5/7 pass");
+    expect(t["Gitring-Corrections"]).toBe("0");
   });
 });
 
@@ -107,10 +107,10 @@ describe("parseTrailers", () => {
 });
 
 describe("landingNote", () => {
-  it("is pretty JSON with schema bearing.logbook/v1 and the full why-record", () => {
+  it("is pretty JSON with schema gitring.logbook/v1 and the full why-record", () => {
     const attempt = currencyVessel().attempt;
     const text = landingNote({ intent: intents.currency, attempt, agent: agents.heron, method: "merge", corrections: [correction], courseChecks: [courseCheck], checks, decision });
-    expect(text).toContain('\n  "schema": "bearing.logbook/v1"');
+    expect(text).toContain('\n  "schema": "gitring.logbook/v1"');
     const note = JSON.parse(text);
     expect(note.schema).toBe(LOGBOOK_SCHEMA);
     expect(note.intent).toEqual({ id: "int_currency", title: "Add currency support", goal: intents.currency.goal, constraints: [], version: 1, amendments: [] });
@@ -147,7 +147,7 @@ describe("landingNote", () => {
 });
 
 describe("intentFile", () => {
-  it("writes .bearing/intents/<slug>.md with YAML front matter", () => {
+  it("writes .gitring/intents/<slug>.md with YAML front matter", () => {
     const intent = {
       ...intents.currency,
       version: 2,
@@ -155,7 +155,7 @@ describe("intentFile", () => {
       amendments: [{ version: 2, at: T0, by: { kind: "human" as const, id: "robin", name: "Robin" }, reason: "Correction from HERON-3", text: "Default to USD." }],
     };
     const file = intentFile(intent, { sha: "d".repeat(40), attemptId: "att_currency", agent: agents.heron, method: "merge" });
-    expect(file.path).toBe(".bearing/intents/add-currency-support.md");
+    expect(file.path).toBe(".gitring/intents/add-currency-support.md");
     const [, front, body] = file.content.split(/^---$/m);
     expect(front.trim().split("\n")).toEqual([
       'id: "int_currency"',
@@ -177,7 +177,7 @@ describe("intentFile", () => {
 
   it("quotes titles safely in YAML", () => {
     const file = intentFile(makeIntent("int_q", 'Fix "quotes": and #hashes', "Goal."), { attemptId: "a", agent: agents.kestrel, method: "fast-forward" });
-    expect(file.path).toBe(".bearing/intents/fix-quotes-and-hashes.md");
+    expect(file.path).toBe(".gitring/intents/fix-quotes-and-hashes.md");
     expect(file.content).toContain('title: "Fix \\"quotes\\": and #hashes"');
     expect(file.content).not.toContain("sha:");
   });

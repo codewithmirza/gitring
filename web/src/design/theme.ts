@@ -11,7 +11,7 @@ export const THEMES: { id: Theme; label: string; help: string }[] = [
   { id: "night", label: "Night", help: "Dark" },
 ];
 
-const KEY = "bearing.theme";
+const KEY = "gitring.theme";
 const listeners = new Set<() => void>();
 
 function isTheme(v: unknown): v is Theme {

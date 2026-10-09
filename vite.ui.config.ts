@@ -1,16 +1,16 @@
 /**
- * UI-only dev config for the Bearing web app (owner: web UI).
+ * UI-only dev config for the Gitring web app (owner: web UI).
  *
  *   npx vite --config vite.ui.config.ts --port 5182 --host 127.0.0.1
  *
- * The UI talks to a running Bearing Worker. Set BEARING_API to its origin (local or deployed):
+ * The UI talks to a running Gitring Worker. Set GITRING_API to its origin (local or deployed):
  *
- *   BEARING_API=http://127.0.0.1:8787 npx vite --config vite.ui.config.ts
+ *   GITRING_API=http://127.0.0.1:8787 npx vite --config vite.ui.config.ts
  */
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const api = process.env.BEARING_API;
+const api = process.env.GITRING_API;
 
 export default defineConfig({
   root: ".",

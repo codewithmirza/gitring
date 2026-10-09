@@ -26,7 +26,7 @@ describe("sealed values", () => {
   });
 
   it("needs a secret of at least 16 characters", async () => {
-    await expect(seal("short", {})).rejects.toThrow(/BEARING_SECRET/);
+    await expect(seal("short", {})).rejects.toThrow(/GITRING_SECRET/);
   });
 });
 

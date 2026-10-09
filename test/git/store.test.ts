@@ -52,7 +52,7 @@ export function sqliteStorage(): SqlStorageLike & { close(): void } {
 }
 
 const T0 = 1_760_000_000_000;
-const author = { name: "Kestrel", email: "kestrel@bearing.dev" };
+const author = { name: "Kestrel", email: "kestrel@gitring.dev" };
 
 function makeStores(): [string, () => ObjectStore][] {
   return [
@@ -113,7 +113,7 @@ describe.each(makeStores())("GitStore over %s", (_label, makeStore) => {
       repo: "demo",
       branch: "main",
       parent: c1.sha,
-      message: "Change render\n\nBearing-Intent: int_1\n",
+      message: "Change render\n\nGitring-Intent: int_1\n",
       author,
       changes: [
         { path: "src/render.js", content: "export const render = (x) => x;\n" },
@@ -125,7 +125,7 @@ describe.each(makeStores())("GitStore over %s", (_label, makeStore) => {
     expect(log[0]).toMatchObject({
       treeHash: c2.tree,
       parents: [c1.sha],
-      message: "Change render\n\nBearing-Intent: int_1",
+      message: "Change render\n\nGitring-Intent: int_1",
       author,
       committer: author,
       authoredAt: (T0 + 3000) / 1000, // the clock ticks for ensureRepo, commit 1, commit 2
@@ -194,13 +194,13 @@ describe.each(makeStores())("GitStore over %s", (_label, makeStore) => {
   it("fork copies the default branch only; forks diverge independently; notes stay per repo", async () => {
     const { git: g } = fresh();
     await g.ensureRepo("canon");
-    const c1 = await g.commit({ repo: "canon", branch: "main", parent: "", message: "1", author, changes: [{ path: "a", content: "1" }], note: '{"schema":"bearing.logbook/v1"}' });
+    const c1 = await g.commit({ repo: "canon", branch: "main", parent: "", message: "1", author, changes: [{ path: "a", content: "1" }], note: '{"schema":"gitring.logbook/v1"}' });
     await g.commit({ repo: "canon", branch: "side", parent: "", message: "side", author, changes: [{ path: "s", content: "s" }] });
 
     const fork = await g.fork("canon", "att-1", { description: "attempt 1" });
     expect(fork).toEqual({ name: "att-1", defaultBranch: "main" });
     expect(await g.listRefs("att-1")).toEqual({ "refs/heads/main": c1.sha });
-    expect(await g.readNote("canon", c1.sha)).toBe('{"schema":"bearing.logbook/v1"}');
+    expect(await g.readNote("canon", c1.sha)).toBe('{"schema":"gitring.logbook/v1"}');
     expect(await g.readNote("att-1", c1.sha)).toBeNull(); // notes are not copied (defaultBranchOnly)
 
     const f2 = await g.commit({ repo: "att-1", branch: "main", parent: c1.sha, message: "work", author, changes: [{ path: "b", content: "b" }] });

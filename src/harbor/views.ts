@@ -171,10 +171,10 @@ export function trafficVessel(
 
 export function adviceFor(verdict: Verdict | undefined, newCorrections: number, traffic: TrafficVessel[]): string {
   if (newCorrections > 0) {
-    return `You have ${newCorrections} new correction${newCorrections > 1 ? "s" : ""}. Apply ${newCorrections > 1 ? "them" : "it"}, then call bearing_ack. Continue your work.`;
+    return `You have ${newCorrections} new correction${newCorrections > 1 ? "s" : ""}. Apply ${newCorrections > 1 ? "them" : "it"}, then call gitring_ack. Continue your work.`;
   }
   const close = traffic.filter((t) => t.range <= 2);
-  if (verdict === "escalate") return "A human reviews a risk on your course. Continue your work. Bearing tells you if the course changes.";
+  if (verdict === "escalate") return "A human reviews a risk on your course. Continue your work. Gitring tells you if the course changes.";
   if (close.length) return `Course clear. ${close.length} vessel${close.length > 1 ? "s" : ""} work near you. Read their context in traffic before you edit shared files.`;
   return "Course clear. Continue your work.";
 }
@@ -200,11 +200,11 @@ export function median(xs: number[]): number {
 }
 
 export const PROTOCOL = [
-  "Call bearing_log after each meaningful step. Name the files you touch.",
-  "Read every correction in a response. Apply it, then call bearing_ack. Continue your work.",
-  "Write files with bearing_write (api mode) or git push to your fork (git mode), then call bearing_log with headSha.",
-  "Call bearing_check before bearing_submit. Do not edit check files of other intents.",
-  "Read bearing_traffic when you plan to edit a shared file.",
+  "Call gitring_log after each meaningful step. Name the files you touch.",
+  "Read every correction in a response. Apply it, then call gitring_ack. Continue your work.",
+  "Write files with gitring_write (api mode) or git push to your fork (git mode), then call gitring_log with headSha.",
+  "Call gitring_check before gitring_submit. Do not edit check files of other intents.",
+  "Read gitring_traffic when you plan to edit a shared file.",
 ];
 
 /** ASD-STE100 friendly short reason for check failures. */

@@ -3,7 +3,7 @@
  *
  * The page is served under a path prefix (basePath), for example /preview/demo/a_123/. servePreview
  * strips the prefix, keeps the query, forwards the request to the app's default export, and marks
- * the response with "x-bearing-preview: <key>". The app has no network (globalOutbound: null).
+ * the response with "x-gitring-preview: <key>". The app has no network (globalOutbound: null).
  * Apps must use relative links, so that they work under the prefix.
  */
 import { isModulePath, toLoaderModules } from "./runner";
@@ -13,7 +13,7 @@ export interface PreviewOptions {
   timeoutMs?: number;
   /**
    * Serve the app with "Content-Security-Policy: sandbox …", so that its scripts run in an opaque
-   * origin and cannot use the cookies or storage of the Bearing origin. Default false: in a sandbox,
+   * origin and cannot use the cookies or storage of the Gitring origin. Default false: in a sandbox,
    * localStorage throws and the parent page cannot read the frame location.
    */
   sandbox?: boolean;
@@ -21,11 +21,11 @@ export interface PreviewOptions {
 
 export const PREVIEW_COMPATIBILITY_DATE = "2026-10-01";
 export const PREVIEW_MAIN_MODULE = "src/index.js";
-export const PREVIEW_HEADER = "x-bearing-preview";
+export const PREVIEW_HEADER = "x-gitring-preview";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const PREVIEW_CPU_MS = 5_000;
-/** Credentials of the Bearing origin never go to agent code. */
+/** Credentials of the Gitring origin never go to agent code. */
 const STRIPPED_REQUEST_HEADERS = ["cookie", "authorization"];
 const SANDBOX_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads";
 

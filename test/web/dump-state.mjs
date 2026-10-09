@@ -5,7 +5,7 @@ const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromi
 const page = await browser.newPage();
 await page.goto("http://127.0.0.1:5182/?mock=1&t=80&freeze=1", { waitUntil: "networkidle" });
 await page.waitForTimeout(800);
-const st = await page.evaluate(() => JSON.stringify(window.__bearing.store.get().state));
+const st = await page.evaluate(() => JSON.stringify(window.__gitring.store.get().state));
 writeFileSync(process.argv[2], st);
 console.log("bytes", st.length);
 await browser.close();

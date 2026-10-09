@@ -42,7 +42,7 @@ function sourceText(i: Intent): string {
   const ref = i.source.ref ?? "";
   if (ref.startsWith("github")) return `GitHub issue ${ref.split("#")[1] ? "#" + ref.split("#")[1] : ""}`.trim();
   if (ref.startsWith("linear")) return `Linear ${ref.split(":")[1] ?? ""}`.trim();
-  if (ref.startsWith("slack")) return "Slack /bearing";
+  if (ref.startsWith("slack")) return "Slack /gitring";
   return SOURCE_TEXT[i.source.kind];
 }
 
@@ -158,7 +158,7 @@ function AmendDialog({ intent, open, onClose }: { intent: Intent; open: boolean;
       onClose={onClose}
       size="lg"
       title="Amend intent"
-      description={`v${intent.version} → v${intent.version + 1}. Bearing keeps every version. Active attempts get the change as a correction.`}
+      description={`v${intent.version} → v${intent.version + 1}. Gitring keeps every version. Active attempts get the change as a correction.`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -302,12 +302,12 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
           )}
           <span className="ink-3">base {shortSha(a.baseSha)}</span>
         </div>
-        {alternate && <p className="lane__note">Alternate. Bearing keeps it with its preview and its diff.</p>}
+        {alternate && <p className="lane__note">Alternate. Gitring keeps it with its preview and its diff.</p>}
         {a.drift && !landed && !alternate && (
           <p className="lane__note lane__note--drift">
             <Icon name="rederive" size={14} />
             Main moved to <span className="voice-agent">{shortSha(a.drift.mainSha)}</span>. {a.drift.overlaps.join(", ")} overlap{a.drift.overlaps.length > 1 ? "" : "s"} the
-            landed change. If you pick this attempt, Bearing re-derives it on the new main.
+            landed change. If you pick this attempt, Gitring re-derives it on the new main.
           </p>
         )}
         {landed && landing && (
@@ -541,10 +541,10 @@ function IntentDetail({ intent }: { intent: Intent }) {
               : intent.status === "landed"
                 ? pick
                   ? `${pick.by.name} picked ${names(pick.attemptIds[0])}: “${pick.rationale}”`
-                  : "Bearing landed the attempt that passed its checks. Alternates stay below."
+                  : "Gitring landed the attempt that passed its checks. Alternates stay below."
                 : n === 0
                   ? "No attempts yet. Launch 1 to 4 attempts. Each runs in its own fork."
-                  : "Attempts run in their own forks. Bearing checks every course against all traffic."}
+                  : "Attempts run in their own forks. Gitring checks every course against all traffic."}
           </p>
         </div>
         {n === 0 ? (
@@ -582,7 +582,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
         open={park}
         onClose={() => setPark(false)}
         title="Park intent"
-        description="Parking stops all attempts of this intent. Bearing keeps them as alternates. You can open a new intent later."
+        description="Parking stops all attempts of this intent. Gitring keeps them as alternates. You can open a new intent later."
         label="Reason"
         placeholder="The shop does not sell enough books for a search yet."
         action="Park intent"
@@ -596,7 +596,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
         open={Boolean(landing)}
         onClose={() => setLanding(null)}
         title={`Land ${landing ? names(landing.id) : ""}`}
-        description={`Bearing composes the attempt with main ${shortSha(mainSha)}, runs every landed check, then lands it. ${
+        description={`Gitring composes the attempt with main ${shortSha(mainSha)}, runs every landed check, then lands it. ${
           n > 1 ? "The other attempts stay as alternates." : ""
         }`}
         label="Why this attempt?"

@@ -50,7 +50,7 @@ export async function hmacSha256Hex(secret: string, data: string): Promise<strin
   return [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/* ───────────── sealed values (AES-GCM, key from BEARING_SECRET via HKDF) ───────────── */
+/* ───────────── sealed values (AES-GCM, key from GITRING_SECRET via HKDF) ───────────── */
 
 const keyCache = new Map<string, Promise<CryptoKey>>();
 
@@ -61,7 +61,7 @@ function sealKey(secret: string, purpose: string): Promise<CryptoKey> {
     k = (async () => {
       const base = await crypto.subtle.importKey("raw", enc.encode(secret), "HKDF", false, ["deriveKey"]);
       return crypto.subtle.deriveKey(
-        { name: "HKDF", hash: "SHA-256", salt: enc.encode("bearing"), info: enc.encode(purpose) },
+        { name: "HKDF", hash: "SHA-256", salt: enc.encode("gitring"), info: enc.encode(purpose) },
         base,
         { name: "AES-GCM", length: 256 },
         false,
@@ -75,7 +75,7 @@ function sealKey(secret: string, purpose: string): Promise<CryptoKey> {
 
 /** Encrypt a JSON value. Output: base64url(12-byte IV ‖ ciphertext ‖ tag). */
 export async function seal(secret: string, value: unknown, purpose = "config-v1"): Promise<string> {
-  if (!secret || secret.length < 16) throw new Error("BEARING_SECRET is missing or too short (use 32 random bytes).");
+  if (!secret || secret.length < 16) throw new Error("GITRING_SECRET is missing or too short (use 32 random bytes).");
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await sealKey(secret, purpose), enc.encode(JSON.stringify(value))));

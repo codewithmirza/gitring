@@ -325,7 +325,7 @@ function WhyTrail({ id }: { id: string }) {
             </figure>
           ) : (
             <p className="why__auto">
-              No human pick was necessary. The intent had one live attempt and its checks passed, so Bearing landed it by itself
+              No human pick was necessary. The intent had one live attempt and its checks passed, so Gitring landed it by itself
               {siblings.length ? ` (${plural(siblings.length, "alternate")} stay visible)` : ""}.
             </p>
           )}
@@ -352,8 +352,8 @@ function WhyTrail({ id }: { id: string }) {
           <CodeBlock code={landing.message} label={`commit ${shortSha(landing.mainAfter)}`} copyLabel="Copy message" />
           {noteText && (
             <details className="why__note">
-              <summary>Show the raw logbook note (git note refs/notes/bearing)</summary>
-              <CodeBlock code={noteText} label="bearing.logbook/v1" copyLabel="Copy note" />
+              <summary>Show the raw logbook note (git note refs/notes/gitring)</summary>
+              <CodeBlock code={noteText} label="gitring.logbook/v1" copyLabel="Copy note" />
             </details>
           )}
           <p className="why__meta">
@@ -399,7 +399,7 @@ export function LogbookView({ id }: { id?: string }) {
           </div>
         )}
         {rows.length === 0 ? (
-          <EmptyState text="No landings yet. Bearing writes a logbook record for every landing." />
+          <EmptyState text="No landings yet. Gitring writes a logbook record for every landing." />
         ) : (
           <ol className="lrows" role="list">
             {rows.map((r) => (

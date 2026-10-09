@@ -37,7 +37,7 @@ export function parseRoute(pathname: string): Route {
   }
 }
 
-const EVENT = "bearing:navigate";
+const EVENT = "gitring:navigate";
 /** Query params that belong to the session and survive navigation. */
 const KEEP = ["project"];
 

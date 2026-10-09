@@ -161,7 +161,7 @@ describe("trees", () => {
 });
 
 describe("commits", () => {
-  const author = { name: "Kestrel Agent", email: "kestrel-7@bearing.dev", timestamp: 1_760_000_000, tzOffset: "+0000" };
+  const author = { name: "Kestrel Agent", email: "kestrel-7@gitring.dev", timestamp: 1_760_000_000, tzOffset: "+0000" };
 
   function gitCommitTree(tree: string, parents: string[], message: string, env: Record<string, string>): string {
     const args = ["commit-tree", tree, ...parents.flatMap((p) => ["-p", p])];
@@ -192,8 +192,8 @@ describe("commits", () => {
     const tree = git(["mktree"], { cwd: repo, input: `100644 blob ${gitBlob("two\n")}\tfile.txt\n` });
     const p1 = gitCommitTree(tree, [], "p1\n", identEnv(author));
     const p2 = gitCommitTree(tree, [], "p2\n", identEnv(author));
-    const committer = { name: "Bearing", email: "harbor@bearing.dev", timestamp: 1_760_000_123, tzOffset: "-0700" };
-    const message = "Land intent: dark mode\n\nBody line 1\nBody line 2\n\nBearing-Intent: int_1\n";
+    const committer = { name: "Gitring", email: "harbor@gitring.dev", timestamp: 1_760_000_123, tzOffset: "-0700" };
+    const message = "Land intent: dark mode\n\nBody line 1\nBody line 2\n\nGitring-Intent: int_1\n";
     const expected = gitCommitTree(tree, [p1, p2], message, identEnv(author, committer));
     const body = encodeCommit({ tree, parents: [p1, p2], author, committer, message });
     expect(await hashObject("commit", body)).toBe(expected);
@@ -202,7 +202,7 @@ describe("commits", () => {
     expect(meta).toEqual({
       hash: expected,
       treeHash: tree,
-      message: "Land intent: dark mode\n\nBody line 1\nBody line 2\n\nBearing-Intent: int_1",
+      message: "Land intent: dark mode\n\nBody line 1\nBody line 2\n\nGitring-Intent: int_1",
       author: { name: author.name, email: author.email },
       committer: { name: committer.name, email: committer.email },
       parents: [p1, p2],
@@ -249,7 +249,7 @@ describe("modes and refs", () => {
   });
 
   it("isValidBranchName follows git check-ref-format", () => {
-    for (const ok of ["main", "feature/x", "att-123_x.y", "bearing/attempt-7"]) {
+    for (const ok of ["main", "feature/x", "att-123_x.y", "gitring/attempt-7"]) {
       expect(isValidBranchName(ok)).toBe(true);
       expect(() => git(["check-ref-format", "--branch", ok])).not.toThrow();
     }

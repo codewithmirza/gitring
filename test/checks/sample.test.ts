@@ -197,7 +197,7 @@ describe("landing order: " + LANDING_ORDER.join(" → "), () => {
     }
   });
 
-  it("also lands with Bearing's own merge3 (src/core/text/merge3.ts)", async (ctx) => {
+  it("also lands with Gitring's own merge3 (src/core/text/merge3.ts)", async (ctx) => {
     const mod = await import("../../src/core/text/merge3").catch(() => null);
     if (!mod) return ctx.skip();
     let main = { ...demo.seed };
@@ -221,7 +221,7 @@ describe("landing order: " + LANDING_ORDER.join(" → "), () => {
   });
 });
 
-describe("pairs that conflict as text without Bearing (files/ variants, no corrections)", () => {
+describe("pairs that conflict as text without Gitring (files/ variants, no corrections)", () => {
   function second(a: string, b: string) {
     return land(demo, [a, b]).log[1];
   }
@@ -284,7 +284,7 @@ function permutations<T>(items: T[]): T[][] {
 }
 
 async function writeTree(tree: Tree): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "bearing-demo-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "gitring-demo-"));
   tempDirs.push(dir);
   for (const [file, content] of Object.entries(tree)) {
     await mkdir(path.dirname(path.join(dir, file)), { recursive: true });

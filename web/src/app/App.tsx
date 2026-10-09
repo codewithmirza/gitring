@@ -64,10 +64,10 @@ function useShortcuts() {
     };
     const onEvent = () => openShortcuts();
     window.addEventListener("keydown", onKey);
-    window.addEventListener("bearing:shortcuts", onEvent);
+    window.addEventListener("gitring:shortcuts", onEvent);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("bearing:shortcuts", onEvent);
+      window.removeEventListener("gitring:shortcuts", onEvent);
     };
   }, []);
 }
@@ -157,8 +157,8 @@ function Booting() {
   }
   return (
     <div className="booting">
-      <ProgressRule label="Bearing connects to the harbor" />
-      <p>Bearing connects to the harbor.</p>
+      <ProgressRule label="Gitring connects to the harbor" />
+      <p>Gitring connects to the harbor.</p>
     </div>
   );
 }
@@ -173,7 +173,7 @@ export function App() {
 
   const key = route.name + ("id" in route ? `:${route.id ?? ""}` : "");
   useEffect(() => {
-    document.title = `${TITLES[route.name]}${project ? ` · ${project}` : ""} · Bearing`;
+    document.title = `${TITLES[route.name]}${project ? ` · ${project}` : ""} · Gitring`;
   }, [route.name, project]);
   useEffect(() => {
     if (first.current) {

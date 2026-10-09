@@ -27,7 +27,7 @@ export interface UserInfo {
   email?: string;
   avatar?: string;
   identities: Identity[];
-  /** A deployment owner (BEARING_OWNERS): may set up sign-in and act on every project. */
+  /** A deployment owner (GITRING_OWNERS): may set up sign-in and act on every project. */
   admin: boolean;
 }
 

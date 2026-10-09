@@ -1,4 +1,4 @@
-// Visual QA: screenshot Bearing views in Day, Dusk and Night, desktop and phone.
+// Visual QA: screenshot Gitring views in Day, Dusk and Night, desktop and phone.
 //
 //   node test/web/shots.mjs                     # all P0 views, all themes, both sizes
 //   node test/web/shots.mjs chart day desktop   # filter by view / theme / size

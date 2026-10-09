@@ -39,7 +39,7 @@ export function ImportPanel() {
     setBusy("check");
     try {
       const r = await checkImport(projectId);
-      if (r.importing) toast({ tone: "info", title: "No push yet", text: "Bearing looks again every few minutes." });
+      if (r.importing) toast({ tone: "info", title: "No push yet", text: "Gitring looks again every few minutes." });
     } catch (e) {
       toast({ tone: "danger", title: "The check failed", text: (e as Error).message });
     } finally {
@@ -52,14 +52,14 @@ export function ImportPanel() {
       <h2 className="importpanel__title">Push your repository</h2>
       <p className="importpanel__text">
         This project waits for its first <span className="voice-agent">git push</span>. Push from a clone of your repository on GitHub, GitLab or any host, private
-        repositories too. Bearing adopts the branch you push as main.
+        repositories too. Gitring adopts the branch you push as main.
       </p>
       {owner ? (
         push ? (
           <>
             <CodeBlock shell label="In your repository" code={`git push ${authed} HEAD:main`} copyLabel="Copy command" />
             <p className="importpanel__note">
-              The token in this command works until {new Date(push.expiresAt).toLocaleString()} and only for this push. Bearing revokes it when the push arrives.
+              The token in this command works until {new Date(push.expiresAt).toLocaleString()} and only for this push. Gitring revokes it when the push arrives.
               Keep it private.
             </p>
           </>

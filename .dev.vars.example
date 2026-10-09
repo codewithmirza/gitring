@@ -1,7 +1,7 @@
 # Copy to .dev.vars for `npm run dev`. Never commit .dev.vars.
 # Seals the sign-in credentials (GitHub App, Google client). Make one: openssl rand -base64 32
-BEARING_SECRET=
+GITRING_SECRET=
 # Opens /setup before an owner signs in. Make one: openssl rand -hex 16
-BEARING_SETUP_TOKEN=
-# Owners of this Bearing: they open /setup and act on every project.
-BEARING_OWNERS=github:your-login,google:you@example.com
+GITRING_SETUP_TOKEN=
+# Owners of this Gitring: they open /setup and act on every project.
+GITRING_OWNERS=github:your-login,google:you@example.com

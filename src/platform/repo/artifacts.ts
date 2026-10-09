@@ -14,7 +14,7 @@
  *   4. build blobs + trees + commit with the same code as the emulator (`prepareCommit`) and write
  *      them as loose objects. No checkout and no index: memory stays ~1× the packed branch, and
  *      exec bits, symlinks and gitlinks of untouched files survive exactly;
- *   5. if `input.note`: fetch `refs/notes/bearing` (depth 1), add the note, push the notes ref
+ *   5. if `input.note`: fetch `refs/notes/gitring` (depth 1), add the note, push the notes ref
  *      (retried on a lost race). The note goes first, so a landed commit always has its note;
  *   6. push the branch without force. isomorphic-git refuses a non-fast-forward and the server
  *      compare-and-swaps the ref on the advertised old id; a rejected push whose tip moved
@@ -40,7 +40,7 @@ import {
 import { MemoryFS } from "./memory-fs";
 
 /** Notes ref for logbook records. */
-export const NOTES_REF = "refs/notes/bearing";
+export const NOTES_REF = "refs/notes/gitring";
 const DEFAULT_BRANCH = "main";
 /** TTL of the internal write token used for clone/fetch/push. */
 const GIT_TOKEN_TTL_S = 600;
@@ -250,7 +250,7 @@ export class ArtifactsBackend implements RepoBackend {
     private readonly binding: Artifacts,
     opts: ArtifactsBackendOptions = {},
   ) {
-    this.author = opts.author ?? { name: "Bearing", email: "logbook@bearing.invalid" };
+    this.author = opts.author ?? { name: "Gitring", email: "logbook@gitring.invalid" };
     this.now = opts.now ?? (() => Date.now());
     this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.retryBudgetMs = opts.retryBudgetMs ?? 20_000;
@@ -554,7 +554,7 @@ export class ArtifactsBackend implements RepoBackend {
   }
 
   /**
-   * The note for a commit under refs/notes/bearing. Fast path: the binding resolves the notes ref
+   * The note for a commit under refs/notes/gitring. Fast path: the binding resolves the notes ref
    * (`log`) and reads the notes tree by hash. Fallback (the binding cannot resolve the ref): fetch
    * the notes ref at depth 1 over git. Null if there is no note.
    */
@@ -665,7 +665,7 @@ export class ArtifactsBackend implements RepoBackend {
     });
   }
 
-  /** Add a note for `commitSha` to refs/notes/bearing and push it (3 tries on a lost race). */
+  /** Add a note for `commitSha` to refs/notes/gitring and push it (3 tries on a lost race). */
   private async pushNote(url: string, secret: string, commitSha: string, note: string): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       const s: GitSession = { fs: new MemoryFS(), dir: "/notes", cache: {}, url, secret };
@@ -700,7 +700,7 @@ export class ArtifactsBackend implements RepoBackend {
         changes,
         parents: tip ? [tip] : [],
         author: this.author,
-        message: `Notes added by Bearing for ${commitSha}`,
+        message: `Notes added by Gitring for ${commitSha}`,
         timestamp: Math.floor(this.now() / 1000),
       });
       await writeLocalObjects(s, preparedObjects(prepared, fetched));
@@ -723,10 +723,10 @@ export class ArtifactsBackend implements RepoBackend {
  *   1. isomorphic-git shallow clone (`depth: 1, singleBranch`, protocol v1) works against Artifacts.
  *   2. Basic auth `x:<secret>` sent up front on every request is accepted (no 401 challenge needed).
  *   3. A push with a stale old-oid is rejected (CAS) and surfaces as GitPushError / PushRejectedError.
- *   4. `log({ ref: "refs/notes/bearing" })` resolves a full ref name (the readNote fast path);
+ *   4. `log({ ref: "refs/notes/gitring" })` resolves a full ref name (the readNote fast path);
  *      if it returns [], the git fallback is used, which costs a token + a fetch per readNote.
  *   5. `log({ ref })` for a missing branch returns [] (not an error), including on an empty repo.
- *   6. Pushing `refs/notes/bearing` (a non-branch ref) is accepted; notes survive `fork()` only with
+ *   6. Pushing `refs/notes/gitring` (a non-branch ref) is accepted; notes survive `fork()` only with
  *      `defaultBranchOnly: false` (we use true: forks start without notes, like the emulator).
  *   7. ArtifactsError.code survives the binding RPC (`artifactsErrorCode` falls back to messages).
  *   8. FORK_IN_PROGRESS / CREATE_IN_PROGRESS timing: is a 20 s retry budget enough?

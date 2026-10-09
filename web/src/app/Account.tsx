@@ -14,7 +14,7 @@ const SOURCE_TEXT: Record<string, string> = { sample: "sample", empty: "empty re
 export function ProjectSwitcher() {
   const projects = useStore((s) => s.projects);
   const current = useStore((s) => s.projectId);
-  const name = useStore((s) => s.state?.project.name ?? projects.find((p) => p.id === s.projectId)?.name ?? "Bearing");
+  const name = useStore((s) => s.state?.project.name ?? projects.find((p) => p.id === s.projectId)?.name ?? "Gitring");
   const canAct = useCanAct();
   const signedIn = Boolean(useMe()?.user);
   const [open, setOpen] = useState(false);
@@ -126,7 +126,7 @@ export function UserMenu() {
           <p className="acct-menu__name">{u.name}</p>
           <p className="acct-menu__meta">
             {u.identities.map((i) => (i.provider === "github" ? `GitHub @${i.login}` : `Google ${i.email}`)).join(" · ")}
-            {u.admin ? " · owner of this Bearing" : ""}
+            {u.admin ? " · owner of this Gitring" : ""}
           </p>
           <Link to="/projects" className="acct-menu__item" onClick={() => setOpen(false)}>
             <Icon name="grid" /> Projects
@@ -155,7 +155,7 @@ export function SignInDialog() {
   const gh = me?.providers.github;
   const gg = me?.providers.google;
   return (
-    <Dialog open={ui.signIn} onClose={close} title="Sign in to Bearing" description="Sign in to make projects, launch agents, pick attempts and create API keys for your agents." dismissOnScrim>
+    <Dialog open={ui.signIn} onClose={close} title="Sign in to Gitring" description="Sign in to make projects, launch agents, pick attempts and create API keys for your agents." dismissOnScrim>
       <div className="acct-signin">
         {gh && (
           <Button variant="primary" icon="fork" onClick={() => signIn("github")}>
@@ -167,8 +167,8 @@ export function SignInDialog() {
             Continue with Google
           </Button>
         )}
-        {!gh && !gg && <p className="acct-signin__note">Sign-in is not set up on this Bearing yet. Its owner opens /setup to add GitHub or Google.</p>}
-        <p className="acct-signin__note">Bearing keeps your name, email and avatar. It does not post anything for you.</p>
+        {!gh && !gg && <p className="acct-signin__note">Sign-in is not set up on this Gitring yet. Its owner opens /setup to add GitHub or Google.</p>}
+        <p className="acct-signin__note">Gitring keeps your name, email and avatar. It does not post anything for you.</p>
       </div>
     </Dialog>
   );

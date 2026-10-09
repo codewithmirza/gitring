@@ -12,7 +12,7 @@ afterAll(() => loader.cleanup());
 const BASE = "/preview/demo/a_123";
 
 function get(path: string, init?: RequestInit): Request {
-  return new Request(`https://bearing.test${path}`, init);
+  return new Request(`https://gitring.test${path}`, init);
 }
 
 // A tiny app that echoes what it receives.
@@ -82,7 +82,7 @@ describe("servePreview", () => {
     expect(res.headers.get(PREVIEW_HEADER)).toBe("seed-key");
   });
 
-  it("forwards the method and the body, and drops the credentials of the Bearing origin", async () => {
+  it("forwards the method and the body, and drops the credentials of the Gitring origin", async () => {
     const request = get(`${BASE}/form`, { method: "POST", body: "q=salt", headers: { cookie: "session=secret", authorization: "Bearer key", "x-test": "1" } });
     const echoed = (await (await servePreview(loader, "echo", ECHO, request, BASE)).json()) as { headers: Record<string, string> };
     expect(echoed).toMatchObject({ path: "/form", method: "POST", body: "q=salt" });
@@ -149,7 +149,7 @@ describe("servePreview", () => {
     expect(boxed.headers.get("content-security-policy")).toMatch(/^sandbox allow-scripts allow-forms/);
   });
 
-  it("loads the app with no network and the compatibility date of Bearing", async () => {
+  it("loads the app with no network and the compatibility date of Gitring", async () => {
     await servePreview(loader, "seed-key", seed, get(`${BASE}/`), BASE);
     expect(loader.codes.get("app:seed-key")).toMatchObject({ compatibilityDate: "2026-10-01", mainModule: "src/index.js", globalOutbound: null });
     expect(loader.codes.get("app:seed-key")!.modules["tests/run.mjs"]).toEqual({ js: demo.seed["tests/run.mjs"] });
