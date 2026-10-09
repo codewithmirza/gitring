@@ -26,7 +26,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       credentials: "same-origin",
     });
   } catch {
-    throw new AccountError(0, "Gitring did not answer. Check the connection and try again.");
+    throw new AccountError(0, "gitring did not answer. Check the connection and try again.");
   }
   if (res.status === 204) return undefined as T;
   const json = (await res.json().catch(() => ({}))) as { error?: string };

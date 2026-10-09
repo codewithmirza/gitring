@@ -24,6 +24,6 @@ node tests/run.mjs tests/app.test.js    # one file
 npx wrangler dev
 ```
 
-Links and forms are relative (`href="api/products"`, `action="./"`). The shop also works under a path prefix, for example in a Gitring preview.
+Links and forms are relative (`href="api/products"`, `action="./"`). The shop also works under a path prefix, for example in a gitring preview.
 
 Agents: read [AGENTS.md](AGENTS.md) before you change the code.

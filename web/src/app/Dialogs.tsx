@@ -138,7 +138,7 @@ export function NewIntentDialog() {
           />
         </Field>
         <div className="newintent__row">
-          <Field label="Check file" optional help="Gitring writes this test into every attempt and runs it.">
+          <Field label="Check file" optional help="gitring writes this test into every attempt and runs it.">
             <Input className="voice-agent" value={checkPath} onChange={(e) => setCheckPath(e.target.value)} placeholder={`tests/${slug}.test.js`} spellCheck={false} />
           </Field>
           <div className="b-field">
@@ -163,8 +163,8 @@ export function NewIntentDialog() {
           optional
           help={
             container
-              ? "A test in the framework of this repository. Gitring adds it to every attempt; the test command runs it with all other tests."
-              : "JavaScript with the repo test harness. Without checks, Gitring runs the repo checks only."
+              ? "A test in the framework of this repository. gitring adds it to every attempt; the test command runs it with all other tests."
+              : "JavaScript with the repo test harness. Without checks, gitring runs the repo checks only."
           }
         >
           <Textarea voice="agent" rows={7} value={checkCode} onChange={(e) => setCheckCode(e.target.value)} placeholder={container ? CONTAINER_PLACEHOLDER : CHECK_PLACEHOLDER} spellCheck={false} />

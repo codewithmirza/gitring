@@ -2,8 +2,8 @@
 /**
  * Claude Code hook demo: corrections reach an agent in the middle of its task.
  *
- * Claude Code sends each PostToolUse event (Write, Edit, MultiEdit) to Gitring's hook endpoint.
- * Gitring records the edit as a shadow edit of the attempt, runs a course check, and answers with
+ * Claude Code sends each PostToolUse event (Write, Edit, MultiEdit) to gitring's hook endpoint.
+ * gitring records the edit as a shadow edit of the attempt, runs a course check, and answers with
  * `hookSpecificOutput.additionalContext`. Claude Code puts that text into the agent's context.
  *
  * This script plays Claude Code: it declares a course over MCP (with `workdir`), then posts two hook
@@ -56,7 +56,7 @@ async function hook(event) {
   return out?.hookSpecificOutput?.additionalContext ?? "(no correction: Claude Code continues)";
 }
 
-// 1. Claude Code edits formatPrice in its own working copy. The hook sends the edit to Gitring.
+// 1. Claude Code edits formatPrice in its own working copy. The hook sends the edit to gitring.
 const edit = {
   session_id: session,
   cwd: workdir,
@@ -68,10 +68,10 @@ const edit = {
     new_string: "// Prices show the currency code.\nexport function formatPrice(",
   },
 };
-console.log("\nPostToolUse Edit src/products.js → Gitring answers (additionalContext):");
+console.log("\nPostToolUse Edit src/products.js → gitring answers (additionalContext):");
 console.log(await hook(edit));
 
 // 2. A second edit in the same session (the session id now maps to the attempt).
 const write = { ...edit, cwd: `${workdir}/src`, tool_name: "Edit", tool_input: { ...edit.tool_input, old_string: "// Prices show the currency code.", new_string: "// Prices show the ISO currency code." } };
-console.log("\nPostToolUse Edit (from a subfolder) → Gitring answers:");
+console.log("\nPostToolUse Edit (from a subfolder) → gitring answers:");
 console.log(await hook(write));

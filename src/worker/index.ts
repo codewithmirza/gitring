@@ -1,5 +1,5 @@
 /**
- * Gitring Worker — routes:
+ * gitring Worker — routes:
  *   /mcp                       MCP server for external agents (personal API key)
  *   /api/*                     REST for the UI and other apps (session cookie or API key)
  *   /ws/:p                     WebSocket → HarborMaster live events
@@ -57,16 +57,16 @@ function harbor(env: Env, project: string) {
 app.onError((e, c) => {
   if (e instanceof HTTPError) return c.json({ error: e.message }, e.status);
   console.error("unhandled", e);
-  return c.json({ error: "Gitring could not finish the request. Try again." }, 500);
+  return c.json({ error: "gitring could not finish the request. Try again." }, 500);
 });
 
 /* ───────────── who is calling ───────────── */
 
 app.use("*", async (c, next) => {
   const p = await resolvePrincipal(c.env, c.req.raw);
-  if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in Gitring (Connect → API keys)." }, 401);
+  if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Connect → API keys)." }, 401);
   c.set("principal", p);
-  // A browser session may only change state from Gitring's own pages (no cross-site requests).
+  // A browser session may only change state from gitring's own pages (no cross-site requests).
   const m = c.req.method;
   if (p.via === "session" && m !== "GET" && m !== "HEAD" && m !== "OPTIONS") {
     const origin = c.req.header("origin");
@@ -488,7 +488,7 @@ async function preview(c: C): Promise<Response> {
       previewCache.set(pf.key, entry);
       if (previewCache.size > 64) previewCache.delete(previewCache.keys().next().value!);
     }
-    // Agent code runs in an opaque origin: it never sees Gitring's cookies or storage.
+    // Agent code runs in an opaque origin: it never sees gitring's cookies or storage.
     return servePreview(c.env.LOADER, entry.key, entry.files, c.req.raw, base, { sandbox: true });
   } catch (e) {
     const status = e instanceof HTTPError ? e.status : 500;
@@ -567,7 +567,7 @@ app.post("/hooks/github-app", async (c) => {
 app.post("/hooks/github", async (c) => {
   const event = c.req.header("x-github-event");
   const raw = await c.req.text();
-  if (!c.env.GITHUB_WEBHOOK_SECRET) return c.json({ error: "Set GITHUB_WEBHOOK_SECRET, or use the Gitring GitHub App." }, 404);
+  if (!c.env.GITHUB_WEBHOOK_SECRET) return c.json({ error: "Set GITHUB_WEBHOOK_SECRET, or use the gitring GitHub App." }, 404);
   const sig = (c.req.header("x-hub-signature-256") ?? "").replace(/^sha256=/, "");
   if (!sameString(sig, await hmacSha256Hex(c.env.GITHUB_WEBHOOK_SECRET, raw))) return c.json({ error: "Bad signature." }, 401);
   if (event === "ping") return c.json({ ok: true });
@@ -635,7 +635,7 @@ export default {
       if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null })(request, env, ctx);
       const p = await resolvePrincipal(env, request);
       if (!p.user && p.via !== "operator") {
-        return new Response(JSON.stringify({ error: "Send a personal API key: Authorization: Bearer gk_… (create one in Gitring → Connect)." }), {
+        return new Response(JSON.stringify({ error: "Send a personal API key: Authorization: Bearer gk_… (create one in gitring → Connect)." }), {
           status: 401,
           headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="gitring"' },
         });

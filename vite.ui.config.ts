@@ -1,9 +1,9 @@
 /**
- * UI-only dev config for the Gitring web app (owner: web UI).
+ * UI-only dev config for the gitring web app (owner: web UI).
  *
  *   npx vite --config vite.ui.config.ts --port 5182 --host 127.0.0.1
  *
- * The UI talks to a running Gitring Worker. Set GITRING_API to its origin (local or deployed):
+ * The UI talks to a running gitring Worker. Set GITRING_API to its origin (local or deployed):
  *
  *   GITRING_API=http://127.0.0.1:8787 npx vite --config vite.ui.config.ts
  */

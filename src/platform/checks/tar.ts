@@ -1,5 +1,5 @@
 /**
- * A small tar writer (POSIX ustar + PAX for long or non-ASCII paths), so that Gitring can copy a tree
+ * A small tar writer (POSIX ustar + PAX for long or non-ASCII paths), so that gitring can copy a tree
  * into a check container through `tar -x` on standard input. No dependencies; runs in Workers and Node.
  */
 

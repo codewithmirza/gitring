@@ -214,7 +214,7 @@ function connectSocket(projectId: string) {
     ws.addEventListener("close", () => {
       tries++;
       const delay = Math.min(15000, 500 * 2 ** Math.min(tries, 5)) * (0.8 + Math.random() * 0.4);
-      store.setConn("reconnecting", `The live connection dropped. Gitring reconnects in ${Math.max(1, Math.round(delay / 1000))} s.`);
+      store.setConn("reconnecting", `The live connection dropped. gitring reconnects in ${Math.max(1, Math.round(delay / 1000))} s.`);
       setTimeout(open, delay);
     });
     ws.addEventListener("error", () => ws.close());
@@ -285,7 +285,7 @@ export async function boot(): Promise<void> {
     }
     bootTries++;
     const delay = Math.min(30_000, 2000 * 2 ** Math.min(bootTries - 1, 4));
-    store.setConn("offline", `The harbor is not reachable. Gitring tries again in ${Math.round(delay / 1000)} s.`);
+    store.setConn("offline", `The harbor is not reachable. gitring tries again in ${Math.round(delay / 1000)} s.`);
     setTimeout(() => void boot(), delay);
   }
 }

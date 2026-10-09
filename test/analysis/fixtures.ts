@@ -1,5 +1,5 @@
 /**
- * Fixtures: the Gitring demo app (a tiny bookshop Worker in plain ES modules, no build step).
+ * Fixtures: the gitring demo app (a tiny bookshop Worker in plain ES modules, no build step).
  * Line numbers matter in the tests; keep these texts stable.
  */
 

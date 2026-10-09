@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * An outside agent works with Gitring through MCP only. It is not built into Gitring.
+ * An outside agent works with gitring through MCP only. It is not built into gitring.
  *
  *   gitring_intents → gitring_declare → (git mode) clone the Artifacts fork, edit, commit, push
  *                                     → (api mode) gitring_read, gitring_write
@@ -10,7 +10,7 @@
  *   GITRING_URL=https://gitring.<you>.workers.dev GITRING_KEY=gk_… node scripts/external-agent.mjs   # git mode
  *   … node scripts/external-agent.mjs --mode api                                                     # api mode
  * Options: --mode git|api   --title "..." --project <id> (default: GITRING_PROJECT, else a new private sample)
- * Env: GITRING_KEY, a personal API key (Gitring → Connect → API keys). The fork token is never printed.
+ * Env: GITRING_KEY, a personal API key (gitring → Connect → API keys). The fork token is never printed.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -37,7 +37,7 @@ const say = (who, line) => console.log(`${String(((Date.now() - t0) / 1000).toFi
 const client = new Client({ name: "external-agent", version: "0.1.0" });
 await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", base), { requestInit: { headers } }));
 
-/** Call a Gitring tool. The answer is: optional correction lines, a headline, a blank line, JSON. */
+/** Call a gitring tool. The answer is: optional correction lines, a headline, a blank line, JSON. */
 async function call(name, args) {
   const r = await client.callTool({ name, arguments: { project, ...args } });
   const text = r.content?.[0]?.text ?? "";
@@ -62,7 +62,7 @@ say("agent", `connects to ${new URL("/mcp", base)}: ${tools.length} tools (${too
 const open = await call("gitring_intents", {});
 say("gitring", open.headline);
 
-// Bring a new intent. Gitring checks it for duplicates against the open intents.
+// Bring a new intent. gitring checks it for duplicates against the open intents.
 const NOTE = "Gift wrapping is free.";
 const declared = await call("gitring_declare", {
   newIntent: { title, goal: `Add the sentence "${NOTE}" to the footer of every page, after the line about books that are not on the shelf.` },

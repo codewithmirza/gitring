@@ -1,5 +1,5 @@
 /**
- * Rules for repositories that come from outside: which remotes Gitring imports, and which files of
+ * Rules for repositories that come from outside: which remotes gitring imports, and which files of
  * a tree it reads as text. Pure module (no platform APIs).
  */
 
@@ -13,7 +13,7 @@ export function normalizeGitUrl(raw: string): string {
   }
   if (u.protocol !== "https:") throw new Error("Use an https URL.");
   if (u.username || u.password) throw new Error("Do not put credentials in the URL.");
-  if (["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].includes(u.hostname) || /\.(local|internal)$/.test(u.hostname)) throw new Error("Gitring cannot import from a private host.");
+  if (["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].includes(u.hostname) || /\.(local|internal)$/.test(u.hostname)) throw new Error("gitring cannot import from a private host.");
   u.hash = "";
   u.search = "";
   return u.toString().replace(/\/+$/, "");
@@ -26,7 +26,7 @@ export const MAX_TEXT_FILES = 6000;
 const OPAQUE_DIRS = /(^|\/)(node_modules|vendor|dist|build|out|coverage|\.next|\.nuxt|\.turbo|\.cache|\.git|target|__pycache__)\//;
 const OPAQUE_EXT = /\.(png|jpe?g|gif|webp|avif|ico|bmp|tiff?|psd|pdf|zip|gz|tgz|bz2|xz|7z|rar|jar|war|class|so|dylib|dll|exe|bin|wasm|woff2?|ttf|otf|eot|mp3|mp4|m4a|mov|avi|webm|wav|flac|ogg|sqlite|db|lockb)$/i;
 
-/** True for files whose text Gitring loads (source and docs), false for vendored or binary files. */
+/** True for files whose text gitring loads (source and docs), false for vendored or binary files. */
 export function textEligible(path: string): boolean {
   return !OPAQUE_DIRS.test(path) && !OPAQUE_EXT.test(path);
 }

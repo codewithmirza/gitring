@@ -1,8 +1,8 @@
 /**
- * Shared setup for the scripts: the Gitring URL, the API key, and a project to work in.
+ * Shared setup for the scripts: the gitring URL, the API key, and a project to work in.
  *
  *   GITRING_URL      the Worker (default http://127.0.0.1:5173, the dev server)
- *   GITRING_KEY      a personal API key (Gitring → Connect → API keys). Required.
+ *   GITRING_KEY      a personal API key (gitring → Connect → API keys). Required.
  *   GITRING_PROJECT  a project id. Without it, the script makes a private copy of the sample.
  */
 export const base = process.env.GITRING_URL ?? "http://127.0.0.1:5173";
@@ -10,7 +10,7 @@ export const base = process.env.GITRING_URL ?? "http://127.0.0.1:5173";
 export function authHeaders() {
   const key = process.env.GITRING_KEY;
   if (!key) {
-    console.error("Set GITRING_KEY to a personal API key. Create one in Gitring: Connect → API keys.");
+    console.error("Set GITRING_KEY to a personal API key. Create one in gitring: Connect → API keys.");
     process.exit(2);
   }
   return { Authorization: `Bearer ${key}` };
@@ -25,6 +25,6 @@ export async function projectFor(label, headers = authHeaders()) {
     body: JSON.stringify({ name: `${label} ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, visibility: "private", source: { kind: "sample" } }),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Gitring did not make a project: ${json.error ?? res.status}`);
+  if (!res.ok) throw new Error(`gitring did not make a project: ${json.error ?? res.status}`);
   return { id: json.project.id, fresh: true };
 }

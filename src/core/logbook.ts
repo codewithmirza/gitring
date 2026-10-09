@@ -1,7 +1,7 @@
 /**
  * Logbook: the "why" record of every landing.
  *
- *  - landingMessage: commit message = subject (intent title) + short body + Gitring-* trailers.
+ *  - landingMessage: commit message = subject (intent title) + short body + gitring-* trailers.
  *  - landingNote:    git note (refs/notes/gitring) = pretty JSON, schema "gitring.logbook/v1".
  *  - intentFile:     `.gitring/intents/<slug>.md` with YAML front matter (optional in-repo copy).
  *  - parseTrailers:  read the trailers back from any commit message.
@@ -75,7 +75,7 @@ function checksTotal(checks: CheckRun): { passed: number; total: number } {
   return { passed, total };
 }
 
-/** Commit message: subject, blank line, short body, blank line, Gitring-* trailers. */
+/** Commit message: subject, blank line, short body, blank line, gitring-* trailers. */
 export function landingMessage(args: {
   intent: Intent;
   attempt: Attempt;

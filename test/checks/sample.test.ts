@@ -197,7 +197,7 @@ describe("landing order: " + LANDING_ORDER.join(" → "), () => {
     }
   });
 
-  it("also lands with Gitring's own merge3 (src/core/text/merge3.ts)", async (ctx) => {
+  it("also lands with gitring's own merge3 (src/core/text/merge3.ts)", async (ctx) => {
     const mod = await import("../../src/core/text/merge3").catch(() => null);
     if (!mod) return ctx.skip();
     let main = { ...demo.seed };
@@ -221,7 +221,7 @@ describe("landing order: " + LANDING_ORDER.join(" → "), () => {
   });
 });
 
-describe("pairs that conflict as text without Gitring (files/ variants, no corrections)", () => {
+describe("pairs that conflict as text without gitring (files/ variants, no corrections)", () => {
   function second(a: string, b: string) {
     return land(demo, [a, b]).log[1];
   }

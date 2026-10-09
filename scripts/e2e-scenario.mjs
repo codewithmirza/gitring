@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * End-to-end run of the sample project with real Workers AI agents, against a running Gitring
+ * End-to-end run of the sample project with real Workers AI agents, against a running gitring
  * (local `npm run dev` or a deployed Worker). It makes a private copy of the sample (or resets
  * GITRING_PROJECT), launches agents on every open intent, waits until no agent is at work, lands the
  * first ready dark mode attempt as a human pick, and prints what happened. AI agents take 5 to 15 minutes.

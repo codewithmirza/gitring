@@ -41,7 +41,7 @@ const landed = await checks("landed");
 check(`landed tree (validated order): all 6 files, 39 tests pass (${summary(landed)})`, landed.ok && landed.passed === 39 && landed.testPaths.length === 6, JSON.stringify(failing(landed)));
 
 const noHarness = await checks("no-harness");
-check(`no harness/test.js: Gitring injects its harness (${summary(noHarness)})`, noHarness.ok && noHarness.passed === 6);
+check(`no harness/test.js: gitring injects its harness (${summary(noHarness)})`, noHarness.ok && noHarness.passed === 6);
 
 const brokenTest = await checks("broken-test");
 check(

@@ -159,7 +159,7 @@ export function SettingsView() {
           <h2 className="page__h2" id="st-repo">
             Repository
           </h2>
-          <p className="np__help">The canonical repository. Only Gitring writes its main branch: agents and people land work through intents.</p>
+          <p className="np__help">The canonical repository. Only gitring writes its main branch: agents and people land work through intents.</p>
           <CodeBlock label="Artifacts remote" code={project.repo.remote} copyLabel="Copy remote" />
         </section>
       )}
@@ -194,7 +194,7 @@ export function SettingsView() {
   );
 }
 
-/** How checks run: the Gitring harness (Dynamic Worker) or the project's own commands in a container. */
+/** How checks run: the gitring harness (Dynamic Worker) or the project's own commands in a container. */
 function ChecksSection({ projectId, owner }: { projectId: string; owner: boolean }) {
   const [cs, setCs] = useState<CheckSettings | null>(null);
   const [install, setInstall] = useState("");
@@ -235,7 +235,7 @@ function ChecksSection({ projectId, owner }: { projectId: string; owner: boolean
         Checks
       </h2>
       <p className="np__help">
-        Gitring runs the checks before an attempt is ready and again on main plus the attempt before it lands. Work lands only when they pass.
+        gitring runs the checks before an attempt is ready and again on main plus the attempt before it lands. Work lands only when they pass.
       </p>
       <Segmented<CheckSettings["runner"]>
         label="Where checks run"
@@ -243,13 +243,13 @@ function ChecksSection({ projectId, owner }: { projectId: string; owner: boolean
         onChange={(runner) => owner && void save({ ...cs, runner })}
         options={[
           { value: "container", label: "Container", icon: "anchor" },
-          { value: "worker", label: "Gitring harness", icon: "compass" },
+          { value: "worker", label: "gitring harness", icon: "compass" },
         ]}
       />
       <p className="np__help">
         {container
           ? "A Linux container with Node.js 24 runs the install command, then the test command. The container reaches package registries only."
-          : "A Dynamic Worker runs tests/*.test.js with the Gitring test harness. No dependencies and no network. The sample uses it."}
+          : "A Dynamic Worker runs tests/*.test.js with the gitring test harness. No dependencies and no network. The sample uses it."}
       </p>
       {container && (
         <>

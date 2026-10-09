@@ -387,13 +387,13 @@ export function DesignView() {
       <div className="ds-main">
         <header className="ds-hero">
           <p className="page__eyebrow">
-            <Icon name="grid" size={14} /> Gitring design system · v0.1
+            <Icon name="grid" size={14} /> gitring design system · v0.1
           </p>
           <h1 className="ds-title" tabIndex={-1}>
             Chart room
           </h1>
           <p className="ds-hero__lede">
-            Gitring is a chart room for coding agents. Many agents move through one codebase at the same time. A human reads the chart, makes decisions and
+            gitring is a chart room for coding agents. Many agents move through one codebase at the same time. A human reads the chart, makes decisions and
             keeps the fleet clear of collisions. This page renders the real tokens and components.
           </p>
           <div className="ds-hero__voices">
@@ -463,7 +463,7 @@ export function DesignView() {
           </ul>
         </Section>
 
-        <Section id="voices" title="Three voices" lede="Who speaks decides the typeface. A reader always knows if a human, an agent or Gitring wrote a line.">
+        <Section id="voices" title="Three voices" lede="Who speaks decides the typeface. A reader always knows if a human, an agent or gitring wrote a line.">
           <div className="ds-voices">
             <div className="ds-voice">
               <p className="ds-voice__who">
@@ -605,7 +605,7 @@ export function DesignView() {
           </div>
         </Section>
 
-        <Section id="icons" title="Icons" lede="16px grid, 1.5px stroke, square caps, currentColor. Drawn for Gitring.">
+        <Section id="icons" title="Icons" lede="16px grid, 1.5px stroke, square caps, currentColor. Drawn for gitring.">
           <div className="ds-hulls">
             {HULL_NAMES.map((h, i) => (
               <div key={h} className="ds-hull">
@@ -1058,7 +1058,7 @@ export function DesignView() {
         open={dialog}
         onClose={() => setDialog(false)}
         title="Land PETREL-2"
-        description="Gitring composes the attempt with main, runs every landed check, then lands it."
+        description="gitring composes the attempt with main, runs every landed check, then lands it."
         footer={
           <>
             <Button variant="ghost" onClick={() => setDialog(false)}>

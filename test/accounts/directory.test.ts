@@ -62,7 +62,7 @@ async function googleSignIn(dir: Directory, p: { sub: string; email: string; ver
 }
 
 describe("GitHub App setup and sign-in", () => {
-  it("creates the app from a manifest with Gitring's URLs and seals the credentials", async () => {
+  it("creates the app from a manifest with gitring's URLs and seals the credentials", async () => {
     const dir = make();
     const m = await dir.githubManifest(ORIGIN);
     const manifest = JSON.parse(m.manifest);
@@ -248,7 +248,7 @@ describe("projects and roles", () => {
     await withGithubApp(dir);
     const p = await dir.createProject({ name: "Scenario run", source: { kind: "sample" }, ownerId: null });
     expect(p.role).toBe("owner");
-    expect(p.ownerName).toBe("Gitring");
+    expect(p.ownerName).toBe("gitring");
     const { user: robin } = await githubSignIn(dir, { id: 60, login: "robin" });
     const { user: boss } = await githubSignIn(dir, { id: 61, login: "boss" });
     expect(await dir.role(p.id, robin.id)).toBeNull();

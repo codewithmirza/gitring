@@ -1,20 +1,20 @@
-# Gitring
+# gitring
 
-Gitring lets many coding agents change one repository at the same time.
+gitring lets many coding agents change one repository at the same time.
 
-An agent declares its course (plan, files, symbols) before it writes code. Gitring checks the course against the work of all other agents. If two courses can collide, Gitring sends a correction, not a rejection, and the agent keeps working. When an intent lands, Gitring moves all work in progress onto the new main. Humans do not fix merge conflicts.
+An agent declares its course (plan, files, symbols) before it writes code. gitring checks the course against the work of all other agents. If two courses can collide, gitring sends a correction, not a rejection, and the agent keeps working. When an intent lands, gitring moves all work in progress onto the new main. Humans do not fix merge conflicts.
 
-Gitring runs on Cloudflare Workers, Artifacts, Durable Objects, Dynamic Workers and Workers AI. Agents connect through MCP or plain git.
+gitring runs on Cloudflare Workers, Artifacts, Durable Objects, Dynamic Workers and Workers AI. Agents connect through MCP or plain git.
 
 ## How it works
 
 ```
-agent ──gitring_declare (plan, files, symbols)──► Gitring ── course check ──► CLEAR
+agent ──gitring_declare (plan, files, symbols)──► gitring ── course check ──► CLEAR
   ▲                                                     │                  or
   └──────── correction in the next tool result ◄────────┘              CORRECTION
 agent ──gitring_log / gitring_write / git push──► course check again
 agent ──gitring_submit──► checks in a Dynamic Worker ──► landing ladder ──► main + logbook note
-main moves ──► Gitring re-plots all work in progress onto the new main
+main moves ──► gitring re-plots all work in progress onto the new main
 ```
 
 | Term | Meaning |
@@ -24,7 +24,7 @@ main moves ──► Gitring re-plots all work in progress onto the new main
 | traffic | The other agents near your work: their courses, files and logs. |
 | course check | A decision: will two pieces of work collide if both continue? |
 | correction | An amendment to an agent's brief. Never a rejection. |
-| re-plot | After each landing, Gitring moves work in progress onto the new main (3-way, per file). |
+| re-plot | After each landing, gitring moves work in progress onto the new main (3-way, per file). |
 | landing ladder | Fast-forward → 3-way merge → re-derive from the intent on the new main. |
 | logbook | The record of each landing: intent, course, corrections, checks and decisions (git notes and commit trailers). |
 
@@ -43,7 +43,7 @@ Symbol analysis and checks support JavaScript and TypeScript. Other languages fa
 
 ## Run it
 
-Gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account.
+gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account.
 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)
@@ -94,7 +94,7 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
   | Source | How |
   |---|---|
   | Import URL | Artifacts imports a public https repository (GitHub, GitLab, Bitbucket or any host), with its history. |
-  | git push | Gitring makes an empty repository and shows the owner a push command with a 24-hour token. Use it for private repositories from any host. |
+  | git push | gitring makes an empty repository and shows the owner a push command with a 24-hour token. Use it for private repositories from any host. |
   | Folder | The browser uploads a folder (without `.git`, dependencies and build output; at most 20 MB) as the first commit. |
   | Empty | A README. Agents write the code. |
   | Sample | A copy of the sample bookshop with five intents and checks. |
@@ -108,14 +108,14 @@ Work lands only when its checks pass: once on the attempt, and again on main plu
 
 | Runner | Where | Used by |
 |---|---|---|
-| container | A Cloudflare container per attempt (Node.js 24 on Debian). Gitring copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Imported, pushed, uploaded and empty projects |
-| worker | A Dynamic Worker runs `tests/*.test.js` with Gitring's small test harness. No dependencies, no network. | The sample |
+| container | A Cloudflare container per attempt (Node.js 24 on Debian). gitring copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Imported, pushed, uploaded and empty projects |
+| worker | A Dynamic Worker runs `tests/*.test.js` with gitring's small test harness. No dependencies, no network. | The sample |
 
 Owners change the runner, the commands and the time limit in Project settings → Checks. Check containers have no direct Internet access: a Worker entrypoint (`Seawall`) lets requests to package registries (npm, PyPI, Go proxy, Debian) pass and refuses all other hosts.
 
 ## Connect agents
 
-Gitring speaks MCP (streamable HTTP) at `/mcp`. Tools: `gitring_intents`, `gitring_declare`, `gitring_log`, `gitring_traffic`, `gitring_read`, `gitring_list`, `gitring_write`, `gitring_check`, `gitring_submit`, `gitring_ack`. Every call needs a personal API key: `Authorization: Bearer gk_…`.
+gitring speaks MCP (streamable HTTP) at `/mcp`. Tools: `gitring_intents`, `gitring_declare`, `gitring_log`, `gitring_traffic`, `gitring_read`, `gitring_list`, `gitring_write`, `gitring_check`, `gitring_submit`, `gitring_ack`. Every call needs a personal API key: `Authorization: Bearer gk_…`.
 
 ```bash
 export GITRING_KEY=gk_…
@@ -128,7 +128,7 @@ Cursor: `.cursor/mcp.json` → `{ "mcpServers": { "gitring": { "url": "https://<
 
 Two modes:
 
-- **api mode** (default): the agent reads and writes files through Gitring. Gitring holds the working tree, re-plots it when main moves, and merges writes made from a stale copy.
+- **api mode** (default): the agent reads and writes files through gitring. gitring holds the working tree, re-plots it when main moves, and merges writes made from a stale copy.
 - **git mode**: `gitring_declare` returns an Artifacts fork remote and a short-lived token. The agent clones, commits and pushes with plain git, then calls `gitring_log` with the head SHA.
 
 Try an outside agent end to end: `GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run agent:external` (git mode, on a new private sample project). Add `-- --mode api` for api mode.
@@ -147,7 +147,7 @@ See it work: `GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run agent
 | In | |
 |---|---|
 | `POST /hooks/intents` | Any app with a member's API key: `{ project, title, goal, checks?, source?, launch? }` → a new intent |
-| `POST /hooks/github-app` | The Gitring GitHub App: an issue labeled `gitring` by a project member → an intent in each project imported from that repository |
+| `POST /hooks/github-app` | The gitring GitHub App: an issue labeled `gitring` by a project member → an intent in each project imported from that repository |
 | `POST /hooks/github` | A plain repository webhook (`GITHUB_WEBHOOK_SECRET`, `?project=`) → the same |
 | `POST /hooks/slack` | Slash command `/gitring Add a dark mode — Readers can switch…` (`SLACK_SIGNING_SECRET`, `?project=`) |
 | **Out** | Project webhooks get `landing`, `correction` and `decision` events as JSON or Slack messages |

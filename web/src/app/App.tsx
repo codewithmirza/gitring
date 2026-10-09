@@ -157,8 +157,8 @@ function Booting() {
   }
   return (
     <div className="booting">
-      <ProgressRule label="Gitring connects to the harbor" />
-      <p>Gitring connects to the harbor.</p>
+      <ProgressRule label="gitring connects to the harbor" />
+      <p>gitring connects to the harbor.</p>
     </div>
   );
 }
@@ -173,7 +173,7 @@ export function App() {
 
   const key = route.name + ("id" in route ? `:${route.id ?? ""}` : "");
   useEffect(() => {
-    document.title = `${TITLES[route.name]}${project ? ` · ${project}` : ""} · Gitring`;
+    document.title = `${TITLES[route.name]}${project ? ` · ${project}` : ""} · gitring`;
   }, [route.name, project]);
   useEffect(() => {
     if (first.current) {

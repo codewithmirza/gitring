@@ -13,7 +13,7 @@ export interface PreviewOptions {
   timeoutMs?: number;
   /**
    * Serve the app with "Content-Security-Policy: sandbox …", so that its scripts run in an opaque
-   * origin and cannot use the cookies or storage of the Gitring origin. Default false: in a sandbox,
+   * origin and cannot use the cookies or storage of the gitring origin. Default false: in a sandbox,
    * localStorage throws and the parent page cannot read the frame location.
    */
   sandbox?: boolean;
@@ -25,7 +25,7 @@ export const PREVIEW_HEADER = "x-gitring-preview";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const PREVIEW_CPU_MS = 5_000;
-/** Credentials of the Gitring origin never go to agent code. */
+/** Credentials of the gitring origin never go to agent code. */
 const STRIPPED_REQUEST_HEADERS = ["cookie", "authorization"];
 const SANDBOX_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads";
 

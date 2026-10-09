@@ -19,7 +19,7 @@ function isIdentifier(raw: string): boolean {
 }
 
 /** Names (the product name is a proper noun, not an "-ing" form). */
-const PROPER_NOUNS = new Set(["Gitring"]);
+const PROPER_NOUNS = new Set(["gitring"]);
 
 export function steViolations(message: string): string[] {
   const problems: string[] = [];

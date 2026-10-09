@@ -3,7 +3,7 @@
  * Stateless (MCP 2026-07-28 via createMcpHandler); all state lives in the project's HarborMaster.
  * Every call carries a personal API key; each tool checks the caller's role on the project.
  *
- * Every tool result starts with a one-line status. When Gitring has new corrections for the agent,
+ * Every tool result starts with a one-line status. When gitring has new corrections for the agent,
  * the result starts with "GITRING COURSE CORRECTION" so the model cannot miss it.
  */
 import { McpServer } from "@modelcontextprotocol/server";
@@ -67,7 +67,7 @@ function createServer(env: Env, who: Principal) {
           const list = (await directory(env).listProjects(who.user?.id ?? null)).filter((x) => atLeast(x.role, "member"));
           return text(
             list.map((x) => ({ project: x.id, name: x.name, role: x.role })),
-            list.length ? `${list.length} projects. Call gitring_intents with one project id.` : "Your key has no project where it can act. Create one in Gitring, or ask an owner to add you.",
+            list.length ? `${list.length} projects. Call gitring_intents with one project id.` : "Your key has no project where it can act. Create one in gitring, or ask an owner to add you.",
           );
         }
         const h = await harbor(p, "viewer");
@@ -84,13 +84,13 @@ function createServer(env: Env, who: Principal) {
     "gitring_declare",
     {
       description:
-        "Declare your course BEFORE you write code: plan, files, symbols, approach. Gitring checks it against all traffic and answers clear or sends corrections. " +
-        "Gitring never blocks you. mode 'git' gives you an Artifacts fork remote + token to clone and push. mode 'api' (default) uses gitring_read / gitring_write. " +
+        "Declare your course BEFORE you write code: plan, files, symbols, approach. gitring checks it against all traffic and answers clear or sends corrections. " +
+        "gitring never blocks you. mode 'git' gives you an Artifacts fork remote + token to clone and push. mode 'api' (default) uses gitring_read / gitring_write. " +
         "Give workdir (your repository root) so the Claude Code hook can deliver corrections mid-task.",
       inputSchema: {
         project,
         intentId: z.string().optional().describe("An intent id from gitring_intents."),
-        newIntent: z.object({ title: z.string(), goal: z.string() }).optional().describe("Bring a new intent instead. Gitring checks it for duplicates."),
+        newIntent: z.object({ title: z.string(), goal: z.string() }).optional().describe("Bring a new intent instead. gitring checks it for duplicates."),
         plan: z.array(z.string()).describe("Short steps, in order."),
         files: z.array(z.string()).describe("Repo-relative paths you will change."),
         symbols: z.array(z.string()).optional().describe("path#name of functions you will add or change. Add (params) if you change a signature."),
@@ -191,7 +191,7 @@ function createServer(env: Env, who: Principal) {
   server.registerTool(
     "gitring_write",
     {
-      description: "Write complete file contents into your attempt (api mode). Gitring re-checks your course after each write. The answer can hold corrections.",
+      description: "Write complete file contents into your attempt (api mode). gitring re-checks your course after each write. The answer can hold corrections.",
       inputSchema: {
         project,
         attemptId,
@@ -203,7 +203,7 @@ function createServer(env: Env, who: Principal) {
       try {
         const res = await (await harbor(args.project)).stub.write({ attemptId: args.attemptId, files: args.files, message: args.message });
         const extra = [
-          res.merged?.length ? `Main moved after your last read: Gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read these files again.` : "",
+          res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read these files again.` : "",
           ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
         ].filter(Boolean);
         return text(res, `Written: ${res.written.join(", ") || "nothing"}. ${extra.length ? `${extra.join(" ")} ` : ""}Course check: ${res.clearance.verdict}. ${res.clearance.advice}`, res.clearance);
@@ -229,7 +229,7 @@ function createServer(env: Env, who: Principal) {
   server.registerTool(
     "gitring_submit",
     {
-      description: "Submit when your checks pass. Gitring lands the work (fast-forward, merge, or re-derive from intent), or asks a human to pick between attempts.",
+      description: "Submit when your checks pass. gitring lands the work (fast-forward, merge, or re-derive from intent), or asks a human to pick between attempts.",
       inputSchema: { project, attemptId, summary: z.string() },
     },
     async (args) => {

@@ -47,7 +47,7 @@ export function FanoutPicker({
       </fieldset>
       <p className="launch__help">
         {fanout === 1
-          ? "One attempt. Gitring lands it when its checks pass."
+          ? "One attempt. gitring lands it when its checks pass."
           : `${fanout} attempts in parallel, each in its own fork. Compare them, then land one.`}
       </p>
     </div>

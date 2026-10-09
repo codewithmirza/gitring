@@ -68,7 +68,7 @@ export const LogLine = memo(function LogLine({ log, agent }: LogLineProps) {
           <Callsign callsign={agent.callsign} color={agent.color} model={agent.model} />
         ) : (
           <span className="b-logline__sys">
-            <Mark size={14} accent={false} title="Gitring" />
+            <Mark size={14} accent={false} title="gitring" />
             gitring
           </span>
         )}

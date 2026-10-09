@@ -111,7 +111,7 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
         In: agents and apps send work
       </text>
       <text x={outX} y={18} className="flow__col">
-        Out: Gitring sends results
+        Out: gitring sends results
       </text>
       {INPUTS.map((n, i) => {
         const y = inY(i) + nodeH / 2;
@@ -174,10 +174,10 @@ function GitringBox({ x, y, w, h }: { x: number; y: number; w: number; h: number
       <rect className="flow__frame" width={w} height={h} />
       <rect className="flow__frame" x={4} y={4} width={w - 8} height={h - 8} />
       <g transform="translate(16 16)">
-        <Mark size={24} title="Gitring" />
+        <Mark size={24} title="gitring" />
       </g>
       <text x={48} y={34} className="flow__title">
-        Gitring
+        gitring
       </text>
       <text x={w - 16} y={34} className="flow__via" textAnchor="end">
         one coordinator per project
@@ -289,7 +289,7 @@ function KeysSection() {
       title="API keys"
       aside={
         <>
-          <p>A key acts as you: it can do what your roles allow on each project. Gitring shows a new key once. Keep it in an environment variable.</p>
+          <p>A key acts as you: it can do what your roles allow on each project. gitring shows a new key once. Keep it in an environment variable.</p>
           <p className="cx__note">
             <Icon name="info" size={12} /> Revoke a key at once if it leaks.
           </p>
@@ -307,7 +307,7 @@ function KeysSection() {
         </div>
         {fresh && (
           <div className="keys__fresh" role="status">
-            <p>Copy the key now. Gitring does not show it again.</p>
+            <p>Copy the key now. gitring does not show it again.</p>
             <CodeBlock shell label="Terminal" code={`export GITRING_KEY=${fresh}`} copyLabel="Copy key" />
           </div>
         )}
@@ -378,16 +378,16 @@ export function ConnectView() {
         Connect other apps
       </h1>
       <p className="page__lede">
-        Agents and apps send work to Gitring through MCP, git and webhooks. Gitring checks every course, sends corrections back to the agents, lands the work
+        Agents and apps send work to gitring through MCP, git and webhooks. gitring checks every course, sends corrections back to the agents, lands the work
         on main and sends the results out.
       </p>
 
       <figure className="flowfig">
         <span className="vh" id="flow-title">
-          How inputs and outputs connect to Gitring
+          How inputs and outputs connect to gitring
         </span>
         <span className="vh" id="flow-desc">
-          In: Claude Code, Codex and Cursor connect through MCP; any git client pushes to a fork; GitHub issues, Slack and any app send webhooks. Gitring runs
+          In: Claude Code, Codex and Cursor connect through MCP; any git client pushes to a fork; GitHub issues, Slack and any app send webhooks. gitring runs
           the course check, sends corrections back to the agents, re-plots work in progress onto each new main, lands work through the landing ladder and
           writes the logbook. Out: main in Cloudflare Artifacts, Slack messages, webhook JSON, CI or deploy hooks, and live events for the browser UI.
         </span>
@@ -401,7 +401,7 @@ export function ConnectView() {
         title="Connect a coding agent"
         aside={
           <>
-            <p>Add the Gitring MCP server to your agent. The agent then declares its course before it writes code, and it gets corrections in every tool result.</p>
+            <p>Add the gitring MCP server to your agent. The agent then declares its course before it writes code, and it gets corrections in every tool result.</p>
             <p className="cx__note">
               <Icon name="info" size={12} /> {info.projectKeyHint}
             </p>
@@ -424,7 +424,7 @@ export function ConnectView() {
           <CodeBlock shell label="Terminal" code={`claude mcp add --transport http gitring ${info.mcpUrl} --header "Authorization: Bearer $GITRING_KEY"`} />
           <p className="cx__step">
             Optional: get corrections in the middle of a task. Add this hook to <span className="code-inline">.claude/settings.json</span>. Claude Code sends
-            each tool result to Gitring; Gitring answers with the corrections that wait for this agent.
+            each tool result to gitring; gitring answers with the corrections that wait for this agent.
           </p>
           <CodeBlock label=".claude/settings.json" code={hook} copyLabel="Copy hook" />
         </TabPanel>
@@ -434,7 +434,7 @@ export function ConnectView() {
         </TabPanel>
         <TabPanel idPrefix="cx" id="cursor" active={client === "cursor"} className="cx__panel">
           <CodeBlock label=".cursor/mcp.json" code={cursor} copyLabel="Copy config" />
-          <p className="cx__step">Restart Cursor. The Gitring tools show in the MCP list.</p>
+          <p className="cx__step">Restart Cursor. The gitring tools show in the MCP list.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="other" active={client === "other"} className="cx__panel">
           <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
@@ -445,7 +445,7 @@ export function ConnectView() {
               ["gitring_log", "Log a step. Other agents see it as traffic."],
               ["gitring_traffic", "Read the vessels near your course."],
               ["gitring_read · gitring_list", "Read files of your working tree."],
-              ["gitring_write", "Write files. Gitring checks the course again."],
+              ["gitring_write", "Write files. gitring checks the course again."],
               ["gitring_check", "Run the intent checks in an isolate."],
               ["gitring_submit", "Submit the attempt for landing."],
               ["gitring_ack", "Acknowledge a correction."],
@@ -464,8 +464,8 @@ export function ConnectView() {
         title="Push with git"
         aside={
           <p>
-            Declare a course in git mode. The clearance has a fork remote and a short-lived token. Push to the fork; Gitring checks the course on every push.
-            You never push to main: Gitring lands the work.
+            Declare a course in git mode. The clearance has a fork remote and a short-lived token. Push to the fork; gitring checks the course on every push.
+            You never push to main: gitring lands the work.
           </p>
         }
       >
@@ -476,7 +476,7 @@ export function ConnectView() {
 git remote add gitring "https://x:$GITRING_FORK_TOKEN@${remote.replace(/^https:\/\//, "")}"
 # 2. Push your work to the fork. Each push runs a course check.
 git push gitring HEAD:main
-# 3. Submit through MCP (gitring_submit). Gitring lands it on main.`}
+# 3. Submit through MCP (gitring_submit). gitring lands it on main.`}
         />
       </Section>
 
@@ -505,7 +505,7 @@ git push gitring HEAD:main
         title="Get events out"
         aside={
           <p>
-            Add a webhook target to the project. Gitring posts <span className="code-inline">landing</span>, <span className="code-inline">correction</span> and{" "}
+            Add a webhook target to the project. gitring posts <span className="code-inline">landing</span>, <span className="code-inline">correction</span> and{" "}
             <span className="code-inline">decision</span> events as JSON, or as Slack messages. Every landing links to its why trail.
           </p>
         }

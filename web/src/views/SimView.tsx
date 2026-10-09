@@ -288,7 +288,7 @@ export function SimView() {
         <StatRow label="Throughput">
           <Stat variant="hero" value={shown ? compact(shown.courseChecksPerSec) : "—"} label="course checks / s" source="Course checks served per second, all sectors." />
           <Stat value={shown ? compact(shown.correctionsPerSec) : "—"} label="corrections / s" source="Corrections from course checks, all sectors." />
-          <Stat value={shown ? compact(shown.replotsPerSec ?? 0) : "—"} label="re-plots / s" source="Work in progress that Gitring moved onto a new main after a landing near it." />
+          <Stat value={shown ? compact(shown.replotsPerSec ?? 0) : "—"} label="re-plots / s" source="Work in progress that gitring moved onto a new main after a landing near it." />
           <Stat value={shown ? (shown.landingsPerSec >= 100 ? compact(shown.landingsPerSec) : shown.landingsPerSec.toFixed(1)) : "—"} label="landings / s" />
         </StatRow>
         <StatRow label="Safety and latency">
@@ -296,13 +296,13 @@ export function SimView() {
           <Stat value={shown ? int(shown.conflictsAtLanding) : "—"} label="conflicts at landing" good={Boolean(shown && shown.conflictsAtLanding === 0)} />
           <Stat
             value={shown?.conflictRate !== undefined ? `${(shown.conflictRate * 100).toFixed(1)}%` : "—"}
-            label="conflict rate with Gitring"
+            label="conflict rate with gitring"
             good={Boolean(shown && (shown.conflictRate ?? 1) < (shown.baselineConflictRate ?? 0))}
             source="Landings that hit lines or interfaces changed by an earlier landing, with course checks on."
           />
           <Stat
             value={shown?.baselineConflictRate !== undefined ? `${(shown.baselineConflictRate * 100).toFixed(1)}%` : "—"}
-            label="without Gitring (baseline shard)"
+            label="without gitring (baseline shard)"
             source="The same agents and density in one extra sector with course checks off."
           />
           <Stat
@@ -335,11 +335,11 @@ export function SimView() {
 
       <section className="sim__how" aria-labelledby="how-title">
         <h2 className="page__h2" id="how-title">
-          How Gitring scales
+          How gitring scales
         </h2>
         <ul>
           <li>
-            <strong>Most courses clear without a model call.</strong> Gitring asks the model only when another vessel is within range R3.
+            <strong>Most courses clear without a model call.</strong> gitring asks the model only when another vessel is within range R3.
           </li>
           <li>
             <strong>One sector per code region.</strong> A sector Durable Object checks the courses in its region. In this simulation each agent works inside

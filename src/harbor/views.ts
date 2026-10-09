@@ -174,7 +174,7 @@ export function adviceFor(verdict: Verdict | undefined, newCorrections: number, 
     return `You have ${newCorrections} new correction${newCorrections > 1 ? "s" : ""}. Apply ${newCorrections > 1 ? "them" : "it"}, then call gitring_ack. Continue your work.`;
   }
   const close = traffic.filter((t) => t.range <= 2);
-  if (verdict === "escalate") return "A human reviews a risk on your course. Continue your work. Gitring tells you if the course changes.";
+  if (verdict === "escalate") return "A human reviews a risk on your course. Continue your work. gitring tells you if the course changes.";
   if (close.length) return `Course clear. ${close.length} vessel${close.length > 1 ? "s" : ""} work near you. Read their context in traffic before you edit shared files.`;
   return "Course clear. Continue your work.";
 }

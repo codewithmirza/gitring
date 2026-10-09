@@ -61,7 +61,7 @@ export interface DrydockResult {
   log: string;
 }
 
-/** Shell script of one run. Gitring's markers on stdout tell the stages apart. */
+/** Shell script of one run. gitring's markers on stdout tell the stages apart. */
 export function runScript(): string {
   return String.raw`set -u
 W=/workspace
@@ -163,14 +163,14 @@ export class Drydock extends DurableObject<Env> {
     const untar = await c.exec(["tar", "-xzf", "-", "-C", "/workspace", "--no-same-owner"], { env, stdin });
     const unpacked = await untar.output();
     if (unpacked.exitCode !== 0) {
-      return { ok: false, stage: "start", exitCode: unpacked.exitCode, installMs: 0, testMs: 0, reused: false, log: `Gitring could not copy the tree into the container: ${new TextDecoder().decode(unpacked.stderr).slice(0, 2000)}` };
+      return { ok: false, stage: "start", exitCode: unpacked.exitCode, installMs: 0, testMs: 0, reused: false, log: `gitring could not copy the tree into the container: ${new TextDecoder().decode(unpacked.stderr).slice(0, 2000)}` };
     }
     const seconds = Math.max(60, Math.min(1800, Math.round(input.timeoutSec)));
     const proc = await c.exec(["timeout", "--kill-after=10", String(seconds), "bash", "-c", runScript()], { env, cwd: "/workspace", stderr: "combined" });
     const out = await proc.output();
     const text = new TextDecoder().decode(out.stdout);
     const res = parseRun(text, out.exitCode);
-    if (res.stage === "timeout") res.log = `${res.log}\nThe run took more than ${seconds} s. Gitring stopped it.`;
+    if (res.stage === "timeout") res.log = `${res.log}\nThe run took more than ${seconds} s. gitring stopped it.`;
     if (!res.installMs && !res.testMs) res.testMs = Date.now() - started;
     return res;
   }
@@ -216,7 +216,7 @@ export class Seawall extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (!registryAllowed(url.hostname)) {
-      return new Response(`Gitring check containers reach package registries only. ${url.hostname} is not one of them.\n`, { status: 403 });
+      return new Response(`gitring check containers reach package registries only. ${url.hostname} is not one of them.\n`, { status: 403 });
     }
     return fetch(request);
   }

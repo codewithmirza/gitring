@@ -200,14 +200,15 @@ export class Directory extends DurableObject<Env> {
     const host = new URL(origin).hostname;
     const tag = host.endsWith(".workers.dev") ? host.split(".").slice(-3, -2)[0] : host.split(".")[0];
     const manifest = {
-      name: `Gitring ${tag}`.slice(0, 34),
+      // GitHub reserves app names with "gitring" in them (an account has that login), so the app is "git-ring".
+      name: `git-ring ${tag}`.slice(0, 34),
       url: origin,
       hook_attributes: { url: `${origin}/hooks/github-app`, active: true },
       redirect_url: `${origin}/setup/github/callback`,
       callback_urls: [`${origin}/auth/github/callback`],
       setup_url: `${origin}/setup/github/installed`,
       setup_on_update: true,
-      description: "Gitring: many coding agents change one codebase at the same time. Sign in, import repositories, mirror landings.",
+      description: "gitring: many coding agents change one codebase at the same time. Sign in, import repositories, mirror landings.",
       public: true,
       default_permissions: { contents: "write", issues: "read", metadata: "read" },
       default_events: ["issues", "push"],
@@ -268,13 +269,13 @@ export class Directory extends DurableObject<Env> {
     const back = safeReturn(returnTo);
     if (provider === "github") {
       const gh = await this.getSealed<GithubAppConfig>("github_app");
-      if (!gh) throw new Error("GitHub sign-in is not set up on this Gitring yet.");
+      if (!gh) throw new Error("GitHub sign-in is not set up on this gitring yet.");
       const state = this.putState({ kind: "signin", provider, origin, returnTo: back });
       const q = new URLSearchParams({ client_id: gh.clientId, redirect_uri: `${origin}/auth/github/callback`, state, allow_signup: "true" });
       return `https://github.com/login/oauth/authorize?${q}`;
     }
     const gg = await this.getSealed<GoogleConfig>("google");
-    if (!gg) throw new Error("Google sign-in is not set up on this Gitring yet.");
+    if (!gg) throw new Error("Google sign-in is not set up on this gitring yet.");
     const verifier = randomToken(48);
     const nonce = randomToken(16);
     const state = this.putState({ kind: "signin", provider, origin, returnTo: back, verifier, nonce });
@@ -472,7 +473,7 @@ export class Directory extends DurableObject<Env> {
   }
 
   private info(row: ProjectRow, userId: string | null): A.ProjectInfo {
-    const owner = row.owner_id ? this.sql.exec<{ name: string }>("SELECT name FROM users WHERE id = ?", row.owner_id).toArray()[0]?.name : "Gitring";
+    const owner = row.owner_id ? this.sql.exec<{ name: string }>("SELECT name FROM users WHERE id = ?", row.owner_id).toArray()[0]?.name : "gitring";
     return {
       id: row.id,
       name: row.name,
@@ -539,7 +540,7 @@ export class Directory extends DurableObject<Env> {
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "project";
     let id = `${base}-${rand(4)}`;
     while (this.projectRow(id)) id = `${base}-${rand(4)}`;
-    if (!PROJECT_ID.test(id)) throw new Error("Gitring could not make an id for this name. Use letters and digits.");
+    if (!PROJECT_ID.test(id)) throw new Error("gitring could not make an id for this name. Use letters and digits.");
     const now = Date.now();
     this.sql.exec(
       "INSERT INTO projects (id, name, owner_id, visibility, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",

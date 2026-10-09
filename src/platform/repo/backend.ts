@@ -1,5 +1,5 @@
 /**
- * RepoBackend — the only way Gitring touches git storage.
+ * RepoBackend — the only way gitring touches git storage.
  *
  * ArtifactsBackend is the implementation: the Cloudflare Artifacts binding for control-plane +
  * reads, isomorphic-git (in-memory, shallow) for writes, because `git push` is the only write path.

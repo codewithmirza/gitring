@@ -2,12 +2,12 @@
  * Sector — one shard of the scale simulation (a Durable Object).
  *
  * A sector owns a region of a large synthetic codebase (a set of modules). Synthetic agents in the
- * region declare courses, log progress and land. Every course check runs the REAL Gitring
+ * region declare courses, log progress and land. Every course check runs the REAL gitring
  * coordination code (selectCandidates → buildPairFacts → rules assessment → decide → corrections)
  * over synthetic vessel views. No LLM and no forks: this measures the coordination layer only.
  *
  * With `coordinate = false` the sector skips course checks; landings then count the conflicts that
- * agents would hit without Gitring (the baseline).
+ * agents would hit without gitring (the baseline).
  */
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../worker/env";
@@ -307,7 +307,7 @@ export class Sector extends DurableObject<Env> {
     this.landingCount += 1;
     this.landed.push({ id: a.id, at: this.landingCount, files: a.hunks, changed: a.changed, signatureChanged: a.signatureChanged });
     out.landings += 1;
-    // Re-plot: main moved, so Gitring moves every vessel near the landed files onto the new main.
+    // Re-plot: main moved, so gitring moves every vessel near the landed files onto the new main.
     // Overlapping lines go back to main and the agent makes its change again (it adapts with ADAPT_P).
     if (this.cfg?.coordinate) {
       const near = new Set<SimAgent>();

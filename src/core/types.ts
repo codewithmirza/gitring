@@ -1,12 +1,12 @@
 /**
- * Gitring — core domain types.
+ * gitring — core domain types.
  *
  * Vocabulary:
  *   Intent      the source: a goal plus executable checks. Replaces issue + pull request.
  *   Attempt     one agent's work on one intent, in its own Artifacts fork. Replaces branch / worktree.
  *   Course      what an agent declares BEFORE it writes code: plan, files, symbols.
  *   Footprint   what an agent actually touched (from real diffs).
- *   Course check  Gitring's collision assessment of a course against all traffic.
+ *   Course check  gitring's collision assessment of a course against all traffic.
  *   Correction  an amendment to an agent's brief. The agent keeps working. Replaces "rejected / conflict".
  *   Landing     integration into main via the landing ladder (fast-forward → merge → re-derive).
  *   Logbook     the "why" record: intent, course, corrections, checks, decision (git notes).
@@ -59,13 +59,13 @@ export interface ProjectSettings {
   thresholds: PolicyThresholds;
   /** Outbound webhooks (Slack, CI, mirrors). */
   webhooks: WebhookTarget[];
-  /** How Gitring runs checks. Absent: the Gitring test harness in a Dynamic Worker (the sample). */
+  /** How gitring runs checks. Absent: the gitring test harness in a Dynamic Worker (the sample). */
   checks?: CheckSettings;
 }
 
 /**
  * Check runners:
- *   worker     Gitring's test harness in a Dynamic Worker: tests/*.test.js, no dependencies, no network (fast).
+ *   worker     gitring's test harness in a Dynamic Worker: tests/*.test.js, no dependencies, no network (fast).
  *   container  A Linux container (Cloudflare Containers, Node.js 24): the install command, then the test command.
  *              Network in the container reaches package registries only.
  */
@@ -120,7 +120,7 @@ export interface Project {
   /** The Directory user who created the project (budget and default owner). */
   ownerId?: string;
   /**
-   * Set while main is empty: Artifacts imports the repository (git), or Gitring waits for the owner's
+   * Set while main is empty: Artifacts imports the repository (git), or gitring waits for the owner's
    * first `git push` (push). Main fills when it is done.
    */
   importing?: { url: string; startedAt: Millis; error?: string; push?: boolean; tokenIds?: string[] };
@@ -142,7 +142,7 @@ export interface CheckSpec {
   id: string;
   /** Repo-relative path of the test file, for example `tests/dark-mode.test.js`. */
   path: string;
-  /** Test source. Gitring writes it into each attempt's working tree. */
+  /** Test source. gitring writes it into each attempt's working tree. */
   content: string;
   description: string;
 }
@@ -302,7 +302,7 @@ export interface Attempt {
   intentId: string;
   agentId: string;
   fork: { repo: string; remote?: string };
-  /** "api": Gitring holds the working tree (MCP read/write). "git": the agent pushes to the fork. */
+  /** "api": gitring holds the working tree (MCP read/write). "git": the agent pushes to the fork. */
   mode: "api" | "git";
   baseSha: string;
   baseTree: string;
@@ -317,7 +317,7 @@ export interface Attempt {
   lineage: { generation: number; rederivedFrom?: string };
   /** Set when main moved and some files of a waiting attempt overlap the landed change: landing re-derives them. */
   drift?: { mainSha: string; overlaps: string[] };
-  /** Built-in agents only: the hourly AI budget is used, so the agent starts at this time (Gitring retries then). */
+  /** Built-in agents only: the hourly AI budget is used, so the agent starts at this time (gitring retries then). */
   waitsForBudget?: Millis;
   summary?: string;
   stats: { filesChanged: number; additions: number; deletions: number; steps: number; tokens?: number };
@@ -422,14 +422,14 @@ export interface Correction {
     avoidRegions?: { path: string; lines: LineRange }[];
     useSignatures?: { symbol: SymbolKey; signature: string }[];
     notes?: string[];
-    /** Files to change again on the new main: Gitring kept the main version; the diff is the agent's earlier change. */
+    /** Files to change again on the new main: gitring kept the main version; the diff is the agent's earlier change. */
     reapply?: { path: string; diff: string }[];
-    /** Set when Gitring moved the work onto a new main (re-plot). */
+    /** Set when gitring moved the work onto a new main (re-plot). */
     replot?: { mainSha: string };
   };
   checkId: string;
   status: "pending" | "delivered" | "acknowledged" | "superseded";
-  /** Severity of the situation when issued (higher = closer / more overlap). Gitring re-sends only when it grows. */
+  /** Severity of the situation when issued (higher = closer / more overlap). gitring re-sends only when it grows. */
   severity?: number;
   /** How many times the advice was refreshed in place without a new delivery. */
   refreshes?: number;
@@ -483,7 +483,7 @@ export interface Landing {
   checks: CheckRun;
   correctionsApplied: number;
   at: Millis;
-  /** Commit message (with Gitring trailers). */
+  /** Commit message (with gitring trailers). */
   message: string;
 }
 
@@ -571,7 +571,7 @@ export interface HarborStats {
   landings: number;
   landedByMethod: Record<LandingMethod, number>;
   rederives: number;
-  /** Times Gitring moved in-flight work onto a new main (re-plot). */
+  /** Times gitring moved in-flight work onto a new main (re-plot). */
   replots?: number;
   humanMergeFixes: number; // the number we keep at zero
   medianCheckLatencyMs: number;
@@ -592,9 +592,9 @@ export interface SimStats {
   p99CheckMs: number;
   startedAt?: Millis;
   elapsedMs: number;
-  /** Course checks on (Gitring) or off (baseline). */
+  /** Course checks on (gitring) or off (baseline). */
   coordinate?: boolean;
-  /** Conflicts at landing per landing, with Gitring. */
+  /** Conflicts at landing per landing, with gitring. */
   conflictRate?: number;
   /** Conflicts at landing per landing in a baseline shard with no course checks. */
   baselineConflictRate?: number;
@@ -638,7 +638,7 @@ export type GitringEvent =
 /* ───────────────────────────── agent protocol (MCP + built-in vessels) ───────────────────────────── */
 
 export interface AgentIdentity {
-  /** Stable id from the client if it has one; Gitring creates one if absent. */
+  /** Stable id from the client if it has one; gitring creates one if absent. */
   id?: string;
   name?: string;
   client?: string;
@@ -650,7 +650,7 @@ export interface DeclareInput {
   agent: AgentIdentity;
   /** Join an existing intent… */
   intentId?: string;
-  /** …or bring a new intent (Gitring creates it, then checks for duplicates). */
+  /** …or bring a new intent (gitring creates it, then checks for duplicates). */
   newIntent?: { title: string; goal: string };
   plan: string[];
   files: string[];
@@ -692,7 +692,7 @@ export interface DeclareResult {
     tokenExpiresAt?: string;
   };
   clearance: Clearance;
-  /** How to work with Gitring (short protocol reminder). */
+  /** How to work with gitring (short protocol reminder). */
   protocol: string[];
 }
 
@@ -713,9 +713,9 @@ export interface WriteInput {
 
 export interface WriteResult {
   written: string[];
-  /** Files that changed under the agent after its last read (main moved). Gitring merged the write with those changes. */
+  /** Files that changed under the agent after its last read (main moved). gitring merged the write with those changes. */
   merged?: string[];
-  /** Files that Gitring did not write: the write overlaps changes that the agent did not read yet. */
+  /** Files that gitring did not write: the write overlaps changes that the agent did not read yet. */
   refused?: { path: string; reason: string }[];
   footprint: { files: string[]; symbols: SymbolKey[] };
   clearance: Clearance;

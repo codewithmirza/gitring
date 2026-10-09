@@ -65,7 +65,7 @@ function Connection() {
   const btn = useRef<HTMLButtonElement | null>(null);
   let text = "Connecting";
   let tone = "neutral";
-  let help = "Gitring asks the harbor for the project state.";
+  let help = "gitring asks the harbor for the project state.";
   if (mode === "live" && conn === "open") {
     text = "Live";
     tone = "clear";
@@ -73,7 +73,7 @@ function Connection() {
   } else if (conn === "reconnecting" || conn === "offline") {
     text = conn === "offline" ? "Offline" : "Reconnecting";
     tone = "caution";
-    help = error ?? "The live connection dropped. Gitring reconnects.";
+    help = error ?? "The live connection dropped. gitring reconnects.";
   }
   const act = async (kind: "run" | "reset") => {
     setBusy(kind);
@@ -156,7 +156,7 @@ function JudgmentQueue() {
       <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} label="Judgment queue" align="end">
         <div className="queue">
           <p className="queue__head">
-            {n ? "These decisions need a human. Everything else lands by itself." : "No decisions need a human now. Gitring lands work that passes its checks."}
+            {n ? "These decisions need a human. Everything else lands by itself." : "No decisions need a human now. gitring lands work that passes its checks."}
           </p>
           {queue.map((q) => (
             <Link key={q.key} to={`/intents/${q.intentId}`} className="queue__item" onClick={() => setOpen(false)}>
@@ -192,9 +192,9 @@ function StatsStrip() {
         variant="inline"
         value={int(stats.replots ?? 0)}
         label="re-plots"
-        source="Times Gitring moved work in progress onto a new main, so the agent keeps working on current code."
+        source="Times gitring moved work in progress onto a new main, so the agent keeps working on current code."
       />
-      <Stat variant="inline" value={int(stats.humanMergeFixes)} label="human merge fixes" good={stats.humanMergeFixes === 0} source="Text conflicts a human fixed by hand. Gitring keeps this number at zero." />
+      <Stat variant="inline" value={int(stats.humanMergeFixes)} label="human merge fixes" good={stats.humanMergeFixes === 0} source="Text conflicts a human fixed by hand. gitring keeps this number at zero." />
     </div>
   );
 }
@@ -213,7 +213,7 @@ export function TopBar({ route }: { route: Route }) {
             e.preventDefault();
             navigate("/");
           }}
-          aria-label="Gitring, go to the chart"
+          aria-label="gitring, go to the chart"
         >
           <Mark size={22} />
           <span className="topbar__wordmark">gitring</span>

@@ -250,7 +250,7 @@ export class ArtifactsBackend implements RepoBackend {
     private readonly binding: Artifacts,
     opts: ArtifactsBackendOptions = {},
   ) {
-    this.author = opts.author ?? { name: "Gitring", email: "logbook@gitring.invalid" };
+    this.author = opts.author ?? { name: "gitring", email: "logbook@gitring.invalid" };
     this.now = opts.now ?? (() => Date.now());
     this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.retryBudgetMs = opts.retryBudgetMs ?? 20_000;
@@ -700,7 +700,7 @@ export class ArtifactsBackend implements RepoBackend {
         changes,
         parents: tip ? [tip] : [],
         author: this.author,
-        message: `Notes added by Gitring for ${commitSha}`,
+        message: `Notes added by gitring for ${commitSha}`,
         timestamp: Math.floor(this.now() / 1000),
       });
       await writeLocalObjects(s, preparedObjects(prepared, fetched));

@@ -14,8 +14,8 @@ type Kind = "sample" | "empty" | "git" | "push" | "upload";
 const KINDS: { value: Kind; label: string; icon: IconName; help: string }[] = [
   { value: "sample", label: "Sample", icon: "compass", help: "A small bookshop on Cloudflare Workers with five intents and checks. Your own copy, to try real AI agents." },
   { value: "git", label: "Import URL", icon: "fork", help: "Import a public repository from GitHub, GitLab, Bitbucket or any https git host. The history comes with it." },
-  { value: "push", label: "git push", icon: "launch", help: "For private repositories from any host: Gitring makes an empty repository, then you push yours to it with git. The history comes with it." },
-  { value: "upload", label: "Folder", icon: "grid", help: "Upload a folder from your computer, without git. Gitring leaves out .git, node_modules and build output." },
+  { value: "push", label: "git push", icon: "launch", help: "For private repositories from any host: gitring makes an empty repository, then you push yours to it with git. The history comes with it." },
+  { value: "upload", label: "Folder", icon: "grid", help: "Upload a folder from your computer, without git. gitring leaves out .git, node_modules and build output." },
   { value: "empty", label: "Empty", icon: "anchor", help: "A new repository with a README. Let agents write the code." },
 ];
 
@@ -92,7 +92,7 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
       open={open}
       onClose={onClose}
       title="New project"
-      description="Gitring keeps the code in Cloudflare Artifacts: main, one fork per agent, and the logbook."
+      description="gitring keeps the code in Cloudflare Artifacts: main, one fork per agent, and the logbook."
       size="lg"
       footer={
         <>
@@ -114,7 +114,7 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
         />
         <p className="np__help">{KINDS.find((k) => k.value === kind)?.help}</p>
         {kind === "upload" && (
-          <Field label="Folder" help="Gitring reads the files in your browser and sends them in one commit (at most 20 MB).">
+          <Field label="Folder" help="gitring reads the files in your browser and sends them in one commit (at most 20 MB).">
             <input
               type="file"
               className="np__folder"
@@ -203,7 +203,7 @@ export function ProjectsView() {
       <h1 className="page__title" tabIndex={-1}>
         Projects
       </h1>
-      <p className="page__lede">Each project is one repository in Cloudflare Artifacts. Agents work on it at the same time; Gitring keeps them apart.</p>
+      <p className="page__lede">Each project is one repository in Cloudflare Artifacts. Agents work on it at the same time; gitring keeps them apart.</p>
       <div className="projects__actions">
         {signedIn ? (
           <Button variant="primary" icon="plus" onClick={() => setOpen(true)}>

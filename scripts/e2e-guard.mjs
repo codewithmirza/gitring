@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * End-to-end check of re-plot and the write guard, through MCP only (api mode), against a running
- * Gitring (local `npm run dev` or a deployed Worker). Exit code 1 when a check fails.
+ * gitring (local `npm run dev` or a deployed Worker). Exit code 1 when a check fails.
  *
  *   GITRING_URL=https://<your-worker> GITRING_KEY=gk_… node scripts/e2e-guard.mjs
  *
- * 1. A reads src/render.js. B changes the footer and lands. Gitring re-plots A onto the new main.
- *    A writes from its old copy: Gitring merges, so B's line stays. A writes again from the same copy:
+ * 1. A reads src/render.js. B changes the footer and lands. gitring re-plots A onto the new main.
+ *    A writes from its old copy: gitring merges, so B's line stays. A writes again from the same copy:
  *    B's line still stays. A write on the line next to B's line overlaps it: refused, read again.
- * 2. C and D change the same footer line. D lands. Gitring resets C's file to main (must read).
+ * 2. C and D change the same footer line. D lands. gitring resets C's file to main (must read).
  *    C writes its old text: refused. C reads, writes again: accepted, and D's line stays.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -52,7 +52,7 @@ async function landed(id) {
   throw new Error(`${id} did not land`);
 }
 const fileOnMain = async () => (await fetch(`${base}/api/projects/${project}/file?ref=main&path=src/render.js`, { headers })).text();
-/** The attempt's file as Gitring holds it (not a read by the agent: the agent's copy does not change). */
+/** The attempt's file as gitring holds it (not a read by the agent: the agent's copy does not change). */
 const fileOf = async (id) => (await fetch(`${base}/api/projects/${project}/file?ref=${id}&path=src/render.js`, { headers })).text();
 
 // ── 1. merge a write from a stale copy, twice ──
@@ -76,7 +76,7 @@ await write(A, aV2);
 now = await fileOf(A);
 ok(now.includes("since 1987, on the quay"), "A's second write applies");
 ok(now.includes("Gift wrapping is free."), "A's second write from its old copy keeps B's landed line");
-// A change on the line next to B's landed line overlaps it: Gitring refuses it and asks for a read.
+// A change on the line next to B's landed line overlaps it: gitring refuses it and asks for a read.
 const aV3 = aV2.replace("Ask at the counter", "Please ask at the counter");
 const w3 = await write(A, aV3);
 ok(w3.refused?.length === 1 && (await fileOf(A)).includes("Gift wrapping is free."), "A's write next to B's line is refused (read again), B's line stays");

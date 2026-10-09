@@ -1,6 +1,6 @@
 /**
  * Snapshots: a flat view of a git tree (repo-relative path → file entry), plus the
- * operations Gitring needs on top of it: read (recursive, cached, bounded concurrency),
+ * operations gitring needs on top of it: read (recursive, cached, bounded concurrency),
  * diff, apply file changes, and build tree objects bottom-up.
  *
  * Pure module (WebCrypto + TextEncoder only). Runs in Node 22 and in workerd.

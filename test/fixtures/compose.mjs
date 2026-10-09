@@ -1,4 +1,4 @@
-// Test fixture: compose the reference solutions of the sample intents the way Gitring lands attempts
+// Test fixture: compose the reference solutions of the sample intents the way gitring lands attempts
 // (a line-based 3-way merge for each file). Tests use it to prove that every sample intent can pass
 // its checks and that the solutions compose. Pure, except loadSample(), which reads disk (Node only).
 import { readdir, readFile } from "node:fs/promises";
@@ -58,7 +58,7 @@ export function intentOf(demo, slug) {
   return intent;
 }
 
-/** The check files of an intent, as a change (Gitring writes them into each attempt). */
+/** The check files of an intent, as a change (gitring writes them into each attempt). */
 export function checkFiles(demo, slug) {
   return Object.fromEntries(intentOf(demo, slug).checks.map((check) => [check.path, check.content]));
 }

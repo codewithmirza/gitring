@@ -325,7 +325,7 @@ function WhyTrail({ id }: { id: string }) {
             </figure>
           ) : (
             <p className="why__auto">
-              No human pick was necessary. The intent had one live attempt and its checks passed, so Gitring landed it by itself
+              No human pick was necessary. The intent had one live attempt and its checks passed, so gitring landed it by itself
               {siblings.length ? ` (${plural(siblings.length, "alternate")} stay visible)` : ""}.
             </p>
           )}
@@ -399,7 +399,7 @@ export function LogbookView({ id }: { id?: string }) {
           </div>
         )}
         {rows.length === 0 ? (
-          <EmptyState text="No landings yet. Gitring writes a logbook record for every landing." />
+          <EmptyState text="No landings yet. gitring writes a logbook record for every landing." />
         ) : (
           <ol className="lrows" role="list">
             {rows.map((r) => (

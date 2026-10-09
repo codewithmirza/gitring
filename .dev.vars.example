@@ -3,5 +3,5 @@
 GITRING_SECRET=
 # Opens /setup before an owner signs in. Make one: openssl rand -hex 16
 GITRING_SETUP_TOKEN=
-# Owners of this Gitring: they open /setup and act on every project.
+# Owners of this gitring: they open /setup and act on every project.
 GITRING_OWNERS=github:your-login,google:you@example.com
