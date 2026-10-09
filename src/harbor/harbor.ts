@@ -64,7 +64,7 @@ import {
 import bundle from "../../sample/bundle.json";
 
 const BEARING_AUTHOR = { name: "Bearing", email: "harbor@bearing.dev" };
-export const BUILD_ID = "0.3.0+20261009b";
+export const BUILD_ID = "0.3.0+20261009c";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
