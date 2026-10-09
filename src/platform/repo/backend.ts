@@ -81,7 +81,8 @@ export interface RepoBackend {
   /** Create an empty repo. Idempotent: returns the existing repo if the name exists. */
   ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle>;
   /** Fork `source` (default branch only) into a new repo named `name`. */
-  fork(source: string, name: string, opts?: { description?: string }): Promise<ForkResult>;
+  /** Fork the source's default branch (allBranches: every branch) into a new repo. */
+  fork(source: string, name: string, opts?: { description?: string; allBranches?: boolean }): Promise<ForkResult>;
   deleteRepo(name: string): Promise<void>;
 
   /** Resolve a branch/tag/sha to a commit hash, or null. */

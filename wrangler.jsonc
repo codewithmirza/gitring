@@ -37,7 +37,7 @@
     "AI_AGENTS_PER_HOUR": "40",
     "AI_AGENTS_PER_USER_HOUR": "12"
   },
-  // Imports read many git objects from Artifacts in one request.
-  "limits": { "subrequests": 100000 },
+  // Imports read many git objects from Artifacts in one request, and index large repositories.
+  "limits": { "subrequests": 100000, "cpu_ms": 300000 },
   "observability": { "enabled": true }
 }

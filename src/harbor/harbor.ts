@@ -271,10 +271,13 @@ export class HarborMaster extends DurableObject<Env> {
     if (!p?.importing || p.importing.error) return;
     const elapsed = Date.now() - p.importing.startedAt;
     let ready = false;
+    let remoteDefault = "";
     try {
+      // get() throws IMPORT_IN_PROGRESS until Artifacts has the whole repository.
       using repo = await this.env.ARTIFACTS.get(p.repo.name);
       const info = await repo.info();
       ready = !("status" in info) || (info as { status?: string }).status !== "importing";
+      remoteDefault = info.defaultBranch ?? "";
     } catch {
       ready = false;
     }
@@ -289,9 +292,20 @@ export class HarborMaster extends DurableObject<Env> {
       await this.ctx.storage.setAlarm(Date.now() + Math.min(15_000, 2000 + elapsed / 10));
       return;
     }
-    const sha = await this.backend.resolve(p.repo.name, p.repo.defaultBranch);
+    // Main is the branch the owner asked for, else the remote's default branch.
+    const asked = p.source?.kind === "git" ? p.source.branch : undefined;
+    const candidates = asked ? [asked] : [...new Set([remoteDefault, p.repo.defaultBranch, "main", "master", "trunk", "develop"].filter(Boolean))];
+    let sha: string | null = null;
+    for (const branch of candidates) {
+      sha = await this.backend.resolve(p.repo.name, branch);
+      if (sha) {
+        p.repo.defaultBranch = branch;
+        p.repo.forkAllBranches = remoteDefault !== branch;
+        break;
+      }
+    }
     if (!sha) {
-      p.importing = { ...p.importing, error: `The repository has no branch "${p.repo.defaultBranch}".` };
+      p.importing = { ...p.importing, error: asked ? `The repository has no branch "${asked}".` : "Bearing did not find the default branch of the repository. Import it again and name the branch." };
       this.db.setMeta("project", p);
       this.addLog({ kind: "system", message: `Import failed: ${p.importing.error}` });
       this.emit({ type: "snapshot", state: await this.state() });
@@ -760,7 +774,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (job) return job;
     const p = this.requireProject();
     job = (async () => {
-      const fork = await this.backend.fork(p.repo.name, a.fork.repo, { description: `${intent.title} · ${a.id}` });
+      const fork = await this.backend.fork(p.repo.name, a.fork.repo, { description: `${intent.title} · ${a.id}`, allBranches: p.repo.forkAllBranches });
       a.fork.remote = fork.remote ?? (await this.backend.remoteUrl(a.fork.repo));
       if (a.mode === "git" && intent.checks.length) {
         // Put the intent's checks into the fork so a git client sees them after clone.

@@ -28,7 +28,7 @@ export type EmulatorCommitOutcome =
 /** RPC methods of the LocalArtifacts Durable Object (all async). */
 export interface EmulatorRpc {
   ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle>;
-  fork(source: string, name: string, opts?: { description?: string }): Promise<ForkResult>;
+  fork(source: string, name: string, opts?: { description?: string; allBranches?: boolean }): Promise<ForkResult>;
   deleteRepo(name: string): Promise<void>;
   resolve(repo: string, ref: string): Promise<string | null>;
   readCommit(repo: string, sha: string): Promise<CommitMeta | null>;
@@ -47,7 +47,7 @@ export class EmulatorService implements EmulatorRpc {
   ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle> {
     return this.git.ensureRepo(name, opts);
   }
-  fork(source: string, name: string, opts?: { description?: string }): Promise<ForkResult> {
+  fork(source: string, name: string, opts?: { description?: string; allBranches?: boolean }): Promise<ForkResult> {
     return this.git.fork(source, name, opts);
   }
   deleteRepo(name: string): Promise<void> {
@@ -113,7 +113,7 @@ export class EmulatorBackend implements RepoBackend {
   ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle> {
     return this.rpc().ensureRepo(name, opts);
   }
-  fork(source: string, name: string, opts?: { description?: string }): Promise<ForkResult> {
+  fork(source: string, name: string, opts?: { description?: string; allBranches?: boolean }): Promise<ForkResult> {
     return this.rpc().fork(source, name, opts);
   }
   deleteRepo(name: string): Promise<void> {

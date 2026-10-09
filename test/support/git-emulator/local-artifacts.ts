@@ -28,7 +28,7 @@ export class LocalArtifacts extends DurableObject implements EmulatorRpc {
   async ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle> {
     return this.service.ensureRepo(name, opts);
   }
-  async fork(source: string, name: string, opts?: { description?: string }): Promise<ForkResult> {
+  async fork(source: string, name: string, opts?: { description?: string; allBranches?: boolean }): Promise<ForkResult> {
     return this.service.fork(source, name, opts);
   }
   async deleteRepo(name: string): Promise<void> {

@@ -412,11 +412,11 @@ export class ArtifactsBackend implements RepoBackend {
    * Fork `source` (default branch only) into `name`. Retries FORK_IN_PROGRESS / CREATE_IN_PROGRESS.
    * If `name` already exists as a fork of `source` (a retried call), it is adopted with a new token.
    */
-  async fork(source: string, name: string, opts: { description?: string } = {}): Promise<ForkResult> {
+  async fork(source: string, name: string, opts: { description?: string; allBranches?: boolean } = {}): Promise<ForkResult> {
     return this.retrying(async () => {
       const src = await this.binding.get(source);
       try {
-        const res = await src.fork(name, { defaultBranchOnly: true, ...(opts.description ? { description: opts.description } : {}) });
+        const res = await src.fork(name, { defaultBranchOnly: !opts.allBranches, ...(opts.description ? { description: opts.description } : {}) });
         this.remember(res.name, res.remote);
         return { name: res.name, remote: res.remote, defaultBranch: res.defaultBranch, token: res.token };
       } catch (err) {

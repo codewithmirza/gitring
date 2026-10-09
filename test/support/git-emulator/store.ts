@@ -417,7 +417,7 @@ export class GitStore {
    * `defaultBranchOnly: true`). Notes are not copied. If `name` already exists as a fork of
    * `source` (a retried call), it is returned; any other existing repo is an error.
    */
-  async fork(source: string, name: string, opts: { description?: string } = {}): Promise<ForkResult> {
+  async fork(source: string, name: string, opts: { description?: string; allBranches?: boolean } = {}): Promise<ForkResult> {
     const src = await this.requireRepo(source);
     assertRepoName(name);
     const existing = await this.store.getRepo(name);

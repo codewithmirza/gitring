@@ -40,6 +40,8 @@ export interface ProjectRepo {
   /** Git remote URL of the canonical repo in Artifacts. */
   remote?: string;
   defaultBranch: string;
+  /** Main is not the default branch of the Artifacts repo (an import of another branch): forks copy every branch. */
+  forkAllBranches?: boolean;
 }
 
 export interface ProjectSettings {
