@@ -39,7 +39,7 @@ const project = z.string().describe("Project id (bearing_intents without a proje
 const attemptId = z.string().describe("Your attempt id from bearing_declare.");
 
 function createServer(env: Env, who: Principal) {
-  const server = new McpServer({ name: "bearing", version: "0.3.0" });
+  const server = new McpServer({ name: "bearing", version: "0.4.0" });
 
   /** The project's HarborMaster, after a role check (member to act, viewer to read). */
   async function harbor(raw: string | undefined, need: A.Role = "member"): Promise<{ id: string; stub: HarborApi }> {
