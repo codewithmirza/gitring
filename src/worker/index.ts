@@ -21,6 +21,7 @@ import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, directory, resolvePrincipal, type Principal } from "./auth";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { normalizeGitUrl } from "../core/repo-rules";
+import { isCrossSiteWrite } from "./csrf";
 import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
@@ -67,12 +68,8 @@ app.use("*", async (c, next) => {
   if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Connect → API keys)." }, 401);
   c.set("principal", p);
   // A browser session may only change state from gitring's own pages (no cross-site requests).
-  const m = c.req.method;
-  if (p.via === "session" && m !== "GET" && m !== "HEAD" && m !== "OPTIONS") {
-    const origin = c.req.header("origin");
-    const site = c.req.header("sec-fetch-site");
-    const own = new URL(c.req.url).origin;
-    if ((origin && origin !== own) || (!origin && site && site !== "same-origin")) return c.json({ error: "Cross-site requests are not allowed." }, 403);
+  if (p.via === "session" && isCrossSiteWrite(c.req.method, c.req.header("origin"), c.req.header("sec-fetch-site"), new URL(c.req.url).origin)) {
+    return c.json({ error: "Cross-site requests are not allowed." }, 403);
   }
   await next();
 });

@@ -95,7 +95,7 @@ input{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1px soli
 code{font-family:ui-monospace,monospace;font-size:14px;background:color-mix(in srgb,var(--line) 40%,transparent);padding:1px 5px;border-radius:4px;word-break:break-all}
 ol{padding-left:20px}li{margin:4px 0}
 </style></head><body><main>${body}</main></body></html>`;
-  return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } });
+  return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "same-origin" } });
 }
 
 function appReadyPage(slug: string): Response {
