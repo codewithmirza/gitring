@@ -1,0 +1,214 @@
+/* Bearing base: reset, voices, focus, scrollbars. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink-1);
+  font-family: var(--font-system);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+}
+
+h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd, pre {
+  margin: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 500;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+ul, ol {
+  margin: 0;
+  padding: 0;
+}
+
+ul[role="list"], ol[role="list"], .plain-list {
+  list-style: none;
+}
+
+button, input, textarea, select {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled, [aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+img, svg {
+  display: block;
+}
+
+svg {
+  overflow: visible;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklch, currentColor 38%, transparent);
+  transition: text-decoration-color var(--dur-1) var(--ease-out);
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+/* Focus: 2px accent ring with 2px offset on every interactive element. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* Scrollbars: hairline, quiet. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* ───────────── three voices ───────────── */
+.voice-human {
+  font-family: var(--font-human);
+  font-style: italic;
+  font-optical-sizing: auto;
+  font-weight: 400;
+}
+
+.voice-agent,
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-agent);
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-system {
+  font-family: var(--font-system);
+  font-style: normal;
+}
+
+/* ───────────── type scale utilities ───────────── */
+.t-2xs { font-size: var(--t-2xs); line-height: var(--lh-2xs); }
+.t-xs  { font-size: var(--t-xs);  line-height: var(--lh-xs); }
+.t-sm  { font-size: var(--t-sm);  line-height: var(--lh-sm); }
+.t-md  { font-size: var(--t-md);  line-height: var(--lh-md); }
+.t-lg  { font-size: var(--t-lg);  line-height: var(--lh-lg); }
+.t-xl  { font-size: var(--t-xl);  line-height: var(--lh-xl); }
+.t-2xl { font-size: var(--t-2xl); line-height: var(--lh-2xl); }
+
+.w-400 { font-weight: 400; }
+.w-500 { font-weight: 500; }
+
+.ink-1 { color: var(--ink-1); }
+.ink-2 { color: var(--ink-2); }
+.ink-3 { color: var(--ink-3); }
+
+.nums { font-variant-numeric: tabular-nums; }
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Visually hidden, still read by screen readers. */
+.vh {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--s-3);
+  top: -100px;
+  z-index: 100;
+  background: var(--bg);
+  color: var(--accent);
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-2);
+}
+
+.skip-link:focus-visible {
+  top: var(--s-3);
+}
+
+/* Inline code inside running text (agent voice inside system copy). */
+.code-inline {
+  font-family: var(--font-agent);
+  font-size: .92em;
+  padding: 0 .25em;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  color: var(--ink-1);
+  white-space: break-spaces;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,7 @@
+# LF in the repo and in every checkout (Windows, macOS, Linux).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

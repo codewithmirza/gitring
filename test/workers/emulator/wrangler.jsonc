@@ -1,0 +1,17 @@
+{
+  // Probe worker: runs the LocalArtifacts Durable Object under real workerd (wrangler dev).
+  //   npx wrangler dev --config test/workers/emulator/wrangler.jsonc --port 8791 \
+  //     --inspector-port 9791 --persist-to tmp/agentA-state
+  //   curl localhost:8791/scenario   curl localhost:8791/isogit   curl localhost:8791/state
+  // ArtifactsBackend inside workerd: first start fake-artifacts-server.ts (see its header), then
+  //   curl "localhost:8791/artifacts?rpc=http://127.0.0.1:8792"
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "bearing-emulator-probe",
+  "main": "./index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "EMULATOR", "class_name": "LocalArtifacts" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LocalArtifacts"] }]
+}

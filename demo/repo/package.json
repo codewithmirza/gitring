@@ -1,0 +1,12 @@
+{
+  "name": "saltmarsh-books",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small bookshop web app for Cloudflare Workers. Plain ES modules, no dependencies, no build step.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "dev": "npx wrangler dev"
+  }
+}

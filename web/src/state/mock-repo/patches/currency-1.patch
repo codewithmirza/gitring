@@ -1,0 +1,99 @@
+### src/products.js
+<<<
+// The shelf. Prices are integer cents, in pounds sterling.
+===
+// The shelf. Prices are integer cents, in pounds sterling. formatPrice converts them.
+>>>
+<<<
+export function formatPrice(cents) {
+  return "£" + (cents / 100).toFixed(2);
+}
+===
+// Fixed rates against GBP. Prices stay in integer pence in `books`.
+export const RATES = { GBP: 1, EUR: 1.17, USD: 1.27 };
+
+export function formatPrice(cents, currency = "GBP") {
+  const code = RATES[currency] ? currency : "GBP";
+  const amount = Math.round(cents * RATES[code]) / 100;
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: code }).format(amount);
+}
+>>>
+### src/render.js
+<<<
+export function renderPage(books) {
+===
+export function renderPage(books, currency = "GBP") {
+>>>
+<<<
+    ${books.map(renderBookCard).join("\n    ")}
+===
+    ${books.map((book) => renderBookCard(book, currency)).join("\n    ")}
+>>>
+<<<
+export function renderBookCard(book) {
+===
+export function renderBookCard(book, currency = "GBP") {
+>>>
+<<<
+      <p class="book-price">${formatPrice(book.cents)}</p>
+===
+      <p class="book-price">${formatPrice(book.cents, currency)}</p>
+>>>
+### src/index.js
+<<<
+import { renderPage, renderAbout } from "./render.js";
+===
+import { renderPage, renderAbout } from "./render.js";
+import { RATES } from "./products.js";
+>>>
+<<<
+const html = (body, status = 200) =>
+===
+// ?currency=EUR wins. Then the Accept-Language region. Then GBP.
+function readerCurrency(request, url) {
+  const asked = (url.searchParams.get("currency") || "").toUpperCase();
+  if (RATES[asked]) return asked;
+  const lang = request.headers.get("accept-language") || "";
+  if (/^en-US\b/i.test(lang)) return "USD";
+  if (/^(de|fr|es|it|nl|pt)\b/i.test(lang)) return "EUR";
+  return "GBP";
+}
+
+const html = (body, status = 200) =>
+>>>
+<<<
+    if (url.pathname === "/") {
+      return html(renderPage(books));
+    }
+===
+    if (url.pathname === "/") {
+      return html(renderPage(books, readerCurrency(request, url)));
+    }
+>>>
+### +tests/currency.test.js
+import { test, expect } from "../harness/test.js";
+import worker from "../src/index.js";
+import { books, formatPrice } from "../src/products.js";
+
+const page = (path, headers = {}) =>
+  worker.fetch(new Request("https://shop.test" + path, { headers })).then((r) => r.text());
+
+test("formats pounds by default", async () => {
+  expect(await page("/")).toContain("£18.99");
+});
+
+test("formats euros from ?currency=EUR", async () => {
+  expect(await page("/?currency=EUR")).toContain("€22.22");
+});
+
+test("formats dollars from Accept-Language en-US", async () => {
+  expect(await page("/", { "accept-language": "en-US,en;q=0.8" })).toContain("US$24.12");
+});
+
+test("keeps prices in integer cents", () => {
+  for (const b of books) expect(Number.isInteger(b.cents)).toBe(true);
+});
+
+test("falls back to pounds for an unknown currency", () => {
+  expect(formatPrice(1450, "XYZ")).toBe("£14.50");
+});

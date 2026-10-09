@@ -1,0 +1,167 @@
+[
+  {
+    "slug": "currency",
+    "title": "Show prices in the reader's currency",
+    "goal": "Let readers see prices in US dollars, euros or Indian rupees with `?currency=USD`, `?currency=EUR` or `?currency=INR`. Change `formatPrice(cents)` in `src/products.js` to `formatPrice(cents, currency = \"USD\")`, with fixed rates: 1 USD = 0.92 EUR = 83 INR. The amount is `Math.round(cents * rate) / 100` in the new currency: euros keep two decimals (`€18.39`), rupees show whole rupees with a comma for thousands (1999 cents → `₹1,659`), dollars stay `$19.99`, and an unknown code falls back to USD. Pass the currency from `renderPage` through `renderItem` to `formatPrice`, and add relative links that switch the currency (for example `href=\"?currency=EUR\"`).",
+    "checks": [
+      {
+        "path": "tests/currency.test.js",
+        "description": "formatPrice(cents, currency) converts and formats USD, EUR and INR; ?currency= changes every price on the page; the page links to each currency.",
+        "content": "// Checks for the intent \"Show prices in the reader's currency\".\nimport { test, expect } from \"../harness/test.js\";\nimport * as products from \"../src/products.js\";\nimport worker from \"../src/index.js\";\n\nasync function home(query = \"\") {\n  const res = await worker.fetch(new Request(\"http://shop.test/\" + query));\n  return res.text();\n}\n\ntest(\"formatPrice keeps US dollars as the default\", () => {\n  expect(products.formatPrice(1999)).toBe(\"$19.99\");\n  expect(products.formatPrice(1999, \"USD\")).toBe(\"$19.99\");\n});\n\ntest(\"formatPrice converts to euros at 0.92, to the cent\", () => {\n  expect(products.formatPrice(1999, \"EUR\")).toBe(\"€18.39\");\n  expect(products.formatPrice(1450, \"EUR\")).toBe(\"€13.34\");\n  expect(products.formatPrice(999, \"EUR\")).toBe(\"€9.19\");\n});\n\ntest(\"formatPrice converts to rupees at 83, in whole rupees with a comma for thousands\", () => {\n  expect(products.formatPrice(1999, \"INR\")).toBe(\"₹1,659\");\n  expect(products.formatPrice(2400, \"INR\")).toBe(\"₹1,992\");\n  expect(products.formatPrice(999, \"INR\")).toBe(\"₹829\");\n});\n\ntest(\"formatPrice falls back to US dollars for an unknown currency\", () => {\n  expect(products.formatPrice(1999, \"XYZ\")).toBe(\"$19.99\");\n});\n\ntest(\"?currency=EUR shows every price in euros\", async () => {\n  const html = await home(\"?currency=EUR\");\n  expect(html).toContain(\"€18.39\");\n  expect(html).toContain(\"€9.19\");\n  expect(html).not.toMatch(/\\$\\d/);\n});\n\ntest(\"?currency=INR shows every price in rupees\", async () => {\n  const html = await home(\"?currency=INR\");\n  expect(html).toContain(\"₹1,659\");\n  expect(html).not.toMatch(/\\$\\d/);\n});\n\ntest(\"the page shows US dollars when there is no ?currency\", async () => {\n  expect(await home()).toContain(\"$19.99\");\n});\n\ntest(\"the page has links to switch the currency\", async () => {\n  const html = await home();\n  expect(html).toMatch(/href=\"[^\"]*currency=EUR/);\n  expect(html).toMatch(/href=\"[^\"]*currency=INR/);\n});\n"
+      }
+    ],
+    "expect": {
+      "files": [
+        "src/products.js",
+        "src/render.js",
+        "src/styles.js"
+      ],
+      "symbols": [
+        "src/products.js#CURRENCIES",
+        "src/products.js#formatPrice",
+        "src/products.js#groupThousands",
+        "src/render.js#renderPage",
+        "src/render.js#pickCurrency",
+        "src/render.js#renderCurrencyPicker",
+        "src/render.js#renderItem",
+        "src/styles.js#SHELF"
+      ]
+    },
+    "collisions": [
+      {
+        "with": "search",
+        "kind": "interface",
+        "why": "Changes formatPrice(cents) to formatPrice(cents, currency) and edits renderPage, where search filters the list."
+      },
+      {
+        "with": "staff-picks",
+        "kind": "interface",
+        "why": "Edits the price line of renderItem, where staff-picks adds its badge, and changes the formatPrice call on it."
+      }
+    ]
+  },
+  {
+    "slug": "dark-mode",
+    "title": "Add a dark mode",
+    "goal": "Add a dark mode that readers can switch on and off. Put a `<button class=\"theme-toggle\">` with `aria-pressed` at the end of the nav in the page header (`src/render.js`), with a tiny inline script that sets `data-theme` on `<html>`, updates `aria-pressed` and remembers the choice in `localStorage`. In `src/styles.js`, keep colours in CSS custom properties and override `--bg`, `--ink` and the other tokens under `[data-theme=\"dark\"]`. Follow `prefers-color-scheme: dark` until the reader makes a choice.",
+    "checks": [
+      {
+        "path": "tests/dark-mode.test.js",
+        "description": "The header has a theme toggle with aria-pressed and an inline script; the CSS sets dark tokens under [data-theme=\"dark\"] and follows prefers-color-scheme.",
+        "content": "// Checks for the intent \"Add a dark mode\".\nimport { test, expect } from \"../harness/test.js\";\nimport { CSS } from \"../src/styles.js\";\nimport worker from \"../src/index.js\";\n\nasync function home() {\n  const res = await worker.fetch(new Request(\"http://shop.test/\"));\n  return res.text();\n}\n\nfunction headerOf(html) {\n  const match = html.match(/<header[\\s\\S]*?<\\/header>/);\n  return match ? match[0] : \"\";\n}\n\nfunction toggleOf(html) {\n  const match = headerOf(html).match(/<button[^>]*theme-toggle[^>]*>/);\n  return match ? match[0] : \"\";\n}\n\nfunction darkBlock() {\n  const match = CSS.match(/\\[data-theme=[\"']?dark[\"']?\\][^{]*\\{([^}]*)\\}/);\n  return match ? match[1] : \"\";\n}\n\ntest(\"the header has a theme toggle button\", async () => {\n  expect(toggleOf(await home())).toMatch(/class=\"[^\"]*\\btheme-toggle\\b/);\n});\n\ntest(\"the toggle reports its state with aria-pressed\", async () => {\n  expect(toggleOf(await home())).toMatch(/aria-pressed=\"(true|false)\"/);\n});\n\ntest(\"an inline script switches data-theme and aria-pressed\", async () => {\n  const scripts = (await home()).match(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/g) || [];\n  const code = scripts.join(\"\\n\");\n  expect(code).toMatch(/data-theme|dataset\\.theme/);\n  expect(code).toContain(\"aria-pressed\");\n});\n\ntest(\"the styles set dark colour tokens under [data-theme=\\\"dark\\\"]\", () => {\n  expect(darkBlock()).toMatch(/--bg\\s*:/);\n  expect(darkBlock()).toMatch(/--ink\\s*:/);\n});\n\ntest(\"the styles follow prefers-color-scheme: dark\", () => {\n  expect(CSS).toMatch(/prefers-color-scheme:\\s*dark/);\n});\n\ntest(\"colours still come from CSS custom properties\", () => {\n  expect(CSS).toMatch(/background:\\s*var\\(--bg\\)/);\n  expect(CSS).toMatch(/color:\\s*var\\(--ink\\)/);\n});\n"
+      }
+    ],
+    "expect": {
+      "files": [
+        "src/render.js",
+        "src/styles.js"
+      ],
+      "symbols": [
+        "src/render.js#renderHeader",
+        "src/styles.js#TOKENS",
+        "src/styles.js#HEADER"
+      ]
+    },
+    "collisions": [
+      {
+        "with": "search",
+        "kind": "region",
+        "why": "Both change renderHeader in src/render.js and the HEADER styles in src/styles.js."
+      }
+    ]
+  },
+  {
+    "slug": "search",
+    "title": "Search books by title or author",
+    "goal": "Let readers search the books by title or author. Add `export function findProducts(query)` to `src/products.js`: it returns the books whose title or author contains the trimmed query, in any case, and every book for an empty or missing query. Add a search form to the page header (`role=\"search\"`, a field `name=\"q\"`, a relative `action=\"./\"`) and filter the list with `?q=`. Keep the prices on the results, keep the query in the search box, and show `No books match your search.` when nothing matches.",
+    "checks": [
+      {
+        "path": "tests/search.test.js",
+        "description": "findProducts(query) matches title or author in any case; the header has a search form; ?q= filters the list, keeps prices and the query, and handles no match.",
+        "content": "// Checks for the intent \"Search books by title or author\".\nimport { test, expect } from \"../harness/test.js\";\nimport * as products from \"../src/products.js\";\nimport worker from \"../src/index.js\";\n\nfunction find(query) {\n  if (typeof products.findProducts !== \"function\") throw new Error(\"src/products.js must export findProducts(query)\");\n  return products.findProducts(query);\n}\n\nfunction ids(books) {\n  return books.map((book) => book.id);\n}\n\nasync function home(query = \"\") {\n  const res = await worker.fetch(new Request(\"http://shop.test/\" + query));\n  return res.text();\n}\n\nfunction headerOf(html) {\n  const match = html.match(/<header[\\s\\S]*?<\\/header>/);\n  return match ? match[0] : \"\";\n}\n\ntest(\"findProducts matches titles, in any case\", () => {\n  expect(ids(find(\"TIDEWATER\"))).toEqual([1]);\n  expect(ids(find(\"tide\"))).toEqual([1, 8]);\n});\n\ntest(\"findProducts matches authors\", () => {\n  expect(ids(find(\"quill\"))).toEqual([1]);\n  expect(ids(find(\"Moss\"))).toEqual([8]);\n});\n\ntest(\"findProducts trims the query\", () => {\n  expect(ids(find(\"  marram  \"))).toEqual([6]);\n});\n\ntest(\"an empty or missing query returns every book\", () => {\n  expect(find(\"\").length).toBe(products.PRODUCTS.length);\n  expect(find(undefined).length).toBe(products.PRODUCTS.length);\n});\n\ntest(\"the header has a search form with a q field\", async () => {\n  const header = headerOf(await home());\n  expect(header).toMatch(/<form\\b[^>]*role=\"search\"/);\n  expect(header).toMatch(/<input\\b[^>]*name=\"q\"/);\n});\n\ntest(\"?q= filters the list and keeps the prices\", async () => {\n  const html = await home(\"?q=tide\");\n  expect(html).toContain(\"The Tidewater Almanac\");\n  expect(html).toContain(\"A Small Book of Tides\");\n  expect(html).not.toContain(\"Knots for Small Boats\");\n  expect(html).toContain(\"$19.99\");\n  expect(html).toContain(\"$9.99\");\n});\n\ntest(\"the search box keeps the query\", async () => {\n  expect(await home(\"?q=marram\")).toMatch(/<input\\b[^>]*value=\"marram\"/);\n});\n\ntest(\"a search with no match says so\", async () => {\n  const html = await home(\"?q=zzzz\");\n  expect(html).toContain(\"No books match your search.\");\n  for (const book of products.PRODUCTS) expect(html).not.toContain(book.title);\n});\n\ntest(\"the page escapes the query\", async () => {\n  const html = await home(\"?q=\" + encodeURIComponent('<script>\"x\"'));\n  expect(html).not.toContain('<script>\"x\"');\n});\n"
+      }
+    ],
+    "expect": {
+      "files": [
+        "src/products.js",
+        "src/render.js",
+        "src/styles.js"
+      ],
+      "symbols": [
+        "src/products.js#findProducts",
+        "src/products.js#matchesQuery",
+        "src/render.js#renderPage",
+        "src/render.js#renderHeader",
+        "src/render.js#renderResults",
+        "src/styles.js#HEADER",
+        "src/styles.js#SHELF"
+      ]
+    },
+    "collisions": [
+      {
+        "with": "currency",
+        "kind": "interface",
+        "why": "Renders the filtered list with renderItem and formatPrice, whose signature currency changes; both edit renderPage."
+      },
+      {
+        "with": "dark-mode",
+        "kind": "region",
+        "why": "Both put new controls into the header: renderHeader and the HEADER styles."
+      }
+    ]
+  },
+  {
+    "slug": "staff-picks",
+    "title": "Mark staff picks",
+    "goal": "Mark three books as staff picks: The Tidewater Almanac (id 1), Fog over Marram Point (id 6) and A Small Book of Tides (id 8). Set `staffPick: true` on them in `PRODUCTS` (`src/products.js`). In `renderItem` (`src/render.js`), show `<span class=\"badge\">Staff pick</span>` next to the price, inside the price line of each staff pick. Other books show no badge.",
+    "checks": [
+      {
+        "path": "tests/staff-picks.test.js",
+        "description": "Books 1, 6 and 8 are staff picks and show a Staff pick badge in the price line; other books show none.",
+        "content": "// Checks for the intent \"Mark staff picks\".\nimport { test, expect } from \"../harness/test.js\";\nimport { PRODUCTS } from \"../src/products.js\";\nimport worker from \"../src/index.js\";\n\nconst PICKS = [1, 6, 8];\n\nasync function items() {\n  const res = await worker.fetch(new Request(\"http://shop.test/\"));\n  const html = await res.text();\n  return html.match(/<li\\b[^>]*class=\"[^\"]*\\bbook\\b[^\"]*\"[^>]*>[\\s\\S]*?<\\/li>/g) || [];\n}\n\nfunction itemFor(list, id) {\n  const book = PRODUCTS.find((b) => b.id === id);\n  return list.find((item) => item.includes(book.title)) || \"\";\n}\n\nfunction priceLine(item) {\n  const match = item.match(/<p\\b[^>]*class=\"[^\"]*\\bprice\\b[^\"]*\"[^>]*>[\\s\\S]*?<\\/p>/);\n  return match ? match[0] : \"\";\n}\n\ntest(\"exactly three books are staff picks: ids 1, 6 and 8\", () => {\n  expect(PRODUCTS.filter((book) => book.staffPick).map((book) => book.id)).toEqual(PICKS);\n});\n\ntest(\"every book has a staffPick boolean\", () => {\n  for (const book of PRODUCTS) expect(typeof book.staffPick).toBe(\"boolean\");\n});\n\ntest(\"each staff pick shows a Staff pick badge in its price line\", async () => {\n  const list = await items();\n  for (const id of PICKS) {\n    expect(priceLine(itemFor(list, id))).toMatch(/<span\\b[^>]*class=\"[^\"]*\\bbadge\\b[^\"]*\"[^>]*>\\s*Staff pick\\s*<\\/span>/);\n  }\n});\n\ntest(\"other books show no badge\", async () => {\n  const list = await items();\n  for (const book of PRODUCTS.filter((b) => !PICKS.includes(b.id))) {\n    expect(itemFor(list, book.id)).not.toContain(\"Staff pick\");\n  }\n});\n\ntest(\"the price stays in the price line\", async () => {\n  const list = await items();\n  expect(priceLine(itemFor(list, 1))).toContain(\"$19.99\");\n});\n"
+      }
+    ],
+    "expect": {
+      "files": [
+        "src/products.js",
+        "src/render.js",
+        "src/styles.js"
+      ],
+      "symbols": [
+        "src/products.js#PRODUCTS",
+        "src/render.js#renderItem",
+        "src/render.js#renderBadge",
+        "src/styles.js#BOOK"
+      ]
+    },
+    "collisions": [
+      {
+        "with": "currency",
+        "kind": "interface",
+        "why": "Edits the price line of renderItem, which calls formatPrice; currency changes that call and the signature."
+      }
+    ]
+  },
+  {
+    "slug": "api-item",
+    "title": "Add a JSON endpoint for one book",
+    "goal": "Add `GET /api/products/:id` to `src/index.js`, so that other apps can fetch one book. Return the book as JSON with status 200, or `{ \"error\": \"…\" }` as JSON with status 404 when no book has that id. Keep `/api/products` unchanged.",
+    "checks": [
+      {
+        "path": "tests/api-item.test.js",
+        "description": "GET /api/products/:id returns one book as JSON, or a 404 JSON error for an unknown id.",
+        "content": "// Checks for the intent \"Add a JSON endpoint for one book\".\nimport { test, expect } from \"../harness/test.js\";\nimport { PRODUCTS } from \"../src/products.js\";\nimport worker from \"../src/index.js\";\n\nasync function get(path) {\n  const res = await worker.fetch(new Request(\"http://shop.test\" + path));\n  const type = res.headers.get(\"content-type\") || \"\";\n  const body = type.includes(\"application/json\") ? await res.json() : await res.text();\n  return { status: res.status, type, body };\n}\n\ntest(\"GET /api/products/3 returns that book as JSON\", async () => {\n  const res = await get(\"/api/products/3\");\n  expect(res.status).toBe(200);\n  expect(res.type).toContain(\"application/json\");\n  expect(res.body).toEqual(PRODUCTS.find((book) => book.id === 3));\n});\n\ntest(\"every book has its own URL\", async () => {\n  for (const book of PRODUCTS) {\n    const res = await get(\"/api/products/\" + book.id);\n    expect(res.status).toBe(200);\n    expect(res.body.title).toBe(book.title);\n  }\n});\n\ntest(\"an unknown id returns 404 with a JSON error\", async () => {\n  const res = await get(\"/api/products/999\");\n  expect(res.status).toBe(404);\n  expect(res.type).toContain(\"application/json\");\n  expect(typeof res.body.error).toBe(\"string\");\n});\n\ntest(\"an id that is not a number returns 404 with a JSON error\", async () => {\n  const res = await get(\"/api/products/tidewater\");\n  expect(res.status).toBe(404);\n  expect(typeof res.body.error).toBe(\"string\");\n});\n\ntest(\"the list endpoint still returns every book\", async () => {\n  const res = await get(\"/api/products\");\n  expect(res.status).toBe(200);\n  expect(res.body.length).toBe(PRODUCTS.length);\n});\n"
+      }
+    ],
+    "expect": {
+      "files": [
+        "src/index.js"
+      ],
+      "symbols": [
+        "src/index.js#apiResponse",
+        "src/index.js#productResponse"
+      ]
+    },
+    "collisions": []
+  }
+]

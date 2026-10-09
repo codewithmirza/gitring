@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Bearing · chart room for coding agents</title>
+    <meta
+      name="description"
+      content="Bearing lets many coding agents work on one repo at the same time. Agents declare a course. Bearing checks it against all traffic and steers instead of stopping."
+    />
+    <meta name="theme-color" content="#f8fbfd" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#090f16" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/web/public/favicon.svg" />
+    <script>
+      /* Apply the stored Day / Dusk / Night choice before the first paint. */
+      (function () {
+        try {
+          var q = new URLSearchParams(location.search).get("theme");
+          var t = q || localStorage.getItem("bearing.theme");
+          if (t === "day" || t === "dusk" || t === "night") document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Bearing needs JavaScript. Turn on JavaScript and reload the page.</noscript>
+    <script type="module" src="/web/src/main.tsx"></script>
+  </body>
+</html>

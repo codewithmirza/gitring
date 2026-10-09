@@ -1,0 +1,60 @@
+### src/products.js
+<<<
+];
+===
+];
+
+export function findBook(id) {
+  return books.find((b) => b.id === id) ?? null;
+}
+>>>
+### src/index.js
+<<<
+// GET /api/products  every book (JSON)
+===
+// GET /api/products  every book (JSON)
+// GET /api/books/:id one book (JSON)
+>>>
+<<<
+import { books } from "./products.js";
+===
+import { books, findBook, formatPrice } from "./products.js";
+>>>
+<<<
+    if (url.pathname === "/about") {
+===
+    const match = url.pathname.match(/^\/api\/books\/([a-z0-9-]+)$/);
+    if (match) {
+      const book = findBook(match[1]);
+      if (!book) return Response.json({ error: "No book has this id." }, { status: 404 });
+      return Response.json({ ...book, price: formatPrice(book.cents) });
+    }
+    if (url.pathname === "/about") {
+>>>
+### +tests/book-endpoint.test.js
+import { test, expect } from "../harness/test.js";
+import worker from "../src/index.js";
+
+const get = (path) => worker.fetch(new Request("https://shop.test" + path));
+
+test("returns one book as JSON", async () => {
+  const res = await get("/api/books/tidewater-almanac");
+  expect(res.status).toBe(200);
+  expect((await res.json()).title).toBe("Tidewater Almanac");
+});
+
+test("keeps the price in cents", async () => {
+  const book = await (await get("/api/books/estuary-birds")).json();
+  expect(book.cents).toBe(2650);
+});
+
+test("adds a formatted price", async () => {
+  const book = await (await get("/api/books/estuary-birds")).json();
+  expect(book.price).toBe("£26.50");
+});
+
+test("returns 404 with a JSON error for an unknown id", async () => {
+  const res = await get("/api/books/no-such-book");
+  expect(res.status).toBe(404);
+  expect((await res.json()).error).toBeTruthy();
+});

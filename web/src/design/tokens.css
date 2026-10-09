@@ -1,0 +1,260 @@
+/*
+ * Bearing design tokens — "Chart room".
+ * All colors are OKLCH.
+ *
+ * Themes: Day (bright light), Dusk (dim light), Night (dark).
+ *   - The default follows prefers-color-scheme (light → Day, dark → Night).
+ *   - [data-theme="day|dusk|night"] on <html> stores the viewer's choice.
+ *   - The same attribute on any element scopes a theme to that subtree (style guide).
+ */
+
+/* ───────────── theme-independent tokens ───────────── */
+:root {
+  /* Three voices */
+  --font-system: "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-agent: "Atkinson Hyperlegible Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-human: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", Georgia, serif;
+
+  /* Type scale — size / line-height. At most 4 sizes in one view. */
+  --t-2xs: 10px; --lh-2xs: 12px;
+  --t-xs: 11px;  --lh-xs: 16px;
+  --t-sm: 13px;  --lh-sm: 20px;
+  --t-md: 15px;  --lh-md: 24px;
+  --t-lg: 20px;  --lh-lg: 28px;
+  --t-xl: 28px;  --lh-xl: 34px;
+  --t-2xl: 44px; --lh-2xl: 48px;
+
+  /* Spacing — pixel-literal */
+  --s-0: 2px; --s-1: 4px; --s-2: 6px; --s-3: 8px; --s-4: 12px; --s-5: 16px;
+  --s-6: 20px; --s-7: 24px; --s-8: 32px; --s-9: 40px; --s-10: 48px; --s-11: 64px;
+
+  /* Radius */
+  --r-1: 2px;  /* chips */
+  --r-2: 4px;  /* buttons, inputs */
+  --r-3: 6px;  /* panels, menus */
+  --r-4: 10px; /* dialogs, preview frames */
+
+  /* Lines */
+  --hairline: 1px;
+
+  /* Motion */
+  --dur-1: 120ms;    /* hover, press */
+  --dur-2: 200ms;    /* panels, toasts */
+  --dur-3: 320ms;    /* layout */
+  --dur-track: 800ms; /* vessel moves */
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --ease-in-out: cubic-bezier(.6, 0, .3, 1);
+
+  /* Layers */
+  --z-chart: 0;
+  --z-chart-overlay: 10;
+  --z-rail: 20;
+  --z-popover: 40;
+  --z-toast: 50;
+  --z-dialog: 60;
+
+  /* Component metrics */
+  --control-md: 32px;
+  --control-sm: 24px;
+  --row-min: 36px;
+  --row-max: 44px;
+  --rail-left: 288px;
+  --rail-right: 344px;
+  --topbar-h: 48px;
+  --substrip-h: 32px;
+}
+
+/* ───────────── Day (default) ───────────── */
+:root,
+[data-theme="day"] {
+  color-scheme: light;
+  --bg: oklch(98.6% .004 230);
+  --surface-1: oklch(96.6% .006 232);
+  --surface-2: oklch(93.6% .009 234);
+  --line: oklch(86% .012 236);
+  --line-strong: oklch(64% .016 240);
+  --ink-1: oklch(24% .026 256);
+  --ink-2: oklch(39% .022 252);
+  --ink-3: oklch(50% .02 248);
+  --land: oklch(93.2% .034 84);
+  --land-edge: oklch(62% .06 78);
+  --shoal: oklch(92.5% .03 226);
+
+  --accent: oklch(49% .105 236);
+  --magenta: oklch(51% .2 348);
+  --clear: oklch(50% .1 165);
+  --danger: oklch(53% .19 29);
+  --caution: oklch(49% .1 70);
+  --caution-fill: oklch(80% .14 82);
+
+  --on-accent: oklch(99% .003 230);
+  --on-caution: oklch(20% .02 250);
+  --shadow-overlay: 0 8px 24px oklch(20% .02 250 / .14);
+  --overlay-border: var(--line);
+  --scrim: oklch(24% .026 256 / .28);
+
+  /* Vessel identity: oklch(56% .105 h) */
+  --v0: oklch(56% .105 250);
+  --v1: oklch(56% .105 200);
+  --v2: oklch(56% .105 160);
+  --v3: oklch(56% .105 125);
+  --v4: oklch(56% .105 95);
+  --v5: oklch(56% .105 62);
+  --v6: oklch(56% .105 35);
+  --v7: oklch(56% .105 15);
+  --v8: oklch(56% .105 320);
+  --v9: oklch(56% .105 290);
+  --v10: oklch(56% .105 228);
+  --v11: oklch(56% .105 180);
+}
+
+/* ───────────── Dusk ───────────── */
+[data-theme="dusk"] {
+  color-scheme: dark;
+  --bg: oklch(30% .018 246);
+  --surface-1: oklch(33.5% .02 246);
+  --surface-2: oklch(37% .022 246);
+  --line: oklch(44% .022 246);
+  --line-strong: oklch(59% .024 246);
+  --ink-1: oklch(95% .008 236);
+  --ink-2: oklch(86% .012 240);
+  --ink-3: oklch(78% .016 242);
+  --land: oklch(39% .03 82);
+  --land-edge: oklch(62% .05 80);
+  --shoal: oklch(36% .035 228);
+
+  --accent: oklch(79% .11 232);
+  --magenta: oklch(79% .14 348);
+  --clear: oklch(80% .11 165);
+  --danger: oklch(79% .12 29);
+  --caution: oklch(84% .12 80);
+  --caution-fill: oklch(70% .13 78);
+
+  --on-accent: oklch(20% .02 250);
+  --on-caution: oklch(20% .02 250);
+  --shadow-overlay: 0 8px 24px oklch(0% 0 0 / .38);
+  --overlay-border: var(--line);
+  --scrim: oklch(12% .02 250 / .45);
+
+  --v0: oklch(74% .11 250);
+  --v1: oklch(74% .11 200);
+  --v2: oklch(74% .11 160);
+  --v3: oklch(74% .11 125);
+  --v4: oklch(74% .11 95);
+  --v5: oklch(74% .11 62);
+  --v6: oklch(74% .11 35);
+  --v7: oklch(74% .11 15);
+  --v8: oklch(74% .11 320);
+  --v9: oklch(74% .11 290);
+  --v10: oklch(74% .11 228);
+  --v11: oklch(74% .11 180);
+}
+
+/* ───────────── Night ───────────── */
+[data-theme="night"] {
+  color-scheme: dark;
+  --bg: oklch(16.5% .018 252);
+  --surface-1: oklch(20% .02 252);
+  --surface-2: oklch(23.5% .022 252);
+  --line: oklch(31% .022 252);
+  --line-strong: oklch(50% .024 250);
+  --ink-1: oklch(92% .008 236);
+  --ink-2: oklch(80% .014 240);
+  --ink-3: oklch(68% .018 244);
+  --land: oklch(26.5% .026 82);
+  --land-edge: oklch(50% .045 80);
+  --shoal: oklch(24% .035 230);
+
+  --accent: oklch(74% .11 232);
+  --magenta: oklch(72% .15 348);
+  --clear: oklch(76% .11 165);
+  --danger: oklch(70% .15 29);
+  --caution: oklch(80% .12 80);
+  --caution-fill: oklch(66% .13 78);
+
+  --on-accent: oklch(16.5% .018 252);
+  --on-caution: oklch(16.5% .018 252);
+  --shadow-overlay: 0 8px 24px oklch(0% 0 0 / .5);
+  --overlay-border: var(--line);
+  --scrim: oklch(5% .01 250 / .55);
+
+  --v0: oklch(72% .11 250);
+  --v1: oklch(72% .11 200);
+  --v2: oklch(72% .11 160);
+  --v3: oklch(72% .11 125);
+  --v4: oklch(72% .11 95);
+  --v5: oklch(72% .11 62);
+  --v6: oklch(72% .11 35);
+  --v7: oklch(72% .11 15);
+  --v8: oklch(72% .11 320);
+  --v9: oklch(72% .11 290);
+  --v10: oklch(72% .11 228);
+  --v11: oklch(72% .11 180);
+}
+
+/* No stored choice + dark system setting → Night. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: oklch(16.5% .018 252);
+    --surface-1: oklch(20% .02 252);
+    --surface-2: oklch(23.5% .022 252);
+    --line: oklch(31% .022 252);
+    --line-strong: oklch(50% .024 250);
+    --ink-1: oklch(92% .008 236);
+    --ink-2: oklch(80% .014 240);
+    --ink-3: oklch(68% .018 244);
+    --land: oklch(26.5% .026 82);
+    --land-edge: oklch(50% .045 80);
+    --shoal: oklch(24% .035 230);
+    --accent: oklch(74% .11 232);
+    --magenta: oklch(72% .15 348);
+    --clear: oklch(76% .11 165);
+    --danger: oklch(70% .15 29);
+    --caution: oklch(80% .12 80);
+    --caution-fill: oklch(66% .13 78);
+    --on-accent: oklch(16.5% .018 252);
+    --on-caution: oklch(16.5% .018 252);
+    --shadow-overlay: 0 8px 24px oklch(0% 0 0 / .5);
+    --overlay-border: var(--line);
+    --scrim: oklch(5% .01 250 / .55);
+    --v0: oklch(72% .11 250);
+    --v1: oklch(72% .11 200);
+    --v2: oklch(72% .11 160);
+    --v3: oklch(72% .11 125);
+    --v4: oklch(72% .11 95);
+    --v5: oklch(72% .11 62);
+    --v6: oklch(72% .11 35);
+    --v7: oklch(72% .11 15);
+    --v8: oklch(72% .11 320);
+    --v9: oklch(72% .11 290);
+    --v10: oklch(72% .11 228);
+    --v11: oklch(72% .11 180);
+  }
+}
+
+/* Derived tokens (recomputed per theme scope because they reference theme tokens). */
+:root,
+[data-theme] {
+  --focus: var(--accent);
+  --selection: color-mix(in oklch, var(--accent) 24%, transparent);
+  --accent-tint: color-mix(in oklch, var(--accent) 10%, transparent);
+  --magenta-tint: color-mix(in oklch, var(--magenta) 6%, transparent);
+  --magenta-rule: color-mix(in oklch, var(--magenta) 40%, transparent);
+  --clear-tint: color-mix(in oklch, var(--clear) 10%, transparent);
+  --danger-tint: color-mix(in oklch, var(--danger) 10%, transparent);
+  --caution-tint: color-mix(in oklch, var(--caution) 12%, transparent);
+  --diff-add: color-mix(in oklch, var(--clear) 14%, transparent);
+  --diff-del: color-mix(in oklch, var(--danger) 14%, transparent);
+  --graticule: color-mix(in oklch, var(--line) 50%, transparent);
+  --contour: color-mix(in oklch, var(--accent) 35%, transparent);
+}
+
+/* Reduced motion: no movement transitions, fades ≤ 120ms, no pulses. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-2: 120ms;
+    --dur-3: 0ms;
+    --dur-track: 0ms;
+  }
+}

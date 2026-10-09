@@ -1,0 +1,78 @@
+### src/products.js
+<<<
+    cents: 1899,
+  },
+===
+    cents: 1899,
+    staffPick: "A year of tides, one page a day.",
+  },
+>>>
+<<<
+    cents: 2650,
+  },
+===
+    cents: 2650,
+    staffPick: "The best bird book for wet boots.",
+  },
+>>>
+<<<
+    cents: 1275,
+  },
+===
+    cents: 1275,
+    staffPick: "Short, cold and very funny.",
+  },
+>>>
+### src/render.js
+<<<
+export function renderBookCard(book) {
+  return `<article class="book">
+      <h2 class="book-title">${escape(book.title)}</h2>
+===
+export function renderBookCard(book) {
+  const pick = book.staffPick ? `<p class="badge">Staff pick</p>` : "";
+  const note = book.staffPick ? `<p class="staff-note">${escape(book.staffPick)}</p>` : "";
+  return `<article class="book"${book.staffPick ? ' data-pick="staff"' : ""}>
+      ${pick}
+      <h2 class="book-title">${escape(book.title)}</h2>
+      ${note}
+>>>
+### src/styles.js
+<<<
+.prose { max-width: 60ch; padding: 24px; }
+===
+.prose { max-width: 60ch; padding: 24px; }
+.badge {
+  display: inline-block; margin: 0 0 8px; padding: 0 6px; font-size: 12px; letter-spacing: .02em;
+  color: #24577a; border: 1px solid currentColor; border-radius: 3px;
+}
+.staff-note { margin: 4px 0 0; font-style: italic; color: #5f6b76; }
+>>>
+### +tests/staff-picks.test.js
+import { test, expect } from "../harness/test.js";
+import { renderPage, renderBookCard } from "../src/render.js";
+import { books } from "../src/products.js";
+
+const picks = books.filter((b) => b.staffPick);
+
+test("marks three books as staff picks", () => {
+  expect(picks.length).toBe(3);
+});
+
+test("shows a badge on a staff pick", () => {
+  expect(renderBookCard(picks[0])).toContain("Staff pick");
+});
+
+test("shows the staff note under the title", () => {
+  const html = renderBookCard(picks[0]);
+  expect(html.indexOf("staff-note") > html.indexOf("book-title")).toBe(true);
+});
+
+test("shows no badge on other books", () => {
+  const other = books.find((b) => !b.staffPick);
+  expect(renderBookCard(other)).not.toContain("Staff pick");
+});
+
+test("keeps one card per book", () => {
+  expect(renderPage(books).split("<article").length - 1).toBe(books.length);
+});

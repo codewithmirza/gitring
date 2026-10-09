@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
+*.log
+.DS_Store
+coverage/
+.vite/
+src/worker/env.generated.d.ts
+tmp/
+
+# Local-only files. Never commit.
+private/
+*.private.*
+
+# Local secrets
+.env
+.env.*
+*.pem
+
+# Large media and archives
+*.mp4
+*.mov
+*.zip
+*.bundle

@@ -1,0 +1,55 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bearing",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/preview/*", "/ws/*", "/hooks/*"]
+  },
+  // Production: real Cloudflare Artifacts + Workers AI (Clef + agent models).
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "bearing", "remote": true }],
+  "ai": { "binding": "AI", "remote": true },
+  "worker_loaders": [{ "binding": "LOADER" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "HARBOR", "class_name": "HarborMaster" },
+      { "name": "VESSEL", "class_name": "Vessel" },
+      { "name": "SECTOR", "class_name": "Sector" },
+      { "name": "EMULATOR", "class_name": "LocalArtifacts" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["HarborMaster"] },
+    { "tag": "v2", "new_sqlite_classes": ["Vessel", "Sector", "LocalArtifacts"] }
+  ],
+  "vars": {
+    "ARTIFACTS_NAMESPACE": "bearing",
+    "AGENT_MODELS": "@cf/moonshotai/kimi-k2.7-code,@cf/openai/gpt-oss-120b,@cf/qwen/qwen3.8-27b"
+  },
+  "observability": { "enabled": true },
+  "env": {
+    // Offline: no Cloudflare account needed. Git storage = local Artifacts emulator (same git objects
+    // and hashes); course checks = deterministic rules; built-in vessels = scripted.
+    "offline": {
+      "worker_loaders": [{ "binding": "LOADER" }],
+      "durable_objects": {
+        "bindings": [
+          { "name": "HARBOR", "class_name": "HarborMaster" },
+          { "name": "VESSEL", "class_name": "Vessel" },
+          { "name": "SECTOR", "class_name": "Sector" },
+          { "name": "EMULATOR", "class_name": "LocalArtifacts" }
+        ]
+      },
+      "vars": {
+        "BEARING_MODE": "offline",
+        "REPO_BACKEND": "emulator",
+        "ARTIFACTS_NAMESPACE": "emulator",
+        "AGENT_MODELS": "scripted"
+      }
+    }
+  }
+}

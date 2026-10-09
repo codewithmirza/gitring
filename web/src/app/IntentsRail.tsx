@@ -1,0 +1,145 @@
+import { memo, type CSSProperties } from "react";
+import type { AgentInfo, Attempt, Intent } from "../../../src/core/types";
+import { Button, Panel, SectionLabel, EmptyState } from "../design/components";
+import { Icon } from "../design/icons";
+import { useStore } from "../state/store";
+import { byId, indexes, selectIntentGroups, type IntentGroup } from "../state/selectors";
+import { ATTEMPT_STATUS_TEXT, shortSha } from "../state/format";
+import { Link } from "./router";
+import { openNewIntent } from "./ui";
+import { LaunchButton } from "./LaunchControl";
+
+const EMPTY_GROUPS: IntentGroup[] = [];
+const EMPTY_ATTEMPTS: Attempt[] = [];
+
+/** Lane ticks: one tick per attempt, in the vessel's identity color; shape shows the status. */
+export function LaneTicks({ attempts, agents }: { attempts: Attempt[]; agents: Map<string, AgentInfo> }) {
+  if (!attempts.length) return null;
+  const summary = attempts.map((a) => `${agents.get(a.agentId)?.callsign ?? a.agentId} ${ATTEMPT_STATUS_TEXT[a.status].toLowerCase()}`).join(", ");
+  return (
+    <span className="ticks" role="img" aria-label={`${attempts.length} ${attempts.length === 1 ? "attempt" : "attempts"}: ${summary}`}>
+      {attempts.map((a) => {
+        const g = agents.get(a.agentId);
+        const kind =
+          a.status === "landed"
+            ? "landed"
+            : a.status === "alternate" || a.status === "abandoned"
+              ? "alternate"
+              : a.status === "stale"
+                ? "stale"
+                : a.status === "ready"
+                  ? "ready"
+                  : "active";
+        return (
+          <span
+            key={a.id}
+            className={`tick tick--${kind}`}
+            style={{ "--vc": `var(--v${(g?.color ?? 0) % 12})` } as CSSProperties}
+            title={`${g?.callsign ?? a.agentId} · ${ATTEMPT_STATUS_TEXT[a.status]}`}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+function intentMeta(i: Intent, attempts: Attempt[]): string {
+  const active = attempts.filter((a) => !["landed", "alternate", "abandoned", "failed"].includes(a.status));
+  const ready = attempts.filter((a) => a.status === "ready").length;
+  switch (i.status) {
+    case "judging":
+      return `${ready} ready · pick one`;
+    case "landed":
+      return `Landed ${shortSha(i.landedSha)}${attempts.length > 1 ? ` · ${attempts.length - 1} alternate${attempts.length > 2 ? "s" : ""}` : ""}`;
+    case "parked":
+      return "Parked";
+    case "open":
+    case "draft":
+      return attempts.length ? `${attempts.length} attempts` : "No attempts yet";
+    default:
+      return `${active.length} ${active.length === 1 ? "attempt" : "attempts"} underway${ready ? ` · ${ready} ready` : ""}`;
+  }
+}
+
+const IntentRow = memo(function IntentRow({
+  intent,
+  attempts,
+  agents,
+  selected,
+}: {
+  intent: Intent;
+  attempts: Attempt[];
+  agents: Map<string, AgentInfo>;
+  selected: boolean;
+}) {
+  return (
+    <li className={["irow", selected && "is-selected", intent.status === "judging" && "is-judging"].filter(Boolean).join(" ")}>
+      <Link to={`/intents/${intent.id}`} className="irow__main b-row" aria-current={selected ? "page" : undefined}>
+        <span className="irow__title voice-human">
+          {intent.priority === "high" && (
+            <span className="irow__prio" title="High priority (R5)">
+              <Icon name="chevron-up" size={12} />
+              <span className="vh">High priority.</span>
+            </span>
+          )}
+          {intent.title}
+        </span>
+        <span className="irow__meta">
+          <LaneTicks attempts={attempts} agents={agents} />
+          <span className="irow__status">
+            {intent.status === "judging" && <Icon name="lighthouse" size={12} />}
+            {intentMeta(intent, attempts)}
+          </span>
+        </span>
+      </Link>
+      {(intent.status === "open" || intent.status === "draft") && (
+        <span className="irow__action">
+          <LaunchButton intent={intent} />
+        </span>
+      )}
+    </li>
+  );
+});
+
+export function IntentsRail({ selectedId }: { selectedId?: string }) {
+  const groups = useStore((s) => (s.state ? selectIntentGroups(s.state) : EMPTY_GROUPS));
+  const byIntent = useStore((s) => (s.state ? indexes(s.state).attemptsByIntent : null));
+  const agents = useStore((s) => (s.state ? byId(s.state.agents) : null));
+  const total = groups.reduce((n, g) => n + g.intents.length, 0);
+  return (
+    <Panel
+      title="Intents"
+      count={total}
+      headingId="intents-rail-title"
+      className="rail rail--intents"
+      action={
+        <Button size="sm" variant="ghost" icon="plus" onClick={openNewIntent} title="New intent (N)">
+          New intent
+        </Button>
+      }
+    >
+      {total === 0 ? (
+        <EmptyState text="No intents yet. Write the goal and the checks for your first intent." action={<Button variant="primary" icon="plus" onClick={openNewIntent}>New intent</Button>} />
+      ) : (
+        groups.map((g) => (
+          <div key={g.id} className="igroup">
+            <SectionLabel count={g.intents.length} id={`ig-${g.id}`}>
+              {g.label}
+            </SectionLabel>
+            <ul role="list" aria-labelledby={`ig-${g.id}`}>
+              {g.intents.map((i) => (
+                <IntentRow
+                  key={i.id}
+                  intent={i}
+                  attempts={byIntent?.get(i.id) ?? EMPTY_ATTEMPTS}
+                  agents={agents ?? new Map()}
+                  selected={i.id === selectedId}
+                />
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
+    </Panel>
+  );
+}

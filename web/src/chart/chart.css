@@ -1,0 +1,303 @@
+/* Chart primitives. Hairlines are non-scaling. */
+
+.c-chart {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  isolation: isolate;
+}
+.c-chart:active { cursor: grabbing; }
+.c-chart:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.c-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.c-svg--world { transform-origin: 0 0; will-change: transform; overflow: visible; }
+.c-svg--frame { pointer-events: none; }
+.c-svg * { vector-effect: non-scaling-stroke; }
+.c-water { fill: var(--bg); }
+
+/* graticule + frame (screen space) */
+.c-grat line { stroke: var(--graticule); stroke-width: 1; }
+.c-frame__rule { fill: none; stroke: var(--line-strong); stroke-width: 1; }
+.c-frame__bar { fill: var(--line-strong); }
+.c-tick {
+  font-family: var(--font-agent);
+  font-size: var(--t-2xs);
+  font-weight: 500;
+  fill: var(--ink-3);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* sea */
+.c-depth {
+  fill: none;
+  stroke: color-mix(in oklch, var(--accent) 22%, var(--line));
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+.c-shoal {
+  fill: var(--shoal);
+  stroke: color-mix(in oklch, var(--accent) 30%, var(--shoal));
+  stroke-width: 1;
+}
+
+/* land */
+.c-island { fill: var(--land); stroke: var(--land-edge); stroke-width: 1; }
+.c-island-label {
+  font-family: var(--font-agent);
+  font-weight: 500;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+.c-parcel { cursor: pointer; }
+.c-parcel rect {
+  fill: transparent;
+  stroke: color-mix(in oklch, var(--land-edge) 60%, transparent);
+  stroke-width: 1;
+}
+.c-parcel-hover { fill: var(--shoal); pointer-events: none; }
+.c-parcel-label {
+  font-family: var(--font-agent);
+  font-weight: 500;
+  fill: var(--ink-1);
+  pointer-events: none;
+}
+.c-sounding {
+  font-family: var(--font-agent);
+  fill: var(--ink-3);
+  pointer-events: none;
+}
+
+/* activity contours */
+.c-contour { fill: none; stroke: var(--contour); stroke-width: 1; }
+
+/* landing ripple */
+.c-ripple {
+  fill: var(--clear);
+  opacity: 0;
+  pointer-events: none;
+  animation: c-ripple 800ms var(--ease-out) 1;
+}
+@keyframes c-ripple {
+  0% { opacity: .3; }
+  100% { opacity: 0; }
+}
+
+/* compass rose */
+.c-rose { pointer-events: none; }
+.c-rose circle { fill: none; stroke: var(--line-strong); stroke-width: 1; opacity: .75; }
+.c-rose .c-rose__inner { stroke-dasharray: 1 2; opacity: .6; }
+.c-rose line { stroke: var(--line-strong); stroke-width: 1; opacity: .75; }
+.c-rose__dark { fill: var(--line-strong); stroke: var(--line-strong); stroke-width: 1; opacity: .8; }
+.c-rose__light { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1; opacity: .8; }
+.c-rose__n { font-family: var(--font-agent); font-size: 12px; font-weight: 500; fill: var(--ink-3); }
+
+/* course, wake, waypoints */
+.c-tracks { pointer-events: none; }
+.c-wake {
+  fill: none;
+  stroke: var(--vc);
+  stroke-opacity: .4;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.c-course,
+.c-course-pending {
+  fill: none;
+  stroke: var(--vc);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.c-course-pending { stroke-dasharray: 5 4; }
+.c-waypoint { fill: var(--bg); stroke: var(--vc); stroke-width: 1; }
+.c-wake.is-dim, .c-course.is-dim, .c-course-pending.is-dim, .c-waypoint.is-dim { opacity: .25; }
+.c-course.is-quiet { opacity: .3; }
+
+/* range lines */
+.c-range { --tone: var(--caution); pointer-events: none; }
+.c-range--caution { --tone: var(--caution); }
+.c-range--correction { --tone: var(--magenta); }
+.c-range--danger { --tone: var(--danger); }
+.c-range--neutral { --tone: var(--ink-3); }
+.c-range line { stroke: var(--tone); stroke-width: 1; stroke-dasharray: 3 3; }
+.c-range--danger line { stroke-dasharray: none; }
+.c-range__bg { fill: var(--bg); stroke: var(--tone); stroke-width: 1; }
+.c-range__text {
+  font-family: var(--font-agent);
+  font-size: var(--t-2xs);
+  font-weight: 500;
+  fill: var(--tone);
+}
+.c-range.is-dim { opacity: .25; }
+
+/* closing pulse: once, never looping */
+.c-pulse {
+  fill: none;
+  stroke: var(--caution);
+  stroke-width: 1.5;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: c-pulse 1200ms var(--ease-out) 1;
+}
+@keyframes c-pulse {
+  0% { opacity: .9; transform: scale(.35); }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+
+/* buoys */
+.c-buoy { cursor: pointer; outline: none; }
+.c-buoy__hit { fill: transparent; }
+.c-buoy__mark { fill: var(--magenta); stroke: var(--bg); stroke-width: 1.5; paint-order: stroke; }
+.c-buoy.is-done .c-buoy__mark { fill: var(--bg); stroke: var(--magenta); stroke-width: 1.5; }
+.c-buoy__label {
+  font-family: var(--font-agent);
+  font-size: var(--t-2xs);
+  font-weight: 500;
+  fill: var(--magenta);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.c-buoy:hover .c-buoy__mark { stroke: var(--ink-1); }
+.c-buoy:focus-visible .c-buoy__hit { stroke: var(--focus); stroke-width: 2; }
+.c-buoy.is-dim { opacity: .35; }
+
+/* vessels */
+.c-vessel {
+  cursor: pointer;
+  outline: none;
+  transition: transform var(--dur-track) var(--ease-in-out), opacity var(--dur-2) var(--ease-out);
+}
+.c-vessel__hit { fill: transparent; }
+.c-vessel__ring { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; transition: opacity var(--dur-1) var(--ease-out); }
+.c-vessel.is-selected .c-vessel__ring,
+.c-vessel:focus-visible .c-vessel__ring { opacity: 1; }
+.c-vessel.is-hovered .c-vessel__ring,
+.c-vessel:hover .c-vessel__ring { opacity: .45; }
+.c-vessel__hull {
+  fill: var(--vc);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.c-vessel__heading { stroke: var(--vc); stroke-width: 1.5; }
+.c-tag__bg {
+  fill: color-mix(in oklch, var(--vc) 20%, var(--bg));
+  stroke: color-mix(in oklch, var(--vc) 55%, var(--bg));
+  stroke-width: 1;
+}
+.c-tag__hull { fill: var(--vc); }
+.c-tag__text {
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  fill: var(--ink-1);
+  letter-spacing: .02em;
+}
+.c-vessel.is-dim { opacity: .4; }
+.c-vessel.is-selected .c-tag__bg { stroke: var(--accent); stroke-width: 1.5; }
+.c-vessel:focus-visible .c-tag__bg { stroke: var(--focus); stroke-width: 2; }
+
+/* overlays (HTML) */
+.c-overlay { position: absolute; z-index: var(--z-chart-overlay); cursor: auto; }
+.c-tip {
+  pointer-events: none;
+  display: grid;
+  gap: 2px;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-2);
+  background: var(--bg);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+}
+
+.c-cartouche {
+  left: var(--s-6);
+  top: var(--s-7);
+  display: grid;
+  gap: 2px;
+  max-width: min(360px, calc(100% - 96px));
+  padding: var(--s-3) var(--s-4);
+  background: color-mix(in oklch, var(--bg) 94%, transparent);
+  border: 1px solid var(--line-strong);
+  outline: 1px solid var(--line-strong);
+  outline-offset: 2px;
+  border-radius: 0;
+}
+.c-cartouche__title { font-weight: 500; font-size: var(--t-sm); }
+.c-cartouche__meta { font-size: var(--t-xs); color: var(--ink-3); }
+.c-cartouche__toggle {
+  justify-self: start;
+  min-height: 24px;
+  color: var(--accent);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+
+.c-zoom {
+  right: var(--s-5);
+  bottom: var(--s-5);
+  display: grid;
+  gap: var(--s-1);
+}
+.c-zoom .b-btn { background: color-mix(in oklch, var(--bg) 94%, transparent); }
+
+.c-legend {
+  display: grid;
+  gap: 3px;
+  margin: var(--s-2) 0 0;
+  padding: var(--s-2) 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--ink-2);
+}
+.c-legend--wide { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-2) var(--s-6); border-top: 0; margin: 0; padding: 0; }
+.c-legend__row { display: flex; align-items: center; gap: var(--s-3); }
+.c-legend__art { flex: none; overflow: visible; }
+.c-legend__art * { vector-effect: non-scaling-stroke; }
+.c-legend__scale { margin-top: 4px; color: var(--ink-3); font-size: var(--t-2xs); line-height: var(--lh-2xs); }
+.c-legend--wide .c-legend__scale { grid-column: 1 / -1; }
+
+.c-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.c-empty > * { pointer-events: auto; background: color-mix(in oklch, var(--bg) 92%, transparent); border: 1px solid var(--line); z-index: var(--z-chart-overlay); }
+.c-empty__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); }
+
+/* Large fleets: vessels jump instead of gliding; hundreds of concurrent transitions cost more than they explain. */
+.c-chart--fleet .c-vessel { transition: opacity var(--dur-2) var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .c-ripple, .c-pulse { display: none; }
+  .c-vessel { transition: opacity 120ms linear; }
+}
+
+@media (max-width: 760px) {
+  .c-cartouche { left: var(--s-4); top: var(--s-5); padding: var(--s-1) var(--s-3); gap: 0; }
+  .c-cartouche__title { display: none; }
+  .c-zoom { right: var(--s-3); bottom: var(--s-3); }
+}

@@ -1,0 +1,22 @@
+// Timeline trace of chart panning: totals per event type (Layout, Paint, UpdateLayoutTree, …).
+import { chromium } from "playwright";
+import { readFileSync } from "node:fs";
+const N = Number(process.argv[2] ?? 100);
+const out = process.argv[3] ?? "/tmp/trace.json";
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await page.goto(`http://127.0.0.1:5182/?mock=1&t=34&fleet=${N}`, { waitUntil: "networkidle" });
+await page.waitForTimeout(1500);
+await browser.startTracing(page, { path: out, categories: ["devtools.timeline", "disabled-by-default-devtools.timeline"] });
+const box = await page.locator(".c-chart").boundingBox();
+await page.mouse.move(box.x + 400, box.y + 300);
+await page.mouse.down();
+for (let i = 0; i < 30; i++) await page.mouse.move(box.x + 400 + Math.sin(i / 5) * 150, box.y + 300 + Math.cos(i / 5) * 100);
+await page.mouse.up();
+await page.waitForTimeout(300);
+await browser.stopTracing();
+await browser.close();
+const ev = JSON.parse(readFileSync(out, "utf8")).traceEvents ?? JSON.parse(readFileSync(out, "utf8"));
+const tot = new Map();
+for (const e of ev) if (e.ph === "X" && e.dur) tot.set(e.name, (tot.get(e.name) ?? 0) + e.dur / 1000);
+[...tot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18).forEach(([k, v]) => console.log(v.toFixed(0).padStart(7), "ms", k));

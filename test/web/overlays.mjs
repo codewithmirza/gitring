@@ -1,0 +1,36 @@
+// Screenshot overlays: legend, judgment queue, new intent dialog, diff drawer, file drawer.
+import { chromium } from "playwright";
+const out = process.argv[2] ?? "tmp/screenshots";
+const theme = process.argv[3] ?? "day";
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+page.on("pageerror", (e) => console.log("[pageerror]", e.message));
+const go = async (p) => {
+  await page.goto(`http://127.0.0.1:5182${p}${p.includes("?") ? "&" : "?"}mock=1&t=80&freeze=1&theme=${theme}`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(700);
+};
+await go("/");
+await page.getByRole("button", { name: "Show legend" }).click();
+await page.waitForTimeout(200);
+await page.screenshot({ path: `${out}/overlay-legend-${theme}.png`, clip: { x: 288, y: 80, width: 520, height: 470 } });
+await page.getByRole("button", { name: /decisions need a human/ }).click();
+await page.waitForTimeout(250);
+await page.screenshot({ path: `${out}/overlay-queue-${theme}.png`, clip: { x: 900, y: 0, width: 540, height: 300 } });
+await page.keyboard.press("Escape");
+await page.locator("#main").click({ position: { x: 600, y: 300 } }).catch(() => {});
+await page.keyboard.press("n");
+await page.getByRole("dialog", { name: "New intent" }).waitFor();
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${out}/overlay-new-intent-${theme}.png` });
+await page.keyboard.press("Escape");
+await go("/intents/in-dark");
+await page.locator(".lane").first().getByRole("button", { name: "Open diff" }).click();
+await page.waitForTimeout(600);
+await page.screenshot({ path: `${out}/overlay-diff-${theme}.png` });
+await page.keyboard.press("Escape");
+await go("/");
+await page.locator(".c-parcel").first().click();
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${out}/overlay-file-${theme}.png` });
+await browser.close();
+console.log("ok");

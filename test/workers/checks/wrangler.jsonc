@@ -1,0 +1,11 @@
+// Private probe Worker for the check runner and the preview loader (agent C).
+// Run: npx wrangler dev --config test/workers/checks/wrangler.jsonc --port 8790 --persist-to tmp/agentC-state
+// Then: node test/workers/checks/probe.mjs http://localhost:8790
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "bearing-checks-probe",
+  "main": "./index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "worker_loaders": [{ "binding": "LOADER" }]
+}
