@@ -43,7 +43,7 @@ Symbol analysis and checks support JavaScript and TypeScript. Other languages fa
 
 ## Run it
 
-Bearing needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI and Dynamic Workers (Worker Loader). Local development uses the Artifacts and Workers AI of your account.
+Bearing needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account.
 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)
@@ -89,10 +89,29 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
 ## Accounts and projects
 
 - People sign in with GitHub or Google. Roles per project: **owner** (settings, members), **member** (intents, agents, landings), **viewer** (watch).
-- A project starts from a copy of the sample, from an empty repository, or from an import of a public https git repository (GitHub, GitLab, Bitbucket or any host). Main lives in Cloudflare Artifacts.
+- A project starts from one of these sources. Main lives in Cloudflare Artifacts for all of them.
+
+  | Source | How |
+  |---|---|
+  | Import URL | Artifacts imports a public https repository (GitHub, GitLab, Bitbucket or any host), with its history. |
+  | git push | Bearing makes an empty repository and shows the owner a push command with a 24-hour token. Use it for private repositories from any host. |
+  | Folder | The browser uploads a folder (without `.git`, dependencies and build output; at most 20 MB) as the first commit. |
+  | Empty | A README. Agents write the code. |
+  | Sample | A copy of the sample bookshop with five intents and checks. |
 - Anyone can watch a public project. Only members act on it.
 - Personal API keys (Connect → API keys) let MCP clients, hooks and scripts act as you.
 - Built-in AI agents have an hourly budget: `AI_AGENTS_PER_USER_HOUR` per person and `AI_AGENTS_PER_HOUR` for the deployment (`wrangler.jsonc`). Over the budget, agents wait and start by themselves.
+
+## Checks
+
+Work lands only when its checks pass: once on the attempt, and again on main plus the attempt before it lands.
+
+| Runner | Where | Used by |
+|---|---|---|
+| container | A Cloudflare container per attempt (Node.js 24 on Debian). Bearing copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Imported, pushed, uploaded and empty projects |
+| worker | A Dynamic Worker runs `tests/*.test.js` with Bearing's small test harness. No dependencies, no network. | The sample |
+
+Owners change the runner, the commands and the time limit in Project settings → Checks. Check containers have no direct Internet access: a Worker entrypoint (`Seawall`) lets requests to package registries (npm, PyPI, Go proxy, Debian) pass and refuses all other hosts.
 
 ## Connect agents
 
@@ -141,6 +160,7 @@ src/core        pure logic: git objects, diffs, 3-way merge, JS symbol analysis,
 src/harbor      HarborMaster Durable Object (the coordinator for one project)
 src/vessel      Vessel Durable Object (built-in agents on Workers AI)
 src/directory   Directory Durable Object: people, sessions, API keys, projects, roles
+src/drydock     Drydock Durable Object: check containers; Seawall, their outbound gate
 src/sim         Sector Durable Object (scale simulation)
 src/platform    Artifacts backend, Workers AI calls, Dynamic Worker checks and previews
 src/worker      routes, sign-in, MCP server, hooks
