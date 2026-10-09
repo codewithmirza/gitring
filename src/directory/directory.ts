@@ -580,13 +580,15 @@ export class Directory extends DurableObject<Env> {
   /* ════════════════════ AI budget ════════════════════ */
 
   /**
-   * Take up to n built-in agent starts from rolling one-hour windows: one per person (perUser) and one
-   * for the deployment (global). Returns how many it granted and when the next slot frees.
+   * Take up to n units from rolling one-hour windows: one per person (perUser) and one for the
+   * deployment (global). Pools: "ai" (built-in agent starts) and "checks" (container check runs).
+   * Returns how many it granted and when the next slot frees.
    */
-  async budgetTake(owner: string | null, n: number, perUser: number, global: number): Promise<{ granted: number; retryAt: number }> {
+  async budgetTake(owner: string | null, n: number, perUser: number, global: number, pool: "ai" | "checks" = "ai"): Promise<{ granted: number; retryAt: number }> {
     const now = Date.now();
+    const key = (k: string) => (pool === "ai" ? k : `${pool}:${k}`);
     const read = (k: string) =>
-      (JSON.parse(this.sql.exec<{ starts: string }>("SELECT starts FROM budgets WHERE owner = ?", k).toArray()[0]?.starts ?? "[]") as number[])
+      (JSON.parse(this.sql.exec<{ starts: string }>("SELECT starts FROM budgets WHERE owner = ?", key(k)).toArray()[0]?.starts ?? "[]") as number[])
         .filter((t) => now - t < HOUR)
         .sort((a, b) => a - b);
     const g = read("*");
@@ -597,8 +599,8 @@ export class Directory extends DurableObject<Env> {
     const stamps = Array.from({ length: granted }, () => now);
     const g2 = [...g, ...stamps];
     const u2 = [...u, ...stamps];
-    this.sql.exec("INSERT OR REPLACE INTO budgets (owner, starts) VALUES ('*', ?)", JSON.stringify(g2));
-    if (owner) this.sql.exec("INSERT OR REPLACE INTO budgets (owner, starts) VALUES (?, ?)", owner, JSON.stringify(u2));
+    this.sql.exec("INSERT OR REPLACE INTO budgets (owner, starts) VALUES (?, ?)", key("*"), JSON.stringify(g2));
+    if (owner) this.sql.exec("INSERT OR REPLACE INTO budgets (owner, starts) VALUES (?, ?)", key(owner), JSON.stringify(u2));
     const frees = [g2.length >= global ? g2[0] + HOUR : 0, owner && u2.length >= perUser ? u2[0] + HOUR : 0];
     const retryAt = Math.max(now + 1000, ...frees) + 1000;
     return { granted, retryAt };

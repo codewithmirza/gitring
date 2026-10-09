@@ -24,6 +24,9 @@ export interface Env {
   AI_AGENTS_PER_HOUR?: string;
   /** Built-in AI agent starts per hour and person (default 12). */
   AI_AGENTS_PER_USER_HOUR?: string;
+  /** Container check runs per hour for the deployment (default 2000) and per project owner (default 240). */
+  CHECK_RUNS_PER_HOUR?: string;
+  CHECK_RUNS_PER_OWNER_HOUR?: string;
   /** Secret: 32 random bytes (base64). Seals provider credentials in the Directory. */
   BEARING_SECRET?: string;
   /** Secret: opens /setup before any owner can sign in (create the GitHub App, add Google). */

@@ -255,3 +255,7 @@
   .intent__title { font-size: var(--t-lg); line-height: var(--lh-lg); }
   .lanes { grid-template-columns: repeat(var(--n), minmax(min(320px, 84vw), 1fr)); }
 }
+
+.lane__log { margin-top: var(--s-2); font-size: var(--t-sm); }
+.lane__log summary { cursor: pointer; color: var(--ink-2); }
+.lane__log pre { margin: var(--s-2) 0 0; max-height: 240px; overflow: auto; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-2); background: var(--surface-2); font-size: var(--t-xs); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -41,7 +41,9 @@
     "ARTIFACTS_NAMESPACE": "bearing",
     "AGENT_MODELS": "@cf/moonshotai/kimi-k2.7-code,@cf/openai/gpt-oss-120b,@cf/qwen/qwen3.8-27b",
     "AI_AGENTS_PER_HOUR": "40",
-    "AI_AGENTS_PER_USER_HOUR": "12"
+    "AI_AGENTS_PER_USER_HOUR": "12",
+    "CHECK_RUNS_PER_HOUR": "2000",
+    "CHECK_RUNS_PER_OWNER_HOUR": "240"
   },
   // Imports read many git objects from Artifacts in one request, and index large repositories.
   "limits": { "subrequests": 100000, "cpu_ms": 300000 },

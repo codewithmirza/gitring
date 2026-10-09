@@ -275,6 +275,13 @@ describe("AI budget", () => {
     expect(r.granted).toBe(0);
   });
 
+  it("keeps the check-run pool apart from the AI pool", async () => {
+    const dir = make();
+    expect((await dir.budgetTake("u_a", 2, 2, 2, "checks")).granted).toBe(2);
+    expect((await dir.budgetTake("u_a", 1, 2, 2, "checks")).granted).toBe(0);
+    expect((await dir.budgetTake("u_a", 2, 2, 2)).granted).toBe(2);
+  });
+
   it("frees slots after an hour", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

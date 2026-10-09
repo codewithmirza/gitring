@@ -323,6 +323,12 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
         <h3 className="lane__h">Checks</h3>
         <EvidenceBar run={a.checks} checking={a.status === "checking" || a.status === "submitted"} pending={intent.checks.length * 4} label="Alone" />
         {a.composedChecks && <EvidenceBar run={a.composedChecks} label="Composed with main" showFailures />}
+        {(a.composedChecks?.log ?? a.checks?.log) && (
+          <details className="lane__log">
+            <summary>Output of the check container</summary>
+            <pre className="voice-agent">{(a.composedChecks?.log ?? a.checks?.log ?? "").slice(-4000)}</pre>
+          </details>
+        )}
       </section>
 
       <section className="lane__sec lane__preview" aria-label="Live preview">

@@ -1493,6 +1493,16 @@ export class HarborMaster extends DurableObject<Env> {
     }
     const t0 = Date.now();
     const p = this.requireProject();
+    // Container runs cost money: an hourly budget per project owner and for the deployment.
+    const perOwner = Math.max(1, Math.round(Number(this.env.CHECK_RUNS_PER_OWNER_HOUR) || 240));
+    const global = Math.max(1, Math.round(Number(this.env.CHECK_RUNS_PER_HOUR) || 2000));
+    const budget = await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"))
+      .budgetTake(p.ownerId ?? null, 1, perOwner, global, "checks")
+      .catch(() => ({ granted: 1, retryAt: 0 }));
+    if (!budget.granted) {
+      const res: DrydockResult = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The hourly budget for check runs is used. Run the checks again after ${clock(budget.retryAt)} UTC.` };
+      return containerRun(res, { key, scope, cs, ms: 0 });
+    }
     const dock = this.env.DRYDOCK.get(this.env.DRYDOCK.idFromName(`${p.id}:${attemptId}`));
     let res: DrydockResult;
     try {
