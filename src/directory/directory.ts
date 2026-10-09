@@ -31,6 +31,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS budgets (owner TEXT PRIMARY KEY, starts TEXT NOT NULL)`,
+  // gitring does not keep provider access tokens (privacy page). Clear the ones that older builds kept.
+  `UPDATE identities SET token = NULL WHERE token IS NOT NULL`,
 ];
 
 const SESSION_MS = 30 * 24 * 3600_000;
@@ -112,8 +114,6 @@ interface Profile {
   email?: string;
   emailVerified?: boolean;
   avatar?: string;
-  /** Sealed provider token (GitHub user-to-server token for repo listing later). */
-  token?: string;
 }
 
 export class Directory extends DurableObject<Env> {
@@ -324,8 +324,8 @@ export class Directory extends DurableObject<Env> {
     const res = await fetch("https://api.github.com/user", { headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${t.access_token}` } });
     if (!res.ok) throw new Error(`GitHub did not return the profile (status ${res.status}).`);
     const u = await res.json<{ id: number; login: string; name?: string | null; email?: string | null; avatar_url?: string }>();
-    const sealed = await seal(this.secret(), { access: t.access_token, refresh: t.refresh_token, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined }, "token-v1");
-    return { provider: "github", subject: String(u.id), name: u.name || u.login, login: u.login, email: u.email ?? undefined, avatar: u.avatar_url, token: sealed };
+    // The access token proves who signed in; gitring does not keep it.
+    return { provider: "github", subject: String(u.id), name: u.name || u.login, login: u.login, email: u.email ?? undefined, avatar: u.avatar_url };
   }
 
   private async googleProfile(code: string, origin: string, verifier: string): Promise<Profile> {
@@ -373,13 +373,13 @@ export class Directory extends DurableObject<Env> {
       );
     }
     this.sql.exec(
-      "INSERT INTO identities (provider, subject, user_id, login, email, token) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (provider, subject) DO UPDATE SET login = excluded.login, email = excluded.email, token = COALESCE(excluded.token, identities.token)",
+      // The token column stays for older rows; gitring keeps no provider tokens.
+      "INSERT INTO identities (provider, subject, user_id, login, email, token) VALUES (?, ?, ?, ?, ?, NULL) ON CONFLICT (provider, subject) DO UPDATE SET login = excluded.login, email = excluded.email, token = NULL",
       p.provider,
       p.subject,
       userId,
       p.login ?? null,
       p.email ?? null,
-      p.token ?? null,
     );
     // Invites by login or email become memberships.
     const handles = [p.login && `github:${p.login.toLowerCase()}`, p.email && `email:${p.email.toLowerCase()}`].filter(Boolean) as string[];

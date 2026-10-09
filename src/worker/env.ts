@@ -35,6 +35,8 @@ export interface Env {
   GITRING_OWNERS?: string;
   /** Optional operator key for scripts: `Authorization: Bearer <GITRING_KEY>` acts as the deployment. */
   GITRING_KEY?: string;
+  /** Optional contact (email address) on the privacy and terms pages. */
+  GITRING_CONTACT?: string;
   /** Optional: verify signatures of a plain GitHub repository webhook (X-Hub-Signature-256) on /hooks/github. */
   GITHUB_WEBHOOK_SECRET?: string;
   /** Optional: verify Slack request signatures (X-Slack-Signature). */

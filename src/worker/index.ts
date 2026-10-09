@@ -649,7 +649,9 @@ export default {
       path.startsWith("/hooks/") ||
       path.startsWith("/auth/") ||
       path === "/setup" ||
-      path.startsWith("/setup/")
+      path.startsWith("/setup/") ||
+      path === "/privacy" ||
+      path === "/terms"
     ) {
       return app.fetch(request, env, ctx);
     }

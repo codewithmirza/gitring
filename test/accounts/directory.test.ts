@@ -136,6 +136,9 @@ describe("GitHub App setup and sign-in", () => {
     expect(res.user.name).toBe("Robin Q");
     expect(res.user.identities).toEqual([{ provider: "github", login: "Robin", email: undefined }]);
     expect((await dir.sessionUser(res.token))?.id).toBe(res.user.id);
+    // The privacy page says it: gitring keeps no provider access tokens.
+    const rows = (dir as unknown as { sql: { exec(q: string): { toArray(): { token: string | null }[] } } }).sql.exec("SELECT token FROM identities").toArray();
+    expect(rows).toEqual([{ token: null }]);
     await dir.endSession(res.token);
     expect(await dir.sessionUser(res.token)).toBeNull();
   });

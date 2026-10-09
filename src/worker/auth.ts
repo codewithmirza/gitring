@@ -8,6 +8,7 @@ import type * as A from "../core/accounts";
 import type * as T from "../core/types";
 import { sameString } from "../directory/crypto";
 import type { ManifestConversion } from "../directory/directory";
+import { privacyBody, termsBody } from "./legal";
 
 export const SESSION_COOKIE = "__Host-gitring";
 const SESSION_MAX_AGE_S = 30 * 24 * 3600;
@@ -186,6 +187,15 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
 /* ───────────── routes ───────────── */
 
 export function authRoutes(app: Hono<HonoEnv>): void {
+  // Privacy policy and terms (the Google consent screen links to them).
+  const contact = (c: C): string | null => {
+    const v = (c.env.GITRING_CONTACT ?? "").trim();
+    if (!v) return null;
+    return /^[^\s@<>"']+@[^\s@<>"']+$/.test(v) ? `<a href="mailto:${esc(v)}">${esc(v)}</a>` : esc(v);
+  };
+  app.get("/privacy", (c) => page("Privacy", privacyBody(contact(c))));
+  app.get("/terms", (c) => page("Terms", termsBody(contact(c))));
+
   app.get("/setup", async (c) => {
     const token = c.req.query("token") ?? null;
     if (!setupAllowed(c, token)) return page("Setup", `<h1>Setup is closed</h1><p>Open the setup link with its token, or sign in as an owner of this gitring.</p><p><a class="btn" href="/">Open gitring</a></p>`, 403);
