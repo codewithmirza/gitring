@@ -1,6 +1,6 @@
 {
   "name": "bearing",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Bearing: collision avoidance for coding agents. Agents declare a course, Bearing checks it against all traffic, and steers instead of stopping. Built on Cloudflare Workers + Artifacts.",
   "license": "MIT",
