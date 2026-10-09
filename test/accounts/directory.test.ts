@@ -70,6 +70,7 @@ describe("GitHub App setup and sign-in", () => {
     expect(manifest.callback_urls).toEqual([`${ORIGIN}/auth/github/callback`]);
     expect(manifest.redirect_url).toBe(`${ORIGIN}/setup/github/callback`);
     expect(manifest.hook_attributes.url).toBe(`${ORIGIN}/hooks/github-app`);
+    expect(manifest.default_events).toEqual(["issues", "push"]);
     expect(manifest.default_permissions).toEqual({ contents: "write", issues: "read", metadata: "read" });
     expect((await dir.providers()).github).toBeNull();
 
@@ -80,6 +81,23 @@ describe("GitHub App setup and sign-in", () => {
     expect(providers.github).toEqual({ slug: "gitring-x", appId: 7, htmlUrl: "https://github.com/apps/gitring-x", installUrl: "https://github.com/apps/gitring-x/installations/new" });
     // A state works once.
     await expect(dir.githubManifestDone("abc", stateOf(m.postUrl))).rejects.toThrow(/expired or was used/);
+  });
+
+  it("makes an app without a webhook for a local dev server (GitHub cannot reach localhost)", async () => {
+    const dir = make();
+    const m = await dir.githubManifest("http://localhost:5173");
+    const local = JSON.parse(m.manifest);
+    expect(local.name).toBe("git-ring localhost");
+    expect(local.callback_urls).toEqual(["http://localhost:5173/auth/github/callback"]);
+    expect(local.hook_attributes).toBeUndefined();
+    expect(local.default_events).toBeUndefined();
+    routes["https://api.github.com/app-manifests/"] = {
+      json: { id: 8, slug: "git-ring-localhost", client_id: "Iv1.l", client_secret: "s", webhook_secret: null, pem: "p", html_url: "https://github.com/apps/git-ring-localhost" },
+    };
+    await dir.githubManifestDone("loc", stateOf(m.postUrl));
+    // No webhook secret: the webhook route refuses every delivery for this app.
+    expect((await dir.githubApp())?.webhookSecret).toBe("");
+    expect((await dir.providers()).github?.slug).toBe("git-ring-localhost");
   });
 
   it("lets the browser convert the code when GitHub refuses the Worker (429), and checks the key", async () => {

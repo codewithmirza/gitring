@@ -533,6 +533,8 @@ app.post("/hooks/github-app", async (c) => {
   const raw = await c.req.text();
   const gh = await directory(c.env).githubApp();
   if (!gh) return c.json({ error: "The GitHub App is not set up." }, 404);
+  // An app made for localhost has no webhook and no webhook secret: refuse every delivery.
+  if (!gh.webhookSecret) return c.json({ error: "The GitHub App has no webhook." }, 404);
   const sig = (c.req.header("x-hub-signature-256") ?? "").replace(/^sha256=/, "");
   if (!sameString(sig, await hmacSha256Hex(gh.webhookSecret, raw))) return c.json({ error: "Bad signature." }, 401);
   const event = c.req.header("x-github-event");

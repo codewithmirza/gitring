@@ -50,6 +50,7 @@ export interface GithubAppConfig {
   slug: string;
   clientId: string;
   clientSecret: string;
+  /** Empty for an app without a webhook. */
   webhookSecret: string;
   pem: string;
   htmlUrl: string;
@@ -62,7 +63,8 @@ export interface ManifestConversion {
   slug: string;
   client_id: string;
   client_secret: string;
-  webhook_secret: string;
+  /** null when the app has no webhook (an app made for localhost). */
+  webhook_secret: string | null;
   pem: string;
   html_url: string;
   owner?: { login?: string };
@@ -199,11 +201,14 @@ export class Directory extends DurableObject<Env> {
     const state = this.putState({ kind: "manifest", origin });
     const host = new URL(origin).hostname;
     const tag = host.endsWith(".workers.dev") ? host.split(".").slice(-3, -2)[0] : host.split(".")[0];
+    // GitHub cannot deliver webhooks to a local dev server, so an app for localhost has no webhook.
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host);
+    const webhook = local ? {} : { hook_attributes: { url: `${origin}/hooks/github-app`, active: true }, default_events: ["issues", "push"] };
     const manifest = {
       // GitHub reserves app names with "gitring" in them (an account has that login), so the app is "git-ring".
       name: `git-ring ${tag}`.slice(0, 34),
       url: origin,
-      hook_attributes: { url: `${origin}/hooks/github-app`, active: true },
+      ...webhook,
       redirect_url: `${origin}/setup/github/callback`,
       callback_urls: [`${origin}/auth/github/callback`],
       setup_url: `${origin}/setup/github/installed`,
@@ -211,7 +216,6 @@ export class Directory extends DurableObject<Env> {
       description: "gitring: many coding agents change one codebase at the same time. Sign in, import repositories, mirror landings.",
       public: true,
       default_permissions: { contents: "write", issues: "read", metadata: "read" },
-      default_events: ["issues", "push"],
       request_oauth_on_install: false,
     };
     return { postUrl: `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`, manifest: JSON.stringify(manifest) };
@@ -237,7 +241,8 @@ export class Directory extends DurableObject<Env> {
   async githubAppSave(state: string, app: ManifestConversion): Promise<{ slug: string; htmlUrl: string }> {
     const st = this.takeState(state);
     if (st.kind !== "manifest") throw new Error("This link is not a GitHub App setup link.");
-    if (!app || typeof app.id !== "number" || !app.slug || !app.client_id || !app.client_secret || !app.pem || !app.webhook_secret) {
+    // webhook_secret is null for an app without a webhook (made for localhost).
+    if (!app || typeof app.id !== "number" || !app.slug || !app.client_id || !app.client_secret || !app.pem) {
       throw new Error("GitHub did not send complete app credentials. Start again.");
     }
     // The private key must belong to the app: GitHub answers GET /app only to a JWT signed with it.
@@ -255,7 +260,7 @@ export class Directory extends DurableObject<Env> {
       slug: j.slug,
       clientId: j.client_id,
       clientSecret: j.client_secret,
-      webhookSecret: j.webhook_secret,
+      webhookSecret: j.webhook_secret ?? "",
       pem: j.pem,
       htmlUrl: j.html_url,
       owner: j.owner?.login,

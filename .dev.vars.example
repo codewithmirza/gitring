@@ -1,7 +1,9 @@
-# Copy to .dev.vars for `npm run dev`. Never commit .dev.vars.
+# Copy to .dev.vars for `npm run dev`. Never commit .dev.vars. Use other values than production.
 # Seals the sign-in credentials (GitHub App, Google client). Make one: openssl rand -base64 32
 GITRING_SECRET=
 # Opens /setup before an owner signs in. Make one: openssl rand -hex 16
 GITRING_SETUP_TOKEN=
 # Owners of this gitring: they open /setup and act on every project.
 GITRING_OWNERS=github:your-login,google:you@example.com
+# Optional operator key for scripts and MCP clients (acts as an owner on every project). Make one: openssl rand -hex 24
+GITRING_KEY=

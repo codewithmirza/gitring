@@ -48,9 +48,16 @@ gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)
 npx wrangler login
-cp .dev.vars.example .dev.vars   # then fill in the three values
+cp .dev.vars.example .dev.vars   # then fill in the values
 npm run dev                      # http://localhost:5173
 ```
+
+The local server keeps its own storage (`.wrangler/state`), so sign-in on localhost needs its own one-time setup. Open `http://localhost:5173/setup?token=<GITRING_SETUP_TOKEN from .dev.vars>`:
+
+- **GitHub**: the button makes a second app, `git-ring localhost`, with localhost callback URLs and no webhook (GitHub cannot reach your computer).
+- **Google**: add the origin `http://localhost:5173` and the redirect URI `http://localhost:5173/auth/google/callback` to your OAuth client, then paste its ID and secret.
+
+Scripts and MCP clients do not need sign-in: use `GITRING_URL=http://localhost:5173 GITRING_KEY=<GITRING_KEY from .dev.vars>`.
 
 Tests:
 

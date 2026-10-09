@@ -65,7 +65,7 @@ import {
 import bundle from "../../sample/bundle.json";
 
 const GITRING_AUTHOR = { name: "gitring", email: "harbor@gitring.dev" };
-export const BUILD_ID = "0.5.0+20261009i";
+export const BUILD_ID = "0.5.0+20261009j";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
