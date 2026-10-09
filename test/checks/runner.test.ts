@@ -9,10 +9,10 @@ import {
   runChecks,
   toLoaderModules,
 } from "../../src/platform/checks/runner";
-import { loadDemo } from "../../demo/tools/compose.mjs";
+import { loadSample } from "../fixtures/compose.mjs";
 import { nodeLoader, treeMap } from "./node-loader";
 
-const demo = await loadDemo();
+const demo = await loadSample();
 const seed = treeMap(demo.seed);
 const loader = nodeLoader();
 afterAll(() => loader.cleanup());
@@ -72,9 +72,9 @@ describe("buildCheckModules", () => {
     expect(buildCheckModules({ files, testPaths: [] }).modules[HARNESS_PATH]).toMatch(/^\/\/ custom/);
   });
 
-  it("HARNESS_SOURCE is the same as demo/repo/harness/test.js", async () => {
-    // If this fails: copy demo/repo/harness/test.js into the String.raw template in runner.ts.
-    expect(HARNESS_SOURCE).toBe(await readFile(new URL("../../demo/repo/harness/test.js", import.meta.url), "utf8"));
+  it("HARNESS_SOURCE is the same as sample/repo/harness/test.js", async () => {
+    // If this fails: copy sample/repo/harness/test.js into the String.raw template in runner.ts.
+    expect(HARNESS_SOURCE).toBe(await readFile(new URL("../../sample/repo/harness/test.js", import.meta.url), "utf8"));
   });
 
   it("does not let tree files replace generated modules", () => {

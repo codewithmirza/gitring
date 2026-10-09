@@ -256,7 +256,6 @@ interface LaneProps {
   onLand: (a: Attempt) => void;
   onRederive: (a: Attempt) => void;
   now: number;
-  mode: "live" | "mock";
 }
 
 function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, rederivedFromName, onLand, onRederive, now }: LaneProps) {
@@ -265,13 +264,13 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
   const landed = a.status === "landed";
   const canLand = a.status === "ready";
   const closed = intent.status === "landed" || intent.status === "parked";
-  const [doc, setDoc] = useState<{ src: string | null; srcDoc: string | null }>({ src: null, srcDoc: null });
+  const [doc, setDoc] = useState<{ src: string | null }>({ src: null });
 
   useEffect(() => {
     const load = () => {
       const h = harborOrNull();
       if (!h) return;
-      setDoc({ src: h.previewUrl(a.id), srcDoc: h.previewDoc(a.id) });
+      setDoc({ src: h.previewUrl(a.id) });
     };
     load();
     return onHarbor(load);
@@ -328,8 +327,8 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
         <h3 className="lane__h">
           Live preview <span className="ink-3">· the attempt's real code</span>
         </h3>
-        {doc.src || doc.srcDoc ? (
-          <PreviewFrame title={callsign} src={doc.src} srcDoc={doc.srcDoc} height={300} />
+        {doc.src ? (
+          <PreviewFrame title={callsign} src={doc.src} height={300} />
         ) : (
           <div className="lane__nopreview">The preview starts when the attempt has a fork.</div>
         )}
@@ -407,7 +406,6 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
 function IntentDetail({ intent }: { intent: Intent }) {
   const now = useNow(15_000);
   const st = useStore((s) => s.state);
-  const mode = useStore((s) => s.mode);
   const idx = st ? indexes(st) : null;
   const [amend, setAmend] = useState(false);
   const [park, setPark] = useState(false);
@@ -553,7 +551,6 @@ function IntentDetail({ intent }: { intent: Intent }) {
                   onLand={setLanding}
                   onRederive={setRederive}
                   now={now}
-                  mode={mode === "live" ? "live" : "mock"}
                 />
               ))}
             </div>

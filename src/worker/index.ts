@@ -9,7 +9,6 @@
  */
 import { Hono, type Context } from "hono";
 import type { Env } from "./env";
-import { isOffline } from "./env";
 import { mcpHandler } from "./mcp";
 import { servePreview } from "../platform/checks/preview";
 import type * as T from "../core/types";
@@ -17,7 +16,6 @@ import type * as T from "../core/types";
 export { HarborMaster } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
 export { Sector } from "../sim/sector";
-export { LocalArtifacts } from "../platform/repo/emulator";
 
 type C = Context<{ Bindings: Env }>;
 
@@ -83,8 +81,7 @@ app.get("/api/health", async (c) =>
   c.json({
     ok: true,
     build: await harbor(c.env, c.req.query("project") ?? "demo").version().catch(() => "unknown"),
-    mode: isOffline(c.env) ? "offline" : "online",
-    backend: c.env.ARTIFACTS && c.env.REPO_BACKEND !== "emulator" ? "artifacts" : "emulator",
+    backend: "artifacts",
     ai: Boolean(c.env.AI),
   }),
 );
@@ -126,9 +123,9 @@ app.patch("/api/projects/:p/intents/:id", async (c) => {
 app.post("/api/projects/:p/intents/:id/launch", async (c) => {
   if (!authorized(c)) return deny(c);
   try {
-    const body = await c.req.json<{ fanout?: number; models?: string[]; mode?: "llm" | "scripted" }>().catch(() => ({}) as Record<string, never>);
+    const body = await c.req.json<{ fanout?: number; models?: string[] }>().catch(() => ({}) as Record<string, never>);
     const h = await ready(c.env, c.req.param("p"));
-    return c.json(await h.launch(c.req.param("id"), body));
+    return c.json(await h.launch(c.req.param("id"), { fanout: body.fanout, models: body.models }, actor(c)));
   } catch (e) {
     return err(c, e);
   }
@@ -204,9 +201,9 @@ app.get("/api/projects/:p/attempts/:id/vessel", async (c) => {
   return c.json((await stub.status()) ?? { phase: "none" });
 });
 
-/* ───────────── demo + simulation + settings ───────────── */
+/* ───────────── sample reset, launch all, simulation, settings ───────────── */
 
-app.post("/api/projects/:p/demo/reset", async (c) => {
+app.post("/api/projects/:p/reset", async (c) => {
   if (!authorized(c)) return deny(c);
   try {
     const h = harbor(c.env, c.req.param("p"));
@@ -218,13 +215,11 @@ app.post("/api/projects/:p/demo/reset", async (c) => {
   }
 });
 
-app.post("/api/projects/:p/demo/run", async (c) => {
+app.post("/api/projects/:p/launch-all", async (c) => {
   if (!authorized(c)) return deny(c);
   try {
-    type Run = { scenario?: string; mode?: "llm" | "scripted" };
-    const body: Run = await c.req.json<Run>().catch(() => ({}));
     const h = await ready(c.env, c.req.param("p"));
-    return c.json(await h.runScenario(body.scenario ?? "collisions", body.mode));
+    return c.json(await h.launchAll(actor(c)));
   } catch (e) {
     return err(c, e);
   }
@@ -317,7 +312,7 @@ app.post("/hooks/intents", async (c) => {
       { title: body.title, goal: body.goal ?? body.title, checks: body.checks, source: { kind: "webhook", ref: body.source ?? "webhook" } },
       { kind: "system", id: body.source ?? "webhook", name: body.source ?? "Webhook" },
     );
-    const launched = body.launch ? await h.launch(intent.id, { fanout: body.launch }) : undefined;
+    const launched = body.launch ? await h.launch(intent.id, { fanout: body.launch }, { kind: "system", id: body.source ?? "webhook", name: body.source ?? "Webhook" }) : undefined;
     return c.json({ intent, launched: launched?.attempts.map((a) => a.id) ?? [] }, 201);
   } catch (e) {
     return err(c, e);

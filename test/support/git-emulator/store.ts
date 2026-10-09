@@ -16,8 +16,8 @@ import {
   decodeTree,
   isSha,
   isValidBranchName,
-} from "../../../core/git/objects";
-import { MemoryTreeCache, type Snapshot, type TreeCache, prepareCommit, readSnapshot } from "../../../core/git/snapshot";
+} from "../../../src/core/git/objects";
+import { MemoryTreeCache, type Snapshot, type TreeCache, prepareCommit, readSnapshot } from "../../../src/core/git/snapshot";
 import {
   type CommitInput,
   type CommitMeta,
@@ -26,7 +26,7 @@ import {
   RepoConflictError,
   type RepoHandle,
   type TreeEntry,
-} from "../backend";
+} from "../../../src/platform/repo/backend";
 
 export interface StoredObject {
   type: GitObjectType;

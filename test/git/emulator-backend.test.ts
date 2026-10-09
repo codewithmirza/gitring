@@ -5,8 +5,8 @@
 import { describe, expect, it } from "vitest";
 import { utf8 } from "../../src/core/git/objects";
 import { RepoConflictError } from "../../src/platform/repo/backend";
-import { EmulatorBackend, EmulatorService } from "../../src/platform/repo/emulator/service";
-import { GitStore, MemoryObjectStore } from "../../src/platform/repo/emulator/store";
+import { EmulatorBackend, EmulatorService } from "../support/git-emulator/service";
+import { GitStore, MemoryObjectStore } from "../support/git-emulator/store";
 
 function fakeNamespace() {
   const instances = new Map<string, EmulatorService>();

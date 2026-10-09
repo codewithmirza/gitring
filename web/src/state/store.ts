@@ -1,6 +1,5 @@
 /**
- * The harbor store. One reducer for both data modes: the live WebSocket and the
- * in-browser mock harbor emit the same BearingEvent stream.
+ * The harbor store: one reducer over the BearingEvent stream from the live WebSocket.
  *
  * Components read slices with useStore(selector). The reducer keeps references of
  * unchanged slices, so a component re-renders only when its slice changes.
@@ -8,7 +7,7 @@
 import { useRef, useSyncExternalStore } from "react";
 import type { BearingEvent, ProjectState, RadarPair } from "../../../src/core/types";
 
-export type DataMode = "boot" | "live" | "mock";
+export type DataMode = "boot" | "live";
 export type ConnState = "connecting" | "open" | "reconnecting" | "offline";
 
 export interface Ripple {

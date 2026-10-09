@@ -1,5 +1,6 @@
 /**
- * Probe Worker: runs src/platform/checks (runner + preview) in workerd against the demo bundle.
+ * Probe Worker: runs src/platform/checks (runner + preview) in workerd against the sample project and
+ * its reference solutions. First run `node test/fixtures/build-probe.mjs` (workerd cannot read the disk).
  *
  *   GET /run-checks?scenario=<name>[&timeoutMs=<ms>]   → CheckRun JSON (+ "scenario" and "testPaths")
  *   GET /preview/<scenario>/<path>                       → the app of that scenario, under the prefix
@@ -8,7 +9,7 @@
  * Scenarios: seed, seed+checks, solution:<slug>, adapted:<slug>, landed, no-harness, broken-test,
  * broken-src, hang, net, app-throws, app-syntax.
  */
-import bundle from "../../../demo/bundle.json";
+import bundle from "../../fixtures/sample-probe.json";
 import { servePreview } from "../../../src/platform/checks/preview";
 import { contentKey, runChecks } from "../../../src/platform/checks/runner";
 

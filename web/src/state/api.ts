@@ -1,10 +1,8 @@
 /**
- * Harbor client. Two implementations with one interface:
- *   LiveHarbor — the Worker: REST under /api/projects/:p and a WebSocket at /ws/:p.
- *   MockHarbor — an in-browser harbor (state/mock.ts) for demos and development.
+ * Harbor client: the Worker's REST API under /api/projects/:p and live events over /ws/:p.
  *
- * Boot: `?mock=1` forces the mock. Otherwise the UI asks the Worker for the project
- * state; when that fails it falls back to the mock (`?mock=0` stays live and retries).
+ * Boot: the UI asks the Worker for the project state. When the Worker does not answer,
+ * the UI says so and tries again. There is no offline or fake data path.
  */
 import type { Attempt, Intent, Landing, ProjectState } from "../../../src/core/types";
 import { store } from "./store";
@@ -56,7 +54,6 @@ export interface LandResult {
 }
 
 export interface HarborClient {
-  readonly mode: "live" | "mock";
   readonly projectId: string;
   createIntent(input: NewIntentInput): Promise<Intent>;
   amendIntent(id: string, input: AmendInput): Promise<Intent>;
@@ -67,16 +64,15 @@ export interface HarborClient {
   attemptDiff(attemptId: string): Promise<DiffResult>;
   landing(id: string): Promise<LandingDetail>;
   file(ref: string, path: string): Promise<string>;
-  demoReset(): Promise<void>;
-  /** "llm": built-in vessels use Workers AI models (minutes). "scripted": fast, deterministic vessels. Default: the server decides. */
-  demoRun(mode?: "llm" | "scripted"): Promise<void>;
+  /** Sample projects only: start again from the sample's first commit. */
+  resetSample(): Promise<void>;
+  /** Launch built-in AI agents on every open intent (Workers AI models). */
+  launchAll(): Promise<{ launched: number; queued: number }>;
   simStart(agents: number, sectors: number): Promise<void>;
   simStop(): Promise<void>;
   connect(): Promise<ConnectInfo>;
-  /** Live preview URL of an attempt (iframe src), or null when previews come from previewDoc. */
-  previewUrl(attemptId: string): string | null;
-  /** Preview document (iframe srcdoc) for the mock harbor. */
-  previewDoc(attemptId: string, path?: string): string | null;
+  /** Live preview URL of an attempt (iframe src). */
+  previewUrl(attemptId: string): string;
 }
 
 export class ApiError extends Error {
@@ -127,7 +123,6 @@ function looksLikeState(x: unknown): x is ProjectState {
 }
 
 class LiveHarbor implements HarborClient {
-  readonly mode = "live" as const;
   constructor(readonly projectId: string) {}
   private p(path: string) {
     return `/api/projects/${encodeURIComponent(this.projectId)}${path}`;
@@ -159,11 +154,11 @@ class LiveHarbor implements HarborClient {
   file(ref: string, path: string) {
     return request<string>("GET", this.p(`/file?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}`), undefined, 15000, "text/plain, */*");
   }
-  async demoReset() {
-    await request("POST", this.p("/demo/reset"), {});
+  async resetSample() {
+    await request("POST", this.p("/reset"), {});
   }
-  async demoRun(mode?: "llm" | "scripted") {
-    await request("POST", this.p("/demo/run"), { scenario: "collisions", ...(mode ? { mode } : {}) });
+  launchAll() {
+    return request<{ launched: number; queued: number }>("POST", this.p("/launch-all"), {});
   }
   async simStart(agents: number, sectors: number) {
     await request("POST", this.p("/sim/start"), { agents, sectors });
@@ -180,9 +175,6 @@ class LiveHarbor implements HarborClient {
   }
   previewUrl(attemptId: string) {
     return `/preview/${encodeURIComponent(this.projectId)}/${encodeURIComponent(attemptId)}/`;
-  }
-  previewDoc() {
-    return null;
   }
 }
 
@@ -254,36 +246,29 @@ function setClient(c: HarborClient) {
   clientListeners.forEach((l) => l());
 }
 
-async function startMock(params: URLSearchParams, reason: "forced" | "fallback") {
-  const { MockHarbor } = await import("./mock");
-  const mock = new MockHarbor(store.get().projectId);
-  setClient(mock);
-  store.setMode("mock");
-  store.setConn("open", null);
-  mock.start(params, reason);
-}
+let bootTries = 0;
 
 export async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const projectId = params.get("project") || "demo";
   store.setProject(projectId);
-  const mock = params.get("mock");
-  if (mock === "1") return startMock(params, "forced");
   try {
-    const st = await request<unknown>("GET", `/api/projects/${encodeURIComponent(projectId)}/state`, undefined, 4000);
-    if (!looksLikeState(st)) throw new Error("not a project state");
+    const st = await request<unknown>("GET", `/api/projects/${encodeURIComponent(projectId)}/state`, undefined, 8000);
+    if (!looksLikeState(st)) throw new ApiError(0, "The harbor sent a reply that is not a project state.");
+    bootTries = 0;
     setClient(new LiveHarbor(projectId));
     store.setMode("live");
     store.dispatch({ type: "snapshot", state: st });
     connectSocket(projectId);
-  } catch {
-    if (mock === "0") {
-      setClient(new LiveHarbor(projectId));
-      store.setMode("live");
-      store.setConn("offline", "The harbor is not reachable. Bearing tries again in 5 seconds.");
-      setTimeout(() => void boot(), 5000);
+  } catch (e) {
+    const status = e instanceof ApiError ? e.status : 0;
+    if (status === 404 || status === 403) {
+      store.setConn("offline", (e as Error).message);
       return;
     }
-    return startMock(params, "fallback");
+    bootTries++;
+    const delay = Math.min(30_000, 2000 * 2 ** Math.min(bootTries - 1, 4));
+    store.setConn("offline", `The harbor is not reachable. Bearing tries again in ${Math.round(delay / 1000)} s.`);
+    setTimeout(() => void boot(), delay);
   }
 }

@@ -5,20 +5,14 @@
  * through HarborMaster RPC. Corrections arrive piggybacked on every response; the vessel feeds
  * them into its next step and keeps working (no stop, no lock).
  *
- * Modes:
- *   llm       a Workers AI model with tools (read/write/list/checks/log/submit)
- *   scripted  a deterministic replay of the demo's reference solutions (offline + reliable demos);
- *             it applies each solution as a delta (3-way) onto its real base, like a real patch.
- *
+ * A vessel is a Workers AI model with tools (read/write/list/checks/log/submit).
  * Each step runs in an alarm, so a long run survives eviction.
  */
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../worker/env";
 import type * as T from "../core/types";
-import { merge3 } from "../core/text/merge3";
-import { applyPatch, structuredPatch } from "diff";
 import { chat, lastChatError, parseJsonLoose, type ChatMessage, type ToolDef } from "../platform/ai/models";
-import { DEMO, type HarborMaster } from "../harbor/harbor";
+import type { HarborMaster } from "../harbor/harbor";
 
 /** The HarborMaster RPC surface a vessel uses (typed as the class; RPC serializes tuples as arrays). */
 type HarborApi = Pick<HarborMaster, "declare" | "log" | "write" | "read" | "list" | "check" | "submit" | "ack" | "brief" | "attemptDiff">;
@@ -30,8 +24,6 @@ export interface VesselConfig {
   agentId: string;
   callsign: string;
   model: string;
-  mode: "llm" | "scripted";
-  script?: { delayMs?: number; ignoreCorrections?: boolean; startDelayMs?: number; variant?: number };
   rederiveOf?: string;
 }
 
@@ -41,10 +33,6 @@ interface VesselState {
   step: number;
   /** LLM conversation. */
   messages: ChatMessage[];
-  /** Scripted: remaining file writes. */
-  queue: string[];
-  variant: "files" | "adapted";
-  baseCache: Record<string, string | null>;
   corrections: T.CorrectionNotice[];
   submits: number;
   lastError?: string;
@@ -52,13 +40,9 @@ interface VesselState {
   checkSig?: string;
   sameChecks?: number;
   writesSinceCheck?: number;
-  /** Scripted: re-plot corrections whose files this vessel already queued again. */
-  replotted?: string[];
 }
 
 const MAX_LLM_STEPS = 30;
-/** Scripted vessels stop after this many steps, whatever happens (a guard against loops). */
-const MAX_SCRIPTED_STEPS = 90;
 const MAX_SUBMITS = 5;
 
 export class Vessel extends DurableObject<Env> {
@@ -74,14 +58,11 @@ export class Vessel extends DurableObject<Env> {
       phase: "start",
       step: 0,
       messages: [],
-      queue: [],
-      variant: "files",
-      baseCache: {},
       corrections: [],
       submits: 0,
     };
     await this.save();
-    await this.ctx.storage.setAlarm(Date.now() + (config.script?.startDelayMs ?? 300));
+    await this.ctx.storage.setAlarm(Date.now() + 300);
   }
 
   async stop(): Promise<void> {
@@ -92,7 +73,7 @@ export class Vessel extends DurableObject<Env> {
     await this.ctx.storage.deleteAlarm();
   }
 
-  async status(): Promise<{ phase: string; step: number; lastError?: string; model: string; mode: string; messages: number; submits: number; lastReply?: string } | null> {
+  async status(): Promise<{ phase: string; step: number; lastError?: string; model: string; messages: number; submits: number; lastReply?: string } | null> {
     const st = await this.load();
     if (!st) return null;
     const last = [...st.messages].reverse().find((m) => m.role === "assistant");
@@ -101,7 +82,6 @@ export class Vessel extends DurableObject<Env> {
       step: st.step,
       lastError: st.lastError,
       model: st.config.model,
-      mode: st.config.mode,
       messages: st.messages.length,
       submits: st.submits,
       lastReply: last ? `${(last.content ?? "").slice(0, 300)}${last.tool_calls?.length ? ` [tools: ${last.tool_calls.map((t) => t.function.name).join(", ")}]` : ""}` : undefined,
@@ -112,9 +92,9 @@ export class Vessel extends DurableObject<Env> {
     const st = await this.load();
     if (!st || st.phase === "done" || st.phase === "stopped") return;
     const phase0 = st.phase;
-    let delay = st.config.mode === "scripted" ? (st.config.script?.delayMs ?? 1800) : 200;
+    let delay = 200;
     try {
-      const more = st.config.mode === "scripted" ? await this.scriptedStep(st) : await this.llmStep(st);
+      const more = await this.llmStep(st);
       if (!more) st.phase = "done";
     } catch (err) {
       st.lastError = String(err).slice(0, 500);
@@ -126,117 +106,6 @@ export class Vessel extends DurableObject<Env> {
     await this.save();
     if ((st.phase as string) !== "done" && (st.phase as string) !== "stopped") await this.ctx.storage.setAlarm(Date.now() + delay);
     void phase0;
-  }
-
-  /* ───────────────────────── scripted ───────────────────────── */
-
-  private slug(st: VesselState, brief: { demoSlug?: string }): string | undefined {
-    return brief.demoSlug;
-  }
-
-  private async scriptedStep(st: VesselState): Promise<boolean> {
-    const c = st.config;
-    const h = this.harbor(c.projectId);
-    const brief = await h.brief(c.attemptId, c.intentId);
-    const slug = this.slug(st, brief);
-    const di = DEMO.intents.find((x) => x.slug === slug);
-    const sol = slug ? DEMO.solutions[slug] : undefined;
-
-    if (st.phase === "start") {
-      const sigs = scriptedSymbols(slug, di?.expect.symbols ?? []);
-      const res = await h.declare({
-        attemptId: c.attemptId,
-        intentId: c.intentId,
-        agent: { id: c.agentId, kind: "builtin", model: c.model },
-        plan: planFor(slug, di?.title ?? brief.intent.title),
-        files: di?.expect.files ?? brief.intent.scope?.paths ?? [],
-        symbols: sigs,
-        approach: approachFor(slug, brief.intent.title, c.rederiveOf),
-        mode: "api",
-      });
-      this.absorb(st, res.clearance);
-      // A re-derive on a main that already has the producer's change uses the adapted variant.
-      if (c.rederiveOf && sol?.adapted) st.variant = "adapted";
-      st.queue = Object.keys(sol ? (st.variant === "adapted" && sol.adapted ? sol.adapted : sol.files) : {});
-      st.phase = "working";
-      return true;
-    }
-
-    if (st.phase === "working") {
-      if (st.step > MAX_SCRIPTED_STEPS) {
-        st.phase = "submitted";
-        return true;
-      }
-      if (!sol) {
-        await h.log({ attemptId: c.attemptId, message: "No scripted solution for this intent. Submit as is." });
-        st.phase = "submitted";
-        return true;
-      }
-      // A re-plot moved the work onto the new main. Make the change again where Bearing kept the main
-      // version: queue each such file once per correction (read it again first: the cache goes).
-      const handled = (st.replotted ??= []);
-      for (const n of st.corrections.filter((x) => x.constraints?.replot && !handled.includes(x.id))) {
-        handled.push(n.id);
-        for (const r of n.constraints?.reapply ?? []) {
-          delete st.baseCache[r.path];
-          st.queue = [r.path, ...st.queue.filter((q) => q !== r.path)];
-        }
-      }
-      // React to corrections: an interface correction, or a landing that changed a signature, switches to the adapted variant.
-      const adapts = (n: T.CorrectionNotice) =>
-        n.kind === "interface" || (n.kind === "upstream" && (!n.constraints?.replot || !!n.constraints?.useSignatures?.length));
-      for (const n of st.corrections.filter((x) => x.constraints?.replot && !adapts(x))) {
-        if (c.script?.ignoreCorrections) break;
-        this.absorb(st, await h.ack(c.attemptId, n.id, "I read the moved files again and continue on the new main."));
-        st.corrections = st.corrections.filter((x) => x.id !== n.id);
-      }
-      const wantsAdapt = st.corrections.some(adapts);
-      if (wantsAdapt && sol.adapted && st.variant === "files" && !c.script?.ignoreCorrections) {
-        st.variant = "adapted";
-        const done = Object.keys(sol.files).filter((p) => !st.queue.includes(p));
-        st.queue = [...new Set([...done, ...Object.keys(sol.adapted)])];
-        const ack = st.corrections[0];
-        const clr = await h.ack(c.attemptId, ack.id, "I use the new signature in my calls and keep my lines apart.");
-        this.absorb(st, clr);
-        await h.log({ attemptId: c.attemptId, message: `Apply correction ${ack.id}: call formatPrice with the currency and keep the currency parameter.` });
-        return true;
-      }
-      for (const n of st.corrections.filter((x) => x.kind === "region" || x.kind === "duplicate" || x.kind === "intent-amended")) {
-        if (c.script?.ignoreCorrections) break;
-        const clr = await h.ack(c.attemptId, n.id, n.kind === "region" ? "I keep my change out of those lines." : "Noted.");
-        this.absorb(st, clr);
-      }
-      st.corrections = st.corrections.filter((x) => x.kind === "interface" || x.kind === "upstream");
-      const path = st.queue.shift();
-      if (!path) {
-        st.phase = "submitted";
-        return true;
-      }
-      const target = variantOf(slug, c.script?.variant ?? 0, path, (st.variant === "adapted" && sol.adapted?.[path]) || sol.files[path]);
-      const ref = st.variant === "adapted" && sol.adapted?.[path] ? adaptedRef(path) : DEMO.repo[path];
-      if (!(path in st.baseCache)) {
-        st.baseCache[path] = (await h.read(c.attemptId, path)).content;
-      }
-      const content = applyDelta(ref, st.baseCache[path] ?? undefined, target);
-      const res = await h.write({ attemptId: c.attemptId, files: [{ path, content }], message: writeNote(slug, path) });
-      this.absorb(st, res.clearance);
-      return true;
-    }
-
-    if (st.phase === "submitted") {
-      if (st.submits >= MAX_SUBMITS) return false;
-      st.submits += 1;
-      const res = await h.submit(c.attemptId, summaryFor(slug, brief.intent.title, st.variant));
-      this.absorb(st, res.clearance);
-      if (res.next === "fix-checks" && sol?.adapted && st.variant === "files") {
-        st.variant = "adapted";
-        st.queue = Object.keys(sol.adapted);
-        st.phase = "working";
-        return true;
-      }
-      return res.next === "fix-checks" && st.submits < MAX_SUBMITS;
-    }
-    return false;
   }
 
   /* ───────────────────────── LLM ───────────────────────── */
@@ -406,91 +275,6 @@ export class Vessel extends DurableObject<Env> {
   private async save(): Promise<void> {
     if (this.st) await this.ctx.storage.put("st", this.st);
   }
-}
-
-/* ───────────────────────── scripted helpers ───────────────────────── */
-
-/** Apply a solution as a delta: ref → target, onto the current base (3-way). */
-export function applyDelta(ref: string | undefined, current: string | undefined, target: string): string {
-  if (ref === undefined || current === undefined || current === ref) return target;
-  if (current === target) return target;
-  const m = merge3(ref, current, target);
-  if (m.clean) return m.content;
-  // Edits on adjacent lines conflict in a 3-way merge. A patch with some fuzz can still place the delta.
-  const fuzzy = applyPatch(current, structuredPatch("a", "b", ref, target, "", "", { context: 2 }), { fuzzFactor: 2 });
-  return typeof fuzzy === "string" ? fuzzy : target;
-}
-
-/**
- * Best-of-N needs real alternatives: the second scripted dark-mode vessel ships a warm "night reading"
- * palette and label instead of the cool teal one. (LLM vessels differ on their own.)
- */
-function variantOf(slug: string | undefined, variant: number, path: string, content: string): string {
-  if (slug !== "dark-mode" || variant % 2 === 0) return content;
-  if (path === "src/render.js") return content.replace(/◐<\/span> Dark mode/g, "☾</span> Night reading");
-  if (path === "src/styles.js") {
-    const swap: Record<string, string> = {
-      "#0f1a1c": "#1b1611",
-      "#142427": "#261e17",
-      "#e8eee9": "#f3e8d8",
-      "#a7b6b2": "#c9b8a2",
-      "#26393c": "#3a2f25",
-      "#7cc4ba": "#e3a857",
-      "#1c3533": "#3b2c1c",
-      "#233230": "#2f261d",
-    };
-    return content.replace(/#[0-9a-f]{6}\b/gi, (hex) => swap[hex.toLowerCase()] ?? hex);
-  }
-  return content;
-}
-
-/** Adapted solutions were made on top of the currency change. */
-function adaptedRef(path: string): string | undefined {
-  return DEMO.solutions["currency"]?.files[path] ?? DEMO.repo[path];
-}
-
-/** The producer declares its new signature up front, so consumers get an early correction. */
-function scriptedSymbols(slug: string | undefined, symbols: string[]): string[] {
-  if (slug === "currency") return symbols.map((s) => (s === "src/products.js#formatPrice" ? 'src/products.js#formatPrice(cents, currency = "USD")' : s));
-  return symbols;
-}
-
-function planFor(slug: string | undefined, title: string): string[] {
-  const plans: Record<string, string[]> = {
-    currency: ["Add a rate table for USD, EUR and INR", "Change formatPrice(cents) to formatPrice(cents, currency)", "Read ?currency= in renderPage", "Add a currency picker", "Run the checks"],
-    "dark-mode": ["Add theme tokens for dark", "Add a toggle at the end of the nav", "Remember the choice", "Run the checks"],
-    search: ["Add findProducts(query)", "Add a search form below the tagline", "Filter the shelf with ?q=", "Run the checks"],
-    "staff-picks": ["Mark three books as staff picks", "Show a badge next to the price", "Style the badge", "Run the checks"],
-    "api-item": ["Route /api/products/:id", "Return 404 JSON for unknown ids", "Run the checks"],
-  };
-  return plans[slug ?? ""] ?? ["Read the code", `Implement "${title}"`, "Run the checks"];
-}
-
-function approachFor(slug: string | undefined, title: string, rederiveOf?: string): string {
-  const base: Record<string, string> = {
-    currency: "Change the formatPrice interface and pass the currency through the render path.",
-    "dark-mode": "CSS tokens plus a header toggle with aria-pressed.",
-    search: "A pure findProducts filter and a small search form.",
-    "staff-picks": "A staffPick flag on books and a badge in renderItem.",
-    "api-item": "One new route in index.js that returns JSON.",
-  };
-  const a = base[slug ?? ""] ?? `Implement "${title}" with small, focused changes.`;
-  return rederiveOf ? `Re-derive on the new main: ${a}` : a;
-}
-
-function writeNote(slug: string | undefined, path: string): string {
-  const notes: Record<string, Record<string, string>> = {
-    currency: { "src/products.js": "Add rates and the currency parameter to formatPrice.", "src/render.js": "Pass the currency to every formatPrice call.", "src/styles.js": "Style the currency picker." },
-    "dark-mode": { "src/render.js": "Add the theme toggle to the header.", "src/styles.js": "Add dark theme tokens." },
-    search: { "src/products.js": "Add findProducts.", "src/render.js": "Add the search form and the results count.", "src/styles.js": "Style the search form." },
-    "staff-picks": { "src/products.js": "Mark three books as staff picks.", "src/render.js": "Show the badge next to the price.", "src/styles.js": "Style the badge." },
-    "api-item": { "src/index.js": "Add the /api/products/:id route." },
-  };
-  return notes[slug ?? ""]?.[path] ?? `Update ${path}.`;
-}
-
-function summaryFor(slug: string | undefined, title: string, variant: string): string {
-  return `${title}. ${variant === "adapted" ? "Adapted to the new formatPrice interface." : "Applied on my base."} Checks pass.`;
 }
 
 /* ───────────────────────── LLM helpers ───────────────────────── */

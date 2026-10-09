@@ -8,7 +8,7 @@
  * Workers RPC does not keep custom error classes or their fields, so `commit` returns a tagged
  * result for compare-and-swap failures and EmulatorBackend turns it back into RepoConflictError.
  */
-import type { LocalArtifacts } from "../emulator";
+import type { LocalArtifacts } from "./local-artifacts";
 import {
   type CommitInput,
   type CommitMeta,
@@ -18,7 +18,7 @@ import {
   RepoConflictError,
   type RepoHandle,
   type TreeEntry,
-} from "../backend";
+} from "../../../src/platform/repo/backend";
 import type { GitStore, RepoInfo } from "./store";
 
 export type EmulatorCommitOutcome =

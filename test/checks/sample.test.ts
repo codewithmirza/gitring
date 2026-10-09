@@ -1,6 +1,6 @@
 /**
- * The demo codebase (demo/repo), its seed intents (demo/intents.json) and the reference solutions
- * (demo/solutions). The checks run through runChecks: the generated modules execute in Node.
+ * The sample project (sample/repo), its intents (sample/intents.json) and the reference solutions
+ * (test/fixtures/sample-solutions). The checks run through runChecks: the generated modules execute in Node.
  */
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -12,11 +12,11 @@ import { diffIndices } from "node-diff3";
 import { afterAll, describe, expect, it } from "vitest";
 import { runChecks } from "../../src/platform/checks/runner";
 import type { CheckRun } from "../../src/core/types";
-import { DEMO_DIR, LANDING_ORDER, applyChange, changeFor, checkFiles, land, loadDemo, parseStep, testPathsOf, treeAlone, type Tree } from "../../demo/tools/compose.mjs";
+import { SAMPLE_DIR, LANDING_ORDER, applyChange, changeFor, checkFiles, land, loadSample, parseStep, testPathsOf, treeAlone, type Tree } from "../fixtures/compose.mjs";
 import { nodeLoader, treeMap } from "./node-loader";
 
 const run = promisify(execFile);
-const demo = await loadDemo();
+const demo = await loadSample();
 const SLUGS = ["currency", "dark-mode", "search", "staff-picks", "api-item"];
 const loader = nodeLoader();
 const tempDirs: string[] = [];
@@ -72,12 +72,12 @@ function changedSymbols(base: Tree, change: Tree): string[] {
 }
 
 describe("demo build outputs", () => {
-  it("demo/intents.json and demo/bundle.json are up to date (node demo/build.mjs --check)", async () => {
-    await expect(run(process.execPath, [path.join(DEMO_DIR, "build.mjs"), "--check"])).resolves.toBeDefined();
+  it("sample/intents.json and sample/bundle.json are up to date (node sample/build.mjs --check)", async () => {
+    await expect(run(process.execPath, [path.join(SAMPLE_DIR, "build.mjs"), "--check"])).resolves.toBeDefined();
   });
 });
 
-describe("seed intents (demo/intents.json)", () => {
+describe("sample intents (sample/intents.json)", () => {
   it("has the five intents, in order", () => {
     expect(demo.intents.map((i) => i.slug)).toEqual(SLUGS);
   });
@@ -177,10 +177,10 @@ describe("landing order: " + LANDING_ORDER.join(" → "), () => {
     }
   });
 
-  it("matches the landed tree in demo/bundle.json", async () => {
-    const bundle = (await import("../../demo/bundle.json", { with: { type: "json" } })).default as { landing: { order: string[]; tree: Tree } };
-    expect(bundle.landing.order).toEqual(LANDING_ORDER);
-    expect(bundle.landing.tree).toEqual(landed.tree);
+  it("sample/bundle.json carries the seed and the intents, and no solutions", async () => {
+    const bundle = (await import("../../sample/bundle.json", { with: { type: "json" } })).default as Record<string, unknown> & { repo: Tree };
+    expect(Object.keys(bundle).sort()).toEqual(["intents", "name", "repo", "schema"]);
+    expect(bundle.repo).toEqual(demo.seed);
   });
 
   it("keeps at least 2 unchanged lines between the edits of different intents (stricter than git)", () => {
@@ -221,7 +221,7 @@ describe("landing order: " + LANDING_ORDER.join(" → "), () => {
   });
 });
 
-describe("designed collisions (files/ variants, without corrections)", () => {
+describe("pairs that conflict as text without Bearing (files/ variants, no corrections)", () => {
   function second(a: string, b: string) {
     return land(demo, [a, b]).log[1];
   }

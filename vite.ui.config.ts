@@ -3,8 +3,7 @@
  *
  *   npx vite --config vite.ui.config.ts --port 5182 --host 127.0.0.1
  *
- * The UI runs on its own. With no backend it falls back to the in-browser mock harbor
- * (or force it with `?mock=1`). To develop against a running Worker, set BEARING_API:
+ * The UI talks to a running Bearing Worker. Set BEARING_API to its origin (local or deployed):
  *
  *   BEARING_API=http://127.0.0.1:8787 npx vite --config vite.ui.config.ts
  */

@@ -54,17 +54,14 @@ function Connection() {
   const mode = useStore((s) => s.mode);
   const conn = useStore((s) => s.conn);
   const error = useStore((s) => s.error);
+  const sample = useStore((s) => s.state?.project.source?.kind === "sample");
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<"run" | "script" | "reset" | null>(null);
+  const [busy, setBusy] = useState<"run" | "reset" | null>(null);
   const btn = useRef<HTMLButtonElement | null>(null);
   let text = "Connecting";
   let tone = "neutral";
   let help = "Bearing asks the harbor for the project state.";
-  if (mode === "mock") {
-    text = "Mock harbor";
-    tone = "accent";
-    help = "The mock harbor runs in this browser with the Saltmarsh Books demo. Start the Worker for live data.";
-  } else if (mode === "live" && conn === "open") {
+  if (mode === "live" && conn === "open") {
     text = "Live";
     tone = "clear";
     help = "Live events arrive over the WebSocket.";
@@ -73,20 +70,23 @@ function Connection() {
     tone = "caution";
     help = error ?? "The live connection dropped. Bearing reconnects.";
   }
-  const act = async (kind: "run" | "script" | "reset") => {
+  const act = async (kind: "run" | "reset") => {
     setBusy(kind);
     try {
-      if (kind === "run") await harbor().demoRun("llm");
-      else if (kind === "script") await harbor().demoRun("scripted");
-      else await harbor().demoReset();
-      toast({
-        tone: "info",
-        title: kind === "reset" ? "Demo harbor reset" : "Demo scenario started",
-        text: kind === "run" ? "AI agents take 5 to 8 minutes. Watch the chart." : "Watch the chart.",
-      });
+      if (kind === "run") {
+        const r = await harbor().launchAll();
+        toast({
+          tone: "info",
+          title: r.launched ? `${r.launched} AI ${r.launched === 1 ? "agent starts" : "agents start"}` : "No agents start now",
+          text: r.queued ? `${r.queued} more wait for the hourly AI budget. Watch the radio log.` : "Watch the chart. AI agents take 5 to 8 minutes.",
+        });
+      } else {
+        await harbor().resetSample();
+        toast({ tone: "info", title: "Sample project reset", text: "Main is back at the first commit." });
+      }
       setOpen(false);
     } catch (e) {
-      toast({ tone: "danger", title: "The demo did not start", text: (e as Error).message });
+      toast({ tone: "danger", title: kind === "run" ? "The agents did not start" : "The reset did not finish", text: (e as Error).message });
     } finally {
       setBusy(null);
     }
@@ -113,27 +113,15 @@ function Connection() {
           <p className="harborpop__help">{help}</p>
           <div className="harborpop__actions">
             <Button size="sm" variant="primary" icon="play" busy={busy === "run"} onClick={() => act("run")}>
-              Run with AI agents
+              Launch all open intents
             </Button>
-            <Button size="sm" icon="play" busy={busy === "script"} onClick={() => act("script")}>
-              Run scripted
-            </Button>
-            <Button size="sm" icon="reload" busy={busy === "reset"} onClick={() => act("reset")}>
-              Reset demo
-            </Button>
-          </div>
-          <p className="harborpop__note">AI agents use Workers AI models and take 5 to 8 minutes. Scripted vessels take about 1 minute. Offline, both run scripted.</p>
-          <p className="harborpop__note">
-            {mode === "mock" ? (
-              <>
-                The mock loop restarts every 100 s until you act. Add <span className="code-inline">?mock=0</span> to the URL to stay on the live harbor.
-              </>
-            ) : (
-              <>
-                Add <span className="code-inline">?mock=1</span> to the URL to use the in-browser mock harbor.
-              </>
+            {sample && (
+              <Button size="sm" icon="reload" busy={busy === "reset"} onClick={() => act("reset")}>
+                Reset sample
+              </Button>
             )}
-          </p>
+          </div>
+          <p className="harborpop__note">Built-in agents use Workers AI models and take 5 to 8 minutes. Over the hourly AI budget, launches wait in a queue and start by themselves.</p>
         </div>
       </Popover>
     </>

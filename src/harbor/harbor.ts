@@ -12,10 +12,8 @@ import { DEFAULT_SETTINGS } from "../core/types";
 import { Db } from "./store";
 import { callsignFor, colorFor, newId, repoSafe } from "./ids";
 import type { Env } from "../worker/env";
-import { isOffline } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError } from "../platform/repo/backend";
-import { EmulatorBackend } from "../platform/repo/emulator";
 import { ArtifactsBackend } from "../platform/repo/artifacts";
 import { MemoryTreeCache, readSnapshot, diffSnapshots, type Snapshot } from "../core/git/snapshot";
 import { utf8 } from "../core/git/objects";
@@ -62,14 +60,14 @@ import {
   type MainView,
   type TreeText,
 } from "./views";
-import bundle from "../../demo/bundle.json";
+import bundle from "../../sample/bundle.json";
 
 const BEARING_AUTHOR = { name: "Bearing", email: "harbor@bearing.dev" };
-export const BUILD_ID = "0.1.0+20261009j";
+export const BUILD_ID = "0.2.0+20261009a";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
-/** Built-in LLM vessels per hour and project (public demo guardrail for Workers AI spend). */
+/** Default built-in AI agent starts per hour for the whole deployment (AI_AGENTS_PER_HOUR overrides). */
 const LLM_STARTS_PER_HOUR = 40;
 /** The Durable Object (HarborMaster namespace) that holds the deployment-wide AI agent budget. */
 const BUDGET_OBJECT = "__bearing_budget__";
@@ -78,6 +76,7 @@ interface DemoIntent {
   slug: string;
   title: string;
   goal: string;
+  fanout?: number;
   checks: { path: string; description: string; content: string }[];
   expect: { files: string[]; symbols: string[] };
 }
@@ -85,18 +84,13 @@ interface DemoBundle {
   name: string;
   repo: Record<string, string>;
   intents: DemoIntent[];
-  solutions: Record<string, { files: Record<string, string>; adapted?: Record<string, string> }>;
 }
-export const DEMO = bundle as unknown as DemoBundle;
-
-export type LaunchMode = "llm" | "scripted";
+/** The sample project: a real codebase with intents and checks. New sample projects start from it. */
+export const SAMPLE = bundle as unknown as DemoBundle;
 
 export interface LaunchInput {
   fanout?: number;
   models?: string[];
-  mode?: LaunchMode;
-  /** Scripted vessels only: behaviour knobs for the demo scenario. */
-  script?: { delayMs?: number; ignoreCorrections?: boolean; startDelayMs?: number };
 }
 
 export interface Brief {
@@ -108,7 +102,6 @@ export interface Brief {
   checks: { path: string; description: string; content: string }[];
   constraints: string[];
   traffic: T.TrafficVessel[];
-  demoSlug?: string;
 }
 
 export class HarborMaster extends DurableObject<Env> {
@@ -168,17 +161,8 @@ export class HarborMaster extends DurableObject<Env> {
 
   private get backend(): RepoBackend {
     if (this.backendCache) return this.backendCache;
-    const kind = this.project?.repo.backend ?? this.defaultBackendKind();
-    this.backendCache =
-      kind === "artifacts" && this.env.ARTIFACTS
-        ? new ArtifactsBackend(this.env.ARTIFACTS, { author: BEARING_AUTHOR, treeCache: this.treeCache })
-        : new EmulatorBackend(this.env.EMULATOR, this.project?.repo.namespace ?? "emulator");
+    this.backendCache = new ArtifactsBackend(this.env.ARTIFACTS, { author: BEARING_AUTHOR, treeCache: this.treeCache });
     return this.backendCache;
-  }
-
-  private defaultBackendKind(): T.RepoBackendKind {
-    if (this.env.REPO_BACKEND === "emulator") return "emulator";
-    return this.env.ARTIFACTS && this.env.BEARING_MODE !== "offline" ? "artifacts" : "emulator";
   }
 
   private requireProject(): T.Project {
@@ -193,35 +177,36 @@ export class HarborMaster extends DurableObject<Env> {
     return this.requireProject();
   }
 
-  async init(opts: { projectId: string; name?: string; backend?: T.RepoBackendKind }): Promise<T.ProjectState> {
+  async init(opts: { projectId: string; name?: string }): Promise<T.ProjectState> {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
-    const kind = opts.backend ?? this.defaultBackendKind();
-    const namespace = kind === "artifacts" ? (this.env.ARTIFACTS_NAMESPACE ?? "bearing") : "emulator";
+    const kind: T.RepoBackendKind = "artifacts";
+    const namespace = this.env.ARTIFACTS_NAMESPACE ?? "bearing";
     this.project = undefined;
     this.backendCache = undefined;
     const repoName = repoSafe(`${opts.projectId}-g${generation}-${Date.now().toString(36)}`);
     const draft: T.Project = {
       id: opts.projectId,
-      name: opts.name ?? DEMO.name ?? "Saltmarsh Books",
+      name: opts.name ?? SAMPLE.name ?? "Saltmarsh Books",
       repo: { backend: kind, namespace, name: repoName, defaultBranch: "main" },
       mainSha: "",
       mainTree: "",
       createdAt: Date.now(),
+      source: { kind: "sample" },
       settings: {
         ...DEFAULT_SETTINGS,
-        decisionModel: isOffline(this.env) ? "rules" : "clef-flash",
+        decisionModel: "clef-flash",
         agentModels: (this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels),
       },
     };
     this.project = draft;
     const handle = await this.backend.ensureRepo(repoName, { description: `Bearing project ${opts.projectId}` });
-    const changes = Object.entries(DEMO.repo).map(([path, content]) => ({ path, content }));
+    const changes = Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }));
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
       parent: "",
       changes,
-      message: `Seed ${draft.name}\n\nThe starting point of the demo.\n\nBearing-Seed: demo`,
+      message: `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nBearing-Seed: sample`,
       author: BEARING_AUTHOR,
     });
     draft.repo.remote = handle.remote;
@@ -230,8 +215,8 @@ export class HarborMaster extends DurableObject<Env> {
     this.db.setMeta("generation", generation);
     this.db.setMeta("project", draft);
     this.db.setMeta("mainSeq", [seed.sha]);
-    for (const di of DEMO.intents) this.seedIntent(di);
-    this.addLog({ kind: "system", message: `Project ready. Main is ${seed.sha.slice(0, 7)} in ${kind === "artifacts" ? "Cloudflare Artifacts" : "the local emulator"} (${repoName}).` });
+    for (const di of SAMPLE.intents) this.seedIntent(di);
+    this.addLog({ kind: "system", message: `Project ready. Main is ${seed.sha.slice(0, 7)} in Cloudflare Artifacts (${repoName}).` });
     await this.loadMain();
     this.persistStats();
     const state = await this.state();
@@ -239,7 +224,9 @@ export class HarborMaster extends DurableObject<Env> {
     return state;
   }
 
+  /** Sample projects only: wipe the state and start again from the sample's first commit. */
   async reset(): Promise<T.ProjectState> {
+    if (this.project?.source && this.project.source.kind !== "sample") throw new Error("Only a sample project can be reset.");
     const id = this.project?.id ?? "demo";
     // Stop built-in vessels of the old generation.
     for (const a of this.attempts.values()) {
@@ -285,6 +272,7 @@ export class HarborMaster extends DurableObject<Env> {
       createdAt: now,
       updatedAt: now,
       source: { kind: "seed", ref: di.slug },
+      suggestedFanout: di.fanout,
     };
     this.putIntent(intent);
     return intent;
@@ -911,7 +899,6 @@ export class HarborMaster extends DurableObject<Env> {
       checks: intent.checks.map((c) => ({ path: c.path, description: c.description, content: c.content })),
       constraints: intent.constraints,
       traffic: a ? this.trafficFor(a) : [],
-      demoSlug: intent.source.kind === "seed" ? intent.source.ref : undefined,
     };
   }
 
@@ -1026,7 +1013,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (cands.length) {
       const rules = assessWithRules(incoming, cands);
       const model = p.settings.decisionModel;
-      if (model !== "rules" && !isOffline(this.env)) {
+      if (model !== "rules") {
         const first = await callClef(this.env.AI as never, buildBriefClefRequest("clef-flash", incoming, cands));
         if (first) {
           let parsed = parseClefResponse(first.res, incoming, cands);
@@ -1713,23 +1700,22 @@ export class HarborMaster extends DurableObject<Env> {
     return intent;
   }
 
-  async launch(intentId: string, input: LaunchInput = {}): Promise<{ attempts: T.Attempt[] }> {
-    await this.ensure(this.project?.id ?? "demo");
+  async launch(intentId: string, input: LaunchInput = {}, by: T.Actor = HUMAN): Promise<{ attempts: T.Attempt[]; waiting: number }> {
     const p = this.requireProject();
     const intent = this.intents.get(intentId);
     if (!intent) throw new Error("Unknown intent.");
     if (["landed", "parked", "merged-into"].includes(intent.status)) throw new Error(`Intent "${intent.title}" is ${intent.status}.`);
     const main = await this.loadMain();
-    const fanout = Math.max(1, Math.min(4, Math.round(Number(input.fanout ?? p.settings.fanout) || 1)));
-    let mode: LaunchMode = isOffline(this.env) || input.mode === "scripted" ? "scripted" : "llm";
-    if (mode === "llm" && !(await this.takeLlmBudget(fanout))) mode = "scripted";
+    const fanout = Math.max(1, Math.min(4, Math.round(Number(input.fanout ?? intent.suggestedFanout ?? p.settings.fanout) || 1)));
     const ok = this.allowedModels();
     const asked = (input.models ?? []).filter((m) => typeof m === "string" && ok(m));
-    const models = asked.length ? asked : p.settings.agentModels;
+    const models = asked.length ? asked : p.settings.agentModels.filter(ok);
+    if (!models.length) throw new Error("No agent model is set for this project. Add one in the settings.");
+    const budget = await this.takeLlmBudget(fanout);
     const created: T.Attempt[] = [];
     const first = asked.length ? 0 : this.agents.size;
     for (let i = 0; i < fanout; i++) {
-      const model = mode === "scripted" ? "scripted" : models[(first + i) % models.length];
+      const model = models[(first + i) % models.length];
       const agent = this.upsertAgent({ kind: "builtin", model });
       const id = newId("a");
       const now = Date.now();
@@ -1749,96 +1735,112 @@ export class HarborMaster extends DurableObject<Env> {
         stats: { filesChanged: 0, additions: 0, deletions: 0, steps: 0 },
         createdAt: now,
         updatedAt: now,
+        waitsForBudget: i < budget.granted ? undefined : budget.retryAt,
       };
       this.putAttempt(a);
-      agent.status = "underway";
+      agent.status = a.waitsForBudget ? "waiting" : "underway";
       agent.attemptId = id;
       this.putAgent(agent);
       created.push(a);
-      await this.startVessel(a, agent, mode, { ...input.script, variant: i });
+      if (!a.waitsForBudget) await this.startVessel(a, agent);
     }
+    const waiting = created.filter((a) => a.waitsForBudget).length;
+    if (waiting) await this.scheduleBudgetRetry(budget.retryAt);
     if (intent.status === "open" || intent.status === "draft") {
       intent.status = "underway";
       this.putIntent(intent);
     }
-    this.addLog({ kind: "intent", intentId, message: `Launch: ${fanout} built-in vessel${fanout > 1 ? "s" : ""} on "${intent.title}" (${mode === "scripted" ? "scripted" : created.map((c) => this.agents.get(c.agentId)?.model).join(", ")}).` });
-    return { attempts: created };
+    const names = created.map((c) => this.agents.get(c.agentId)?.model).join(", ");
+    this.addLog({
+      kind: "intent",
+      intentId,
+      message: `${by.name} launches ${fanout} built-in agent${fanout > 1 ? "s" : ""} on "${intent.title}" (${names}).${waiting ? ` ${waiting} ${waiting === 1 ? "waits" : "wait"} for the hourly AI budget and ${waiting === 1 ? "starts" : "start"} at ${clock(budget.retryAt)} UTC.` : ""}`,
+    });
+    return { attempts: created, waiting };
   }
 
-  /**
-   * Demo scenario "collisions": five intents designed to collide, launched with staggered starts.
-   *   currency     the producer: it changes formatPrice(cents) → formatPrice(cents, currency)
-   *   api-item     open water: a clear course
-   *   dark-mode    best-of-2: a human picks; it shares the header with search (region correction)
-   *   search       a consumer of formatPrice (interface correction) and a neighbor of dark mode
-   *   staff-picks  a consumer that ignores its corrections: its checks fail until it adapts
-   * Each landing re-plots the others onto the new main, so most work lands by fast-forward.
-   */
-  async runScenario(name: string, mode?: LaunchMode): Promise<{ scenario: string; mode: LaunchMode; launched: { intent: string; attempts: string[] }[] }> {
-    await this.ensure(this.project?.id ?? "demo");
-    const m: LaunchMode = isOffline(this.env) || mode === "scripted" ? "scripted" : "llm";
-    const bySlug = (slug: string) => [...this.intents.values()].find((i) => i.source.kind === "seed" && i.source.ref === slug && !["landed", "parked", "merged-into"].includes(i.status));
-    const K = "@cf/moonshotai/kimi-k2.7-code";
-    const G = "@cf/openai/gpt-oss-120b";
-    const Q = "@cf/qwen/qwen3.8-27b";
-    const plan: { slug: string; fanout: number; startDelayMs: number; delayMs: number; ignoreCorrections?: boolean; models?: string[] }[] =
-      name === "quick"
-        ? [
-            { slug: "currency", fanout: 1, startDelayMs: 200, delayMs: 900 },
-            { slug: "search", fanout: 1, startDelayMs: 1500, delayMs: 900 },
-          ]
-        : [
-            { slug: "currency", fanout: 1, startDelayMs: 300, delayMs: 2200, models: [K] },
-            { slug: "api-item", fanout: 1, startDelayMs: 2500, delayMs: 1800, models: [Q] },
-            { slug: "dark-mode", fanout: 2, startDelayMs: 4500, delayMs: 2600, models: [K, G] },
-            { slug: "search", fanout: 1, startDelayMs: 6500, delayMs: 2800, models: [G] },
-            { slug: "staff-picks", fanout: 1, startDelayMs: 8500, delayMs: 1500, ignoreCorrections: true, models: [K] },
-          ];
-    const launched: { intent: string; attempts: string[] }[] = [];
-    for (const step of plan) {
-      const intent = bySlug(step.slug);
-      if (!intent) continue;
-      const res = await this.launch(intent.id, {
-        fanout: step.fanout,
-        mode: m,
-        models: m === "llm" ? step.models : undefined,
-        script: { startDelayMs: step.startDelayMs, delayMs: step.delayMs, ignoreCorrections: step.ignoreCorrections },
-      });
-      launched.push({ intent: intent.title, attempts: res.attempts.map((a) => a.id) });
+  /** Launch built-in agents on every open intent (each with its suggested fan-out). */
+  async launchAll(by: T.Actor = HUMAN): Promise<{ intents: number; launched: number; queued: number }> {
+    this.requireProject();
+    const open = [...this.intents.values()].filter((i) => i.status === "open").sort((a, b) => a.createdAt - b.createdAt);
+    let launched = 0;
+    let queued = 0;
+    for (const intent of open) {
+      const res = await this.launch(intent.id, {}, by);
+      launched += res.attempts.length - res.waiting;
+      queued += res.waiting;
     }
-    this.addLog({ kind: "system", message: `Scenario "${name}" starts with ${launched.reduce((n, l) => n + l.attempts.length, 0)} vessels (${m === "llm" ? "Workers AI models" : "scripted vessels"}).` });
-    return { scenario: name, mode: m, launched };
+    return { intents: open.length, launched, queued };
   }
 
   /**
-   * Guardrail for the public demo: at most LLM_STARTS_PER_HOUR built-in LLM vessels per hour for the
-   * whole deployment (Workers AI spend). Over the budget, vessels run scripted. Bearing never rejects the launch.
+   * Guardrail for AI spend: at most AI_AGENTS_PER_HOUR built-in agent starts per hour for the whole
+   * deployment. Over the budget, an agent waits and starts when a slot frees. Bearing never fakes the work.
    */
-  private async takeLlmBudget(n: number): Promise<boolean> {
+  private async takeLlmBudget(n: number): Promise<{ granted: number; retryAt: number }> {
+    const limit = Math.max(1, Math.round(Number(this.env.AI_AGENTS_PER_HOUR) || LLM_STARTS_PER_HOUR));
     // One budget for the whole deployment, kept in its own Durable Object (a project reset or a new
     // project id does not refill it).
-    const ok = await this.env.HARBOR.get(this.env.HARBOR.idFromName(BUDGET_OBJECT)).budgetTake(n, LLM_STARTS_PER_HOUR).catch(() => false);
-    if (!ok) this.addLog({ kind: "system", message: `The AI agent budget for this hour is used (${LLM_STARTS_PER_HOUR} vessels). New built-in vessels run scripted.` });
-    return ok;
+    const res = await this.env.HARBOR.get(this.env.HARBOR.idFromName(BUDGET_OBJECT))
+      .budgetTake(n, limit)
+      .catch(() => ({ granted: 0, retryAt: Date.now() + 60_000 }));
+    if (res.granted < n) {
+      this.addLog({ kind: "system", message: `The AI agent budget for this hour is used (${limit} agents). ${n - res.granted} agent${n - res.granted === 1 ? "" : "s"} start at ${clock(res.retryAt)} UTC.` });
+    }
+    return res;
   }
 
-  /** Budget object only: take n starts from a rolling one-hour window of `limit` starts. */
-  async budgetTake(n: number, limit: number): Promise<boolean> {
+  /** Budget object only: take up to n starts from a rolling one-hour window of `limit` starts. */
+  async budgetTake(n: number, limit: number): Promise<{ granted: number; retryAt: number }> {
     const count = Math.max(0, Math.min(16, Math.round(Number(n) || 0)));
     const now = Date.now();
-    const starts = (this.db.getMeta<number[]>("llmStarts") ?? []).filter((t) => now - t < 3_600_000);
-    if (starts.length + count > limit) {
-      this.db.setMeta("llmStarts", starts);
-      return false;
-    }
-    this.db.setMeta("llmStarts", [...starts, ...Array.from({ length: count }, () => now)]);
-    return true;
+    const starts = (this.db.getMeta<number[]>("llmStarts") ?? []).filter((t) => now - t < 3_600_000).sort((a, b) => a - b);
+    const granted = Math.max(0, Math.min(count, limit - starts.length));
+    const next = [...starts, ...Array.from({ length: granted }, () => now)];
+    this.db.setMeta("llmStarts", next);
+    // The next slot frees when the oldest start leaves the one-hour window.
+    const retryAt = next.length >= limit ? next[0] + 3_600_000 + 1000 : now + 1000;
+    return { granted, retryAt };
   }
 
-  private async startVessel(a: T.Attempt, agent: T.AgentInfo, mode: LaunchMode, script: Record<string, unknown> = {}, rederiveOf?: string): Promise<void> {
+  private async scheduleBudgetRetry(at: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, at));
+  }
+
+  /** Alarm: start the built-in agents that waited for the AI budget. */
+  async alarm(): Promise<void> {
+    if (!this.project) return;
+    const waiting = () => [...this.attempts.values()].filter((a) => a.waitsForBudget && !TERMINAL.has(a.status)).sort((a, b) => a.createdAt - b.createdAt);
+    const due = waiting().filter((a) => (a.waitsForBudget ?? 0) <= Date.now());
+    if (due.length) {
+      const budget = await this.takeLlmBudget(due.length);
+      for (let i = 0; i < due.length; i++) {
+        const a = due[i];
+        const agent = this.agents.get(a.agentId);
+        if (i < budget.granted && agent) {
+          a.waitsForBudget = undefined;
+          this.putAttempt(a);
+          agent.status = "underway";
+          this.putAgent(agent);
+          await this.startVessel(a, agent, a.lineage.rederivedFrom);
+          this.addLog({ kind: "system", attemptId: a.id, agentId: agent.id, intentId: a.intentId, message: `${agent.callsign} starts: the AI budget has room again.` });
+        } else {
+          a.waitsForBudget = budget.retryAt;
+          this.putAttempt(a);
+        }
+      }
+    }
+    const left = waiting();
+    if (left.length) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(...left.map((a) => a.waitsForBudget!))));
+  }
+
+  private async startVessel(a: T.Attempt, agent: T.AgentInfo, rederiveOf?: string): Promise<void> {
     const p = this.requireProject();
+    const ok = this.allowedModels();
+    const model = agent.model && ok(agent.model) ? agent.model : (p.settings.agentModels.find(ok) ?? DEFAULT_SETTINGS.agentModels[0]);
     const stub = this.env.VESSEL.get(this.env.VESSEL.idFromName(`${p.id}:${a.id}`));
-    await stub.start({ projectId: p.id, attemptId: a.id, intentId: a.intentId, agentId: agent.id, callsign: agent.callsign, model: agent.model ?? "scripted", mode, script, rederiveOf });
+    await stub.start({ projectId: p.id, attemptId: a.id, intentId: a.intentId, agentId: agent.id, callsign: agent.callsign, model, rederiveOf });
   }
 
   private async stopVessel(attemptId: string): Promise<void> {
@@ -1912,9 +1914,8 @@ export class HarborMaster extends DurableObject<Env> {
     }
     const oldAgent = this.agents.get(old.agentId);
     const builtin = oldAgent?.kind === "builtin";
-    let mode: LaunchMode = builtin && oldAgent?.model === "scripted" ? "scripted" : isOffline(this.env) ? "scripted" : "llm";
-    if (mode === "llm" && !(await this.takeLlmBudget(1))) mode = "scripted";
-    const agent = builtin ? oldAgent! : this.upsertAgent({ kind: "builtin", model: mode === "scripted" ? "scripted" : p.settings.agentModels[0] });
+    const agent = builtin ? oldAgent! : this.upsertAgent({ kind: "builtin", model: p.settings.agentModels[0] });
+    const budget = await this.takeLlmBudget(1);
     const id = newId("a");
     const now = Date.now();
     const a: T.Attempt = {
@@ -1933,9 +1934,10 @@ export class HarborMaster extends DurableObject<Env> {
       stats: { filesChanged: 0, additions: 0, deletions: 0, steps: 0 },
       createdAt: now,
       updatedAt: now,
+      waitsForBudget: budget.granted ? undefined : budget.retryAt,
     };
     this.putAttempt(a);
-    agent.status = "underway";
+    agent.status = a.waitsForBudget ? "waiting" : "underway";
     agent.attemptId = a.id;
     this.putAgent(agent);
     this.stats.rederives += 1;
@@ -1945,7 +1947,8 @@ export class HarborMaster extends DurableObject<Env> {
     if (!builtin && oldAgent) {
       this.issueCorrection(old.id, undefined, { kind: "upstream", message: `Your attempt cannot land on the new main. Bearing re-derives it as ${a.id}. Stop work on ${old.id}.`, constraints: {} }, "R1-landed-has-way", "rederive");
     }
-    await this.startVessel(a, agent, mode, {}, old.id);
+    if (a.waitsForBudget) await this.scheduleBudgetRetry(a.waitsForBudget);
+    else await this.startVessel(a, agent, old.id);
     return { attempt: a };
   }
 
@@ -2290,7 +2293,6 @@ export class HarborMaster extends DurableObject<Env> {
 
   /** LLM polish for correction text is optional; templates are the source of truth. */
   async polish(text: string): Promise<string> {
-    if (isOffline(this.env)) return text;
     const res = await chat(this.env.AI as never, "@cf/zai-org/glm-4.7-flash", [
       { role: "system", content: "Rewrite the message in ASD-STE100: short imperative sentences, max 20 words each, active voice. Keep every file name, line number and signature. Output only the message." },
       { role: "user", content: text },
@@ -2300,6 +2302,11 @@ export class HarborMaster extends DurableObject<Env> {
 }
 
 /* ════════════════════════════ module helpers ════════════════════════════ */
+
+/** HH:MM in UTC, for log lines. */
+function clock(at: number): string {
+  return new Date(at).toISOString().slice(11, 16);
+}
 
 const SYSTEM: T.Actor = { kind: "system", id: "bearing", name: "Bearing" };
 const HUMAN: T.Actor = { kind: "human", id: "human", name: "Human" };

@@ -7,7 +7,6 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "dev:offline": "CLOUDFLARE_ENV=offline vite dev",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -16,7 +15,7 @@
     "types": "wrangler types src/worker/env.generated.d.ts --include-runtime false",
     "agent:external": "node scripts/external-agent.mjs",
     "agent:hook": "node scripts/hook-demo.mjs",
-    "demo:build": "node demo/build.mjs",
+    "sample:build": "node sample/build.mjs",
     "e2e:scenario": "node scripts/e2e-scenario.mjs",
     "e2e:guard": "node scripts/e2e-guard.mjs"
   },

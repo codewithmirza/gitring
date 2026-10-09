@@ -1,5 +1,5 @@
 /**
- * Offline stand-in for Cloudflare Artifacts (Artifacts has no local simulator).
+ * Test double for Cloudflare Artifacts: real git objects in memory or SQLite, for tests only.
  *
  * LocalArtifacts is a Durable Object that stores real git objects (same SHA-1 ids as git) for
  * every repo of one namespace in its SQLite storage. Bind it as EMULATOR (class LocalArtifacts,
@@ -9,12 +9,12 @@
  * ./emulator/service.ts (RPC surface + client); this file only binds them to the DO runtime.
  */
 import { DurableObject } from "cloudflare:workers";
-import type { CommitInput, CommitMeta, ForkResult, RepoHandle, TreeEntry } from "./backend";
-import { type EmulatorCommitOutcome, type EmulatorRpc, EmulatorService } from "./emulator/service";
-import { GitStore, type RepoInfo, SqlObjectStore } from "./emulator/store";
+import type { CommitInput, CommitMeta, ForkResult, RepoHandle, TreeEntry } from "../../../src/platform/repo/backend";
+import { type EmulatorCommitOutcome, type EmulatorRpc, EmulatorService } from "./service";
+import { GitStore, type RepoInfo, SqlObjectStore } from "./store";
 
-export { EmulatorBackend, EmulatorService, type EmulatorCommitOutcome, type EmulatorRpc } from "./emulator/service";
-export { GitStore, MemoryObjectStore, SqlObjectStore, type ObjectStore, type RepoInfo, type RepoRecord } from "./emulator/store";
+export { EmulatorBackend, EmulatorService, type EmulatorCommitOutcome, type EmulatorRpc } from "./service";
+export { GitStore, MemoryObjectStore, SqlObjectStore, type ObjectStore, type RepoInfo, type RepoRecord } from "./store";
 
 /** Durable Object that stores git objects for many repos (one namespace). Bind as EMULATOR. */
 export class LocalArtifacts extends DurableObject implements EmulatorRpc {

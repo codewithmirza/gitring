@@ -1,46 +1,53 @@
 #!/usr/bin/env node
 /**
- * End-to-end run of the demo scenario with scripted vessels, against a running Bearing (default: the
- * offline dev server). Five colliding intents; dark mode is a best-of-2 that a human picks.
- * Exit code 1 when a check fails.
+ * End-to-end run of the sample project with real Workers AI agents, against a running Bearing
+ * (local `npm run dev` or a deployed Worker). It resets a sample project, launches agents on every
+ * open intent, waits until no agent is at work, lands the first ready dark mode attempt as a human
+ * pick, and prints what happened. AI agents take 5 to 15 minutes.
  *
- *   npm run dev:offline &   then   node scripts/e2e-scenario.mjs
+ *   BEARING_URL=https://<your-worker> node scripts/e2e-scenario.mjs
+ *
+ * Exit code 1 when an invariant fails (human merge fixes must stay 0; work must land).
  */
 const base = process.env.BEARING_URL ?? "http://127.0.0.1:5173";
 const project = process.env.BEARING_PROJECT ?? `scn-${Date.now().toString(36)}`;
+const headers = { "content-type": "application/json", ...(process.env.BEARING_KEY ? { authorization: `Bearer ${process.env.BEARING_KEY}` } : {}) };
 const api = (p, body) =>
-  fetch(`${base}/api/projects/${project}${p}`, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined).then((r) => r.json());
+  fetch(`${base}/api/projects/${project}${p}`, body ? { method: "POST", headers, body: JSON.stringify(body) } : { headers }).then((r) => r.json());
+const ACTIVE = new Set(["declared", "underway", "submitted", "checking", "landing", "rederiving"]);
 let failed = 0;
 const ok = (cond, label) => {
   console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
   if (!cond) failed += 1;
 };
-await api("/demo/reset", {});
-const run = await api("/demo/run", { scenario: "collisions", mode: "scripted" });
-ok(run.launched?.length === 5, `scenario launches 5 intents (${run.launched?.reduce((n, l) => n + l.attempts.length, 0)} vessels)`);
+await api("/reset", {});
+const run = await api("/launch-all", {});
+ok(run.intents === 5, `launch-all starts agents on 5 sample intents (${run.launched} now, ${run.queued} wait for the AI budget)`);
 let st;
 const t0 = Date.now();
+const limitMs = Number(process.env.E2E_MINUTES ?? 20) * 60_000;
 for (;;) {
   st = await api("/state");
-  const dark = st.intents.find((i) => /dark/i.test(i.title));
-  const others = st.intents.filter((i) => i !== dark);
-  if (others.every((i) => i.status === "landed") && st.attempts.filter((a) => a.intentId === dark.id && a.status === "ready").length === 2) break;
-  if (Date.now() - t0 > 150_000) break;
-  await new Promise((r) => setTimeout(r, 1000));
+  const busy = st.attempts.filter((a) => ACTIVE.has(a.status)).length;
+  process.stdout.write(`\r${Math.round((Date.now() - t0) / 1000)} s · ${busy} agents at work · ${st.landings.length} landings   `);
+  if (!busy && st.attempts.length) break;
+  if (Date.now() - t0 > limitMs) break;
+  await new Promise((r) => setTimeout(r, 5000));
 }
+console.log("");
 const dark = st.intents.find((i) => /dark/i.test(i.title));
-ok(st.intents.filter((i) => i !== dark).every((i) => i.status === "landed"), "the four other intents land");
-ok(st.attempts.filter((a) => a.intentId === dark.id && a.status === "ready").length === 2, "dark mode: two ready attempts wait for a human pick");
+const pick = st.attempts.find((a) => a.intentId === dark?.id && a.status === "ready");
+if (pick) {
+  const landed = await api(`/attempts/${pick.id}/land`, { rationale: "A human picks this dark mode." });
+  ok(landed.status === "landed", `the human pick lands (${landed.landing?.method ?? landed.message})`);
+  st = await api("/state");
+}
+const landedIntents = st.intents.filter((i) => i.status === "landed");
+ok(landedIntents.length >= 3, `intents on main: ${landedIntents.length} of ${st.intents.length}`);
 ok(st.stats.humanMergeFixes === 0, "human merge fixes: 0");
-ok((st.stats.replots ?? 0) > 0, `Bearing re-plots work in progress (${st.stats.replots})`);
-ok(st.stats.corrections > 0, `course checks send corrections (${st.stats.corrections})`);
-const pick = st.attempts.find((a) => a.intentId === dark.id && a.status === "ready");
-const landed = await api(`/attempts/${pick.id}/land`, { rationale: "The toggle sits at the end of the nav." });
-ok(landed.status === "landed", `the human pick lands (${landed.landing?.method ?? landed.message})`);
-st = await api("/state");
-ok(st.intents.every((i) => i.status === "landed"), "all five intents are on main");
-ok(st.attempts.filter((a) => a.intentId === dark.id && a.status === "alternate").length === 1, "the other dark mode attempt stays as an alternate");
+ok(st.stats.courseChecks > 0, `course checks run (${st.stats.courseChecks})`);
 const methods = st.landings.map((l) => l.method);
-console.log(`landings: ${methods.join(", ")} · course checks ${st.stats.courseChecks} · corrections ${st.stats.corrections} · re-plots ${st.stats.replots}`);
+console.log(`landings: ${methods.join(", ") || "none"} · corrections ${st.stats.corrections} · re-plots ${st.stats.replots ?? 0}`);
+for (const i of st.intents) console.log(`  ${i.status.padEnd(9)} ${i.title}`);
 console.log(failed ? `${failed} check(s) failed` : "All checks pass.");
 process.exit(failed ? 1 : 0);

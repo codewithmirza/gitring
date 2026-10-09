@@ -16,7 +16,7 @@ export interface DemoIntent {
   goal: string;
   checks: DemoCheck[];
   expect: { files: string[]; symbols: string[] };
-  collisions: { with: string; kind: "interface" | "region" | "near"; why: string }[];
+  fanout?: number;
 }
 
 export interface Demo {
@@ -25,7 +25,8 @@ export interface Demo {
   solutions: Record<string, { files: Tree; adapted?: Tree }>;
 }
 
-export const DEMO_DIR: string;
+export const SAMPLE_DIR: string;
+export const SOLUTIONS_DIR: string;
 export const LANDING_ORDER: string[];
 export const ADAPTED_AFTER: string;
 
@@ -39,4 +40,5 @@ export function changeFor(demo: Demo, slug: string, variant?: Variant): { base: 
 export function treeAlone(demo: Demo, slug: string, variant?: Variant): Tree;
 export function land(demo: Demo, steps?: string[]): { tree: Tree; log: { step: string; conflicts: string[] }[]; ok: boolean };
 export function testPathsOf(tree: Tree): string[];
-export function loadDemo(dir?: string, intents?: DemoIntent[]): Promise<Demo>;
+export function loadSample(dir?: string, intents?: DemoIntent[], solutionsDir?: string): Promise<Demo>;
+export function readTree(dir: string): Promise<Tree>;

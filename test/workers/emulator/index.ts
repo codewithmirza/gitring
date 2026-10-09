@@ -10,7 +10,7 @@ import git from "isomorphic-git";
 import { EMPTY_TREE_SHA, encodeTree, hashObject, utf8 } from "../../../src/core/git/objects";
 import { ArtifactsBackend } from "../../../src/platform/repo/artifacts";
 import { RepoConflictError } from "../../../src/platform/repo/backend";
-import { EmulatorBackend, GitStore, LocalArtifacts, MemoryObjectStore } from "../../../src/platform/repo/emulator";
+import { EmulatorBackend, GitStore, LocalArtifacts, MemoryObjectStore } from "../../support/git-emulator/local-artifacts";
 import { MemoryFS } from "../../../src/platform/repo/memory-fs";
 
 export { LocalArtifacts };

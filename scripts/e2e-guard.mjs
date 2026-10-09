@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * End-to-end check of re-plot and the write guard, through MCP only (api mode), against a running
- * Bearing (default: the offline dev server). Exit code 1 when a check fails.
+ * Bearing (local `npm run dev` or a deployed Worker). Exit code 1 when a check fails.
  *
- *   npm run dev:offline &   then   node scripts/e2e-guard.mjs
+ *   BEARING_URL=https://<your-worker> node scripts/e2e-guard.mjs
  *
  * 1. A reads src/render.js. B changes the footer and lands. Bearing re-plots A onto the new main.
  *    A writes from its old copy: Bearing merges, so B's line stays. A writes again from the same copy:

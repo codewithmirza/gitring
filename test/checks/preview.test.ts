@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { PREVIEW_HEADER, previewModules, servePreview } from "../../src/platform/checks/preview";
-import { land, loadDemo } from "../../demo/tools/compose.mjs";
+import { land, loadSample } from "../fixtures/compose.mjs";
 import { nodeLoader, treeMap } from "./node-loader";
 
-const demo = await loadDemo();
+const demo = await loadSample();
 const seed = treeMap(demo.seed);
 const landed = treeMap(land(demo).tree);
 const loader = nodeLoader();

@@ -1,11 +1,16 @@
-// Compose the demo solutions the way Bearing lands attempts: a line-based 3-way merge for each file.
-// Everything here is pure, except loadDemo(), which reads demo/ from disk (Node only).
+// Test fixture: compose the reference solutions of the sample intents the way Bearing lands attempts
+// (a line-based 3-way merge for each file). Tests use it to prove that every sample intent can pass
+// its checks and that the solutions compose. Pure, except loadSample(), which reads disk (Node only).
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { diff3Merge } from "node-diff3";
 
-export const DEMO_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+/** The sample project: seed repo, intents, checks. */
+export const SAMPLE_DIR = path.resolve(HERE, "../../sample");
+/** Reference solutions of the sample intents (test fixtures only). */
+export const SOLUTIONS_DIR = path.resolve(HERE, "sample-solutions");
 
 /** The landing order that the tests validate (slug or slug:variant). */
 export const LANDING_ORDER = ["currency", "api-item", "dark-mode", "search:adapted", "staff-picks:adapted"];
@@ -97,7 +102,7 @@ export function testPathsOf(tree) {
   return Object.keys(tree).filter((file) => /^tests\/[^/]+\.test\.js$/.test(file)).sort();
 }
 
-async function readTree(dir) {
+export async function readTree(dir) {
   const tree = {};
   async function walk(rel) {
     for (const entry of await readdir(path.join(dir, rel), { withFileTypes: true })) {
@@ -110,13 +115,13 @@ async function readTree(dir) {
   return Object.fromEntries(Object.entries(tree).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
-/** Read demo/repo, demo/intents.json (unless `intents` is given) and demo/solutions from disk. */
-export async function loadDemo(dir = DEMO_DIR, intents = undefined) {
+/** Read sample/repo, sample/intents.json (unless `intents` is given) and the reference solutions. */
+export async function loadSample(dir = SAMPLE_DIR, intents = undefined, solutionsDir = SOLUTIONS_DIR) {
   const seed = await readTree(path.join(dir, "repo"));
   intents ??= JSON.parse(await readFile(path.join(dir, "intents.json"), "utf8"));
   const solutions = {};
   for (const intent of intents) {
-    const root = path.join(dir, "solutions", intent.slug);
+    const root = path.join(solutionsDir, intent.slug);
     solutions[intent.slug] = { files: await readTree(path.join(root, "files")) };
     const adapted = await readTree(path.join(root, "adapted")).catch(() => null);
     if (adapted) solutions[intent.slug].adapted = adapted;

@@ -26,23 +26,12 @@
         "src/render.js#renderItem",
         "src/styles.js#SHELF"
       ]
-    },
-    "collisions": [
-      {
-        "with": "search",
-        "kind": "interface",
-        "why": "Changes formatPrice(cents) to formatPrice(cents, currency) and edits renderPage, where search filters the list."
-      },
-      {
-        "with": "staff-picks",
-        "kind": "interface",
-        "why": "Edits the price line of renderItem, where staff-picks adds its badge, and changes the formatPrice call on it."
-      }
-    ]
+    }
   },
   {
     "slug": "dark-mode",
     "title": "Add a dark mode",
+    "fanout": 2,
     "goal": "Add a dark mode that readers can switch on and off. Put a `<button class=\"theme-toggle\">` with `aria-pressed` at the end of the nav in the page header (`src/render.js`), with a tiny inline script that sets `data-theme` on `<html>`, updates `aria-pressed` and remembers the choice in `localStorage`. In `src/styles.js`, keep colours in CSS custom properties and override `--bg`, `--ink` and the other tokens under `[data-theme=\"dark\"]`. Follow `prefers-color-scheme: dark` until the reader makes a choice.",
     "checks": [
       {
@@ -61,14 +50,7 @@
         "src/styles.js#TOKENS",
         "src/styles.js#HEADER"
       ]
-    },
-    "collisions": [
-      {
-        "with": "search",
-        "kind": "region",
-        "why": "Both change renderHeader in src/render.js and the HEADER styles in src/styles.js."
-      }
-    ]
+    }
   },
   {
     "slug": "search",
@@ -96,19 +78,7 @@
         "src/styles.js#HEADER",
         "src/styles.js#SHELF"
       ]
-    },
-    "collisions": [
-      {
-        "with": "currency",
-        "kind": "interface",
-        "why": "Renders the filtered list with renderItem and formatPrice, whose signature currency changes; both edit renderPage."
-      },
-      {
-        "with": "dark-mode",
-        "kind": "region",
-        "why": "Both put new controls into the header: renderHeader and the HEADER styles."
-      }
-    ]
+    }
   },
   {
     "slug": "staff-picks",
@@ -133,14 +103,7 @@
         "src/render.js#renderBadge",
         "src/styles.js#BOOK"
       ]
-    },
-    "collisions": [
-      {
-        "with": "currency",
-        "kind": "interface",
-        "why": "Edits the price line of renderItem, which calls formatPrice; currency changes that call and the signature."
-      }
-    ]
+    }
   },
   {
     "slug": "api-item",
@@ -161,7 +124,6 @@
         "src/index.js#apiResponse",
         "src/index.js#productResponse"
       ]
-    },
-    "collisions": []
+    }
   }
 ]

@@ -14,7 +14,7 @@ import {
   type ObjectStore,
   SqlObjectStore,
   type SqlStorageLike,
-} from "../../src/platform/repo/emulator/store";
+} from "../support/git-emulator/store";
 import { git, tempDir } from "./helpers";
 
 type NodeSqlite = typeof import("node:sqlite");

@@ -864,14 +864,14 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
         <div className="c-empty">
           <EmptyState
             art={false}
-            text="No vessels at sea. Open an intent and launch attempts, or run the demo scenario."
+            text="No vessels at sea. Open an intent and launch attempts, or launch agents on every open intent."
             action={
               <div className="c-empty__actions">
                 <Button variant="primary" icon="plus" onClick={openNewIntent}>
                   New intent
                 </Button>
-                <Button icon="play" onClick={() => void harborOrNull()?.demoRun()}>
-                  Run demo
+                <Button icon="play" onClick={() => void harborOrNull()?.launchAll().catch(() => undefined)}>
+                  Launch all
                 </Button>
               </div>
             }

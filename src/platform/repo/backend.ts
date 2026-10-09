@@ -1,11 +1,9 @@
 /**
  * RepoBackend — the only way Bearing touches git storage.
  *
- * Two implementations:
- *   - ArtifactsBackend (production): Cloudflare Artifacts binding for control-plane + reads,
- *     isomorphic-git (in-memory, shallow) for writes, because `git push` is the only write path.
- *   - EmulatorBackend (offline dev + tests): a Durable Object that stores real git objects
- *     (same SHA-1 hashes as git) in SQLite. Artifacts has no local simulator, so we need this.
+ * ArtifactsBackend is the implementation: the Cloudflare Artifacts binding for control-plane +
+ * reads, isomorphic-git (in-memory, shallow) for writes, because `git push` is the only write path.
+ * Tests use a git-object test double (test/support/git-emulator) with the same interface.
  *
  * All hashes are lowercase 40-char SHA-1 git object ids.
  */
@@ -37,7 +35,7 @@ export interface RepoHandle {
 }
 
 export interface ForkResult extends RepoHandle {
-  /** Write token for the fork (Artifacts). Undefined for the emulator. */
+  /** Write token for the fork (Artifacts). Test doubles may leave it undefined. */
   token?: string;
 }
 
@@ -78,7 +76,7 @@ export class RepoConflictError extends Error {
 }
 
 export interface RepoBackend {
-  readonly kind: "artifacts" | "emulator";
+  readonly kind: string;
 
   /** Create an empty repo. Idempotent: returns the existing repo if the name exists. */
   ensureRepo(name: string, opts?: { description?: string }): Promise<RepoHandle>;
@@ -100,7 +98,7 @@ export interface RepoBackend {
   /** Read the note for a commit under refs/notes/bearing, if any. */
   readNote(repo: string, commitSha: string): Promise<string | null>;
 
-  /** Scoped token for an external git client (Artifacts only; emulator returns undefined). */
+  /** Scoped token for an external git client (test doubles may return undefined). */
   createToken(repo: string, scope: "read" | "write", ttlSeconds: number): Promise<{ token: string; expiresAt: string } | undefined>;
   remoteUrl(repo: string): Promise<string | undefined>;
 }

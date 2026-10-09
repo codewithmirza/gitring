@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// Build demo/intents.json and demo/bundle.json from the sources in demo/.
+// Build sample/intents.json and sample/bundle.json from the sources in sample/.
 //
-//   node demo/build.mjs           write both files
-//   node demo/build.mjs --check   exit 1 if a file is out of date
+//   node sample/build.mjs           write both files
+//   node sample/build.mjs --check   exit 1 if a file is out of date
 //
-// Sources: the intent metadata below, the check files in demo/checks/, the seed repo in demo/repo/
-// and the reference solutions in demo/solutions/. bundle.json holds all of it in one JSON file,
-// so a Worker can import the demo (seed, intents, solutions, landed tree) without file access.
-import { readFile, writeFile } from "node:fs/promises";
+// Sources: the intent metadata below, the check files in sample/checks/ and the seed repo in
+// sample/repo/. bundle.json holds the seed and the intents in one JSON file, so the Worker can
+// create a sample project without file access.
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DEMO_DIR, LANDING_ORDER, land, loadDemo } from "./tools/compose.mjs";
+import { fileURLToPath } from "node:url";
+
+export const SAMPLE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export const INTENTS = [
   {
@@ -40,14 +42,11 @@ export const INTENTS = [
         "src/styles.js#SHELF",
       ],
     },
-    collisions: [
-      { with: "search", kind: "interface", why: "Changes formatPrice(cents) to formatPrice(cents, currency) and edits renderPage, where search filters the list." },
-      { with: "staff-picks", kind: "interface", why: "Edits the price line of renderItem, where staff-picks adds its badge, and changes the formatPrice call on it." },
-    ],
   },
   {
     slug: "dark-mode",
     title: "Add a dark mode",
+    fanout: 2,
     goal: [
       "Add a dark mode that readers can switch on and off.",
       'Put a `<button class="theme-toggle">` with `aria-pressed` at the end of the nav in the page header (`src/render.js`), with a tiny inline script that sets `data-theme` on `<html>`, updates `aria-pressed` and remembers the choice in `localStorage`.',
@@ -64,9 +63,6 @@ export const INTENTS = [
       files: ["src/render.js", "src/styles.js"],
       symbols: ["src/render.js#renderHeader", "src/styles.js#TOKENS", "src/styles.js#HEADER"],
     },
-    collisions: [
-      { with: "search", kind: "region", why: "Both change renderHeader in src/render.js and the HEADER styles in src/styles.js." },
-    ],
   },
   {
     slug: "search",
@@ -95,10 +91,6 @@ export const INTENTS = [
         "src/styles.js#SHELF",
       ],
     },
-    collisions: [
-      { with: "currency", kind: "interface", why: "Renders the filtered list with renderItem and formatPrice, whose signature currency changes; both edit renderPage." },
-      { with: "dark-mode", kind: "region", why: "Both put new controls into the header: renderHeader and the HEADER styles." },
-    ],
   },
   {
     slug: "staff-picks",
@@ -119,9 +111,6 @@ export const INTENTS = [
       files: ["src/products.js", "src/render.js", "src/styles.js"],
       symbols: ["src/products.js#PRODUCTS", "src/render.js#renderItem", "src/render.js#renderBadge", "src/styles.js#BOOK"],
     },
-    collisions: [
-      { with: "currency", kind: "interface", why: "Edits the price line of renderItem, which calls formatPrice; currency changes that call and the signature." },
-    ],
   },
   {
     slug: "api-item",
@@ -141,12 +130,11 @@ export const INTENTS = [
       files: ["src/index.js"],
       symbols: ["src/index.js#apiResponse", "src/index.js#productResponse"],
     },
-    collisions: [],
   },
 ];
 
-/** demo/intents.json: the seed intents with the full source of each check file. */
-export async function buildIntents(dir = DEMO_DIR) {
+/** sample/intents.json: the sample intents with the full source of each check file. */
+export async function buildIntents(dir = SAMPLE_DIR) {
   const intents = [];
   for (const intent of INTENTS) {
     const checks = [];
@@ -159,18 +147,26 @@ export async function buildIntents(dir = DEMO_DIR) {
   return intents;
 }
 
-/** demo/bundle.json: everything a Worker needs for the demo, in one importable file. */
-export async function buildBundle(dir = DEMO_DIR, intents) {
-  const demo = await loadDemo(dir, intents);
-  const landed = land(demo, LANDING_ORDER);
-  if (!landed.ok) throw new Error("The landing order does not compose: " + JSON.stringify(landed.log));
+async function readTree(dir) {
+  const tree = {};
+  async function walk(rel) {
+    for (const entry of await readdir(path.join(dir, rel), { withFileTypes: true })) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(child);
+      else tree[child] = await readFile(path.join(dir, child), "utf8");
+    }
+  }
+  await walk("");
+  return Object.fromEntries(Object.entries(tree).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+/** sample/bundle.json: the seed repo and the intents of the sample project, in one importable file. */
+export async function buildBundle(dir = SAMPLE_DIR, intents) {
   return {
-    schema: "bearing.demo/v1",
+    schema: "bearing.sample/v1",
     name: "Saltmarsh Books",
-    repo: demo.seed,
+    repo: await readTree(path.join(dir, "repo")),
     intents,
-    solutions: demo.solutions,
-    landing: { order: LANDING_ORDER, adaptedAfter: "currency", tree: landed.tree },
   };
 }
 
@@ -183,23 +179,23 @@ async function main() {
   const intents = await buildIntents();
   const outputs = [
     ["intents.json", json(intents)],
-    ["bundle.json", json(await buildBundle(DEMO_DIR, intents))],
+    ["bundle.json", json(await buildBundle(SAMPLE_DIR, intents))],
   ];
   let stale = 0;
   for (const [name, content] of outputs) {
-    const file = path.join(DEMO_DIR, name);
+    const file = path.join(SAMPLE_DIR, name);
     if (check) {
       const current = await readFile(file, "utf8").catch(() => "");
       if (current !== content) {
         stale += 1;
-        console.error(`demo/${name} is out of date. Run: node demo/build.mjs`);
+        console.error(`sample/${name} is out of date. Run: node sample/build.mjs`);
       }
     } else {
       await writeFile(file, content);
-      console.log(`wrote demo/${name} (${content.length} bytes)`);
+      console.log(`wrote sample/${name} (${content.length} bytes)`);
     }
   }
   process.exitCode = stale > 0 ? 1 : 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.join(DEMO_DIR, "build.mjs")) await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === path.join(SAMPLE_DIR, "build.mjs")) await main();

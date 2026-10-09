@@ -9,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EMPTY_TREE_SHA, utf8 } from "../../src/core/git/objects";
 import { ArtifactsBackend, artifactsErrorCode, tokenSecret } from "../../src/platform/repo/artifacts";
 import { type CommitInput, RepoConflictError } from "../../src/platform/repo/backend";
-import { GitStore, MemoryObjectStore } from "../../src/platform/repo/emulator/store";
+import { GitStore, MemoryObjectStore } from "../support/git-emulator/store";
 import { FakeArtifacts, type GitHttpServer, gitIn, startGitHttpServer } from "./fake-artifacts";
 import { git, gitAsync, hasGitHttpBackend, tempDir } from "./helpers";
 

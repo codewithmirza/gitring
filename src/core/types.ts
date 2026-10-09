@@ -29,15 +29,15 @@ export interface Actor {
 
 /* ───────────────────────────── project ───────────────────────────── */
 
-export type RepoBackendKind = "artifacts" | "emulator";
+export type RepoBackendKind = "artifacts";
 
 export interface ProjectRepo {
   backend: RepoBackendKind;
-  /** Artifacts namespace (or the emulator namespace). */
+  /** Artifacts namespace. */
   namespace: string;
   /** Canonical repo name. Only the HarborMaster writes to its `main`. */
   name: string;
-  /** Git remote URL (Artifacts only). */
+  /** Git remote URL of the canonical repo in Artifacts. */
   remote?: string;
   defaultBranch: string;
 }
@@ -47,7 +47,7 @@ export interface ProjectSettings {
   autoLand: boolean;
   /** Default number of parallel attempts per intent (best-of-N). */
   fanout: number;
-  /** Decision model for course checks. "rules" = deterministic fallback (offline). */
+  /** Decision model for course checks. "rules" = deterministic rules only (also the fallback when a model call fails). */
   decisionModel: "clef" | "clef-flash" | "rules";
   /** Models for built-in agents, used round-robin. */
   agentModels: string[];
@@ -79,6 +79,14 @@ export interface WebhookTarget {
   enabled: boolean;
 }
 
+/** Where the code of a project came from. Artifacts holds the canonical repo for every kind. */
+export type ProjectSource =
+  | { kind: "sample" }
+  | { kind: "empty" }
+  | { kind: "git"; url: string; branch?: string; host?: "github" | "gitlab" | "bitbucket" | "other"; private?: boolean }
+  | { kind: "upload"; files: number }
+  | { kind: "push" };
+
 export interface Project {
   id: string;
   name: string;
@@ -87,6 +95,8 @@ export interface Project {
   mainTree: string;
   createdAt: Millis;
   settings: ProjectSettings;
+  /** Absent on projects created before sources existed: those are samples. */
+  source?: ProjectSource;
 }
 
 /* ───────────────────────────── intent ───────────────────────────── */
@@ -140,6 +150,8 @@ export interface Intent {
   mergedInto?: string;
   chosenAttemptId?: string;
   landedSha?: string;
+  /** How many built-in agents a launch starts by default (best-of-N). */
+  suggestedFanout?: number;
   source: { kind: "ui" | "mcp" | "webhook" | "seed" | "sim"; ref?: string };
 }
 
@@ -274,6 +286,8 @@ export interface Attempt {
   lineage: { generation: number; rederivedFrom?: string };
   /** Set when main moved and some files of a waiting attempt overlap the landed change: landing re-derives them. */
   drift?: { mainSha: string; overlaps: string[] };
+  /** Built-in agents only: the hourly AI budget is used, so the agent starts at this time (Bearing retries then). */
+  waitsForBudget?: Millis;
   summary?: string;
   stats: { filesChanged: number; additions: number; deletions: number; steps: number; tokens?: number };
   createdAt: Millis;

@@ -33,7 +33,7 @@ export function parseRoute(pathname: string): Route {
 
 const EVENT = "bearing:navigate";
 /** Query params that belong to the session and survive navigation. */
-const KEEP = ["mock", "project"];
+const KEEP = ["project"];
 
 export function href(to: string): string {
   const [path, query = ""] = to.split("?");
