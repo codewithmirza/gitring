@@ -8,6 +8,7 @@ import { modelShort, plural } from "../state/format";
 import { Link } from "./router";
 import { openDiff, openFile } from "./ui";
 import { useNow } from "./useNow";
+import { useCanAct } from "../state/account";
 
 const EMPTY: VesselModel[] = [];
 
@@ -213,6 +214,7 @@ export function TrafficRail({
   focusCorrection?: string | null;
 }) {
   const vessels = useStore((s) => (s.state ? selectVessels(s.state) : EMPTY));
+  const canAct = useCanAct();
   const names = useMemo(() => new Map(vessels.map((v) => [v.attemptId, v.callsign])), [vessels]);
   const listRef = useRef<HTMLUListElement | null>(null);
   useEffect(() => {
@@ -231,7 +233,7 @@ export function TrafficRail({
     >
       <div className="traffic">
         {vessels.length === 0 ? (
-          <EmptyState art={false} text="No vessels at sea. Launch an intent to start." />
+          <EmptyState art={false} text={canAct ? "No vessels at sea. Launch an intent to start." : "No vessels at sea."} />
         ) : (
           <ul role="list" className="traffic__list" aria-label="Vessels" ref={listRef}>
             {vessels.map((v) => (
