@@ -451,8 +451,9 @@ export function CodeView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
+  // Remember the open folders of this ref, once they belong to it (after the first seeding).
   useEffect(() => {
-    expandedMemory.set(memKey, expanded);
+    if (seeded.current === memKey) expandedMemory.set(memKey, expanded);
   }, [memKey, expanded]);
 
   const [filter, setFilter] = useState("");

@@ -186,12 +186,19 @@ export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle,
   const scroller = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewH, setViewH] = useState(600);
-  const [active, setActive] = useState(0);
+  // The tab stop follows a row (by path), not a position: rows move when folders above open or close.
+  const [activePath, setActivePath] = useState<string | null>(null);
   const focusNext = useRef<number | null>(null);
 
-  const indexOf = useMemo(() => new Map(rows.map((r, i) => [r.path, i])), [rows]);
-  const selectedIndex = selectedPath ? indexOf.get(selectedPath) ?? -1 : -1;
-  const activeIndex = Math.min(active, Math.max(0, rows.length - 1));
+  const indexOf = useMemo(() => new Map(rows.map((r, i) => [r.path + (r.kind === "dir" ? "/" : ""), i])), [rows]);
+  const rowIndex = useCallback((path: string | null, dir = false) => (path === null ? -1 : indexOf.get(path + (dir ? "/" : "")) ?? -1), [indexOf]);
+  const selectedIndex = rowIndex(selectedPath);
+  const activeIndex = (() => {
+    const a = activePath === null ? -1 : indexOf.get(activePath) ?? -1;
+    if (a !== -1) return a;
+    return selectedIndex !== -1 ? selectedIndex : 0;
+  })();
+  const keyOf = (r: TreeRow) => r.path + (r.kind === "dir" ? "/" : "");
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -228,8 +235,8 @@ export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle,
 
   // The selected file shows in the tree: it becomes the active row and scrolls into view.
   useEffect(() => {
-    if (selectedIndex < 0) return;
-    setActive(selectedIndex);
+    if (selectedIndex < 0 || !selectedPath) return;
+    setActivePath(selectedPath);
     ensureVisible(selectedIndex, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealKey, selectedIndex >= 0 ? selectedPath : null]);
@@ -245,18 +252,18 @@ export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle,
     (i: number) => {
       if (!rows.length) return;
       const n = Math.max(0, Math.min(rows.length - 1, i));
-      setActive(n);
+      setActivePath(keyOf(rows[n]));
       ensureVisible(n);
       focusNext.current = n;
     },
-    [rows.length, ensureVisible],
+    [rows, ensureVisible],
   );
 
   const onRowClick = useCallback(
     (i: number, e: MouseEvent) => {
       const r = rows[i];
       if (!r) return;
-      setActive(i);
+      setActivePath(keyOf(r));
       if (r.kind === "dir") {
         onToggle(r.path);
         return;
@@ -268,7 +275,10 @@ export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle,
     [rows, onToggle, onOpen],
   );
 
-  const onFocusRow = useCallback((i: number) => setActive(i), []);
+  const onFocusRow = useCallback((i: number) => {
+    const r = rows[i];
+    if (r) setActivePath(r.path + (r.kind === "dir" ? "/" : ""));
+  }, [rows]);
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -302,8 +312,8 @@ export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle,
       case "ArrowLeft":
         if (r.kind === "dir" && r.expanded) onToggle(r.path, false);
         else if (r.parent) {
-          const p = indexOf.get(r.parent);
-          if (p !== undefined) moveTo(p);
+          const p = rowIndex(r.parent, true);
+          if (p !== -1) moveTo(p);
         }
         break;
       case "Enter":
