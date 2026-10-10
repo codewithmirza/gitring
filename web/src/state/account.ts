@@ -4,7 +4,7 @@
  */
 import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } from "../../../src/core/accounts";
 import { atLeast } from "../../../src/core/accounts";
-import type { ProjectSettings, ProjectSource } from "../../../src/core/types";
+import type { GithubSyncStatus, ProjectSettings, ProjectSource } from "../../../src/core/types";
 import { store, useStore } from "./store";
 
 export class AccountError extends Error {
@@ -62,7 +62,7 @@ export async function signOut() {
 }
 
 /** Open another project (a full load: the live socket and the store start clean). */
-export function openProject(id: string, path = "/") {
+export function openProject(id: string, path = "/overview") {
   try {
     localStorage.setItem("gitring.project", id);
   } catch {
@@ -159,8 +159,13 @@ export async function readUpload(list: { file: File; path: string }[]): Promise<
 }
 
 export const getSettings = (project: string) => call<ProjectSettings>("GET", `/api/projects/${encodeURIComponent(project)}/settings`);
+/** Save part of the settings. The server merges the patch and answers the full settings. */
 export const putSettings = (project: string, patch: Partial<ProjectSettings>) =>
   call<ProjectSettings>("PUT", `/api/projects/${encodeURIComponent(project)}/settings`, patch);
+
+/** GitHub sync of main: the status (members) and Sync now (owners). */
+export const getGithubStatus = (project: string) => call<GithubSyncStatus>("GET", `/api/projects/${encodeURIComponent(project)}/github`);
+export const syncGithub = (project: string) => call<GithubSyncStatus>("POST", `/api/projects/${encodeURIComponent(project)}/github/sync`, {});
 
 /** The caller's role on the open project. */
 export function useAccess(): Role | null {

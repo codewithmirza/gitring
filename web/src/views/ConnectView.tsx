@@ -3,45 +3,54 @@ import { Button, CodeBlock, Field, Input, Tabs, TabPanel, toast } from "../desig
 import type { ApiKeyInfo } from "../../../src/core/accounts";
 import { createKey, listKeys, revokeKey, useMe } from "../state/account";
 import { setUi } from "../app/ui";
+import { Link } from "../app/router";
 import { Icon, Mark, type IconName } from "../design/icons";
 import { harborOrNull, onHarbor, defaultConnectInfo, type ConnectInfo } from "../state/api";
 import { useStore } from "../state/store";
 import "./connect.css";
+import "./projects.css";
 
 /* ───────────── flow diagram ───────────── */
 
-interface Node {
+interface FlowNode {
   label: string;
   via: string;
   icon: IconName;
   group: "agent" | "git" | "app";
 }
 
-const INPUTS: Node[] = [
-  { label: "Claude Code", via: "MCP + hook", icon: "compass", group: "agent" },
-  { label: "Codex", via: "MCP", icon: "compass", group: "agent" },
-  { label: "Cursor", via: "MCP", icon: "compass", group: "agent" },
-  { label: "Any git client", via: "git push to a fork", icon: "fork", group: "git" },
-  { label: "GitHub issue", via: "webhook", icon: "plug", group: "app" },
-  { label: "Any app", via: "JSON to /hooks/intents", icon: "plug", group: "app" },
-  { label: "Slack /gitring", via: "webhook", icon: "plug", group: "app" },
-];
+interface Stage {
+  label: string;
+  icon: IconName;
+  note: string;
+}
 
-const OUTPUTS: { label: string; via: string; icon: IconName }[] = [
-  { label: "main in Cloudflare Artifacts", via: "single writer", icon: "anchor" },
-  { label: "Slack message", via: "webhook, Slack format", icon: "send" },
-  { label: "Webhook JSON", via: "landing · correction · decision", icon: "plug" },
-  { label: "CI or deploy hook", via: "webhook on each landing", icon: "launch" },
-  { label: "Browser UI", via: "live events over WebSocket", icon: "compass" },
-];
-
-const STAGES: { label: string; icon: IconName; note: string }[] = [
-  { label: "Course check", icon: "range", note: "Clef-flash · ~0.3 s" },
-  { label: "Corrections", icon: "buoy", note: "rules of the road" },
-  { label: "Re-plot", icon: "compass", note: "work moves onto each new main" },
-  { label: "Landing ladder", icon: "anchor", note: "ff → merge → re-derive" },
-  { label: "Logbook", icon: "logbook", note: "the why, as git notes" },
-];
+/** Only real parts: the inputs this deployment has, the outputs this project uses. */
+function flowParts(info: ConnectInfo, githubOn: boolean) {
+  const inputs: FlowNode[] = [
+    { label: "Claude Code", via: "MCP", icon: "compass", group: "agent" },
+    { label: "Codex", via: "MCP", icon: "compass", group: "agent" },
+    { label: "Cursor", via: "MCP", icon: "compass", group: "agent" },
+    { label: "Any git client", via: "git push into a work copy", icon: "fork", group: "git" },
+    { label: "Any app", via: "HTTP + API key", icon: "plug", group: "app" },
+    ...(info.inputs.githubIssues ? [{ label: "GitHub issues", via: "label gitring", icon: "plug", group: "app" } satisfies FlowNode] : []),
+    ...(info.inputs.slack ? [{ label: "Slack", via: "the /gitring command", icon: "plug", group: "app" } satisfies FlowNode] : []),
+  ];
+  const stages: Stage[] = [
+    { label: "Conflict check", icon: "range", note: "each plan and each change" },
+    { label: "Change requests", icon: "buoy", note: "back to the agents" },
+    { label: "Rebase", icon: "compass", note: "onto each new main" },
+    { label: "Merge", icon: "anchor", note: "fast-forward · 3-way merge · redo" },
+    { label: "History", icon: "logbook", note: "a git note on each merge commit" },
+  ];
+  const outputs: { label: string; via: string; icon: IconName }[] = [
+    { label: "main in Cloudflare Artifacts", via: "only gitring writes main", icon: "anchor" },
+    ...(githubOn ? [{ label: "GitHub", via: "pull request or main", icon: "fork" as IconName }] : []),
+    { label: "Webhooks", via: "JSON or Slack message", icon: "send" },
+    { label: "Live web pages", via: "updates over a WebSocket", icon: "compass" },
+  ];
+  return { inputs, stages, outputs };
+}
 
 function NodeBox({ x, y, w, h, label, via, icon, side }: { x: number; y: number; w: number; h: number; label: string; via: string; icon: IconName; side: "in" | "out" }) {
   return (
@@ -60,30 +69,31 @@ function NodeBox({ x, y, w, h, label, via, icon, side }: { x: number; y: number;
   );
 }
 
-function FlowDiagram({ vertical }: { vertical: boolean }) {
+function FlowDiagram({ vertical, info, githubOn }: { vertical: boolean; info: ConnectInfo; githubOn: boolean }) {
+  const { inputs, stages, outputs } = flowParts(info, githubOn);
   if (vertical) {
     const W = 360;
     const nodeH = 46;
     const inY = (i: number) => 40 + i * (nodeH + 8);
-    const midTop = inY(INPUTS.length) + 34;
-    const midH = 76 + STAGES.length * 46;
+    const midTop = inY(inputs.length) + 34;
+    const midH = 76 + stages.length * 46;
     const outY = (i: number) => midTop + midH + 50 + i * (nodeH + 8);
-    const H = outY(OUTPUTS.length) + 10;
+    const H = outY(outputs.length) + 10;
     return (
       <svg className="flow" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="flow-title flow-desc">
         <text x={0} y={16} className="flow__col">
           In
         </text>
-        {INPUTS.map((n, i) => (
+        {inputs.map((n, i) => (
           <NodeBox key={n.label} x={0} y={inY(i)} w={W} h={nodeH} label={n.label} via={n.via} icon={n.icon} side="in" />
         ))}
-        <path className="flow__wire" d={`M${W / 2} ${inY(INPUTS.length) - 4} V${midTop}`} markerEnd="url(#flow-arrow)" />
-        <GitringBox x={0} y={midTop} w={W} h={midH} />
+        <path className="flow__wire" d={`M${W / 2} ${inY(inputs.length) - 4} V${midTop}`} markerEnd="url(#flow-arrow)" />
+        <GitringBox x={0} y={midTop} w={W} h={midH} stages={stages} />
         <path className="flow__wire" d={`M${W / 2} ${midTop + midH} V${midTop + midH + 40}`} markerEnd="url(#flow-arrow)" />
         <text x={0} y={midTop + midH + 32} className="flow__col">
           Out
         </text>
-        {OUTPUTS.map((n, i) => (
+        {outputs.map((n, i) => (
           <NodeBox key={n.label} x={0} y={outY(i)} w={W} h={nodeH} label={n.label} via={n.via} icon={n.icon} side="out" />
         ))}
         <Defs />
@@ -96,14 +106,15 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
   const nodeH = 46;
   const inY = (i: number) => 36 + i * (nodeH + 10);
   const outY = (i: number) => 36 + 56 + i * (nodeH + 14);
-  const H = inY(INPUTS.length) + 10;
+  // Room for the stages, also when the deployment has few inputs.
+  const H = Math.max(inY(inputs.length) + 10, outY(outputs.length) + 40, 400);
   const bx = 392;
   const bw = 356;
   const by = 50;
   const bh = H - 84;
   const outX = W - outW;
-  // The corrections stage (index 1) sends the magenta wire back to the agents.
-  const stageStep = (bh - 76) / STAGES.length;
+  // The change-request stage (index 1) sends the magenta wire back to the agents.
+  const stageStep = (bh - 76) / stages.length;
   const corrY = by + 60 + stageStep + (stageStep - 10) / 2;
   return (
     <svg className="flow" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby="flow-title flow-desc">
@@ -113,9 +124,9 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
       <text x={outX} y={18} className="flow__col">
         Out: gitring sends results
       </text>
-      {INPUTS.map((n, i) => {
+      {inputs.map((n, i) => {
         const y = inY(i) + nodeH / 2;
-        const ty = by + 48 + i * ((bh - 96) / (INPUTS.length - 1));
+        const ty = by + 48 + i * ((bh - 96) / Math.max(1, inputs.length - 1));
         return (
           <path
             key={`w${n.label}`}
@@ -125,28 +136,28 @@ function FlowDiagram({ vertical }: { vertical: boolean }) {
           />
         );
       })}
-      {/* corrections return to the agents: the only magenta in the diagram */}
+      {/* change requests return to the agents: the only magenta in the diagram */}
       <path
         className="flow__return"
         d={`M${bx + 2} ${corrY} C${bx - 70} ${corrY}, ${nodeW + 80} ${inY(2) + nodeH - 4}, ${nodeW + 4} ${inY(2) + nodeH - 8}`}
         markerEnd="url(#flow-arrow-magenta)"
       />
       <text x={(nodeW + bx) / 2} y={inY(3) + 6} className="flow__returnlabel" textAnchor="middle">
-        <tspan x={(nodeW + bx) / 2}>corrections</tspan>
+        <tspan x={(nodeW + bx) / 2}>change requests</tspan>
         <tspan x={(nodeW + bx) / 2} dy="14">
           back to agents
         </tspan>
       </text>
-      {INPUTS.map((n, i) => (
+      {inputs.map((n, i) => (
         <NodeBox key={n.label} x={0} y={inY(i)} w={nodeW} h={nodeH} label={n.label} via={n.via} icon={n.icon} side="in" />
       ))}
-      <GitringBox x={bx} y={by} w={bw} h={bh} />
-      {OUTPUTS.map((n, i) => {
+      <GitringBox x={bx} y={by} w={bw} h={bh} stages={stages} />
+      {outputs.map((n, i) => {
         const y = outY(i) + nodeH / 2;
-        const sy = by + 60 + i * ((bh - 120) / (OUTPUTS.length - 1));
+        const sy = by + 60 + i * ((bh - 120) / Math.max(1, outputs.length - 1));
         return <path key={`o${n.label}`} className="flow__wire" d={`M${bx + bw + 2} ${sy} C${bx + bw + 70} ${sy}, ${outX - 70} ${y}, ${outX - 2} ${y}`} markerEnd="url(#flow-arrow)" />;
       })}
-      {OUTPUTS.map((n, i) => (
+      {outputs.map((n, i) => (
         <NodeBox key={n.label} x={outX} y={outY(i)} w={outW} h={nodeH} label={n.label} via={n.via} icon={n.icon} side="out" />
       ))}
       <Defs />
@@ -167,8 +178,8 @@ function Defs() {
   );
 }
 
-function GitringBox({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
-  const step = (h - 76) / STAGES.length;
+function GitringBox({ x, y, w, h, stages }: { x: number; y: number; w: number; h: number; stages: Stage[] }) {
+  const step = (h - 76) / stages.length;
   return (
     <g className="flow__gitring" transform={`translate(${x} ${y})`}>
       <rect className="flow__frame" width={w} height={h} />
@@ -182,7 +193,7 @@ function GitringBox({ x, y, w, h }: { x: number; y: number; w: number; h: number
       <text x={w - 16} y={34} className="flow__via" textAnchor="end">
         one coordinator per project
       </text>
-      {STAGES.map((s, i) => {
+      {stages.map((s, i) => {
         const sy = 60 + i * step;
         return (
           <g key={s.label} transform={`translate(16 ${sy})`} className="flow__stage">
@@ -196,11 +207,23 @@ function GitringBox({ x, y, w, h }: { x: number; y: number; w: number; h: number
             <text x={w - 44} y={(step - 10) / 2 + 4} className="flow__via" textAnchor="end">
               {s.note}
             </text>
-            {i < STAGES.length - 1 && <path className="flow__wire" d={`M${(w - 32) / 2} ${step - 10} V${step}`} />}
+            {i < stages.length - 1 && <path className="flow__wire" d={`M${(w - 32) / 2} ${step - 10} V${step}`} />}
           </g>
         );
       })}
     </g>
+  );
+}
+
+function flowText(info: ConnectInfo, githubOn: boolean): string {
+  const apps = ["any app sends HTTP requests with an API key", info.inputs.githubIssues && "GitHub issues with the label gitring open tasks", info.inputs.slack && "the Slack command /gitring opens tasks"]
+    .filter(Boolean)
+    .join("; ");
+  return (
+    `In: Claude Code, Codex and Cursor connect through MCP; any git client pushes into a work copy; ${apps}. ` +
+    "gitring runs a conflict check on each plan and each change, sends change requests back to the agents, rebases active work onto each new main, " +
+    "merges the work (fast-forward, 3-way merge or redo) and writes the history as a git note on each merge commit. " +
+    `Out: main in Cloudflare Artifacts${githubOn ? ", GitHub (a pull request or main)" : ""}, webhooks (JSON or Slack messages) and live updates for the web pages.`
   );
 }
 
@@ -249,14 +272,12 @@ function KeysSection() {
 
   if (!signedIn) {
     return (
-      <Section
-        id="cx-keys"
-        title="API keys"
-        aside={<p>Agents and scripts need a personal API key. Sign in to create one.</p>}
-      >
-        <Button variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
-          Sign in
-        </Button>
+      <Section id="cx-keys" title="API keys" aside={<p>Agents and scripts need a personal API key. Sign in to create one.</p>}>
+        <div>
+          <Button variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
+            Sign in
+          </Button>
+        </div>
       </Section>
     );
   }
@@ -289,16 +310,16 @@ function KeysSection() {
       title="API keys"
       aside={
         <>
-          <p>A key acts as you: it can do what your roles allow on each project. gitring shows a new key once. Keep it in an environment variable.</p>
+          <p>A key acts as you: it can do what your roles allow on each project. gitring shows a new key one time only. Keep it in an environment variable.</p>
           <p className="cx__note">
-            <Icon name="info" size={12} /> Revoke a key at once if it leaks.
+            <Icon name="info" size={12} /> If a key leaks, revoke it at once.
           </p>
         </>
       }
     >
       <div className="keys">
         <div className="keys__new">
-          <Field label="Key name" help="Where the key lives, for example “my laptop” or “CI”.">
+          <Field label="Key name" help="Where the key is used, for example “my laptop” or “CI”.">
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
           </Field>
           <Button variant="primary" icon="plus" busy={busy} onClick={() => void create()}>
@@ -329,19 +350,33 @@ function KeysSection() {
   );
 }
 
+const TOOLS: [string, string][] = [
+  ["gitring_intents", "List the open tasks of a project. Without a project: list your projects."],
+  ["gitring_declare", "Send your plan: steps, files and functions. The answer has the result of the conflict check."],
+  ["gitring_log", "Report a step. Other agents see it. In git mode, give headSha after each push."],
+  ["gitring_traffic", "Read the active work near your plan, and the tasks that merged after your base."],
+  ["gitring_read · gitring_list", "Read the files of your work copy."],
+  ["gitring_write", "Write files into your work copy. gitring checks your plan again."],
+  ["gitring_check", "Run the tests of your work copy."],
+  ["gitring_submit", "Submit your work. gitring merges it when the tests pass, or asks a person to choose."],
+  ["gitring_ack", "Confirm that you applied a change request."],
+];
+
 export function ConnectView() {
   const projectId = useStore((s) => s.projectId);
+  const branch = useStore((s) => s.state?.project.repo.defaultBranch ?? "main");
+  const githubOn = useStore((s) => (s.state?.project.settings.github?.mode ?? "off") !== "off");
   const [info, setInfo] = useState<ConnectInfo>(() => defaultConnectInfo(projectId));
   const [client, setClient] = useState<Client>("claude");
   const narrow = useNarrow();
-  const origin = typeof location !== "undefined" ? location.origin : "";
 
   useEffect(() => {
+    setInfo(defaultConnectInfo(projectId));
     const load = () => {
       harborOrNull()
         ?.connect()
         .then(setInfo)
-        .catch(() => setInfo(defaultConnectInfo(projectId)));
+        .catch(() => undefined);
     };
     load();
     return onHarbor(load);
@@ -367,7 +402,21 @@ export function ConnectView() {
     2,
   );
   const cursor = JSON.stringify({ mcpServers: { gitring: { url: info.mcpUrl, headers: { Authorization: "Bearer ${env:GITRING_KEY}" } } } }, null, 2);
-  const remote = info.gitRemoteExample ?? `https://<account-id>.artifacts.cloudflare.net/git/gitring/${projectId}--kestrel-7.git`;
+  const project = info.projectId || projectId;
+  const payload = JSON.stringify(
+    {
+      event: "landing",
+      project,
+      at: "2026-10-10T12:00:00.000Z",
+      landing: { id: "…", intentId: "…", attemptId: "…", method: "merge", mainBefore: "…", mainAfter: "…", correctionsApplied: 1 },
+      intent: { id: "…", title: "…" },
+      callsign: "…",
+      mainSha: "…",
+    },
+    null,
+    2,
+  );
+  const slackUrl = `${location.origin}/hooks/slack?project=${encodeURIComponent(project)}`;
 
   return (
     <div className="page connect">
@@ -375,23 +424,21 @@ export function ConnectView() {
         <Icon name="plug" size={14} /> Connect
       </p>
       <h1 className="page__title" tabIndex={-1}>
-        Connect other apps
+        Connect agents and apps
       </h1>
       <p className="page__lede">
-        Agents and apps send work to gitring through MCP, git and webhooks. gitring checks every course, sends corrections back to the agents, lands the work
-        on main and sends the results out.
+        Agents and apps send work to gitring through MCP, git and HTTP. gitring checks each plan, sends change requests back to the agents, merges the work into
+        main and sends the results out.
       </p>
 
       <figure className="flowfig">
         <span className="vh" id="flow-title">
-          How inputs and outputs connect to gitring
+          How agents and apps connect to gitring
         </span>
         <span className="vh" id="flow-desc">
-          In: Claude Code, Codex and Cursor connect through MCP; any git client pushes to a fork; GitHub issues, Slack and any app send webhooks. gitring runs
-          the course check, sends corrections back to the agents, re-plots work in progress onto each new main, lands work through the landing ladder and
-          writes the logbook. Out: main in Cloudflare Artifacts, Slack messages, webhook JSON, CI or deploy hooks, and live events for the browser UI.
+          {flowText(info, githubOn)}
         </span>
-        <FlowDiagram vertical={narrow} />
+        <FlowDiagram vertical={narrow} info={info} githubOn={githubOn} />
       </figure>
 
       <KeysSection />
@@ -401,9 +448,9 @@ export function ConnectView() {
         title="Connect a coding agent"
         aside={
           <>
-            <p>Add the gitring MCP server to your agent. The agent then declares its course before it writes code, and it gets corrections in every tool result.</p>
+            <p>Add the gitring MCP server to your agent. The agent then sends its plan before it writes code, and it gets change requests in the answers of the gitring tools.</p>
             <p className="cx__note">
-              <Icon name="info" size={12} /> {info.projectKeyHint}
+              <Icon name="info" size={12} /> Set GITRING_KEY to a personal API key (see API keys).
             </p>
           </>
         }
@@ -422,15 +469,11 @@ export function ConnectView() {
         />
         <TabPanel idPrefix="cx" id="claude" active={client === "claude"} className="cx__panel">
           <CodeBlock shell label="Terminal" code={`claude mcp add --transport http gitring ${info.mcpUrl} --header "Authorization: Bearer $GITRING_KEY"`} />
-          <p className="cx__step">
-            Optional: get corrections in the middle of a task. Add this hook to <span className="code-inline">.claude/settings.json</span>. Claude Code sends
-            each tool result to gitring; gitring answers with the corrections that wait for this agent.
-          </p>
-          <CodeBlock label=".claude/settings.json" code={hook} copyLabel="Copy hook" />
+          <p className="cx__step">Optional: add the Claude Code hook (below). Then change requests also arrive in the middle of a task.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="codex" active={client === "codex"} className="cx__panel">
           <CodeBlock label="~/.codex/config.toml" code={`[mcp_servers.gitring]\nurl = "${info.mcpUrl}"\nbearer_token_env_var = "GITRING_KEY"`} copyLabel="Copy config" />
-          <p className="cx__step">Codex reads the corrections in each tool result and continues its work.</p>
+          <p className="cx__step">Codex reads the change requests in each tool answer and continues its work.</p>
         </TabPanel>
         <TabPanel idPrefix="cx" id="cursor" active={client === "cursor"} className="cx__panel">
           <CodeBlock label=".cursor/mcp.json" code={cursor} copyLabel="Copy config" />
@@ -439,17 +482,7 @@ export function ConnectView() {
         <TabPanel idPrefix="cx" id="other" active={client === "other"} className="cx__panel">
           <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
           <ul className="tools">
-            {[
-              ["gitring_intents", "Read the open intents and a traffic summary."],
-              ["gitring_declare", "Declare your course: plan, files, symbols. Get a clearance."],
-              ["gitring_log", "Log a step. Other agents see it as traffic."],
-              ["gitring_traffic", "Read the vessels near your course."],
-              ["gitring_read · gitring_list", "Read files of your working tree."],
-              ["gitring_write", "Write files. gitring checks the course again."],
-              ["gitring_check", "Run the intent checks in an isolate."],
-              ["gitring_submit", "Submit the attempt for landing."],
-              ["gitring_ack", "Acknowledge a correction."],
-            ].map(([t, d]) => (
+            {TOOLS.map(([t, d]) => (
               <li key={t}>
                 <span className="voice-agent">{t}</span>
                 <span>{d}</span>
@@ -460,77 +493,140 @@ export function ConnectView() {
       </Section>
 
       <Section
-        id="cx-git"
-        title="Push with git"
+        id="cx-modes"
+        title="Two ways to work"
         aside={
-          <p>
-            Declare a course in git mode. The clearance has a fork remote and a short-lived token. Push to the fork; gitring checks the course on every push.
-            You never push to main: gitring lands the work.
-          </p>
+          <>
+            <p>
+              <strong>Edit through gitring.</strong> The agent reads and writes files with <span className="code-inline">gitring_read</span> and{" "}
+              <span className="code-inline">gitring_write</span>. gitring keeps the work copy. This is good for small changes.
+            </p>
+            <p>
+              <strong>Git mode.</strong> We recommend it for agents on your computer. The agent works in your repository folder and pushes with git.
+            </p>
+            <ol className="cx__steps">
+              <li>
+                Call <span className="code-inline">gitring_declare</span> with <span className="code-inline">mode</span> "git" and{" "}
+                <span className="code-inline">workdir</span> set to your repository folder.
+              </li>
+              <li>Clone the work copy, or add it as a remote. Use the remote and the token from the answer. The token works for 6 hours.</li>
+              <li>Commit, then push to that remote.</li>
+              <li>
+                Call <span className="code-inline">gitring_check</span>, then <span className="code-inline">gitring_submit</span>. gitring reads your latest push
+                at check and at submit.
+              </li>
+              <li>
+                Optional: call <span className="code-inline">gitring_log</span> with <span className="code-inline">headSha</span> after each push. You get a
+                conflict check at once.
+              </li>
+            </ol>
+          </>
         }
       >
         <CodeBlock
           shell
-          label="Terminal"
-          code={`# 1. Declare a course with mode "git" (gitring_declare). Keep the token from the clearance.
-git remote add gitring "https://x:$GITRING_FORK_TOKEN@${remote.replace(/^https:\/\//, "")}"
-# 2. Push your work to the fork. Each push runs a course check.
-git push gitring HEAD:main
-# 3. Submit through MCP (gitring_submit). gitring lands it on main.`}
+          label="Git mode, in your repository folder"
+          code={`# 1. The answer of gitring_declare has a remote and a token.
+export GITRING_REMOTE="<remote from the answer>"
+export GITRING_TOKEN="<token from the answer>"
+# 2. Add the work copy as a remote.
+git remote add gitring "https://x:$GITRING_TOKEN@\${GITRING_REMOTE#https://}"
+# 3. Commit, then push.
+git push gitring HEAD:${branch}
+# 4. Call gitring_check, then gitring_submit.`}
         />
       </Section>
 
       <Section
-        id="cx-in"
-        title="Send intents from other apps"
+        id="cx-hook"
+        title="Claude Code hook (optional)"
         aside={
           <>
-            <p>Any app can open an intent with one HTTP call. GitHub issues with the label <span className="code-inline">gitring</span> and the Slack command{" "}
-              <span className="code-inline">/gitring</span> open intents too.</p>
+            <p>Claude Code sends each edit to gitring. gitring answers with the change requests that wait for this agent.</p>
+            <p>
+              Give your repository folder as <span className="code-inline">workdir</span> when you call <span className="code-inline">gitring_declare</span>. The
+              hook finds your work copy by that folder and adds waiting change requests to the agent's context.
+            </p>
+          </>
+        }
+      >
+        <CodeBlock label=".claude/settings.json" code={hook} copyLabel="Copy hook" />
+      </Section>
+
+      <Section
+        id="cx-in"
+        title="Open tasks from other apps"
+        aside={
+          <>
+            <p>Any app can open a task with one HTTP call and an API key of a project member.</p>
+            {info.inputs.githubIssues && (
+              <p>
+                <strong>GitHub issues.</strong> Label an issue <span className="code-inline">gitring</span> in a GitHub repository that you imported into a project
+                where you are a member. gitring opens a task.
+              </p>
+            )}
+            {info.inputs.slack && (
+              <p>
+                <strong>Slack.</strong> The command <span className="code-inline">/gitring Add a dark mode — Readers can switch to a dark theme.</span> opens a
+                task. Set the command URL to <span className="code-inline">{slackUrl}</span>.
+              </p>
+            )}
           </>
         }
       >
         <CodeBlock
           shell
           label="Terminal"
-          code={`curl -X POST ${origin}/hooks/intents \\
+          code={`curl -X POST ${info.intentsUrl} \\
   -H 'content-type: application/json' \\
   -H "authorization: Bearer $GITRING_KEY" \\
-  -d '{"project":"${projectId}","title":"Show the stock count","goal":"Show In stock or Sold out under each price."}'`}
+  -d '{"project":"${project}","title":"Add a dark mode","goal":"Readers can switch to a dark theme."}'`}
         />
       </Section>
 
       <Section
         id="cx-out"
-        title="Get events out"
+        title="Send events out"
+        aside={
+          <>
+            <p>
+              Add a webhook in <Link to="/settings">Settings → Webhooks</Link>. gitring sends these events as JSON, or as Slack messages:
+            </p>
+            <ul className="cx__events">
+              <li>
+                <span className="code-inline">landing</span> a merge
+              </li>
+              <li>
+                <span className="code-inline">correction</span> a change request
+              </li>
+              <li>
+                <span className="code-inline">decision</span> a person decided
+              </li>
+              <li>
+                <span className="code-inline">intent</span> a new task
+              </li>
+            </ul>
+          </>
+        }
+      >
+        <CodeBlock label="POST to your webhook (JSON)" copyLabel="Copy example" code={payload} />
+      </Section>
+
+      <Section
+        id="cx-github"
+        title="Send merged code to GitHub"
         aside={
           <p>
-            Add a webhook target to the project. gitring posts <span className="code-inline">landing</span>, <span className="code-inline">correction</span> and{" "}
-            <span className="code-inline">decision</span> events as JSON, or as Slack messages. Every landing links to its why trail.
+            Turn it on in <Link to="/settings">Settings → GitHub</Link>. gitring sends each merge to a pull request, or straight to main.
           </p>
         }
       >
-        <CodeBlock
-          label="POST to your webhook"
-          copyLabel="Copy example"
-          code={JSON.stringify(
-            {
-              type: "landing",
-              project: projectId,
-              landing: {
-                id: "ld-02",
-                intentId: "in-currency",
-                method: "merge",
-                mainAfter: "d20153b",
-                correctionsApplied: 1,
-                checks: { passed: 17, failed: 0 },
-              },
-              why: `${origin}/logbook/ld-02`,
-            },
-            null,
-            2,
-          )}
-        />
+        <div className="cx__links">
+          <Link to="/settings" className="b-btn b-btn--secondary">
+            <Icon name="fork" />
+            Open the GitHub settings
+          </Link>
+        </div>
       </Section>
     </div>
   );

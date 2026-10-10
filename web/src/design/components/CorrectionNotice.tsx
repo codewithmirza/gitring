@@ -6,14 +6,14 @@ import { CourseCheckReadout } from "./CourseCheckReadout";
 
 interface CorrectionNoticeProps {
   correction: Correction;
-  /** Callsign of the stand-on vessel. */
+  /** Name of the agent that continues. */
   from?: string;
-  /** Callsign of the give-way vessel (the receiver). */
+  /** Name of the agent that adapts (the receiver). */
   to: string;
   check?: CourseCheck;
   nameOf?: (attemptId: string) => string;
   size?: "sm" | "lg";
-  /** Open the course check readout at first render. */
+  /** Open the conflict check readout at first render. */
   expanded?: boolean;
   now?: number;
 }
@@ -22,10 +22,10 @@ const STATUS = {
   pending: { icon: "clock" as const, text: "Pending" },
   delivered: { icon: "send" as const, text: "Delivered" },
   acknowledged: { icon: "check" as const, text: "Acknowledged" },
-  superseded: { icon: "cross" as const, text: "Superseded" },
+  superseded: { icon: "cross" as const, text: "Replaced" },
 };
 
-/** A re-plot correction carries the agent's earlier diffs after the sentences, as ```diff blocks. */
+/** A rebase change request carries the agent's earlier diffs after the sentences, as ```diff blocks. */
 function splitDiffs(message: string): { text: string; diffs: { path: string; diff: string }[] } {
   const diffs: { path: string; diff: string }[] = [];
   const re = /\n\nYour earlier change to ([^\n:]+):\n```diff\n([\s\S]*?)\n```/g;
@@ -45,7 +45,7 @@ export function CorrectionMessage({ text }: { text: string }) {
 }
 
 /**
- * CorrectionNotice: an amendment to an agent's brief. Magenta 2px rule, buoy icon,
+ * CorrectionNotice: a change request to an agent. Magenta 2px rule, marker icon,
  * kind, STE message, constraints, status. Not a card: no shadow, a 6% tint only.
  */
 export function CorrectionNotice({ correction: c, from, to, check, nameOf, size = "sm", expanded = false, now = Date.now() }: CorrectionNoticeProps) {
@@ -60,7 +60,7 @@ export function CorrectionNotice({ correction: c, from, to, check, nameOf, size 
   return (
     <article
       className={["b-corr", size === "lg" && "b-corr--lg", c.status === "superseded" && "is-superseded"].filter(Boolean).join(" ")}
-      aria-label={`Correction ${c.id} for ${to}: ${CORRECTION_KIND_TEXT[c.kind]}, ${ruleLabel(c.rule)}, ${st.text}`}
+      aria-label={`Change request ${c.id} for ${to}: ${CORRECTION_KIND_TEXT[c.kind]}, ${ruleLabel(c.rule)}, ${st.text}`}
     >
       <div className="b-corr__head">
         <span className="b-corr__kind">
@@ -102,7 +102,7 @@ export function CorrectionNotice({ correction: c, from, to, check, nameOf, size 
         <span>
           {from ? (
             <>
-              <span className="voice-agent ink-2">{from}</span> stands on → <span className="voice-agent ink-2">{to}</span> gives way
+              <span className="voice-agent ink-2">{from}</span> continues → <span className="voice-agent ink-2">{to}</span> adapts
             </>
           ) : (
             <>
@@ -124,7 +124,7 @@ export function CorrectionNotice({ correction: c, from, to, check, nameOf, size 
         <>
           <button type="button" className="b-corr__toggle" aria-expanded={open} aria-controls={rid} onClick={() => setOpen(!open)}>
             <Icon name="chevron-right" />
-            {open ? "Hide course check" : "Show course check"}
+            {open ? "Hide the conflict check" : "Show the conflict check"}
           </button>
           {open && (
             <div id={rid}>

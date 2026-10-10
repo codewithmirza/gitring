@@ -9,7 +9,7 @@ import { openProject, signIn, signOut, useCanAct, useMe } from "../state/account
 import { Link, navigate } from "./router";
 import { setUi, useUi } from "./ui";
 
-const SOURCE_TEXT: Record<string, string> = { sample: "sample", empty: "empty repo", git: "import", upload: "upload", push: "git push" };
+const SOURCE_TEXT: Record<string, string> = { sample: "sample", empty: "empty repository", git: "import", upload: "upload", push: "git push" };
 
 export function ProjectSwitcher() {
   const projects = useStore((s) => s.projects);
@@ -126,13 +126,16 @@ export function UserMenu() {
           <p className="acct-menu__name">{u.name}</p>
           <p className="acct-menu__meta">
             {u.identities.map((i) => (i.provider === "github" ? `GitHub @${i.login}` : `Google ${i.email}`)).join(" · ")}
-            {u.admin ? " · owner of this gitring" : ""}
+            {u.admin ? " · administrator" : ""}
           </p>
           <Link to="/projects" className="acct-menu__item" onClick={() => setOpen(false)}>
             <Icon name="grid" /> Projects
           </Link>
           <Link to="/connect" className="acct-menu__item" onClick={() => setOpen(false)}>
             <Icon name="plug" /> API keys and agents
+          </Link>
+          <Link to="/?home" className="acct-menu__item" onClick={() => setOpen(false)}>
+            <Icon name="info" /> About gitring
           </Link>
           {u.admin && (
             <a className="acct-menu__item" href="/setup">
@@ -155,7 +158,7 @@ export function SignInDialog() {
   const gh = me?.providers.github;
   const gg = me?.providers.google;
   return (
-    <Dialog open={ui.signIn} onClose={close} title="Sign in to gitring" description="Sign in to make projects, launch agents, pick attempts and create API keys for your agents." dismissOnScrim>
+    <Dialog open={ui.signIn} onClose={close} title="Sign in to gitring" description="Sign in to make projects, start agents, choose work copies and create API keys for your agents." dismissOnScrim>
       <div className="acct-signin">
         {gh && (
           <Button variant="primary" icon="fork" onClick={() => signIn("github")}>
@@ -167,14 +170,14 @@ export function SignInDialog() {
             Continue with Google
           </Button>
         )}
-        {!gh && !gg && <p className="acct-signin__note">Sign-in is not set up on this gitring yet. Its owner opens /setup to add GitHub or Google.</p>}
+        {!gh && !gg && <p className="acct-signin__note">Sign-in is not set up on this server yet. Its owner opens /setup to add GitHub or Google.</p>}
         <p className="acct-signin__note">gitring keeps your name, email and avatar. It does not post anything for you.</p>
       </div>
     </Dialog>
   );
 }
 
-/** Shown when the caller can only watch the open project. */
+/** Shown when the caller can only view the open project. */
 export function WatchBanner() {
   const me = useMe();
   const canAct = useCanAct();
@@ -185,15 +188,17 @@ export function WatchBanner() {
     <div className="acct-watch" role="status">
       <Icon name="eye" />
       <span>
-        {me.user
-          ? "You watch this project. To act on it, ask an owner for the member role, or make your own project."
-          : isSample
-            ? "You watch the public sample. Sign in to get your own copy and run real AI agents on it."
-            : "You watch this project. Sign in to act on it."}
+        {isSample
+          ? me.user
+            ? "You view the public sample. Copy it to your projects to start agents."
+            : "You view the public sample. Sign in, then copy it to your projects to start agents."
+          : me.user
+            ? "You can view this project. To change it, ask an owner for the member role, or make your own project."
+            : "You can view this project. Sign in to change it."}
       </span>
       {me.user ? (
         <Button size="sm" variant="primary" icon="plus" onClick={() => navigate(isSample ? "/projects?new=sample" : "/projects?new=1")}>
-          {isSample ? "Make my copy" : "New project"}
+          {isSample ? "Copy the sample" : "New project"}
         </Button>
       ) : (
         <Button size="sm" variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>

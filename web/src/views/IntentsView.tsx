@@ -24,26 +24,24 @@ import { Link, navigate } from "../app/router";
 import { openDiff, openFile } from "../app/ui";
 import { useNow } from "../app/useNow";
 import { harbor, harborOrNull, onHarbor } from "../state/api";
-import { ago, modelShort, plural, shortSha } from "../state/format";
+import { ago, ATTEMPT_STATUS_TEXT, METHOD_TEXT, modelShort, plural, shortSha } from "../state/format";
 import { useStore } from "../state/store";
 import { useCanAct } from "../state/account";
 import { byId, indexes, selectIntentGroups } from "../state/selectors";
 import "./intents.css";
 
 const SOURCE_TEXT: Record<Intent["source"]["kind"], string> = {
-  ui: "the chart",
+  ui: "the web app",
   mcp: "MCP",
   webhook: "a webhook",
-  seed: "the seed",
-  sim: "the simulation",
+  seed: "the starting code",
 };
 
 function sourceText(i: Intent): string {
   const ref = i.source.ref ?? "";
   if (ref.startsWith("github")) return `GitHub issue ${ref.split("#")[1] ? "#" + ref.split("#")[1] : ""}`.trim();
-  if (ref.startsWith("linear")) return `Linear ${ref.split(":")[1] ?? ""}`.trim();
   if (ref.startsWith("slack")) return "Slack /gitring";
-  return SOURCE_TEXT[i.source.kind];
+  return SOURCE_TEXT[i.source.kind] ?? i.source.kind;
 }
 
 /* ───────────── dialogs ───────────── */
@@ -113,7 +111,7 @@ function ReasonDialog({
       }
     >
       {children}
-      <Field label={label} help={help} error={tried && !reason.trim() ? "Write the reason. The logbook keeps it." : undefined}>
+      <Field label={label} help={help} error={tried && !reason.trim() ? "Write the reason. The history keeps it." : undefined}>
         <Textarea voice="human" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={placeholder} data-autofocus />
       </Field>
     </Dialog>
@@ -144,10 +142,10 @@ function AmendDialog({ intent, open, onClose }: { intent: Intent; open: boolean;
         constraints: constraint.trim() ? [constraint.trim()] : undefined,
         reason: reason.trim(),
       });
-      toast({ tone: "info", title: `Intent amended to v${intent.version + 1}`, text: "Active attempts get a correction with the new text." });
+      toast({ tone: "info", title: `Goal changed (version ${intent.version + 1})`, text: "Active work copies get a change request with the new text." });
       onClose();
     } catch (e) {
-      toast({ tone: "danger", title: "The amendment failed", text: (e as Error).message });
+      toast({ tone: "danger", title: "The change did not save", text: (e as Error).message });
     } finally {
       setBusy(false);
     }
@@ -157,15 +155,15 @@ function AmendDialog({ intent, open, onClose }: { intent: Intent; open: boolean;
       open={open}
       onClose={onClose}
       size="lg"
-      title="Amend intent"
-      description={`v${intent.version} → v${intent.version + 1}. gitring keeps every version. Active attempts get the change as a correction.`}
+      title="Change the goal"
+      description={`Version ${intent.version} → ${intent.version + 1}. gitring keeps every version. Active work copies get the change as a change request.`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" icon="amend" busy={busy} onClick={submit}>
-            Amend intent
+            Change the goal
           </Button>
         </>
       }
@@ -176,14 +174,14 @@ function AmendDialog({ intent, open, onClose }: { intent: Intent; open: boolean;
       <Field label="Add a constraint" optional help="Agents must follow every constraint.">
         <Input value={constraint} onChange={(e) => setConstraint(e.target.value)} placeholder="Show at most 20 results." className="voice-human" />
       </Field>
-      <Field label="Reason" error={tried && !reason.trim() ? "Write the reason. The amendments timeline shows it." : undefined}>
+      <Field label="Reason" error={tried && !reason.trim() ? "Write the reason. The list of versions shows it." : undefined}>
         <Textarea voice="human" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Long result lists are slow on phones." />
       </Field>
     </Dialog>
   );
 }
 
-/* ───────────── living spec ───────────── */
+/* ───────────── spec ───────────── */
 
 function LivingSpec({ intent, now }: { intent: Intent; now: number }) {
   const versions = [
@@ -193,7 +191,7 @@ function LivingSpec({ intent, now }: { intent: Intent; now: number }) {
   return (
     <section className="spec" aria-labelledby="spec-title">
       <h2 className="spec__title" id="spec-title">
-        Living spec <span className="voice-agent ink-3">v{intent.version}</span>
+        Spec <span className="voice-agent ink-3">v{intent.version}</span>
       </h2>
       <ol className="timeline">
         {versions.map((a, i) => (
@@ -257,10 +255,12 @@ interface LaneProps {
   onLand: (a: Attempt) => void;
   onRederive: (a: Attempt) => void;
   canAct: boolean;
+  /** Main is a Cloudflare Workers app (src/index.js): the work copy has a live preview. */
+  preview: boolean;
   now: number;
 }
 
-function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, rederivedFromName, onLand, onRederive, canAct, now }: LaneProps) {
+function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, rederivedFromName, onLand, onRederive, canAct, preview, now }: LaneProps) {
   const callsign = agent?.callsign ?? a.agentId;
   const alternate = a.status === "alternate" || a.status === "abandoned" || (a.status === "stale" && intent.status === "landed");
   const landed = a.status === "landed";
@@ -269,6 +269,7 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
   const [doc, setDoc] = useState<{ src: string | null }>({ src: null });
 
   useEffect(() => {
+    if (!preview) return;
     const load = () => {
       const h = harborOrNull();
       if (!h) return;
@@ -276,15 +277,15 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
     };
     load();
     return onHarbor(load);
-    // Rebuild the preview when the attempt writes files.
-  }, [a.id, a.stats.steps, a.status]);
+    // Rebuild the preview when the work copy changes files.
+  }, [a.id, a.stats.steps, a.status, preview]);
 
   const style = { "--vc": `var(--v${(agent?.color ?? 0) % 12})` } as CSSProperties;
   return (
     <article
       className={["lane", alternate && "is-alternate", landed && "is-landed", canLand && "is-ready"].filter(Boolean).join(" ")}
       style={style}
-      aria-label={`Attempt ${callsign}: ${a.status}`}
+      aria-label={`Work copy of ${callsign}: ${ATTEMPT_STATUS_TEXT[a.status]}`}
     >
       <header className="lane__head">
         <div className="lane__id">
@@ -297,50 +298,52 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
           {a.lineage.generation > 1 && (
             <span className="lane__gen">
               <Icon name="rederive" size={12} /> generation {a.lineage.generation}
-              {rederivedFromName ? ` · re-derived from ${rederivedFromName}` : ""}
+              {rederivedFromName ? ` · redo of ${rederivedFromName}` : ""}
             </span>
           )}
           <span className="ink-3">base {shortSha(a.baseSha)}</span>
         </div>
-        {alternate && <p className="lane__note">Alternate. gitring keeps it with its preview and its diff.</p>}
+        {alternate && <p className="lane__note">Alternative. gitring keeps it with its diff.</p>}
         {a.drift && !landed && !alternate && (
           <p className="lane__note lane__note--drift">
             <Icon name="rederive" size={14} />
             Main moved to <span className="voice-agent">{shortSha(a.drift.mainSha)}</span>. {a.drift.overlaps.join(", ")} overlap{a.drift.overlaps.length > 1 ? "" : "s"} the
-            landed change. If you pick this attempt, gitring re-derives it on the new main.
+            merged change. If you choose this work copy, gitring redoes it on the new main.
           </p>
         )}
         {landed && landing && (
           <p className="lane__note lane__note--landed">
             <Icon name="anchor" size={14} />
-            Landed on main <span className="voice-agent">{shortSha(landing.mainAfter)}</span> with <MethodBadge method={landing.method} />{" "}
-            <Link to={`/logbook/${landing.id}`}>Read the why</Link>
+            Merged into main <span className="voice-agent">{shortSha(landing.mainAfter)}</span> with <MethodBadge method={landing.method} />{" "}
+            <Link to={`/history/${landing.id}`}>Read the merge record</Link>
           </p>
         )}
       </header>
 
-      <section className="lane__sec lane__evidence" aria-label="Checks">
-        <h3 className="lane__h">Checks</h3>
+      <section className="lane__sec lane__evidence" aria-label="Tests">
+        <h3 className="lane__h">Tests</h3>
         <EvidenceBar run={a.checks} checking={a.status === "checking" || a.status === "submitted"} pending={intent.checks.length * 4} label="Alone" />
-        {a.composedChecks && <EvidenceBar run={a.composedChecks} label="Composed with main" showFailures />}
+        {a.composedChecks && <EvidenceBar run={a.composedChecks} label="Combined with main" showFailures />}
         {(a.composedChecks?.log ?? a.checks?.log) && (
           <details className="lane__log">
-            <summary>Output of the check container</summary>
+            <summary>Output of the test container</summary>
             <pre className="voice-agent">{(a.composedChecks?.log ?? a.checks?.log ?? "").slice(-4000)}</pre>
           </details>
         )}
       </section>
 
-      <section className="lane__sec lane__preview" aria-label="Live preview">
-        <h3 className="lane__h">
-          Live preview <span className="ink-3">· the attempt's real code</span>
-        </h3>
-        {doc.src ? (
-          <PreviewFrame title={callsign} src={doc.src} height={300} />
-        ) : (
-          <div className="lane__nopreview">The preview starts when the attempt has a fork.</div>
-        )}
-      </section>
+      {preview && (
+        <section className="lane__sec lane__preview" aria-label="Live preview">
+          <h3 className="lane__h">
+            Live preview <span className="ink-3">· the real code of this work copy</span>
+          </h3>
+          {doc.src ? (
+            <PreviewFrame title={callsign} src={doc.src} height={300} />
+          ) : (
+            <div className="lane__nopreview">The preview starts when the work copy exists.</div>
+          )}
+        </section>
+      )}
 
       <section className="lane__sec" aria-label="Files changed">
         <h3 className="lane__h">
@@ -349,8 +352,8 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
         <FileList attempt={a} />
       </section>
 
-      <section className="lane__sec" aria-label="Course">
-        <h3 className="lane__h">Course</h3>
+      <section className="lane__sec" aria-label="Plan">
+        <h3 className="lane__h">Plan</h3>
         <p className="lane__approach voice-agent">{a.course.approach}</p>
         <ol className="lane__plan voice-agent">
           {a.course.plan.map((p, i) => (
@@ -365,12 +368,12 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
         )}
       </section>
 
-      <section className="lane__sec" aria-label="Corrections received">
+      <section className="lane__sec" aria-label="Change requests received">
         <h3 className="lane__h">
-          Corrections <span className="ink-3 voice-agent">{corrections.length}</span>
+          Change requests <span className="ink-3 voice-agent">{corrections.length}</span>
         </h3>
         {corrections.length === 0 ? (
-          <p className="ink-3 lane__empty">No corrections. The course stayed clear.</p>
+          <p className="ink-3 lane__empty">No change requests. The plan had no conflict.</p>
         ) : (
           <div className="lane__corrs">
             {corrections.map((c) => (
@@ -395,9 +398,9 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
             icon="anchor"
             disabled={!canLand || closed}
             onClick={() => onLand(a)}
-            title={canLand ? undefined : "Only a ready attempt can land."}
+            title={canLand ? undefined : "Only a ready work copy can merge."}
           >
-            Land attempt
+            Merge
           </Button>
         )}
         <Button icon="diff" onClick={() => openDiff(a.id, callsign)}>
@@ -405,7 +408,7 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
         </Button>
         {canAct && (
           <Button variant="ghost" icon="rederive" disabled={closed || landed} onClick={() => onRederive(a)}>
-            Re-derive
+            Redo
           </Button>
         )}
       </footer>
@@ -441,14 +444,16 @@ function IntentDetail({ intent }: { intent: Intent }) {
   const decisions = idx?.decisionsByIntent.get(intent.id) ?? [];
   const pick = [...decisions].reverse().find((d) => d.kind === "pick");
   const n = attempts.length;
+  // Live previews run Cloudflare Workers apps: main must have src/index.js.
+  const preview = useStore((s) => Boolean(s.state?.files.some((f) => f.path === "src/index.js")));
 
   return (
     <article className="intent" aria-labelledby="intent-title">
       <header className="intent__head">
         <div className="intent__crumbs">
-          <Link to="/intents" className="backlink">
+          <Link to="/tasks" className="backlink">
             <Icon name="arrow-left" size={14} />
-            Intents
+            Tasks
           </Link>
           <IntentBadge status={intent.status} />
           {intent.priority === "high" && (
@@ -468,10 +473,10 @@ function IntentDetail({ intent }: { intent: Intent }) {
           <div className="intent__actions">
             <LaunchButton intent={intent} size="md" variant={n === 0 ? "primary" : "secondary"} />
             <Button icon="amend" onClick={() => setAmend(true)} disabled={intent.status === "landed" || intent.status === "parked"}>
-              Amend intent
+              Change the goal
             </Button>
             <Button variant="ghost" icon="park" onClick={() => setPark(true)} disabled={intent.status === "landed" || intent.status === "parked"}>
-              Park intent
+              Pause the task
             </Button>
           </div>
         )}
@@ -484,7 +489,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
               Constraints <span className="voice-agent ink-3">{intent.constraints.length}</span>
             </h2>
             {intent.constraints.length === 0 ? (
-              <p className="ink-3">No constraints yet. Humans and corrections add them.</p>
+              <p className="ink-3">No constraints yet. People and change requests add them.</p>
             ) : (
               <ul className="constraints">
                 {intent.constraints.map((c) => {
@@ -501,7 +506,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
           </section>
           <section aria-labelledby="checks-title">
             <h2 className="intent__h2" id="checks-title">
-              Checks <span className="voice-agent ink-3">{intent.checks.length}</span>
+              Tests <span className="voice-agent ink-3">{intent.checks.length}</span>
             </h2>
             <ul className="checklist">
               {intent.checks.map((c) => {
@@ -511,7 +516,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
                     <div className="checklist__head">
                       <Icon name="check" size={14} />
                       <span className="voice-agent">{c.path}</span>
-                      <span className="ink-3">{plural(cases.length, "case")}</span>
+                      <span className="ink-3">{plural(cases.length, "test")}</span>
                     </div>
                     <p className="checklist__desc">{c.description}</p>
                     {cases.length > 0 && (
@@ -533,28 +538,33 @@ function IntentDetail({ intent }: { intent: Intent }) {
       <section className="compare" aria-labelledby="compare-title">
         <div className="compare__head">
           <h2 className="intent__h2" id="compare-title">
-            {n === 0 ? "Attempts" : n === 1 ? "1 attempt" : `Compare ${n} attempts`}
+            {n === 0 ? "Work copies" : n === 1 ? "1 work copy" : `Compare ${n} work copies`}
           </h2>
           <p className="compare__help">
             {intent.status === "judging"
-              ? `${ready.length} attempts are ready. Compare the evidence and the previews. Land one. The others stay as alternates.`
+              ? `${ready.length} work copies are ready. Compare the tests${preview ? " and the previews" : ""}. Merge one. The others stay as alternatives.`
               : intent.status === "landed"
                 ? pick
-                  ? `${pick.by.name} picked ${names(pick.attemptIds[0])}: “${pick.rationale}”`
-                  : "gitring landed the attempt that passed its checks. Alternates stay below."
+                  ? `${pick.by.name} chose ${names(pick.attemptIds[0])}: “${pick.rationale}”`
+                  : "gitring merged the work copy that passed its tests. Alternatives stay below."
                 : n === 0
-                  ? "No attempts yet. Launch 1 to 4 attempts. Each runs in its own fork."
-                  : "Attempts run in their own forks. gitring checks every course against all traffic."}
+                  ? "No work copies yet. Start 1 to 4 agents. Each agent works in its own work copy."
+                  : "Each agent works in its own work copy. gitring checks each plan against all other active work."}
           </p>
+          {n > 0 && !preview && <p className="compare__note">Preview works for Cloudflare Workers apps (src/index.js).</p>}
         </div>
         {n === 0 ? (
           <EmptyState
-            text={canAct ? "Launch attempts to fill the lanes. Each attempt shows its checks, its live preview and its diff." : "No attempts yet. Members launch attempts for this intent."}
+            text={
+              canAct
+                ? `Start agents to fill this view. Each work copy shows its tests${preview ? ", its live preview" : ""} and its diff.`
+                : "No work copies yet. Members start agents for this task."
+            }
             action={canAct ? <LaunchButton intent={intent} size="md" variant="primary" /> : undefined}
           />
         ) : (
           <div className="lanes-scroll">
-            <div className="lanes" style={{ "--n": n } as CSSProperties}>
+            <div className={["lanes", !preview && "lanes--nopreview"].filter(Boolean).join(" ")} style={{ "--n": n } as CSSProperties}>
               {attempts.map((a) => (
                 <Lane
                   key={a.id}
@@ -569,6 +579,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
                   onLand={setLanding}
                   onRederive={setRederive}
                   canAct={canAct}
+                  preview={preview}
                   now={now}
                 />
               ))}
@@ -581,40 +592,40 @@ function IntentDetail({ intent }: { intent: Intent }) {
       <ReasonDialog
         open={park}
         onClose={() => setPark(false)}
-        title="Park intent"
-        description="Parking stops all attempts of this intent. gitring keeps them as alternates. You can open a new intent later."
+        title="Pause the task"
+        description="Pausing stops all work copies of this task. gitring keeps them. You can open a new task later."
         label="Reason"
         placeholder="The shop does not sell enough books for a search yet."
-        action="Park intent"
+        action="Pause the task"
         danger
         onSubmit={async (reason) => {
           await harbor().park(intent.id, reason);
-          toast({ tone: "info", title: "Intent parked", text: `“${intent.title}” stops. Its attempts stay visible.` });
+          toast({ tone: "info", title: "Task paused", text: `“${intent.title}” stops. Its work copies stay visible.` });
         }}
       />
       <ReasonDialog
         open={Boolean(landing)}
         onClose={() => setLanding(null)}
-        title={`Land ${landing ? names(landing.id) : ""}`}
-        description={`gitring composes the attempt with main ${shortSha(mainSha)}, runs every landed check, then lands it. ${
-          n > 1 ? "The other attempts stay as alternates." : ""
+        title={`Merge the work of ${landing ? names(landing.id) : ""}`}
+        description={`gitring combines the work copy with main ${shortSha(mainSha)}, runs the tests of all merged tasks, then merges it. ${
+          n > 1 ? "The other work copies stay as alternatives." : ""
         }`}
-        label="Why this attempt?"
-        help="Your reason goes into the logbook with the landing."
+        label="Why this work copy?"
+        help="Your reason goes into the merge record."
         placeholder="Smaller diff. The search form stays out of the header."
-        action="Land attempt"
+        action="Merge"
         onSubmit={async (reason) => {
           if (!landing) return;
           const res = await harbor().land(landing.id, reason);
           if (res.landing) {
             toast({
               tone: "clear",
-              title: `Landed on main ${shortSha(res.landing.mainAfter)}`,
-              text: `“${intent.title}” · ${res.landing.method}. Human merge fixes: 0.`,
-              action: { label: "Read the why", onClick: () => navigate(`/logbook/${res.landing!.id}`) },
+              title: `Merged into main ${shortSha(res.landing.mainAfter)}`,
+              text: `“${intent.title}” · ${METHOD_TEXT[res.landing.method] ?? res.landing.method}.`,
+              action: { label: "Read the merge record", onClick: () => navigate(`/history/${res.landing!.id}`) },
             });
           } else {
-            toast({ tone: "info", title: "Re-derive scheduled", text: res.message ?? "The attempt does not compose with main." });
+            toast({ tone: "info", title: "Redo scheduled", text: res.message ?? "The work copy does not merge cleanly with main." });
           }
         }}
       >
@@ -623,15 +634,15 @@ function IntentDetail({ intent }: { intent: Intent }) {
       <ReasonDialog
         open={Boolean(rederive)}
         onClose={() => setRederive(null)}
-        title={`Re-derive ${rederive ? names(rederive.id) : ""}`}
-        description="A new attempt starts from the intent on the current main. The old attempt stays as an alternate. A re-derive needs a reason: no blind re-rolls."
-        label="What is wrong with this attempt?"
+        title={`Redo the work of ${rederive ? names(rederive.id) : ""}`}
+        description="A new work copy starts from the task on the current main. The old work copy stays as an alternative. Give a reason, so that the agent knows what to change."
+        label="What is wrong with this work copy?"
         placeholder="The toggle hides the search field on small screens."
-        action="Re-derive attempt"
+        action="Redo on the new main"
         onSubmit={async (reason) => {
           if (!rederive) return;
           const res = await harbor().rederive(rederive.id, reason);
-          toast({ tone: "info", title: "Re-derive started", text: `${names(res.attempt.id)} declares a new course.` });
+          toast({ tone: "info", title: "Redo started", text: `${names(res.attempt.id)} sends a new plan.` });
         }}
       />
     </article>
@@ -646,12 +657,12 @@ export function IntentsView({ id }: { id?: string }) {
   useEffect(() => {
     if (id || !groups || window.matchMedia("(max-width: 760px)").matches) return;
     const first = groups[0]?.intents[0];
-    if (first) navigate(`/intents/${first.id}`, { replace: true });
+    if (first) navigate(`/tasks/${first.id}`, { replace: true });
   }, [id, groups]);
 
   return (
     <div className={["intents-view", id ? "has-detail" : "no-detail"].join(" ")}>
-      <aside className="intents-view__rail" aria-label="Intents">
+      <aside className="intents-view__rail" aria-label="Tasks">
         <IntentsRail selectedId={id} />
       </aside>
       <div className="intents-view__main">
@@ -660,16 +671,16 @@ export function IntentsView({ id }: { id?: string }) {
         ) : id && exists ? (
           <div className="page">
             <h1 className="page__title" tabIndex={-1}>
-              Intent not found
+              Task not found
             </h1>
-            <EmptyState text="This intent is not in the harbor. The demo harbor may have restarted." action={<Link to="/intents">Show all intents</Link>} />
+            <EmptyState text="This task does not exist in this project." action={<Link to="/tasks">Show all tasks</Link>} />
           </div>
         ) : (
           <div className="page">
             <h1 className="page__title" tabIndex={-1}>
-              Intents
+              Tasks
             </h1>
-            <p className="page__lede">An intent is the source of the work: a goal and the checks that prove it. Select an intent to compare its attempts.</p>
+            <p className="page__lede">A task is the source of the work: a goal and the tests that prove it. Select a task to compare its work copies.</p>
           </div>
         )}
       </div>

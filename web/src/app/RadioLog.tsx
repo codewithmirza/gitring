@@ -22,7 +22,7 @@ function readPref(): boolean {
   }
 }
 
-/** Radio log: every log line from every vessel. An ARIA live region (polite). */
+/** Activity: every log line from every agent. An ARIA live region (polite). */
 export function RadioLog() {
   const logs = useStore((s) => s.state?.logs ?? EMPTY);
   const agents = useStore((s) => (s.state ? byId(s.state.agents) : null));
@@ -57,24 +57,24 @@ export function RadioLog() {
       <div className="radio__head">
         <IconButton
           icon={open ? "chevron-down" : "chevron-up"}
-          label={open ? "Collapse the radio log" : "Expand the radio log"}
+          label={open ? "Hide the activity" : "Show the activity"}
           size="sm"
           aria-expanded={open}
           aria-controls="radio-body"
           onClick={() => setOpen(!open)}
         />
         <h2 className="radio__title" id="radio-title">
-          Radio log
+          Activity
         </h2>
         {open ? (
           <Segmented<Filter>
-            label="Filter the radio log"
+            label="Filter the activity"
             value={filter}
             onChange={setFilter}
             options={[
               { value: "all", label: "All" },
-              { value: "corrections", label: "Corrections" },
-              { value: "landings", label: "Landings" },
+              { value: "corrections", label: "Change requests" },
+              { value: "landings", label: "Merges" },
               { value: "decisions", label: "Decisions" },
             ]}
           />
@@ -94,7 +94,7 @@ export function RadioLog() {
         role="log"
         aria-live="polite"
         aria-relevant="additions"
-        aria-label="Radio log"
+        aria-label="Activity"
         tabIndex={0}
         onScroll={(e) => {
           const el = e.currentTarget;

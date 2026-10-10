@@ -18,11 +18,13 @@ interface SegmentedProps<T extends string> {
   size?: "sm" | "md";
   /** Hide text labels (icons only); the ariaLabel or label still names each option. */
   iconOnly?: boolean;
+  /** Read only: shows the value, ignores clicks and keys. */
+  disabled?: boolean;
   className?: string;
 }
 
 /** Segmented control: role="radiogroup"; arrow keys move and select. */
-export function Segmented<T extends string>({ options, value, onChange, label, size = "sm", iconOnly, className }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ options, value, onChange, label, size = "sm", iconOnly, disabled, className }: SegmentedProps<T>) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const idx = Math.max(0, options.findIndex((o) => o.value === value));
   const move = (e: KeyboardEvent, i: number) => {
@@ -33,11 +35,17 @@ export function Segmented<T extends string>({ options, value, onChange, label, s
     else if (e.key === "End") next = options.length - 1;
     else return;
     e.preventDefault();
+    if (disabled) return;
     onChange(options[next].value);
     refs.current[next]?.focus();
   };
   return (
-    <div role="radiogroup" aria-label={label} className={["b-seg", size === "md" && "b-seg--md", className].filter(Boolean).join(" ")}>
+    <div
+      role="radiogroup"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      className={["b-seg", size === "md" && "b-seg--md", disabled && "b-seg--disabled", className].filter(Boolean).join(" ")}
+    >
       {options.map((o, i) => (
         <button
           key={o.value}
@@ -47,11 +55,12 @@ export function Segmented<T extends string>({ options, value, onChange, label, s
           type="button"
           role="radio"
           aria-checked={o.value === value}
+          aria-disabled={disabled || undefined}
           aria-label={iconOnly ? o.ariaLabel ?? (typeof o.label === "string" ? o.label : undefined) : o.ariaLabel}
           title={o.title}
           tabIndex={i === idx ? 0 : -1}
           className="b-seg__opt"
-          onClick={() => onChange(o.value)}
+          onClick={() => !disabled && onChange(o.value)}
           onKeyDown={(e) => move(e, i)}
         >
           {o.icon && <Icon name={o.icon} />}

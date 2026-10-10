@@ -1,5 +1,5 @@
 /**
- * The harbor store: one reducer over the GitringEvent stream from the live WebSocket.
+ * The project store: one reducer over the GitringEvent stream from the live WebSocket.
  *
  * Components read slices with useStore(selector). The reducer keeps references of
  * unchanged slices, so a component re-renders only when its slice changes.
@@ -31,9 +31,9 @@ export interface StoreState {
   state: ProjectState | null;
   /** STE error text for the connection banner. */
   error: string | null;
-  /** Landing ripples (changed parcels flash once). */
+  /** Merge ripples (changed files flash once). */
   ripples: Ripple[];
-  /** Closing pulses (a range ring pulses once when two vessels start to close). */
+  /** Pulses (a ring pulses once when two pieces of work start to move closer). */
   pulses: Pulse[];
   events: number;
   lastEventAt: number;
@@ -41,6 +41,8 @@ export interface StoreState {
   me: MeInfo | null;
   /** Projects the caller can see. */
   projects: ProjectInfo[];
+  /** True after the first answers for the person and the project list (or their failure). */
+  accountReady: boolean;
   /** The caller's role on the open project (null: unknown or no access). */
   access: Role | null;
 }
@@ -52,7 +54,7 @@ let seq = 1;
 let snap: StoreState = {
   mode: "boot",
   conn: "connecting",
-  projectId: "demo",
+  projectId: "",
   state: null,
   error: null,
   ripples: [],
@@ -61,6 +63,7 @@ let snap: StoreState = {
   lastEventAt: 0,
   me: null,
   projects: [],
+  accountReady: false,
   access: null,
 };
 
@@ -119,7 +122,7 @@ export function reduce(st: ProjectState, ev: GitringEvent): ProjectState {
       return { ...st, logs: capTail([...st.logs, ev.log], LOG_CAP) };
     }
     case "radar": {
-      // Merge by pair; the selectors drop pairs whose vessels left the chart.
+      // Merge by pair; the selectors drop pairs whose work is no longer active.
       const map = new Map<string, RadarPair>(st.radar.map((p) => [pairKey(p), p]));
       for (const p of ev.pairs) map.set(pairKey(p), p);
       return { ...st, radar: [...map.values()] };
@@ -133,8 +136,8 @@ export function reduce(st: ProjectState, ev: GitringEvent): ProjectState {
       };
     case "stats":
       return { ...st, stats: ev.stats };
-    case "sim":
-      return { ...st, sim: ev.sim };
+    case "github":
+      return { ...st, project: { ...st.project, github: ev.github } };
     default:
       return st;
   }
@@ -196,6 +199,9 @@ export const store = {
   },
   setProjects(projects: ProjectInfo[]) {
     set({ projects });
+  },
+  setAccountReady() {
+    set({ accountReady: true });
   },
   setAccess(access: Role | null) {
     set({ access });

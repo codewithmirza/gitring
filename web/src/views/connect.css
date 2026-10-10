@@ -38,6 +38,11 @@
 .cx__code { display: grid; gap: var(--s-3); min-width: 0; align-content: start; }
 .cx__panel { display: grid; gap: var(--s-3); padding-top: var(--s-3); }
 .cx__step { font-size: var(--t-sm); color: var(--ink-2); }
+.cx__steps { display: grid; gap: var(--s-2); margin: 0; padding-left: 20px; max-width: 52ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.cx__events { display: grid; gap: var(--s-1); margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.cx__events .code-inline { margin-right: var(--s-1); }
+.cx__links { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.cx__text strong { font-weight: 600; color: var(--ink-1); }
 .tools { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-3); }
 .tools li { display: grid; grid-template-columns: 200px 1fr; gap: var(--s-4); padding: var(--s-2) var(--s-4); font-size: var(--t-xs); border-top: 1px solid var(--line); }
 .tools li:first-child { border-top: 0; }

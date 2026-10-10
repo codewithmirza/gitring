@@ -28,6 +28,8 @@
 .pj-card__meta { font-size: var(--t-xs); color: var(--ink-3); }
 
 .np { display: grid; gap: var(--s-4); }
+/* Segmented controls keep their own width inside the grid of a dialog or a settings section. */
+.np > .b-seg, .st-sec > .b-seg { justify-self: start; max-width: 100%; }
 .np__help { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); margin: 0; max-width: 64ch; }
 .np__folder { font: inherit; font-size: var(--t-sm); color: var(--ink-2); }
 .np__error { display: flex; align-items: center; gap: var(--s-2); color: var(--danger); font-size: var(--t-sm); margin: 0; }
@@ -40,6 +42,20 @@
 .st-members__name { font-weight: 500; }
 .st-members__handle, .st-members__role { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
 .st-danger { border-top-color: color-mix(in oklch, var(--danger) 40%, var(--line)); }
+.st-note { margin-top: var(--s-3); font-size: var(--t-sm); color: var(--ink-3); }
+.st-error { display: flex; align-items: baseline; gap: var(--s-2); margin: 0; color: var(--danger); font-size: var(--t-sm); line-height: var(--lh-sm); }
+.st-error .b-icon { flex: none; transform: translateY(1px); }
+.st-checks { display: grid; gap: var(--s-2); justify-items: start; }
+.st-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.st-sync { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); }
+.st-sync__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.st-sync__msg { font-size: var(--t-sm); color: var(--ink-1); }
+.st-sync__links { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-5); margin: 0; font-size: var(--t-sm); }
+.st-hooks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
+.st-hook { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); }
+.st-hook__events { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-5); margin: 0; padding: 0; border: 0; min-width: 0; }
+.st-hook__events legend { float: left; margin-right: var(--s-4); padding: 0; }
+.st-hook__events:disabled .b-check { cursor: default; }
 
 .keys { display: grid; gap: var(--s-4); }
 .keys__new { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); }

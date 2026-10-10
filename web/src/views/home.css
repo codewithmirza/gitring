@@ -1,0 +1,115 @@
+/* Start page. Type sizes here: 11, 13, 15, 20, 44 (28 on phones). */
+
+.home {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--s-11) var(--s-8) var(--s-10);
+}
+.home--wait { padding-top: var(--s-10); }
+
+.home__hero { display: grid; gap: var(--s-5); justify-items: start; }
+.home__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.home__title {
+  max-width: 17ch;
+  font-size: var(--t-2xl);
+  line-height: var(--lh-2xl);
+  font-weight: 600;
+  letter-spacing: -.012em;
+  color: var(--ink-1);
+  text-wrap: balance;
+}
+.home__lede {
+  max-width: 58ch;
+  font-size: var(--t-lg);
+  line-height: var(--lh-lg);
+  color: var(--ink-2);
+}
+.home__actions { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-2); }
+
+.home__figure {
+  width: 100%;
+  margin: var(--s-6) 0 0;
+  padding: var(--s-6) var(--s-6) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface-1);
+}
+.home__art { display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; }
+.home__lane { fill: none; stroke: var(--vc); stroke-width: 2; stroke-linecap: round; }
+.home__main { stroke: var(--ink-2); stroke-width: 2; stroke-linecap: round; }
+.home__dot { fill: var(--surface-1); stroke: var(--vc); stroke-width: 2; }
+.home__dot--main { fill: var(--ink-2); stroke: none; }
+.home__merge { fill: var(--surface-1); stroke: var(--clear); stroke-width: 2; }
+.home__check { fill: none; stroke: var(--clear); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.home__marker { fill: var(--magenta); }
+.home__artlabel { font-family: var(--font-agent); font-size: 11px; fill: var(--ink-3); }
+.home__artlabel--cr { fill: var(--magenta); }
+.home__artlabel--ok { fill: var(--clear); }
+
+.home__sec {
+  display: grid;
+  gap: var(--s-4);
+  margin-top: var(--s-10);
+  padding-top: var(--s-7);
+  border-top: 1px solid var(--line);
+}
+.home__h2 { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; color: var(--ink-1); }
+.home__h3 { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 600; color: var(--ink-1); }
+.home__text { max-width: 64ch; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); }
+.home__step .home__text { margin-top: var(--s-1); font-size: var(--t-sm); line-height: var(--lh-sm); }
+
+.home__steps {
+  list-style: none;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-7) var(--s-8);
+}
+.home__step { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--s-4); align-items: start; }
+.home__num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+.home__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3) var(--s-6);
+  margin-top: var(--s-10);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line);
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+}
+.home__built { max-width: 60ch; }
+.home__links { display: flex; gap: var(--s-5); }
+
+@media (max-width: 760px) {
+  .home { padding: var(--s-8) var(--s-5) var(--s-10); }
+  .home__title { font-size: var(--t-xl); line-height: var(--lh-xl); }
+  .home__lede { font-size: var(--t-md); line-height: var(--lh-md); }
+  .home__steps { grid-template-columns: minmax(0, 1fr); }
+  .home__sec { margin-top: var(--s-8); }
+}
+/* The drawing needs room for its labels: phones show the steps without it. */
+@media (max-width: 600px) {
+  .home__figure { display: none; }
+}

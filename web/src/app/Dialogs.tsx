@@ -51,7 +51,7 @@ export function NewIntentDialog() {
   }, [newIntent]);
 
   const close = () => setUi({ newIntent: false });
-  const slug = slugify(title) || "new-intent";
+  const slug = slugify(title) || "new-task";
   const errTitle = tried && !title.trim() ? "Write a title. Use a short verb phrase." : undefined;
   const errGoal = tried && !goal.trim() ? "Write the goal in one or two sentences." : undefined;
 
@@ -65,23 +65,23 @@ export function NewIntentDialog() {
         goal: goal.trim(),
         priority,
         checks: checkCode.trim()
-          ? [{ path: checkPath.trim() || `tests/${slug}.test.js`, content: checkCode, description: `Checks for “${title.trim()}”.` }]
+          ? [{ path: checkPath.trim() || `tests/${slug}.test.js`, content: checkCode, description: `Tests for “${title.trim()}”.` }]
           : undefined,
       });
       if (launch) await harbor().launch(intent.id, fanout, models.length ? models : undefined);
       toast({
         tone: "info",
-        title: launch ? "Intent open. Attempts launched." : "Intent open",
-        text: launch ? `${fanout} ${fanout === 1 ? "attempt" : "attempts"} for “${intent.title}”.` : `Launch attempts for “${intent.title}” when you are ready.`,
+        title: launch ? "Task open. Agents start." : "Task open",
+        text: launch ? `${fanout} ${fanout === 1 ? "agent" : "agents"} for “${intent.title}”.` : `Start agents for “${intent.title}” when you are ready.`,
       });
       setTitle("");
       setGoal("");
       setCheckCode("");
       setCheckPath("");
       close();
-      navigate(`/intents/${intent.id}`);
+      navigate(`/tasks/${intent.id}`);
     } catch (e) {
-      toast({ tone: "danger", title: "The intent was not created", text: (e as Error).message });
+      toast({ tone: "danger", title: "The task was not created", text: (e as Error).message });
     } finally {
       setBusy(null);
     }
@@ -92,21 +92,21 @@ export function NewIntentDialog() {
       open={newIntent}
       onClose={close}
       size="lg"
-      title="New intent"
-      description="Write the goal. Add checks that prove it. Then launch attempts."
+      title="New task"
+      description="Write the goal. Add tests that prove it. Then start agents."
       footer={
         <>
           <span className="b-dialog__note">
-            <Kbd>Esc</Kbd> closes. Nothing is saved until you create the intent.
+            <Kbd>Esc</Kbd> closes. Nothing is saved until you create the task.
           </span>
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
           <Button busy={busy === "create"} onClick={() => submit(false)}>
-            Create intent
+            Create task
           </Button>
           <Button variant="primary" icon="launch" busy={busy === "launch"} onClick={() => submit(true)}>
-            Create and launch
+            Create and start agents
           </Button>
         </>
       }
@@ -138,7 +138,7 @@ export function NewIntentDialog() {
           />
         </Field>
         <div className="newintent__row">
-          <Field label="Check file" optional help="gitring writes this test into every attempt and runs it.">
+          <Field label="Test file" optional help="gitring adds this test to each work copy and runs it.">
             <Input className="voice-agent" value={checkPath} onChange={(e) => setCheckPath(e.target.value)} placeholder={`tests/${slug}.test.js`} spellCheck={false} />
           </Field>
           <div className="b-field">
@@ -155,22 +155,22 @@ export function NewIntentDialog() {
                 { value: "high", label: "High" },
               ]}
             />
-            <span className="b-field__help">High priority stands on (rule R5).</span>
+            <span className="b-field__help">A high-priority task continues when its work collides with other work.</span>
           </div>
         </div>
         <Field
-          label="Checks"
+          label="Test"
           optional
           help={
             container
-              ? "A test in the framework of this repository. gitring adds it to every attempt; the test command runs it with all other tests."
-              : "JavaScript with the repo test harness. Without checks, gitring runs the repo checks only."
+              ? "A test in the test framework of this repository. gitring adds it to each work copy. The test command runs it with all other tests."
+              : "JavaScript for the gitring test runner. Without a test, gitring runs only the tests of the repository."
           }
         >
           <Textarea voice="agent" rows={7} value={checkCode} onChange={(e) => setCheckCode(e.target.value)} placeholder={container ? CONTAINER_PLACEHOLDER : CHECK_PLACEHOLDER} spellCheck={false} />
         </Field>
         <fieldset className="newintent__launch">
-          <legend className="b-field__label">Launch</legend>
+          <legend className="b-field__label">Agents</legend>
           <FanoutPicker fanout={fanout} setFanout={setFanout} models={models} setModels={setModels} available={available} />
         </fieldset>
       </form>
@@ -179,17 +179,17 @@ export function NewIntentDialog() {
 }
 
 const SHORTCUTS: [string[], string][] = [
-  [["g", "c"], "Go to the chart"],
-  [["g", "i"], "Go to the intents"],
-  [["g", "l"], "Go to the logbook"],
+  [["g", "o"], "Go to the overview"],
+  [["g", "t"], "Go to the tasks"],
+  [["g", "h"], "Go to the history"],
   [["g", "k"], "Go to Connect"],
-  [["g", "s"], "Go to the simulation"],
-  [["g", "d"], "Go to the design system"],
-  [["n"], "Write a new intent"],
-  [["←", "↑", "→", "↓"], "Pan the chart (Shift: pan more)"],
-  [["+", "−"], "Zoom the chart in or out"],
-  [["0"], "Fit the chart"],
-  [["Enter"], "Open the focused vessel or buoy"],
+  // Development builds only (the design page does not exist in production).
+  ...(import.meta.env.DEV ? ([[["g", "d"], "Go to the design page"]] as [string[], string][]) : []),
+  [["n"], "Write a new task"],
+  [["←", "↑", "→", "↓"], "Move the map (Shift: move more)"],
+  [["+", "−"], "Zoom the map in or out"],
+  [["0"], "Fit the map"],
+  [["Enter"], "Open the focused agent or change request"],
   [["Esc"], "Close a dialog or clear the selection"],
   [["?"], "Show these shortcuts"],
 ];
@@ -197,7 +197,7 @@ const SHORTCUTS: [string[], string][] = [
 export function ShortcutsDialog() {
   const { shortcuts } = useUi();
   return (
-    <Dialog open={shortcuts} onClose={() => setUi({ shortcuts: false })} title="Keyboard shortcuts" description="Tab moves through the rails and the vessels." dismissOnScrim>
+    <Dialog open={shortcuts} onClose={() => setUi({ shortcuts: false })} title="Keyboard shortcuts" description="Tab moves through the lists and the agents." dismissOnScrim>
       <dl className="shortcuts">
         {SHORTCUTS.map(([keys, text]) => (
           <div key={text} className="shortcuts__row">
@@ -272,7 +272,7 @@ export function DiffDrawer() {
           Diff of <span className="voice-agent">{diff?.title}</span>
         </>
       }
-      description={res ? `${res.files.length} files · +${adds} −${dels} · against the attempt's base` : "The attempt against its base commit."}
+      description={res ? `${res.files.length} files · +${adds} −${dels} · against the base of the work copy` : "The work copy against its base commit."}
     >
       {error ? <p className="err">{error}</p> : res === null ? <ProgressRule label="Loading the diff" /> : <DiffView files={res.files} large />}
     </Dialog>

@@ -4,32 +4,32 @@ import { ProgressRule } from "./ProgressRule";
 
 interface EvidenceBarProps {
   run?: CheckRun | null;
-  /** Show this many pending segments while checks run. */
+  /** Show this many pending segments while tests run. */
   pending?: number;
-  /** "Alone" or "Composed with main". */
+  /** "Alone" or "Combined with main". */
   label?: string;
   showFailures?: boolean;
   checking?: boolean;
 }
 
 /**
- * EvidenceBar: one segment per check case (pass = solid clear, fail = hatched danger)
+ * EvidenceBar: one segment per test (pass = solid clear, fail = hatched danger)
  * plus "7/7 pass". role="img" with a text alternative.
  */
 export function EvidenceBar({ run, pending = 0, label, showFailures = true, checking }: EvidenceBarProps) {
   if (!run) {
     const n = Math.max(pending, 1);
     return (
-      <div className="b-evidence" role="img" aria-label={checking ? "Checks run now." : "No check results yet."}>
+      <div className="b-evidence" role="img" aria-label={checking ? "Tests run now." : "No test results yet."}>
         <div className="b-evidence__bar" aria-hidden="true">
           {Array.from({ length: n }, (_, i) => (
             <span key={i} className="b-evidence__seg is-pending" />
           ))}
         </div>
-        {checking && <ProgressRule label="Checks run" />}
+        {checking && <ProgressRule label="Tests run" />}
         <div className="b-evidence__label">
           {label && <span>{label}</span>}
-          <span className="b-evidence__count">{checking ? "Checks run…" : "No results yet"}</span>
+          <span className="b-evidence__count">{checking ? "Tests run…" : "No results yet"}</span>
         </div>
       </div>
     );
@@ -37,9 +37,9 @@ export function EvidenceBar({ run, pending = 0, label, showFailures = true, chec
   const total = run.passed + run.failed;
   const fails = run.cases.filter((c) => !c.ok);
   const alt =
-    `${label ? label + ": " : ""}${total} checks: ${run.passed} pass` +
+    `${label ? label + ": " : ""}${total} tests: ${run.passed} pass` +
     (fails.length ? `, ${fails.length} fail: ${fails.map((f) => f.name).join("; ")}` : "") +
-    (run.error ? `. Runner error: ${run.error}` : "");
+    (run.error ? `. Test runner error: ${run.error}` : "");
   const cases = run.cases.length ? run.cases : Array.from({ length: total }, (_, i) => ({ ok: i < run.passed, name: "", file: "", ms: 0 }));
   return (
     <div className="b-evidence">

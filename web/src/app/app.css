@@ -336,7 +336,7 @@
 .vdetail__plan { display: grid; gap: 2px; margin: 0; padding-left: 18px; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .vdetail__files { display: flex; flex-wrap: wrap; gap: var(--s-1); margin: 0; padding: 0; list-style: none; }
 .vdetail__ranges { margin: 0; padding: 0 var(--s-5); list-style: none; display: grid; gap: 4px; font-size: var(--t-xs); }
-.vdetail__ranges li { display: flex; align-items: center; gap: var(--s-3); }
+.vdetail__ranges li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s-3); }
 .vdetail__corrs { gap: var(--s-3); }
 .vdetail__log { padding: 0 0 var(--s-2); }
 .vdetail__log .b-logline { grid-template-columns: 58px 14px minmax(0, 1fr); padding: 1px var(--s-4) 1px var(--s-5); }

@@ -1,6 +1,6 @@
 /**
- * The chart: gitring's home. A nautical chart of the repo with every vessel (agent),
- * its course, wake, range to others and every correction (buoy).
+ * The overview map: a map of the repository with every active agent, its plan, the files it
+ * touched, its distance to other work and every change request (marker).
  *
  * Geometry lives in world units; strokes are non-scaling hairlines; glyphs and labels
  * keep a constant screen size. Layers are memoized so an event re-renders only what moved.
@@ -12,7 +12,7 @@ import { selectBuoys, selectRangeLines, selectVessels, type BuoyModel, type Rang
 import { anchorOf, islandOf, layoutChart, type ChartLayout, type Parcel } from "./layout";
 import { usePanZoom, type Transform } from "./panzoom";
 import { HULL_PATHS, type HullName } from "../design/icons";
-import { ATTEMPT_STATUS_TEXT, kb, RANGE_TEXT, shortSha } from "../state/format";
+import { ATTEMPT_STATUS_TEXT, CORRECTION_KIND_SHORT, CORRECTION_KIND_TEXT, kb, RANGE_TEXT, shortSha } from "../state/format";
 import { Button, EmptyState, IconButton } from "../design/components";
 import { openNewIntent } from "../app/ui";
 import { useCanAct } from "../state/account";
@@ -522,7 +522,7 @@ const Buoys = memo(function Buoys({
         perFile.set(b.file, n + 1);
         const bx = p ? p.x1 - 9 / k - n * (16 / k) : a.x;
         const by = p ? p.y0 + 10 / k : a.y;
-        const rule = b.correction.rule === "human" ? "H" : b.correction.rule.slice(0, 2);
+        const kind = CORRECTION_KIND_SHORT[b.correction.kind];
         const dim = Boolean(selected && b.attemptId !== selected);
         const done = b.correction.status === "acknowledged";
         return (
@@ -532,7 +532,7 @@ const Buoys = memo(function Buoys({
             transform={`translate(${bx} ${by}) scale(${1 / k})`}
             role="button"
             tabIndex={0}
-            aria-label={`Correction ${b.id} for ${b.callsign} at ${b.file}: ${b.correction.kind}, rule ${rule}${b.fromCallsign ? `, ${b.fromCallsign} stands on` : ""}. Open the correction.`}
+            aria-label={`Change request ${b.id} for ${b.callsign} in ${b.file}: ${CORRECTION_KIND_TEXT[b.correction.kind]}${b.fromCallsign ? `, ${b.fromCallsign} continues` : ""}. Open the change request.`}
             onClick={(e) => {
               e.stopPropagation();
               onBuoy(b.id, b.attemptId);
@@ -547,9 +547,10 @@ const Buoys = memo(function Buoys({
           >
             <circle className="c-buoy__hit" r={11} />
             <path className="c-buoy__mark" d="M0 -7 L7 0 L0 7 L-7 0 Z" />
-            {(totals.get(b.file) ?? 0) <= 2 && (
+            {/* A word label fits next to a single marker; two or more markers on one file show no labels. */}
+            {(totals.get(b.file) ?? 0) === 1 && (
               <text className="c-buoy__label" x={10} y={-6}>
-                {rule}
+                {kind}
               </text>
             )}
           </g>
@@ -623,9 +624,9 @@ const VesselLayer = memo(function VesselLayer({
         const p = placements.get(v.attemptId);
         if (!p) return null;
         const near = v.ranges.find((r) => r.range <= 2);
-        const label = `${v.callsign}, ${v.model}. ${ATTEMPT_STATUS_TEXT[v.status]}${v.file ? ` in ${v.file}` : ", offshore"}. Intent: ${v.intentTitle}.${
-          near ? ` Range R${near.range} ${RANGE_TEXT[near.range as Range]}${near.closing ? ", closing" : ""}.` : ""
-        }${v.corrections.length ? ` ${v.corrections.length} ${v.corrections.length === 1 ? "correction" : "corrections"}.` : ""}`;
+        const label = `${v.callsign}, ${v.model}. ${ATTEMPT_STATUS_TEXT[v.status]}${v.file ? ` in ${v.file}` : ", no file changed yet"}. Task: ${v.intentTitle}.${
+          near ? ` Distance ${near.range}: ${RANGE_TEXT[near.range as Range]}${near.closing ? ", moving closer" : ""}.` : ""
+        }${v.corrections.length ? ` ${v.corrections.length} ${v.corrections.length === 1 ? "change request" : "change requests"}.` : ""}`;
         return (
           <Vessel
             key={v.attemptId}
@@ -661,7 +662,7 @@ export interface ChartProps {
   onSelect: (attemptId: string | null) => void;
   onBuoy: (correctionId: string, attemptId: string) => void;
   onParcel?: (path: string) => void;
-  /** Bring this attempt into view (changes when the Traffic list selects a vessel). */
+  /** Bring this work copy into view (changes when the Active work list selects an agent). */
   focusRequest?: { id: string; n: number } | null;
   projectName: string;
 }
@@ -783,9 +784,9 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
   }, [vessels]);
 
   const corrections = buoys.length;
-  const summary = `Chart of ${projectName}. ${vessels.length} ${vessels.length === 1 ? "vessel" : "vessels"} at sea, ${rangeLines.length} close ${
+  const summary = `Map of ${projectName}. ${vessels.length} ${vessels.length === 1 ? "agent works" : "agents work"}, ${rangeLines.length} close ${
     rangeLines.length === 1 ? "pair" : "pairs"
-  }, ${corrections} ${corrections === 1 ? "correction" : "corrections"}. Arrow keys pan, plus and minus zoom, 0 fits the chart. The Traffic list has the same information as text.`;
+  }, ${corrections} ${corrections === 1 ? "change request" : "change requests"}. Arrow keys move the map, plus and minus zoom, 0 fits the map. The Active work list has the same information as text.`;
 
   return (
     <div
@@ -794,7 +795,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
       tabIndex={0}
       role="region"
       aria-label={summary}
-      aria-roledescription="chart"
+      aria-roledescription="map"
       onKeyDown={onKey}
       {...handlers}
       onDoubleClick={(e) => {
@@ -873,15 +874,15 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
         <div className="c-empty">
           <EmptyState
             art={false}
-            text={canAct ? "No vessels at sea. Open an intent and launch attempts, or launch agents on every open intent." : "No vessels at sea now. Members launch agents on this project."}
+            text={canAct ? "No agents work now. Write a task and start agents, or start agents on all open tasks." : "No agents work now. Members start agents on this project."}
             action={
               canAct ? (
                 <div className="c-empty__actions">
                   <Button variant="primary" icon="plus" onClick={openNewIntent}>
-                    New intent
+                    New task
                   </Button>
                   <Button icon="play" onClick={() => void launchAllNow()}>
-                    Launch all
+                    Start agents
                   </Button>
                 </div>
               ) : undefined
@@ -893,7 +894,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
       <div className="c-overlay c-zoom" role="group" aria-label="Zoom">
         <IconButton icon="plus" label="Zoom in" shortcut="+" variant="secondary" onClick={() => zoomAt(1.25)} />
         <IconButton icon="minus" label="Zoom out" shortcut="−" variant="secondary" onClick={() => zoomAt(0.8)} />
-        <IconButton icon="fit" label="Fit the chart" shortcut="0" variant="secondary" onClick={fit} />
+        <IconButton icon="fit" label="Fit the map" shortcut="0" variant="secondary" onClick={fit} />
       </div>
     </div>
   );

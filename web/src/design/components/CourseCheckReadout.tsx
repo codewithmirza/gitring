@@ -1,17 +1,17 @@
 import type { CourseCheck, PolicyThresholds } from "../../../../src/core/types";
 import { DEFAULT_THRESHOLDS, INTERFERENCE_LEVELS } from "../../../../src/core/types";
-import { prob, ruleLabel, RANGE_TEXT } from "../../state/format";
+import { checkSourceText, prob, ruleLabel, RANGE_TEXT, TRIGGER_TEXT } from "../../state/format";
 import { assessmentFor, factsFor } from "../../state/selectors";
 import { Icon } from "../icons";
 
 interface ReadoutProps {
   check: CourseCheck;
-  /** The other vessel of the pair to show (defaults to the first assessment). */
+  /** The other work copy of the pair to show (defaults to the first assessment). */
   otherAttemptId?: string;
   thresholds?: PolicyThresholds;
-  /** Callsign for an attempt id. */
+  /** Agent name for a work copy id. */
   nameOf: (attemptId: string) => string;
-  /** Callsign of the vessel that ran the check (the incoming vessel). */
+  /** Name of the agent whose plan was checked. */
   incoming: string;
 }
 
@@ -34,8 +34,8 @@ function Bar({ value, max = 1, threshold, label, text }: { value: number; max?: 
 }
 
 /**
- * CourseCheckReadout: Clef probabilities as bars with the policy threshold marked,
- * the give-way choice and the rule of the road. Every number shows its source.
+ * CourseCheckReadout: the conflict check as bars with the policy threshold marked,
+ * the agent that adapts and the rule. Every number shows its source.
  */
 export function CourseCheckReadout({ check, otherAttemptId, thresholds = DEFAULT_THRESHOLDS, nameOf, incoming }: ReadoutProps) {
   const a = assessmentFor(check, otherAttemptId);
@@ -46,8 +46,8 @@ export function CourseCheckReadout({ check, otherAttemptId, thresholds = DEFAULT
   return (
     <div className="b-readout">
       <div className="b-readout__src">
-        <span className="b-readout__tag" title="Decision source">
-          {check.source}
+        <span className="b-readout__tag" title="Who decided">
+          {checkSourceText(check.source)}
         </span>
         <span className="voice-agent">{check.latencyMs} ms</span>
         <span>·</span>
@@ -55,39 +55,39 @@ export function CourseCheckReadout({ check, otherAttemptId, thresholds = DEFAULT
           confidence <span className="voice-agent ink-1">{prob(check.confidence)}</span>
         </span>
         <span>·</span>
-        <span>trigger {check.trigger}</span>
+        <span>after {TRIGGER_TEXT[check.trigger] ?? check.trigger}</span>
         {raw?.escalatedFrom && (
           <span className="ink-2">
-            · escalated from {raw.escalatedFrom.source} (confidence <span className="voice-agent">{prob(raw.escalatedFrom.confidence)}</span> &lt;{" "}
-            <span className="voice-agent">{prob(thresholds.minConfidence)}</span>)
+            · asked again: the {checkSourceText(raw.escalatedFrom.source)} was not sure (confidence{" "}
+            <span className="voice-agent">{prob(raw.escalatedFrom.confidence)}</span> &lt; <span className="voice-agent">{prob(thresholds.minConfidence)}</span>)
           </span>
         )}
       </div>
       {!a ? (
-        <p className="ink-2">No vessels in range. gitring cleared the course without a model call.</p>
+        <p className="ink-2">No other work is near. gitring passed the plan without a model call.</p>
       ) : (
         <>
           <div className="b-readout__grid">
-            <Bar label="P(collision)" value={a.collision} threshold={thresholds.collision} />
-            <Bar label="Interference" value={a.interference} max={4} threshold={thresholds.interference} text={level} />
-            <Bar label="P(duplicate)" value={a.duplicate} threshold={thresholds.duplicate} />
+            <Bar label="Chance of conflict" value={a.collision} threshold={thresholds.collision} />
+            <Bar label="Overlap" value={a.interference} max={4} threshold={thresholds.interference} text={level} />
+            <Bar label="Chance of duplicate" value={a.duplicate} threshold={thresholds.duplicate} />
           </div>
           <div className="b-readout__giveway">
             <Icon name="compass" size={12} />
             <span>
-              Give way: <span className="voice-agent ink-1">{giveWayName}</span> (
+              Adapts: <span className="voice-agent ink-1">{giveWayName}</span> (
               <span className="voice-agent">{prob(a.giveWayConfidence)}</span>) · {ruleLabel(a.rule)}
             </span>
           </div>
           {f && (
             <div className="b-readout__facts">
               <span>
-                R{f.range} {RANGE_TEXT[f.range]}
-                {f.previousRange !== undefined && f.previousRange !== f.range ? ` (was R${f.previousRange})` : ""}
-                {f.closing ? " · closing" : ""}
+                Distance {f.range}: {RANGE_TEXT[f.range]}
+                {f.previousRange !== undefined && f.previousRange !== f.range ? ` (was ${f.previousRange})` : ""}
+                {f.closing ? " · moving closer" : ""}
               </span>
               {f.sharedFiles.length > 0 && <span>files {f.sharedFiles.join(", ")}</span>}
-              {f.sharedSymbols.length > 0 && <span>symbols {f.sharedSymbols.map((s) => s.split("#")[1]).join(", ")}</span>}
+              {f.sharedSymbols.length > 0 && <span>functions {f.sharedSymbols.map((s) => s.split("#")[1]).join(", ")}</span>}
               {[...new Set(f.interfaceHits.map((h) => h.symbol))].map((sym) => (
                 <span key={sym}>interface {sym.split("#")[1]}</span>
               ))}

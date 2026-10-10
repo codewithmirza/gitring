@@ -13,12 +13,12 @@ import { useCanAct } from "../state/account";
 const EMPTY_GROUPS: IntentGroup[] = [];
 const EMPTY_ATTEMPTS: Attempt[] = [];
 
-/** Lane ticks: one tick per attempt, in the vessel's identity color; shape shows the status. */
+/** Lane ticks: one tick per work copy, in the agent's identity color; shape shows the status. */
 export function LaneTicks({ attempts, agents }: { attempts: Attempt[]; agents: Map<string, AgentInfo> }) {
   if (!attempts.length) return null;
   const summary = attempts.map((a) => `${agents.get(a.agentId)?.callsign ?? a.agentId} ${ATTEMPT_STATUS_TEXT[a.status].toLowerCase()}`).join(", ");
   return (
-    <span className="ticks" role="img" aria-label={`${attempts.length} ${attempts.length === 1 ? "attempt" : "attempts"}: ${summary}`}>
+    <span className="ticks" role="img" aria-label={`${attempts.length} ${attempts.length === 1 ? "work copy" : "work copies"}: ${summary}`}>
       {attempts.map((a) => {
         const g = agents.get(a.agentId);
         const kind =
@@ -49,16 +49,18 @@ function intentMeta(i: Intent, attempts: Attempt[]): string {
   const ready = attempts.filter((a) => a.status === "ready").length;
   switch (i.status) {
     case "judging":
-      return `${ready} ready · pick one`;
+      return `${ready} ready · choose one`;
     case "landed":
-      return `Landed ${shortSha(i.landedSha)}${attempts.length > 1 ? ` · ${attempts.length - 1} alternate${attempts.length > 2 ? "s" : ""}` : ""}`;
+      return `Merged ${shortSha(i.landedSha)}${attempts.length > 1 ? ` · ${attempts.length - 1} ${attempts.length > 2 ? "alternatives" : "alternative"}` : ""}`;
     case "parked":
-      return "Parked";
+      return "Paused";
+    case "merged-into":
+      return "Duplicate of another task";
     case "open":
     case "draft":
-      return attempts.length ? `${attempts.length} attempts` : "No attempts yet";
+      return attempts.length ? `${attempts.length} ${attempts.length === 1 ? "work copy" : "work copies"}` : "No work copies yet";
     default:
-      return `${active.length} ${active.length === 1 ? "attempt" : "attempts"} underway${ready ? ` · ${ready} ready` : ""}`;
+      return `${active.length} ${active.length === 1 ? "agent works" : "agents work"}${ready ? ` · ${ready} ready` : ""}`;
   }
 }
 
@@ -75,10 +77,10 @@ const IntentRow = memo(function IntentRow({
 }) {
   return (
     <li className={["irow", selected && "is-selected", intent.status === "judging" && "is-judging"].filter(Boolean).join(" ")}>
-      <Link to={`/intents/${intent.id}`} className="irow__main b-row" aria-current={selected ? "page" : undefined}>
+      <Link to={`/tasks/${intent.id}`} className="irow__main b-row" aria-current={selected ? "page" : undefined}>
         <span className="irow__title voice-human">
           {intent.priority === "high" && (
-            <span className="irow__prio" title="High priority (R5)">
+            <span className="irow__prio" title="High priority">
               <Icon name="chevron-up" size={12} />
               <span className="vh">High priority.</span>
             </span>
@@ -95,7 +97,7 @@ const IntentRow = memo(function IntentRow({
       </Link>
       {(intent.status === "open" || intent.status === "draft") && (
         <span className="irow__action">
-          <LaunchButton intent={intent} />
+          <LaunchButton intent={intent} label="Start" />
         </span>
       )}
     </li>
@@ -110,23 +112,23 @@ export function IntentsRail({ selectedId }: { selectedId?: string }) {
   const canAct = useCanAct();
   return (
     <Panel
-      title="Intents"
+      title="Tasks"
       count={total}
       headingId="intents-rail-title"
       className="rail rail--intents"
       action={
         canAct ? (
-          <Button size="sm" variant="ghost" icon="plus" onClick={openNewIntent} title="New intent (N)">
-            New intent
+          <Button size="sm" variant="ghost" icon="plus" onClick={openNewIntent} title="New task (N)">
+            New task
           </Button>
         ) : undefined
       }
     >
       {total === 0 ? (
         canAct ? (
-          <EmptyState text="No intents yet. Write the goal and the checks for your first intent." action={<Button variant="primary" icon="plus" onClick={openNewIntent}>New intent</Button>} />
+          <EmptyState text="No tasks yet. Write the goal and the tests for your first task." action={<Button variant="primary" icon="plus" onClick={openNewIntent}>New task</Button>} />
         ) : (
-          <EmptyState text="No intents yet. Members open intents here." />
+          <EmptyState text="No tasks yet. Members open tasks here." />
         )
       ) : (
         groups.map((g) => (

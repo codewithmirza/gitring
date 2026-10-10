@@ -23,20 +23,20 @@ const KIND_ICON: Record<LogKind, IconName> = {
 };
 
 const KIND_TEXT: Record<LogKind, string> = {
-  declare: "declare",
+  declare: "plan",
   log: "log",
   write: "write",
   push: "push",
-  check: "check",
-  correction: "correction",
+  check: "tests",
+  correction: "change request",
   ack: "acknowledge",
   submit: "submit",
-  land: "landing",
-  stale: "stale",
-  rederive: "re-derive",
-  replot: "re-plot",
+  land: "merge",
+  stale: "out of date",
+  rederive: "redo",
+  replot: "rebase",
   decision: "decision",
-  intent: "intent",
+  intent: "task",
   system: "system",
 };
 
@@ -45,7 +45,7 @@ interface LogLineProps {
   agent?: AgentInfo;
 }
 
-/** LogLine: radio log row — time (mono), callsign, kind icon, message. */
+/** LogLine: activity row — time (mono), agent name, kind icon, message. */
 export const LogLine = memo(function LogLine({ log, agent }: LogLineProps) {
   const fail = log.kind === "check" && /^Checks fail/.test(log.message);
   const cls = [

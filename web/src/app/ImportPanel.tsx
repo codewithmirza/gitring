@@ -1,5 +1,5 @@
 /**
- * Shown on the chart while main is empty: an import in progress, an import error, or a push project
+ * Shown on the overview while main is empty: an import in progress, an import error, or a push project
  * that waits for its first `git push` (with the commands and a one-day token for the owner).
  */
 import { useState } from "react";
@@ -14,13 +14,13 @@ export function ImportPanel() {
   const [push, setPush] = useState<{ remote: string; token: string; expiresAt: string } | null>(null);
   const [busy, setBusy] = useState<"token" | "check" | null>(null);
 
-  if (!importing) return <EmptyState art={false} text="Main has no text files yet. Open an intent and let agents write the first files." />;
+  if (!importing) return <EmptyState art={false} text="Main has no text files yet. Write a task, then let agents write the first files." />;
   if (importing.error) return <EmptyState art={false} text={`The import failed. ${importing.error}`} />;
   if (!importing.push) {
     return (
       <EmptyState
         art={false}
-        text={`Cloudflare Artifacts imports ${importing.url.replace(/^https:\/\//, "")}. The chart fills when the import is done. A large repository takes some minutes.`}
+        text={`Cloudflare Artifacts imports ${importing.url.replace(/^https:\/\//, "")}. The overview fills when the import is done. A large repository takes some minutes.`}
       />
     );
   }
@@ -41,7 +41,7 @@ export function ImportPanel() {
       const r = await checkImport(projectId);
       if (r.importing) toast({ tone: "info", title: "No push yet", text: "gitring looks again every few minutes." });
     } catch (e) {
-      toast({ tone: "danger", title: "The check failed", text: (e as Error).message });
+      toast({ tone: "danger", title: "gitring could not look for the push", text: (e as Error).message });
     } finally {
       setBusy(null);
     }

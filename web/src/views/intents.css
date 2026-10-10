@@ -1,4 +1,4 @@
-/* Intent view: living spec + compare lanes. Type sizes here: 11, 13, 15, 28. */
+/* Task view: spec + compare lanes. Type sizes here: 11, 13, 15, 28. */
 
 .intents-view {
   display: grid;
@@ -96,7 +96,7 @@
 }
 .checklist__cases li::before { content: "· "; }
 
-/* living spec timeline */
+/* spec timeline */
 .spec { min-width: 0; }
 .spec__title { display: flex; align-items: baseline; gap: var(--s-2); font-size: var(--t-sm); font-weight: 500; }
 .timeline { position: relative; display: grid; gap: var(--s-4); margin: var(--s-4) 0 0; padding: 0 0 0 var(--s-5); list-style: none; }
@@ -146,6 +146,10 @@
   min-width: min-content;
 }
 .lanes[style*="--n: 1"] { grid-template-columns: minmax(320px, 720px); width: fit-content; max-width: 100%; }
+/* Without a live preview each lane has one section less. */
+.lanes--nopreview { grid-template-rows: repeat(6, auto); }
+.lanes--nopreview .lane { grid-row: 1 / span 6; }
+.compare__note { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 .lane {
   position: relative;
   grid-row: 1 / span 7;

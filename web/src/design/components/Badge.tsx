@@ -56,7 +56,7 @@ export function AttemptBadge({ status, failing }: { status: AttemptStatus; faili
   if (failing && status === "underway") {
     return (
       <Badge tone="danger" icon="cross">
-        Checks fail
+        Tests fail
       </Badge>
     );
   }

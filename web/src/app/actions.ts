@@ -2,7 +2,7 @@
 import { toast } from "../design/components";
 import { harbor } from "../state/api";
 
-/** Launch built-in AI agents on every open intent. Over the hourly AI budget, launches wait in a queue. */
+/** Start built-in AI agents on every open task. Over the hourly AI budget, new agents wait in a queue. */
 export async function launchAllNow(): Promise<boolean> {
   try {
     const r = await harbor().launchAll();
@@ -10,10 +10,10 @@ export async function launchAllNow(): Promise<boolean> {
       tone: "info",
       title: r.launched ? `${r.launched} AI ${r.launched === 1 ? "agent starts" : "agents start"}` : "No agents start now",
       text: r.queued
-        ? `${r.queued} more wait for the hourly AI budget and start by themselves. Watch the radio log.`
+        ? `${r.queued} more wait for the hourly AI budget and start by themselves. Watch the activity.`
         : r.launched
-          ? "Watch the chart. AI agents take 5 to 8 minutes."
-          : "No open intent needs an agent. Open an intent first.",
+          ? "Watch the overview. AI agents need 5 to 8 minutes."
+          : "No open task needs an agent. Write a task first.",
     });
     return true;
   } catch (e) {

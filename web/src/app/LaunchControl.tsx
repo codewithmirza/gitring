@@ -25,13 +25,13 @@ export function FanoutPicker({
     <div className="launch">
       <div className="launch__row">
         <span className="launch__label" id="fanout-label">
-          Fan-out
+          Agents
         </span>
         <Segmented
-          label="Fan-out: number of parallel attempts"
+          label="Number of agents that work in parallel"
           value={String(fanout) as (typeof FANOUT)[number]}
           onChange={(v) => setFanout(Number(v))}
-          options={FANOUT.map((v) => ({ value: v, label: v, ariaLabel: `${v} ${v === "1" ? "attempt" : "attempts"}` }))}
+          options={FANOUT.map((v) => ({ value: v, label: v, ariaLabel: `${v} ${v === "1" ? "agent" : "agents"}` }))}
         />
       </div>
       <fieldset className="launch__models">
@@ -47,15 +47,26 @@ export function FanoutPicker({
       </fieldset>
       <p className="launch__help">
         {fanout === 1
-          ? "One attempt. gitring lands it when its checks pass."
-          : `${fanout} attempts in parallel, each in its own fork. Compare them, then land one.`}
+          ? "One agent. gitring merges its work when the tests pass."
+          : `${fanout} agents work in parallel, each in its own work copy. Compare the results, then merge one.`}
       </p>
     </div>
   );
 }
 
-/** "Launch" control for an intent: fan-out 1–4 and the models. */
-export function LaunchButton({ intent, size = "sm", variant = "secondary" }: { intent: Intent; size?: "sm" | "md"; variant?: "secondary" | "primary" | "ghost" }) {
+/** "Start agents" control for a task: 1–4 built-in agents and their models. */
+export function LaunchButton({
+  intent,
+  size = "sm",
+  variant = "secondary",
+  label = "Start agents",
+}: {
+  intent: Intent;
+  size?: "sm" | "md";
+  variant?: "secondary" | "primary" | "ghost";
+  /** Button text. The accessible name always names the task. */
+  label?: string;
+}) {
   const available = useStore((s) => s.state?.project.settings.agentModels ?? []);
   const defaultFanout = useStore((s) => s.state?.project.settings.fanout ?? 1);
   const [open, setOpen] = useState(false);
@@ -72,12 +83,12 @@ export function LaunchButton({ intent, size = "sm", variant = "secondary" }: { i
       const res = await harbor().launch(intent.id, fanout, models.length ? models : undefined);
       toast({
         tone: "info",
-        title: `${res.attempts.length} ${res.attempts.length === 1 ? "attempt" : "attempts"} launched`,
-        text: `“${intent.title}”. Watch the course checks on the chart.`,
+        title: `${res.attempts.length} ${res.attempts.length === 1 ? "agent starts" : "agents start"}`,
+        text: `“${intent.title}”. Watch the conflict checks on the overview.`,
       });
       setOpen(false);
     } catch (e) {
-      toast({ tone: "danger", title: "The launch failed", text: (e as Error).message });
+      toast({ tone: "danger", title: "The agents did not start", text: (e as Error).message });
     } finally {
       setBusy(false);
     }
@@ -94,22 +105,23 @@ export function LaunchButton({ intent, size = "sm", variant = "secondary" }: { i
         disabled={closed}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={`Start agents for ${intent.title}`}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(!open);
         }}
-        title={closed ? "This intent is closed." : undefined}
+        title={closed ? "This task is closed." : undefined}
       >
-        Launch
+        {label}
       </Button>
-      <Popover anchor={anchor.current} open={open} onClose={() => setOpen(false)} label={`Launch attempts for ${intent.title}`} align="end">
+      <Popover anchor={anchor.current} open={open} onClose={() => setOpen(false)} label={`Start agents for ${intent.title}`} align="end">
         <div className="launch__pop">
           <p className="launch__title">
-            Launch attempts for <span className="voice-human">{intent.title}</span>
+            Start agents for <span className="voice-human">{intent.title}</span>
           </p>
           <FanoutPicker fanout={fanout} setFanout={setFanout} models={models} setModels={setModels} available={available} />
           <Button variant="primary" icon="launch" block busy={busy} onClick={launch}>
-            {fanout === 1 ? "Launch 1 attempt" : `Launch ${fanout} attempts`}
+            {fanout === 1 ? "Start 1 agent" : `Start ${fanout} agents`}
           </Button>
         </div>
       </Popover>

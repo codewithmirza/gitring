@@ -15,7 +15,7 @@ import { Icon, type IconName } from "../design/icons";
 import { Link } from "../app/router";
 import { useNow } from "../app/useNow";
 import { harbor, type LandingDetail } from "../state/api";
-import { ago, clock, int, modelShort, plural, prob, shortSha } from "../state/format";
+import { ago, checkSourceText, clock, int, METHOD_TEXT, modelShort, plural, prob, shortSha, TRIGGER_TEXT, VERDICT_TEXT } from "../state/format";
 import { useStore } from "../state/store";
 import { byId, indexes, selectLogbook, type LogbookRow } from "../state/selectors";
 import "./logbook.css";
@@ -27,13 +27,13 @@ function Row({ r, compact, selected, now }: { r: LogbookRow; compact: boolean; s
   return (
     <li>
       <Link
-        to={`/logbook/${r.landing.id}`}
+        to={`/history/${r.landing.id}`}
         className={["lrow b-row", compact && "lrow--compact"].filter(Boolean).join(" ")}
         aria-current={selected ? "page" : undefined}
-        aria-label={`${shortSha(r.landing.mainAfter)}: ${r.intent?.title ?? r.landing.intentId}. ${r.landing.method}. ${r.agent?.callsign ?? ""}. ${plural(
+        aria-label={`${shortSha(r.landing.mainAfter)}: ${r.intent?.title ?? r.landing.intentId}. ${METHOD_TEXT[r.landing.method] ?? r.landing.method}. ${r.agent?.callsign ?? ""}. ${plural(
           r.corrections,
-          "correction",
-        )}. ${r.landing.checks.passed} of ${total} checks pass. ${ago(r.landing.at, now)}.`}
+          "change request",
+        )}. ${r.landing.checks.passed} of ${total} tests pass. ${ago(r.landing.at, now)}.`}
       >
         <span className="lrow__sha voice-agent">
           <Icon name="anchor" size={12} />
@@ -47,10 +47,10 @@ function Row({ r, compact, selected, now }: { r: LogbookRow; compact: boolean; s
         <span className="lrow__corr">
           {r.corrections > 0 ? (
             <Badge tone="correction" icon="buoy">
-              {plural(r.corrections, "correction")}
+              {plural(r.corrections, "change request")}
             </Badge>
           ) : (
-            <span className="ink-3">No corrections</span>
+            <span className="ink-3">No change requests</span>
           )}
         </span>
         <span className="lrow__checks voice-agent">
@@ -63,16 +63,17 @@ function Row({ r, compact, selected, now }: { r: LogbookRow; compact: boolean; s
   );
 }
 
+/** Merge methods, in the order gitring tries them. */
 const LADDER: { method: LandingMethod; title: string; rule: string; icon: IconName }[] = [
-  { method: "fast-forward", title: "Fast-forward", rule: "main is the attempt's base", icon: "fastforward" },
+  { method: "fast-forward", title: "Fast-forward", rule: "main is the base of the work copy", icon: "fastforward" },
   { method: "merge", title: "3-way merge", rule: "the text merge is clean", icon: "merge" },
-  { method: "rederive", title: "Re-derive", rule: "regenerate from the intent on main", icon: "rederive" },
+  { method: "rederive", title: "Redo", rule: "an agent does the task again on the new main", icon: "rederive" },
 ];
 
 function Ladder({ method, baseSha, mainBefore }: { method: LandingMethod; baseSha?: string; mainBefore: string }) {
   const used = LADDER.findIndex((l) => l.method === method);
   return (
-    <ol className="ladder" aria-label="Landing ladder">
+    <ol className="ladder" aria-label="Merge methods">
       {LADDER.map((l, i) => {
         const state = i < used ? "skipped" : i === used ? "used" : "unused";
         let why = "";
@@ -80,7 +81,7 @@ function Ladder({ method, baseSha, mainBefore }: { method: LandingMethod; baseSh
           why =
             i === 0
               ? `main moved: base ${shortSha(baseSha)} ≠ main ${shortSha(mainBefore)}`
-              : "the merge conflicts or composed checks fail";
+              : "the merge has conflicts, or the tests fail on the combined code";
         } else if (state === "used") why = `used: ${l.rule}`;
         else why = "not needed";
         return (
@@ -97,48 +98,48 @@ function Ladder({ method, baseSha, mainBefore }: { method: LandingMethod; baseSh
 }
 
 function ChecksTable({ checks, names, incoming }: { checks: CourseCheck[]; names: (id: string) => string; incoming: string }) {
-  if (!checks.length) return <p className="ink-3">No course checks recorded.</p>;
+  if (!checks.length) return <p className="ink-3">No conflict checks recorded.</p>;
   return (
     <div className="ctable-wrap">
       <table className="ctable">
         <thead>
           <tr>
             <th scope="col">Time</th>
-            <th scope="col">Trigger</th>
-            <th scope="col">Verdict</th>
-            <th scope="col">Source</th>
-            <th scope="col">Latency</th>
+            <th scope="col">After</th>
+            <th scope="col">Result</th>
+            <th scope="col">Decided by</th>
+            <th scope="col">Duration</th>
             <th scope="col">Confidence</th>
-            <th scope="col">Traffic in range</th>
+            <th scope="col">Work nearby</th>
           </tr>
         </thead>
         <tbody>
           {checks.map((c) => (
             <tr key={c.id}>
               <td className="voice-agent">{clock(c.at)}</td>
-              <td>{c.trigger}</td>
+              <td>{TRIGGER_TEXT[c.trigger] ?? c.trigger}</td>
               <td>
                 {c.verdict === "clear" ? (
                   <Badge tone="clear" icon="check">
-                    Clear
+                    {VERDICT_TEXT.clear}
                   </Badge>
                 ) : c.verdict === "correct" ? (
                   <Badge tone="correction" icon="buoy">
-                    Correction
+                    {VERDICT_TEXT.correct}
                   </Badge>
                 ) : (
                   <Badge tone="caution" icon="lighthouse">
-                    {c.verdict}
+                    {VERDICT_TEXT[c.verdict] ?? c.verdict}
                   </Badge>
                 )}
               </td>
-              <td className="voice-agent">{c.source}</td>
+              <td>{checkSourceText(c.source)}</td>
               <td className="voice-agent">{c.latencyMs} ms</td>
               <td className="voice-agent">{prob(c.confidence)}</td>
               <td className="voice-agent ink-2">
                 {c.assessments.length
                   ? c.assessments.map((a) => `${names(a.otherAttemptId)} ${prob(a.collision)}`).join(" · ")
-                  : `none near ${incoming}`}
+                  : `no work near ${incoming}`}
               </td>
             </tr>
           ))}
@@ -190,9 +191,9 @@ function WhyTrail({ id }: { id: string }) {
     return (
       <div className="why">
         <h1 className="why__title" tabIndex={-1}>
-          Landing not found
+          Merge not found
         </h1>
-        <EmptyState text="This landing is not in the logbook. The demo harbor may have restarted. Wait for the next landing." action={<Link to="/logbook">Show the logbook</Link>} />
+        <EmptyState text="This merge is not in the history of this project." action={<Link to="/history">Show the history</Link>} />
       </div>
     );
   }
@@ -215,9 +216,9 @@ function WhyTrail({ id }: { id: string }) {
     <article className="why" aria-labelledby="why-title">
       <header className="why__head">
         <div className="why__crumbs">
-          <Link to="/logbook" className="backlink">
+          <Link to="/history" className="backlink">
             <Icon name="arrow-left" size={14} />
-            Logbook
+            History
           </Link>
           <MethodBadge method={landing.method} />
           <span className="voice-agent ink-2">
@@ -231,14 +232,14 @@ function WhyTrail({ id }: { id: string }) {
         <p className="why__lede">
           {agent && <Callsign callsign={agent.callsign} color={agent.color} model={agent.model} showModel />}
           <span>
-            landed it with {landing.method === "fast-forward" ? "a fast-forward" : landing.method === "merge" ? "a 3-way merge" : "a re-derive from the intent"}.{" "}
-            {landing.checks.passed}/{total} checks pass on main. Human merge fixes: 0.
+            merged it with {landing.method === "fast-forward" ? "a fast-forward" : landing.method === "merge" ? "a 3-way merge" : "a redo on the new main"}.{" "}
+            {landing.checks.passed}/{total} tests pass on main.
           </span>
         </p>
       </header>
 
       <ol className="trail">
-        <Step icon="amend" title={`Intent · v${intent?.version ?? 1}`} id="intent">
+        <Step icon="amend" title={`Task · v${intent?.version ?? 1}`} id="intent">
           <p className="voice-human why__goal">{intent?.goal.replace(/`/g, "")}</p>
           {intent && intent.constraints.length > 0 && (
             <ul className="why__constraints">
@@ -248,20 +249,20 @@ function WhyTrail({ id }: { id: string }) {
             </ul>
           )}
           <p className="why__meta">
-            Opened by {intent?.createdBy.name} · {plural(intent?.amendments.length ?? 0, "amendment")} ·{" "}
-            <Link to={`/intents/${landing.intentId}`}>Open the intent</Link>
+            Opened by {intent?.createdBy.name} · {plural(intent?.amendments.length ?? 0, "change")} to the task ·{" "}
+            <Link to={`/tasks/${landing.intentId}`}>Open the task</Link>
           </p>
         </Step>
 
-        <Step icon="compass" title="Course" id="course">
+        <Step icon="compass" title="Plan" id="course">
           {predecessor && (
             <div className="why__lineage">
               <Badge tone="caution" icon="rederive">
                 Generation {attempt?.lineage.generation}
               </Badge>
               <span>
-                Re-derived from <span className="voice-agent">{names(predecessor.id)}</span>.{" "}
-                {staleLog ? <span className="voice-agent ink-2">{staleLog.message}</span> : "The first attempt did not compose with main."}
+                Redo of <span className="voice-agent">{names(predecessor.id)}</span>.{" "}
+                {staleLog ? <span className="voice-agent ink-2">{staleLog.message}</span> : "The first work copy did not merge cleanly with main."}
               </span>
             </div>
           )}
@@ -274,16 +275,16 @@ function WhyTrail({ id }: { id: string }) {
                 ))}
               </ol>
               <p className="why__meta">
-                Declared {clock(attempt.course.declaredAt)} on base <span className="voice-agent">{shortSha(attempt.baseSha)}</span> · files{" "}
+                Plan sent at {clock(attempt.course.declaredAt)} on base <span className="voice-agent">{shortSha(attempt.baseSha)}</span> · files{" "}
                 <span className="voice-agent">{attempt.course.files.join(", ")}</span>
               </p>
             </>
           )}
         </Step>
 
-        <Step icon="buoy" title={`Corrections · ${corrections.length}`} id="corrections" tone="correction">
+        <Step icon="buoy" title={`Change requests · ${corrections.length}`} id="corrections" tone="correction">
           {corrections.length === 0 ? (
-            <p className="ink-3">No corrections. The course stayed clear of all traffic.</p>
+            <p className="ink-3">No change requests. The plan had no conflict with other work.</p>
           ) : (
             <div className="why__corrs">
               {corrections.map((c) => (
@@ -303,14 +304,14 @@ function WhyTrail({ id }: { id: string }) {
           )}
         </Step>
 
-        <Step icon="range" title={`Course checks · ${courseChecks.length}`} id="course-checks">
+        <Step icon="range" title={`Conflict checks · ${courseChecks.length}`} id="course-checks">
           <ChecksTable checks={courseChecks} names={names} incoming={agent?.callsign ?? ""} />
         </Step>
 
-        <Step icon="check" title="Checks" id="checks" tone="clear">
+        <Step icon="check" title="Tests" id="checks" tone="clear">
           <div className="why__evidence">
-            {attempt?.checks && <EvidenceBar run={attempt.checks} label="Alone, in the attempt's fork" />}
-            <EvidenceBar run={landing.checks} label="Composed with main: every landed intent's checks" />
+            {attempt?.checks && <EvidenceBar run={attempt.checks} label="Alone, in the work copy" />}
+            <EvidenceBar run={landing.checks} label="Combined with main: the tests of all merged tasks" />
           </div>
         </Step>
 
@@ -319,14 +320,14 @@ function WhyTrail({ id }: { id: string }) {
             <figure className="why__decision">
               <blockquote className="voice-human">“{decision.rationale}”</blockquote>
               <figcaption>
-                <Icon name="human" size={12} /> {decision.by.name} picked <span className="voice-agent">{names(decision.attemptIds[0])}</span>
+                <Icon name="human" size={12} /> {decision.by.name} chose <span className="voice-agent">{names(decision.attemptIds[0])}</span>
                 {decision.attemptIds.length > 1 ? ` over ${decision.attemptIds.slice(1).map(names).join(", ")}` : ""} · {ago(decision.at, now)}
               </figcaption>
             </figure>
           ) : (
             <p className="why__auto">
-              No human pick was necessary. The intent had one live attempt and its checks passed, so gitring landed it by itself
-              {siblings.length ? ` (${plural(siblings.length, "alternate")} stay visible)` : ""}.
+              No person had to choose. The task had one active work copy and its tests passed, so gitring merged it by itself
+              {siblings.length ? ` (${plural(siblings.length, "alternative")} stay visible)` : ""}.
             </p>
           )}
           <Ladder method={landing.method} baseSha={attempt?.baseSha} mainBefore={landing.mainBefore} />
@@ -348,16 +349,16 @@ function WhyTrail({ id }: { id: string }) {
           )}
         </Step>
 
-        <Step icon="commit" title="Commit and logbook note" id="commit">
+        <Step icon="commit" title="Commit and merge record" id="commit">
           <CodeBlock code={landing.message} label={`commit ${shortSha(landing.mainAfter)}`} copyLabel="Copy message" />
           {noteText && (
             <details className="why__note">
-              <summary>Show the raw logbook note (git note refs/notes/gitring)</summary>
-              <CodeBlock code={noteText} label="gitring.logbook/v1" copyLabel="Copy note" />
+              <summary>Show the raw merge record (git note refs/notes/gitring)</summary>
+              <CodeBlock code={noteText} label="refs/notes/gitring" copyLabel="Copy record" />
             </details>
           )}
           <p className="why__meta">
-            {agent ? `${agent.callsign} · ${modelShort(agent.model)} · ` : ""}attempt <span className="voice-agent">{landing.attemptId}</span>
+            {agent ? `${agent.callsign} · ${modelShort(agent.model)} · ` : ""}work copy <span className="voice-agent">{landing.attemptId}</span>
           </p>
         </Step>
       </ol>
@@ -376,30 +377,30 @@ export function LogbookView({ id }: { id?: string }) {
         <div className="logbook__head">
           {compact ? (
             <h2 className="logbook__title" id="logbook-title">
-              Logbook <span className="voice-agent ink-3">{rows.length}</span>
+              History <span className="voice-agent ink-3">{rows.length}</span>
             </h2>
           ) : (
             <>
               <h1 className="page__title" id="logbook-title" tabIndex={-1}>
-                Logbook
+                History
               </h1>
-              <p className="page__lede">Every landing on main, with its why: intent, course, corrections, checks and decision. Open a landing to read the trail.</p>
+              <p className="page__lede">Every merge into main, with its reasons: task, plan, change requests, tests and decision. Open a merge to read its record.</p>
             </>
           )}
         </div>
         {!compact && rows.length > 0 && (
           <div className="lrow lrow--header" aria-hidden="true">
             <span>main</span>
-            <span>Intent</span>
+            <span>Task</span>
             <span>Method</span>
             <span>Agent</span>
-            <span>Corrections</span>
-            <span>Checks</span>
+            <span>Change requests</span>
+            <span>Tests</span>
             <span>When</span>
           </div>
         )}
         {rows.length === 0 ? (
-          <EmptyState text="No landings yet. gitring writes a logbook record for every landing." />
+          <EmptyState text="No merges yet. gitring writes a record for each merge." />
         ) : (
           <ol className="lrows" role="list">
             {rows.map((r) => (
@@ -408,7 +409,7 @@ export function LogbookView({ id }: { id?: string }) {
           </ol>
         )}
         <p className="logbook__origin">
-          <Icon name="commit" size={12} /> The logbook starts at the seed import{seed ? `, ${ago(seed, now)}` : ""}.
+          <Icon name="commit" size={12} /> The history starts with the import of the starting code{seed ? `, ${ago(seed, now)}` : ""}.
         </p>
       </section>
       {id && (

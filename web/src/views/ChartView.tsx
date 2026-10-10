@@ -51,25 +51,25 @@ export function ChartView() {
   return (
     <div className="chartview" data-tab={tab} data-traffic={trafficOpen ? "open" : "closed"}>
       <h1 className="vh" tabIndex={-1}>
-        Chart of {name}
+        Overview of {name}
       </h1>
       <Tabs<MobileTab>
         className="chartview__tabs"
-        label="Chart areas"
+        label="Parts of the overview"
         idPrefix="cv"
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "chart", label: "Chart" },
-          { id: "intents", label: "Intents", count: intents },
-          { id: "traffic", label: "Traffic", count: count },
-          { id: "log", label: "Log" },
+          { id: "chart", label: "Map" },
+          { id: "intents", label: "Tasks", count: intents },
+          { id: "traffic", label: "Active work", count: count },
+          { id: "log", label: "Activity" },
         ]}
       />
-      <aside className="chartview__left" id="cv-panel-intents" aria-label="Intents">
+      <aside className="chartview__left" id="cv-panel-intents" aria-label="Tasks">
         <IntentsRail />
       </aside>
-      <section className="chartview__center" aria-label="Chart and radio log">
+      <section className="chartview__center" aria-label="Map and activity">
         <div className="chartview__chart" id="cv-panel-chart">
           <Chart
             selected={selected}
@@ -91,7 +91,7 @@ export function ChartView() {
           )}
           <div className="chartview__traffic-toggle">
             <Button size="sm" variant="secondary" icon="layers" aria-expanded={trafficOpen} onClick={() => setTrafficOpen(!trafficOpen)}>
-              Traffic {count}
+              Active work {count}
             </Button>
           </div>
         </div>
@@ -99,7 +99,7 @@ export function ChartView() {
           <RadioLog />
         </div>
       </section>
-      <aside className="chartview__right" id="cv-panel-traffic" aria-label="Traffic">
+      <aside className="chartview__right" id="cv-panel-traffic" aria-label="Active work">
         <TrafficRail selected={selected} onSelect={(id) => select(id, "list")} onHover={setHovered} focusCorrection={focusCorrection} />
       </aside>
     </div>

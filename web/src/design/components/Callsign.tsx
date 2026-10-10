@@ -15,9 +15,9 @@ interface CallsignProps {
 }
 
 /**
- * Callsign: identity pennant (color) + hull glyph (shape) + mono callsign (text).
- * Color, shape and text together identify a vessel for color-blind readers.
- * Screen readers hear "KESTREL-7, glm-5.3-flash".
+ * Callsign: identity pennant (color) + glyph (shape) + mono agent name (text).
+ * Color, shape and text together identify an agent for color-blind readers.
+ * Screen readers hear the agent name and the model.
  */
 export function Callsign({ callsign, color, hull, model, size = "sm", showModel, dim, className }: CallsignProps) {
   const style = { "--vc": `var(--v${((color % 12) + 12) % 12})` } as CSSProperties;

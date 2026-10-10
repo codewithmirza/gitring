@@ -19,6 +19,7 @@ import type {
   Verdict,
 } from "../../../src/core/types";
 import { hullName, type HullName } from "../design/icons";
+import { RANGE_TEXT } from "./format";
 
 /* ───────────── memo helpers ───────────── */
 
@@ -128,7 +129,7 @@ export function indexes(st: ProjectState): Indexes {
   return indexesMemo(st.intents, st.attempts, st.agents, st.corrections, st.checks, st.landings, st.decisions);
 }
 
-/* ───────────── vessels (chart + traffic) ───────────── */
+/* ───────────── active work (map + list) ───────────── */
 
 export interface RangeLink {
   other: string;
@@ -257,7 +258,7 @@ const vesselsMemo = memo(
           color,
           hull: hullName(color),
           intentId: a.intentId,
-          intentTitle: intent?.title ?? "Unknown intent",
+          intentTitle: intent?.title ?? "Unknown task",
           status: a.status,
           generation: a.lineage?.generation ?? 1,
           file: track.length ? track[track.length - 1] : null,
@@ -279,7 +280,7 @@ export function selectVessels(st: ProjectState): VesselModel[] {
   return vesselsMemo(st.attempts, st.agents, st.intents, st.logs, st.corrections, st.radar, st.checks);
 }
 
-/* ───────────── range lines + buoys (chart) ───────────── */
+/* ───────────── distance lines + change-request markers (map) ───────────── */
 
 export type RangeTone = "caution" | "correction" | "danger" | "neutral";
 
@@ -316,7 +317,7 @@ const rangeLinesMemo = memo((vessels: VesselModel[]): RangeLine[] => {
         range: r.range,
         closing: r.closing,
         tone: rangeTone(r.range, r.corrected),
-        label: `R${r.range}${r.closing ? " · closing" : ""}`,
+        label: `${RANGE_TEXT[r.range]}${r.closing ? " · moving closer" : ""}`,
       });
     }
   }
@@ -373,7 +374,7 @@ export function selectBuoys(st: ProjectState): BuoyModel[] {
   return buoysMemo(selectVessels(st), st.checks, st.attempts);
 }
 
-/* ───────────── judgment queue ───────────── */
+/* ───────────── decisions ───────────── */
 
 export interface JudgmentItem {
   key: string;
@@ -396,7 +397,7 @@ const queueMemo = memo((intents: Intent[], attempts: Attempt[], checks: CourseCh
       kind: "pick",
       intentId: i.id,
       title: i.title,
-      detail: `Pick 1 of ${ready.length} ready attempts`,
+      detail: `Choose 1 of ${ready.length} ready work copies`,
       attemptIds: ready.map((a) => a.id),
       at: i.updatedAt,
     });
@@ -416,8 +417,8 @@ const queueMemo = memo((intents: Intent[], attempts: Attempt[], checks: CourseCh
       key: `esc:${c.id}`,
       kind: "escalation",
       intentId: a.intentId,
-      title: intent?.title ?? "Escalation",
-      detail: `Resolve an escalation for ${agentById.get(a.agentId)?.callsign ?? a.agentId}`,
+      title: intent?.title ?? "A decision needs a person",
+      detail: `Decide on the work of ${agentById.get(a.agentId)?.callsign ?? a.agentId}`,
       attemptIds: [a.id],
       at: c.at,
     });
@@ -432,11 +433,11 @@ export function selectJudgmentQueue(st: ProjectState): JudgmentItem[] {
 /* ───────────── intents ───────────── */
 
 export const INTENT_GROUPS: { id: string; label: string; statuses: IntentStatus[] }[] = [
-  { id: "judging", label: "Needs a pick", statuses: ["judging"] },
-  { id: "underway", label: "Underway", statuses: ["underway", "landing"] },
+  { id: "judging", label: "Needs a choice", statuses: ["judging"] },
+  { id: "underway", label: "Working", statuses: ["underway", "landing"] },
   { id: "open", label: "Open", statuses: ["open", "draft"] },
-  { id: "landed", label: "Landed", statuses: ["landed"] },
-  { id: "parked", label: "Parked", statuses: ["parked", "merged-into"] },
+  { id: "landed", label: "Merged", statuses: ["landed"] },
+  { id: "parked", label: "Paused", statuses: ["parked", "merged-into"] },
 ];
 
 export interface IntentGroup {
@@ -459,7 +460,7 @@ export function selectIntentGroups(st: ProjectState): IntentGroup[] {
   return groupsMemo(st.intents);
 }
 
-/* ───────────── logbook ───────────── */
+/* ───────────── history ───────────── */
 
 export interface LogbookRow {
   landing: Landing;

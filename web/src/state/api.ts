@@ -1,13 +1,16 @@
 /**
- * Harbor client: the Worker's REST API under /api/projects/:p and live events over /ws/:p.
+ * Project client: the Worker's REST API under /api/projects/:p and live events over /ws/:p.
  *
- * Boot: the UI asks the Worker for the project state. When the Worker does not answer,
- * the UI says so and tries again. There is no offline or fake data path.
+ * Boot: the UI asks the Worker for the state of one project, only on the views that show a project.
+ * When the Worker does not answer, the UI says so and tries again. There is no offline or fake data path.
  */
-import type { Attempt, Intent, Landing, ProjectState } from "../../../src/core/types";
-import type { Role } from "../../../src/core/accounts";
+import type { Attempt, ConnectInfo, Intent, Landing, ProjectState } from "../../../src/core/types";
+import type { ProjectInfo, Role } from "../../../src/core/accounts";
 import { store } from "./store";
 import { loadMe, loadProjects, rememberedProject } from "./account";
+import { isProjectRoute, navigate, parseRoute, setSearchParam } from "../app/router";
+
+export type { ConnectInfo };
 
 export interface DiffFile {
   path: string;
@@ -24,16 +27,9 @@ export interface DiffResult {
 
 export interface LandingDetail {
   landing: Landing;
-  /** The logbook git note (JSON text or an object). */
+  /** The merge record: a git note (JSON text or an object). */
   note: unknown;
   diff: DiffResult;
-}
-
-export interface ConnectInfo {
-  mcpUrl: string;
-  gitRemoteExample?: string;
-  hookUrl: string;
-  projectKeyHint: string;
 }
 
 export interface NewIntentInput {
@@ -68,12 +64,10 @@ export interface HarborClient {
   file(ref: string, path: string): Promise<string>;
   /** Sample projects only: start again from the sample's first commit. */
   resetSample(): Promise<void>;
-  /** Launch built-in AI agents on every open intent (Workers AI models). */
+  /** Start built-in AI agents on every open task (Workers AI models). */
   launchAll(): Promise<{ launched: number; queued: number }>;
-  simStart(agents: number, sectors: number): Promise<void>;
-  simStop(): Promise<void>;
   connect(): Promise<ConnectInfo>;
-  /** Live preview URL of an attempt (iframe src). */
+  /** Live preview URL of a work copy (iframe src). */
   previewUrl(attemptId: string): string;
 }
 
@@ -100,7 +94,7 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
       signal: ctl.signal,
     });
   } catch {
-    throw new ApiError(0, "The harbor did not answer. Check the connection and try again.");
+    throw new ApiError(0, "gitring did not answer. Check the connection and try again.");
   } finally {
     clearTimeout(timer);
   }
@@ -162,31 +156,25 @@ class LiveHarbor implements HarborClient {
   launchAll() {
     return request<{ launched: number; queued: number }>("POST", this.p("/launch-all"), {});
   }
-  async simStart(agents: number, sectors: number) {
-    await request("POST", this.p("/sim/start"), { agents, sectors });
-  }
-  async simStop() {
-    await request("POST", this.p("/sim/stop"), {});
-  }
-  async connect(): Promise<ConnectInfo> {
-    try {
-      return await request<ConnectInfo>("GET", this.p("/connect"));
-    } catch {
-      return defaultConnectInfo(this.projectId);
-    }
+  connect(): Promise<ConnectInfo> {
+    return request<ConnectInfo>("GET", this.p("/connect"));
   }
   previewUrl(attemptId: string) {
     return `/preview/${encodeURIComponent(this.projectId)}/${encodeURIComponent(attemptId)}/`;
   }
 }
 
+/** Connect info before the Worker answers: the endpoints of this origin. Inputs count as off until the answer. */
 export function defaultConnectInfo(projectId: string): ConnectInfo {
-  const origin = typeof location !== "undefined" ? location.origin : "https://gitring.example.workers.dev";
+  const origin = typeof location !== "undefined" ? location.origin : "";
   return {
+    projectId,
     mcpUrl: `${origin}/mcp`,
-    hookUrl: `${origin}/hooks/claude-code?project=${encodeURIComponent(projectId)}`,
-    gitRemoteExample: `https://<account-id>.artifacts.cloudflare.net/git/gitring/${projectId}--kestrel-7.git`,
-    projectKeyHint: "Set GITRING_KEY to a personal API key (above).",
+    hookUrl: `${origin}/hooks/claude/${encodeURIComponent(projectId)}`,
+    intentsUrl: `${origin}/hooks/intents`,
+    artifacts: { namespace: "", repo: "", backend: "artifacts" },
+    inputs: { slack: false, githubIssues: false },
+    githubApp: null,
   };
 }
 
@@ -228,7 +216,7 @@ let client: HarborClient | null = null;
 const clientListeners = new Set<() => void>();
 
 export function harbor(): HarborClient {
-  if (!client) throw new ApiError(0, "The harbor is not ready. Try again in 2 seconds.");
+  if (!client) throw new ApiError(0, "The project is not loaded yet. Try again in 2 seconds.");
   return client;
 }
 
@@ -248,28 +236,58 @@ function setClient(c: HarborClient) {
   clientListeners.forEach((l) => l());
 }
 
-let bootTries = 0;
-
-/** Pick the project: ?project=, else the last one used (if the caller still sees it), else the public sample. */
-function chooseProject(params: URLSearchParams): string {
-  const asked = params.get("project");
-  if (asked) return asked;
+/** A signed-in person's project: the remembered one if they still see it, else their first own project. */
+export function defaultProjectFor(projects: ProjectInfo[]): string | null {
   const remembered = rememberedProject();
-  if (remembered && store.get().projects.some((p) => p.id === remembered)) return remembered;
-  const mine = store.get().projects.find((p) => p.role === "owner" && p.id !== "demo");
-  return mine?.id ?? "demo";
+  if (remembered && projects.some((p) => p.id === remembered)) return remembered;
+  return projects.find((p) => p.role === "owner" && p.id !== "demo")?.id ?? null;
 }
 
-export async function boot(): Promise<void> {
-  const params = new URLSearchParams(location.search);
-  if (!store.get().me) {
+/**
+ * The project for a project view: ?project=, else (signed in) the remembered or first own project.
+ * null: a visitor without ?project=, or a person without a project.
+ */
+function chooseProject(params: URLSearchParams): string | null {
+  const asked = params.get("project");
+  if (asked) return asked;
+  const s = store.get();
+  return s.me?.user ? defaultProjectFor(s.projects) : null;
+}
+
+function needsProject(): boolean {
+  return isProjectRoute(parseRoute(location.pathname));
+}
+
+let bootTries = 0;
+let inflight: Promise<void> | null = null;
+
+/** Load the person, the project list and (on a project view) the project state. One run at a time. */
+export function boot(): Promise<void> {
+  inflight ??= run().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function run(): Promise<void> {
+  if (!store.get().accountReady) {
     await Promise.all([loadMe(), loadProjects()]).catch(() => undefined);
+    store.setAccountReady();
   }
+  if (client || !needsProject()) return;
+  const params = new URLSearchParams(location.search);
   const projectId = chooseProject(params);
+  if (!projectId) {
+    // No project to show: visitors go to the start page, signed-in people to their projects.
+    navigate(store.get().me?.user ? "/projects" : "/", { replace: true });
+    return;
+  }
+  // Keep the project in the address, so a copied link opens the same project.
+  if (!params.get("project")) setSearchParam("project", projectId);
   store.setProject(projectId);
   try {
     const st = await request<unknown>("GET", `/api/projects/${encodeURIComponent(projectId)}/state`, undefined, 8000);
-    if (!looksLikeState(st)) throw new ApiError(0, "The harbor sent a reply that is not a project state.");
+    if (!looksLikeState(st)) throw new ApiError(0, "The server sent a reply that is not a project state.");
     bootTries = 0;
     setClient(new LiveHarbor(projectId));
     store.setMode("live");
@@ -285,7 +303,21 @@ export async function boot(): Promise<void> {
     }
     bootTries++;
     const delay = Math.min(30_000, 2000 * 2 ** Math.min(bootTries - 1, 4));
-    store.setConn("offline", `The harbor is not reachable. gitring tries again in ${Math.round(delay / 1000)} s.`);
+    store.setConn("offline", `The server is not reachable. gitring tries again in ${Math.round(delay / 1000)} s.`);
     setTimeout(() => void boot(), delay);
   }
+}
+
+/**
+ * After a navigation inside the app: load the project state that the new view needs.
+ * A link to another project than the live one loads the page again, so the socket and the store start clean.
+ */
+export function syncProject(): void {
+  if (inflight || !needsProject()) return;
+  if (client) {
+    const asked = new URLSearchParams(location.search).get("project");
+    if (asked && asked !== client.projectId) location.reload();
+    return;
+  }
+  void boot();
 }

@@ -1,35 +1,43 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { Button, ProgressRule, ToastHost, EmptyState, toast } from "../design/components";
 import { store, useStore } from "../state/store";
+import { syncProject } from "../state/api";
 import { selectJudgmentQueue } from "../state/selectors";
 import { TopBar } from "./TopBar";
 import { SignInDialog, WatchBanner } from "./Account";
 import { DiffDrawer, FileDrawer, NewIntentDialog, ShortcutsDialog } from "./Dialogs";
-import { Link, navigate, useRoute, type Route } from "./router";
+import { canonicalPath, isProjectRoute, Link, navigate, useLocationKey, useRoute, type Route } from "./router";
 import { openNewIntent, openShortcuts, setUi } from "./ui";
 import { ChartView } from "../views/ChartView";
+import { HomeView } from "../views/HomeView";
 
 const IntentsView = lazy(() => import("../views/IntentsView").then((m) => ({ default: m.IntentsView })));
 const LogbookView = lazy(() => import("../views/LogbookView").then((m) => ({ default: m.LogbookView })));
 const ConnectView = lazy(() => import("../views/ConnectView").then((m) => ({ default: m.ConnectView })));
-const SimView = lazy(() => import("../views/SimView").then((m) => ({ default: m.SimView })));
-const DesignView = lazy(() => import("../views/DesignView").then((m) => ({ default: m.DesignView })));
 const ProjectsView = lazy(() => import("../views/ProjectsView").then((m) => ({ default: m.ProjectsView })));
 const SettingsView = lazy(() => import("../views/SettingsView").then((m) => ({ default: m.SettingsView })));
+// The design page is a development aid. Production builds drop this import, so they have no chunk for it.
+const DesignView = import.meta.env.DEV ? lazy(() => import("../views/DesignView").then((m) => ({ default: m.DesignView }))) : null;
 
 const TITLES: Record<Route["name"], string> = {
-  chart: "Chart",
-  intents: "Intents",
-  logbook: "Logbook",
+  home: "Many coding agents, one codebase",
+  chart: "Overview",
+  intents: "Tasks",
+  logbook: "History",
   connect: "Connect",
-  sim: "Simulation",
-  design: "Design system",
+  design: "Design",
   projects: "Projects",
   settings: "Project settings",
   notfound: "Not found",
 };
 
-const GO: Record<string, string> = { c: "/", i: "/intents", l: "/logbook", k: "/connect", s: "/sim", d: "/design" };
+const GO: Record<string, string> = {
+  o: "/overview",
+  t: "/tasks",
+  h: "/history",
+  k: "/connect",
+  ...(import.meta.env.DEV ? { d: "/design" } : {}),
+};
 
 function useShortcuts() {
   useEffect(() => {
@@ -57,7 +65,8 @@ function useShortcuts() {
         }
         return;
       }
-      if (e.key === "n") {
+      // A new task belongs to the open project: without a project the key does nothing.
+      if (e.key === "n" && store.get().state) {
         e.preventDefault();
         openNewIntent();
       }
@@ -72,7 +81,7 @@ function useShortcuts() {
   }, []);
 }
 
-/** Announce new decisions once: the judgment queue is the human's inbox. */
+/** Announce new decisions once: the decisions list is the person's inbox. */
 function useQueueToasts() {
   useEffect(() => {
     let seen: Set<string> | null = null;
@@ -91,9 +100,9 @@ function useQueueToasts() {
         seen.add(item.key);
         toast({
           tone: "info",
-          title: item.kind === "pick" ? "A pick is necessary" : "An escalation needs a human",
+          title: item.kind === "pick" ? "Choose a work copy" : "A decision needs a person",
           text: `“${item.title}”. ${item.detail}.`,
-          action: { label: "Compare attempts", onClick: () => navigate(`/intents/${item.intentId}`) },
+          action: { label: "Compare work copies", onClick: () => navigate(`/tasks/${item.intentId}`) },
         });
       }
       for (const k of [...seen]) if (!q.some((x) => x.key === k)) seen.delete(k);
@@ -101,8 +110,31 @@ function useQueueToasts() {
   }, []);
 }
 
+/** Old paths ("/chart", "/intents/…", "/logbook/…") still open, then show the current path. */
+function useLocationSync() {
+  const loc = useLocationKey();
+  useEffect(() => {
+    const path = canonicalPath(location.pathname);
+    if (path) navigate(path + location.search, { replace: true });
+    syncProject();
+  }, [loc]);
+}
+
+function NotFound() {
+  return (
+    <div className="page">
+      <h1 className="page__title" tabIndex={-1}>
+        Not found
+      </h1>
+      <EmptyState text="This page does not exist." action={<Link to="/overview">Open the overview</Link>} />
+    </div>
+  );
+}
+
 function View({ route }: { route: Route }) {
   switch (route.name) {
+    case "home":
+      return <HomeView />;
     case "chart":
       return <ChartView />;
     case "intents":
@@ -111,27 +143,18 @@ function View({ route }: { route: Route }) {
       return <LogbookView id={route.id} />;
     case "connect":
       return <ConnectView />;
-    case "sim":
-      return <SimView />;
     case "design":
-      return <DesignView />;
+      return DesignView ? <DesignView /> : <NotFound />;
     case "projects":
       return <ProjectsView />;
     case "settings":
       return <SettingsView />;
     default:
-      return (
-        <div className="page">
-          <h1 className="page__title" tabIndex={-1}>
-            Not found
-          </h1>
-          <EmptyState text="This page is not on the chart. Go back to the chart." action={<Link to="/">Open the chart</Link>} />
-        </div>
-      );
+      return <NotFound />;
   }
 }
 
-/** Before the first project state: connect, or say why there is no project to show. */
+/** Before the first project state: load it, or say why there is no project to show. */
 function Booting() {
   const conn = useStore((s) => s.conn);
   const error = useStore((s) => s.error);
@@ -157,8 +180,8 @@ function Booting() {
   }
   return (
     <div className="booting">
-      <ProgressRule label="gitring connects to the harbor" />
-      <p>gitring connects to the harbor.</p>
+      <ProgressRule label="Loading the project" />
+      <p>Loading the project…</p>
     </div>
   );
 }
@@ -168,13 +191,15 @@ export function App() {
   const ready = useStore((s) => s.state !== null);
   const project = useStore((s) => s.state?.project.name);
   const first = useRef(true);
+  const needsProject = isProjectRoute(route);
   useShortcuts();
   useQueueToasts();
+  useLocationSync();
 
   const key = route.name + ("id" in route ? `:${route.id ?? ""}` : "");
   useEffect(() => {
-    document.title = `${TITLES[route.name]}${project ? ` · ${project}` : ""} · gitring`;
-  }, [route.name, project]);
+    document.title = route.name === "home" ? `gitring · ${TITLES.home}` : `${TITLES[route.name]}${project && needsProject ? ` · ${project}` : ""} · gitring`;
+  }, [route.name, project, needsProject]);
   useEffect(() => {
     if (first.current) {
       first.current = false;
@@ -192,8 +217,8 @@ export function App() {
       </a>
       <TopBar route={route} />
       <main id="main" className={`app__main app__main--${route.name}`} tabIndex={-1}>
-        <WatchBanner />
-        {!ready && route.name !== "design" && route.name !== "projects" ? (
+        {needsProject && <WatchBanner />}
+        {needsProject && !ready ? (
           <Booting />
         ) : (
           <Suspense fallback={<ProgressRule label="Loading the view" />}>

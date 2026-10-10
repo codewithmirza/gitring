@@ -1,5 +1,5 @@
 /** Formatting helpers. Numbers are always shown in the agent voice (mono) by callers. */
-import type { AttemptStatus, CorrectionKind, IntentStatus, LandingMethod, Range, RuleOfTheRoad } from "../../../src/core/types";
+import type { AttemptStatus, CorrectionKind, CourseCheck, IntentStatus, LandingMethod, Range, RuleOfTheRoad, Verdict } from "../../../src/core/types";
 
 export function shortSha(sha: string | undefined | null, n = 7): string {
   return sha ? sha.slice(0, n) : "———————";
@@ -63,69 +63,106 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export const RULE_TEXT: Record<RuleOfTheRoad | "human", { code: string; text: string }> = {
-  "R1-landed-has-way": { code: "R1", text: "landed has way" },
-  "R2-waiting-stands-on": { code: "R2", text: "waiting stands on" },
-  "R3-producer-stands-on": { code: "R3", text: "producer stands on" },
-  "R4-first-declared-stands-on": { code: "R4", text: "first declared stands on" },
-  "R5-priority-stands-on": { code: "R5", text: "priority stands on" },
-  "R6-smaller-gives-way": { code: "R6", text: "smaller gives way" },
-  human: { code: "H", text: "human amendment" },
+/** Who continues and who adapts when two pieces of work collide (the conflict-check rules). */
+export const RULE_TEXT: Record<RuleOfTheRoad | "human", string> = {
+  "R1-landed-has-way": "Merged work has priority",
+  "R2-waiting-stands-on": "Work that waits to merge has priority",
+  "R3-producer-stands-on": "The agent that changes the interface continues",
+  "R4-first-declared-stands-on": "The first plan has priority",
+  "R5-priority-stands-on": "The high-priority task has priority",
+  "R6-smaller-gives-way": "The smaller change adapts",
+  human: "A person changed the task",
 };
 
 export function ruleLabel(rule: RuleOfTheRoad | "human" | undefined): string {
   if (!rule) return "—";
-  const r = RULE_TEXT[rule];
-  return r ? `${r.code} · ${r.text}` : rule;
+  return RULE_TEXT[rule] ?? rule;
 }
 
 export const CORRECTION_KIND_TEXT: Record<CorrectionKind, string> = {
   interface: "Interface",
-  region: "Region",
+  region: "Same lines",
   duplicate: "Duplicate",
-  upstream: "Upstream",
-  "intent-amended": "Intent amended",
+  upstream: "Main moved",
+  "intent-amended": "Goal changed",
+};
+
+/** Short words for the change-request markers on the map. */
+export const CORRECTION_KIND_SHORT: Record<CorrectionKind, string> = {
+  interface: "interface",
+  region: "lines",
+  duplicate: "duplicate",
+  upstream: "main",
+  "intent-amended": "goal",
 };
 
 export const METHOD_TEXT: Record<LandingMethod, string> = {
   "fast-forward": "Fast-forward",
-  merge: "Merge",
-  rederive: "Re-derive",
+  merge: "3-way merge",
+  rederive: "Redo",
 };
 
+/** Distance between two pieces of work in the code (0 = closest). */
 export const RANGE_TEXT: Record<Range, string> = {
-  0: "same lines or symbol",
-  1: "interface use",
+  0: "same lines",
+  1: "shared function",
   2: "same file",
-  3: "direct import",
-  4: "two imports apart",
-  5: "open water",
+  3: "one import",
+  4: "two imports",
+  5: "no relation",
 };
+
+export function distanceLabel(range: Range): string {
+  return `Distance ${range}: ${RANGE_TEXT[range]}`;
+}
+
+export const VERDICT_TEXT: Record<Verdict, string> = {
+  clear: "No conflict",
+  correct: "Change request",
+  "merge-intents": "Duplicate tasks",
+  escalate: "Needs a person",
+};
+
+/** What started a conflict check. */
+export const TRIGGER_TEXT: Record<CourseCheck["trigger"], string> = {
+  declare: "plan",
+  log: "log",
+  write: "write",
+  push: "push",
+  "main-advanced": "main moved",
+  "intent-amended": "goal changed",
+};
+
+/** Who decided a conflict check: the conflict-check model (fast or large), or the rules alone. */
+export function checkSourceText(source: string): string {
+  if (source === "rules") return "rules";
+  return source.endsWith("-flash") ? "conflict-check model (fast)" : "conflict-check model";
+}
 
 export const ATTEMPT_STATUS_TEXT: Record<AttemptStatus, string> = {
-  declared: "Declared",
-  underway: "Underway",
+  declared: "Plan sent",
+  underway: "Working",
   submitted: "Submitted",
-  checking: "Checking",
+  checking: "Testing",
   ready: "Ready",
-  landing: "Landing",
-  landed: "Landed",
-  stale: "Stale",
-  rederiving: "Re-deriving",
-  alternate: "Alternate",
-  abandoned: "Abandoned",
+  landing: "Merging",
+  landed: "Merged",
+  stale: "Out of date",
+  rederiving: "Redoing",
+  alternate: "Alternative",
+  abandoned: "Stopped",
   failed: "Failed",
 };
 
 export const INTENT_STATUS_TEXT: Record<IntentStatus, string> = {
   draft: "Draft",
   open: "Open",
-  underway: "Underway",
-  judging: "Needs a pick",
-  landing: "Landing",
-  landed: "Landed",
-  parked: "Parked",
-  "merged-into": "Merged",
+  underway: "Working",
+  judging: "Needs a choice",
+  landing: "Merging",
+  landed: "Merged",
+  parked: "Paused",
+  "merged-into": "Duplicate",
 };
 
 export function slugify(s: string): string {

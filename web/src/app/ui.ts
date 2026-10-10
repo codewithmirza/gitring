@@ -31,7 +31,7 @@ export function useUi(): UiState {
   );
 }
 
-/** Open the new-intent dialog. A visitor gets the sign-in dialog; a viewer gets a note. */
+/** Open the new-task dialog. A visitor gets the sign-in dialog; a viewer gets a note. */
 export function openNewIntent() {
   const s = store.get();
   if (atLeast(s.access, "member")) {
@@ -42,7 +42,7 @@ export function openNewIntent() {
     setUi({ signIn: true });
     return;
   }
-  toast({ tone: "info", title: "You watch this project", text: "Members open intents. Ask an owner for the member role, or make your own project." });
+  toast({ tone: "info", title: "You can view this project", text: "Members open tasks. Ask an owner for the member role, or make your own project." });
 }
 export const openSignIn = () => setUi({ signIn: true });
 export const openShortcuts = () => setUi({ shortcuts: true });

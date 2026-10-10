@@ -11,12 +11,13 @@ import "./projects.css";
 
 type Kind = "sample" | "empty" | "git" | "push" | "upload";
 
+/** Real sources first; the sample is last. */
 const KINDS: { value: Kind; label: string; icon: IconName; help: string }[] = [
-  { value: "sample", label: "Sample", icon: "compass", help: "A small bookshop on Cloudflare Workers with five intents and checks. Your own copy, to try real AI agents." },
   { value: "git", label: "Import URL", icon: "fork", help: "Import a public repository from GitHub, GitLab, Bitbucket or any https git host. The history comes with it." },
   { value: "push", label: "git push", icon: "launch", help: "For private repositories from any host: gitring makes an empty repository, then you push yours to it with git. The history comes with it." },
   { value: "upload", label: "Folder", icon: "grid", help: "Upload a folder from your computer, without git. gitring leaves out .git, node_modules and build output." },
-  { value: "empty", label: "Empty", icon: "anchor", help: "A new repository with a README. Let agents write the code." },
+  { value: "empty", label: "Empty", icon: "anchor", help: "A new repository with a README. Agents write the code." },
+  { value: "sample", label: "Sample", icon: "compass", help: "Your own copy of a small bookshop on Cloudflare Workers, with five tasks and their tests. Use it to try the agents." },
 ];
 
 function mb(n: number): string {
@@ -74,9 +75,9 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
         title: "Project ready",
         text:
           kind === "git"
-            ? "Artifacts imports the repository now. The chart fills when it is done."
+            ? "Artifacts imports the repository now. The overview fills when it is done."
             : kind === "push"
-              ? "Push your repository now. The chart shows the commands."
+              ? "Push your repository now. The overview shows the commands."
               : `${p.name} is open.`,
       });
       openProject(p.id);
@@ -92,7 +93,7 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
       open={open}
       onClose={onClose}
       title="New project"
-      description="gitring keeps the code in Cloudflare Artifacts: main, one fork per agent, and the logbook."
+      description="gitring keeps the code in Cloudflare Artifacts: main, one work copy per agent, and the history."
       size="lg"
       footer={
         <>
@@ -157,7 +158,7 @@ function NewProjectDialog({ open, onClose, initial }: { open: boolean; onClose: 
             { value: "public", label: "Public", icon: "waves" },
           ]}
         />
-        <p className="np__help">{visibility === "private" ? "Only you and the people you add." : "Anyone with the link can watch. Only members can act."}</p>
+        <p className="np__help">{visibility === "private" ? "Only you and the people you add." : "Anyone with the link can view it. Only members can change it."}</p>
         {error && (
           <p className="np__error" role="alert">
             <Icon name="cross" size={12} /> {error}
@@ -174,7 +175,8 @@ export function ProjectsView() {
   const current = useStore((s) => s.projectId);
   const asked = useSearchParam("new");
   const [open, setOpen] = useState(false);
-  const initial: Kind = asked === "sample" ? "sample" : asked === "git" || asked === "github" ? "git" : asked === "empty" ? "empty" : "sample";
+  const initial: Kind =
+    asked === "sample" ? "sample" : asked === "empty" ? "empty" : asked === "push" ? "push" : asked === "upload" || asked === "folder" ? "upload" : "git";
   const signedIn = Boolean(me?.user);
 
   useEffect(() => {
@@ -203,7 +205,7 @@ export function ProjectsView() {
       <h1 className="page__title" tabIndex={-1}>
         Projects
       </h1>
-      <p className="page__lede">Each project is one repository in Cloudflare Artifacts. Agents work on it at the same time; gitring keeps them apart.</p>
+      <p className="page__lede">Each project is one repository in Cloudflare Artifacts. Many agents work on it at the same time. gitring keeps their work apart.</p>
       <div className="projects__actions">
         {signedIn ? (
           <Button variant="primary" icon="plus" onClick={() => setOpen(true)}>
@@ -224,7 +226,7 @@ export function ProjectsView() {
           {mine.length ? (
             <ProjectGrid list={mine} current={current} />
           ) : (
-            <EmptyState text="You have no project yet. Make one from the sample, from scratch, or import a repository." />
+            <EmptyState text="You have no project yet. Import a repository, push one with git, or upload a folder." />
           )}
         </section>
       )}

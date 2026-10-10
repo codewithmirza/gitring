@@ -4,7 +4,7 @@ import { AttemptBadge, Badge, Button, Callsign, CorrectionNotice, EmptyState, Ic
 import { Icon } from "../design/icons";
 import { useStore } from "../state/store";
 import { byId, indexes, selectVessels, type VesselModel } from "../state/selectors";
-import { modelShort, plural } from "../state/format";
+import { modelShort, plural, VERDICT_TEXT } from "../state/format";
 import { Link } from "./router";
 import { openDiff, openFile } from "./ui";
 import { useNow } from "./useNow";
@@ -12,7 +12,7 @@ import { useCanAct } from "../state/account";
 
 const EMPTY: VesselModel[] = [];
 
-const KIND_TEXT: Record<AgentInfo["kind"], string> = { builtin: "Built-in", mcp: "MCP", git: "Git", sim: "Simulated" };
+const KIND_TEXT: Record<AgentInfo["kind"], string> = { builtin: "Built-in", mcp: "MCP", git: "Git" };
 
 const VesselRow = memo(function VesselRow({
   v,
@@ -54,12 +54,12 @@ const VesselRow = memo(function VesselRow({
               <span key={r.other} className="vrow__range">
                 <RangeIndicator range={r.range} closing={r.closing} corrected={r.corrected} showText={false} to={names.get(r.other)} />
                 <span className="voice-agent ink-3">{names.get(r.other)}</span>
-                {r.closing && <span className="vrow__closing">closing</span>}
+                {r.closing && <span className="vrow__closing">moving closer</span>}
               </span>
             ))}
             {v.corrections.length > 0 && (
               <Badge tone="correction" icon="buoy">
-                {plural(v.corrections.length, "correction")}
+                {plural(v.corrections.length, "change request")}
               </Badge>
             )}
           </span>
@@ -98,7 +98,7 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
         <h3 id="vdetail-title" className="vdetail__title">
           <Callsign callsign={v.callsign} color={v.color} hull={v.hull} model={v.model} size="md" />
         </h3>
-        <IconButton icon="close" label="Close the vessel detail" size="sm" onClick={onClose} shortcut="Esc" />
+        <IconButton icon="close" label="Close the agent details" size="sm" onClick={onClose} shortcut="Esc" />
       </div>
       <div className="vdetail__meta">
         <AttemptBadge status={v.status} />
@@ -109,12 +109,12 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
           {v.generation > 1 ? ` · generation ${v.generation}` : ""}
         </span>
       </div>
-      <Link to={`/intents/${v.intentId}`} className="vdetail__intent voice-human">
+      <Link to={`/tasks/${v.intentId}`} className="vdetail__intent voice-human">
         {v.intentTitle}
         <Icon name="arrow-right" size={14} />
       </Link>
 
-      <SectionLabel>Course</SectionLabel>
+      <SectionLabel>Plan</SectionLabel>
       <div className="vdetail__block">
         <p className="vdetail__approach voice-agent">{attempt.course.approach}</p>
         <ol className="vdetail__plan voice-agent">
@@ -122,7 +122,7 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
             <li key={i}>{p}</li>
           ))}
         </ol>
-        <ul className="vdetail__files" role="list" aria-label="Declared files">
+        <ul className="vdetail__files" role="list" aria-label="Planned files">
           {attempt.course.files.map((f) => {
             const touched = v.track.includes(f);
             const fp = attempt.footprint.files[f];
@@ -146,23 +146,23 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
 
       {v.ranges.length > 0 && (
         <>
-          <SectionLabel count={v.ranges.length}>Range to other vessels</SectionLabel>
+          <SectionLabel count={v.ranges.length}>Distance to other agents</SectionLabel>
           <ul className="vdetail__ranges" role="list">
             {v.ranges.map((r) => (
               <li key={r.other}>
-                <RangeIndicator range={r.range} closing={r.closing} corrected={r.corrected} to={nameOf(r.other)} />
                 <span className="voice-agent">{nameOf(r.other)}</span>
-                <span className="ink-3">{r.corrected ? "correction sent" : r.verdict === "clear" ? "clear" : r.verdict ?? "watch"}</span>
+                <RangeIndicator range={r.range} closing={r.closing} corrected={r.corrected} to={nameOf(r.other)} />
+                <span className="ink-3">{r.corrected ? "change request sent" : r.verdict ? VERDICT_TEXT[r.verdict].toLowerCase() : "not checked yet"}</span>
               </li>
             ))}
           </ul>
         </>
       )}
 
-      <SectionLabel count={corrections.length}>Corrections</SectionLabel>
+      <SectionLabel count={corrections.length}>Change requests</SectionLabel>
       <div className="vdetail__block vdetail__corrs">
         {corrections.length === 0 ? (
-          <p className="ink-3">No corrections. The course is clear.</p>
+          <p className="ink-3">No change requests. The plan has no conflict.</p>
         ) : (
           corrections
             .slice()
@@ -183,7 +183,7 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
         )}
       </div>
 
-      <SectionLabel>Recent log</SectionLabel>
+      <SectionLabel>Recent activity</SectionLabel>
       <div className="vdetail__log" role="list">
         {logs.map((l) => (
           <LogLine key={l.id} log={l} agent={agent} />
@@ -194,8 +194,8 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
         <Button size="sm" icon="diff" onClick={() => openDiff(v.attemptId, v.callsign)}>
           Open diff
         </Button>
-        <Link to={`/intents/${v.intentId}`} className="b-btn b-btn--ghost b-btn--sm">
-          Compare attempts
+        <Link to={`/tasks/${v.intentId}`} className="b-btn b-btn--ghost b-btn--sm">
+          Compare work copies
         </Link>
       </div>
     </div>
@@ -225,17 +225,17 @@ export function TrafficRail({
   const closing = vessels.reduce((n, v) => n + v.ranges.filter((r) => r.closing).length, 0) / 2;
   return (
     <Panel
-      title="Traffic"
+      title="Active work"
       count={vessels.length}
       headingId="traffic-title"
       className={["rail rail--traffic", sel && "has-detail"].filter(Boolean).join(" ")}
-      action={closing > 0 ? <Badge tone="caution" icon="closing">{plural(closing, "pair")} closing</Badge> : undefined}
+      action={closing > 0 ? <Badge tone="caution" icon="closing">{closing === 1 ? "1 pair moves closer" : `${closing} pairs move closer`}</Badge> : undefined}
     >
       <div className="traffic">
         {vessels.length === 0 ? (
-          <EmptyState art={false} text={canAct ? "No vessels at sea. Launch an intent to start." : "No vessels at sea."} />
+          <EmptyState art={false} text={canAct ? "No agents work now. Start agents on a task." : "No agents work now."} />
         ) : (
-          <ul role="list" className="traffic__list" aria-label="Vessels" ref={listRef}>
+          <ul role="list" className="traffic__list" aria-label="Agents" ref={listRef}>
             {vessels.map((v) => (
               <VesselRow key={v.attemptId} v={v} selected={v.attemptId === selected} names={names} onSelect={onSelect} onHover={onHover} />
             ))}
@@ -244,7 +244,7 @@ export function TrafficRail({
         {sel ? (
           <VesselDetail v={sel} onClose={() => onSelect(null)} focusCorrection={focusCorrection} />
         ) : (
-          vessels.length > 0 && <p className="traffic__hint">Select a vessel to see its course, its corrections and its log.</p>
+          vessels.length > 0 && <p className="traffic__hint">Select an agent to see its plan, its change requests and its activity.</p>
         )}
       </div>
     </Panel>
