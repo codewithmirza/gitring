@@ -1,207 +1,360 @@
 /**
- * Account UI: the project switcher, the person menu, the sign-in dialog and the "watching" banner.
+ * Account UI in the shell: the project switcher, the person menu, the sign-in panel and the
+ * "you can only view" banner. Each one is a popover that grows from its button: no modal dialogs.
  */
-import { useRef, useState } from "react";
-import { Button, Dialog, Popover } from "../design/components";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { ProjectInfo, Provider } from "../../../src/core/accounts";
+import { Button, Menu, MenuItem, MenuSeparator, Popover, SkeletonRows, usePopover } from "../design/components";
 import { Icon } from "../design/icons";
+import { GitHubMark, GoogleG } from "../design/brand/marks";
 import { useStore } from "../state/store";
-import { openProject, signIn, signOut, useCanAct, useMe } from "../state/account";
-import { Link, navigate } from "./router";
-import { setUi, useUi } from "./ui";
+import { openProject, signOut, useCanAct, useMe } from "../state/account";
+import { githubSignInUrl, googleSignInUrl } from "../state/signin";
+import { Link, linkProps, navigate } from "./router";
+import { openSignIn, rememberAfterSignIn, setUi, useUi } from "./ui";
+import { fuzzyScore } from "./palette";
 
-const SOURCE_TEXT: Record<string, string> = { sample: "sample", empty: "empty repository", git: "import", upload: "upload", push: "git push" };
+const SOURCE_TEXT: Record<string, string> = { empty: "started empty", git: "imported", github: "GitHub", upload: "uploaded folder", push: "git push" };
+
+function sourceText(p: ProjectInfo): string {
+  if (p.source.kind === "github") return p.source.repo;
+  return SOURCE_TEXT[p.source.kind] ?? "project";
+}
+
+/* ───────────── project switcher ───────────── */
 
 export function ProjectSwitcher() {
   const projects = useStore((s) => s.projects);
-  const current = useStore((s) => s.projectId);
   const name = useStore((s) => s.state?.project.name ?? projects.find((p) => p.id === s.projectId)?.name ?? "gitring");
-  const canAct = useCanAct();
-  const signedIn = Boolean(useMe()?.user);
-  const [open, setOpen] = useState(false);
-  const btn = useRef<HTMLButtonElement | null>(null);
+  const pop = usePopover("dialog");
   return (
     <>
-      <button ref={btn} type="button" className="acct-switch" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`Project: ${name}. Switch project.`}>
+      <button {...pop.triggerProps} type="button" className="acct-switch" aria-label={`Project: ${name}. Switch project.`}>
         <span className="topbar__projname">{name}</span>
         <Icon name="chevron-down" size={14} />
       </button>
-      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} label="Projects" align="start">
-        <div className="acct-list">
-          <p className="acct-list__head">Projects</p>
-          {projects.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={["acct-list__item", p.id === current && "is-current"].filter(Boolean).join(" ")}
-              onClick={() => {
-                setOpen(false);
-                if (p.id !== current) openProject(p.id);
-              }}
-            >
-              <Icon name={p.source.kind === "git" ? "fork" : p.source.kind === "sample" ? "compass" : "anchor"} />
-              <span className="acct-list__text">
-                <span className="acct-list__name">{p.name}</span>
-                <span className="acct-list__meta">
-                  {SOURCE_TEXT[p.source.kind] ?? p.source.kind} · {p.visibility} · {p.role}
-                </span>
-              </span>
-              {p.id === current && <Icon name="check" />}
-            </button>
-          ))}
-          {canAct && (
-            <Link to="/settings" className="acct-list__item acct-list__all" onClick={() => setOpen(false)}>
-              <Icon name="info" />
-              <span className="acct-list__text">
-                <span className="acct-list__name">Project settings</span>
-                <span className="acct-list__meta">Name, visibility, members</span>
-              </span>
-            </Link>
-          )}
-          <Link
-            to="/projects"
-            className={["acct-list__item", !canAct && "acct-list__all"].filter(Boolean).join(" ")}
-            onClick={() => {
-              setOpen(false);
-            }}
-          >
-            <Icon name="grid" />
-            <span className="acct-list__text">
-              <span className="acct-list__name">All projects</span>
-            </span>
-          </Link>
-          {signedIn ? (
-            <Link
-              to="/projects?new=1"
-              className="acct-list__item"
-              onClick={() => {
-                setOpen(false);
-              }}
-            >
-              <Icon name="plus" />
-              <span className="acct-list__text">
-                <span className="acct-list__name">New project</span>
-              </span>
-            </Link>
-          ) : (
-            <button
-              type="button"
-              className="acct-list__item"
-              onClick={() => {
-                setOpen(false);
-                setUi({ signIn: true });
-              }}
-            >
-              <Icon name="human" />
-              <span className="acct-list__text">
-                <span className="acct-list__name">Sign in to make a project</span>
-              </span>
-            </button>
-          )}
-        </div>
+      <Popover {...pop.popoverProps} label="Switch project" align="start" width={340}>
+        <ProjectPicker onDone={pop.close} />
       </Popover>
     </>
   );
 }
 
+function ProjectPicker({ onDone }: { onDone: () => void }) {
+  const projects = useStore((s) => s.projects);
+  const current = useStore((s) => s.projectId);
+  const canAct = useCanAct();
+  const signedIn = Boolean(useMe()?.user);
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const uid = useId();
+  const list = useMemo(() => {
+    const mine = [...projects].sort((a, b) => (a.id === current ? -1 : b.id === current ? 1 : 0));
+    if (!q.trim()) return mine;
+    return mine
+      .map((p) => ({ p, m: fuzzyScore(q, `${p.name} ${p.id}`) }))
+      .filter((x) => x.m)
+      .sort((a, b) => b.m!.score - a.m!.score)
+      .map((x) => x.p);
+  }, [projects, current, q]);
+  useEffect(() => setActive(0), [q]);
+
+  const open = (p: ProjectInfo | undefined) => {
+    if (!p) return;
+    onDone();
+    if (p.id !== current) openProject(p.id);
+  };
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((a) => (list.length ? (a + 1) % list.length : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => (list.length ? (a - 1 + list.length) % list.length : 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      open(list[active]);
+    }
+  };
+  return (
+    <div className="pick">
+      <div className="pick__field">
+        <Icon name="search" size={14} />
+        <input
+          className="pick__input"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls={`${uid}-list`}
+          aria-activedescendant={list.length ? `${uid}-${active}` : undefined}
+          aria-label="Find a project"
+          placeholder="Find a project"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={onKey}
+          data-autofocus
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+      <div className="pick__list" role="listbox" id={`${uid}-list`} aria-label="Projects">
+        {list.length === 0 && (
+          <p className="pick__empty" role="status">
+            {projects.length ? `No project matches “${q.trim()}”.` : "No projects yet."}
+          </p>
+        )}
+        {list.map((p, i) => (
+          <div
+            key={p.id}
+            id={`${uid}-${i}`}
+            role="option"
+            aria-selected={i === active}
+            className={["pick__opt", i === active && "is-active", p.id === current && "is-current"].filter(Boolean).join(" ")}
+            onMouseMove={() => i !== active && setActive(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => open(p)}
+          >
+            <Icon name={p.source.kind === "github" || p.source.kind === "git" ? "fork" : "anchor"} />
+            <span className="pick__text">
+              <span className="pick__name">{p.name}</span>
+              <span className="pick__meta">
+                {sourceText(p)} · {p.visibility}
+                {p.role ? ` · ${p.role}` : ""}
+              </span>
+            </span>
+            {p.id === current && <Icon name="check" className="pick__check" title="Open now" />}
+          </div>
+        ))}
+      </div>
+      <div className="pick__actions">
+        {canAct && (
+          <Link to="/settings" className="pick__action" onClick={onDone}>
+            <Icon name="gear" /> Project settings
+          </Link>
+        )}
+        <Link to="/projects" className="pick__action" onClick={onDone}>
+          <Icon name="grid" /> All projects
+        </Link>
+        {signedIn ? (
+          <Link to="/projects?new=1" className="pick__action" onClick={onDone}>
+            <Icon name="plus" /> New project
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className="pick__action"
+            onClick={(e) => {
+              onDone();
+              openSignIn({ anchor: document.querySelector<HTMLElement>("[data-signin-anchor]") ?? e.currentTarget, reason: "Sign in to make a project.", then: { kind: "newProject" } });
+            }}
+          >
+            <Icon name="human" /> Sign in to make a project
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── person menu ───────────── */
+
 export function UserMenu() {
   const me = useMe();
-  const [open, setOpen] = useState(false);
-  const btn = useRef<HTMLButtonElement | null>(null);
-  if (!me) return null;
+  const ui = useUi();
+  const pop = usePopover("menu");
+  const signInBtn = useRef<HTMLButtonElement | null>(null);
+  if (!me) return <span className="acct-me acct-me--wait" aria-hidden="true" />;
   if (!me.user) {
     return (
-      <Button size="sm" variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
+      <Button
+        ref={signInBtn}
+        size="sm"
+        variant="primary"
+        data-signin-anchor=""
+        aria-haspopup="dialog"
+        aria-expanded={ui.signIn}
+        onClick={(e) => (ui.signIn ? setUi({ signIn: false }) : openSignIn({ anchor: e.currentTarget }))}
+      >
         Sign in
       </Button>
     );
   }
   const u = me.user;
+  const ids = u.identities.map((i) => (i.provider === "github" ? `GitHub @${i.login}` : `Google ${i.email}`)).join(" · ");
   return (
     <>
-      <button ref={btn} type="button" className="acct-me" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`Signed in as ${u.name}. Open the menu.`}>
+      <button {...pop.triggerProps} type="button" className="acct-me" aria-label={`Signed in as ${u.name}. Open the account menu.`}>
         {u.avatar ? <img className="acct-me__avatar" src={u.avatar} alt="" width={24} height={24} referrerPolicy="no-referrer" /> : <Icon name="human" />}
       </button>
-      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} label="Account" align="end">
-        <div className="acct-menu">
-          <p className="acct-menu__name">{u.name}</p>
-          <p className="acct-menu__meta">
-            {u.identities.map((i) => (i.provider === "github" ? `GitHub @${i.login}` : `Google ${i.email}`)).join(" · ")}
+      <Menu anchor={pop.anchor} open={pop.open} onClose={pop.close} id={pop.id} label="Account" align="end" width={280}>
+        <div className="acct-menu__who" role="presentation">
+          <span className="acct-menu__name">{u.name}</span>
+          <span className="acct-menu__meta">
+            {ids}
             {u.admin ? " · administrator" : ""}
-          </p>
-          <Link to="/projects" className="acct-menu__item" onClick={() => setOpen(false)}>
-            <Icon name="grid" /> Projects
-          </Link>
-          <Link to="/connect" className="acct-menu__item" onClick={() => setOpen(false)}>
-            <Icon name="plug" /> API keys and agents
-          </Link>
-          <Link to="/?home" className="acct-menu__item" onClick={() => setOpen(false)}>
-            <Icon name="info" /> About gitring
-          </Link>
-          {u.admin && (
-            <a className="acct-menu__item" href="/setup">
-              <Icon name="info" /> Sign-in setup
-            </a>
-          )}
-          <button type="button" className="acct-menu__item" onClick={() => void signOut()}>
-            <Icon name="arrow-left" /> Sign out
-          </button>
+          </span>
         </div>
-      </Popover>
+        <MenuSeparator />
+        <MenuItem icon="human" shortcut="g a" {...linkProps("/account")}>
+          Account
+        </MenuItem>
+        <MenuItem icon="grid" shortcut="g p" {...linkProps("/projects")}>
+          Projects
+        </MenuItem>
+        <MenuItem icon="plug" {...linkProps("/connect")}>
+          Connect an agent
+        </MenuItem>
+        <MenuItem icon="info" {...linkProps("/?home")}>
+          About gitring
+        </MenuItem>
+        {u.admin && (
+          <MenuItem icon="gear" href="/setup">
+            Sign-in setup
+          </MenuItem>
+        )}
+        <MenuSeparator />
+        <MenuItem icon="sign-out" onSelect={() => void signOut()}>
+          Sign out
+        </MenuItem>
+      </Menu>
     </>
   );
 }
 
-export function SignInDialog() {
-  const ui = useUi();
+/* ───────────── sign-in ───────────── */
+
+const LAST_KEY = "gitring.lastProvider";
+const PROVIDER_NAME: Record<Provider, string> = { github: "GitHub", google: "Google" };
+
+/**
+ * The provider of the last sign-in in this browser: the server's cookie "gitring_last" (set when a
+ * sign-in finishes), else the provider that the person chose last here.
+ */
+export function lastProvider(): Provider | null {
+  try {
+    const m = /(?:^|;\s*)gitring_last=(github|google)\b/.exec(document.cookie);
+    if (m) return m[1] as Provider;
+    const v = localStorage.getItem(LAST_KEY);
+    return v === "github" || v === "google" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The sign-in choices: real provider marks, the last used provider first, one click to the provider.
+ * Each choice is a link (it leaves for the provider), and it shows "Opening …" until the page changes.
+ * `returnTo` is the page to come back to (default: this page).
+ */
+export function SignInChoices({ reason, error, returnTo }: { reason?: string | null; error?: string | null; returnTo?: string }) {
   const me = useMe();
-  const close = () => setUi({ signIn: false });
-  const gh = me?.providers.github;
-  const gg = me?.providers.google;
+  const ui = useUi();
+  const [busy, setBusy] = useState<Provider | null>(null);
+  useEffect(() => {
+    // Back from the provider (the page comes from the back-forward cache): the choices work again.
+    const reset = (e: PageTransitionEvent) => {
+      if (e.persisted) setBusy(null);
+    };
+    addEventListener("pageshow", reset);
+    return () => removeEventListener("pageshow", reset);
+  }, []);
+  const last = lastProvider();
+  if (!me) return <SkeletonRows rows={2} label="Loading the sign-in choices" />;
+  const available = (["github", "google"] as Provider[]).filter((p) => me.providers[p]);
+  const ordered = last && available.includes(last) ? [last, ...available.filter((p) => p !== last)] : available;
+  const back = returnTo ?? location.pathname + location.search;
+  const chose = (p: Provider) => {
+    setBusy(p);
+    try {
+      localStorage.setItem(LAST_KEY, p);
+    } catch {
+      /* storage off */
+    }
+    rememberAfterSignIn(ui.signInThen);
+  };
   return (
-    <Dialog open={ui.signIn} onClose={close} title="Sign in to gitring" description="Sign in to make projects, start agents, choose work copies and create API keys for your agents." dismissOnScrim>
-      <div className="acct-signin">
-        {gh && (
-          <Button variant="primary" icon="fork" onClick={() => signIn("github")}>
-            Continue with GitHub
-          </Button>
-        )}
-        {gg && (
-          <Button icon="human" onClick={() => signIn("google")}>
-            Continue with Google
-          </Button>
-        )}
-        {!gh && !gg && <p className="acct-signin__note">Sign-in is not set up on this server yet. Its owner opens /setup to add GitHub or Google.</p>}
-        <p className="acct-signin__note">gitring keeps your name, email and avatar. It does not post anything for you.</p>
-      </div>
-    </Dialog>
+    <div className="signin">
+      {reason && <p className="pop-help">{reason}</p>}
+      {error && (
+        <p className="signin__error" role="alert">
+          <Icon name="cross" size={14} />
+          <span>{error}</span>
+        </p>
+      )}
+      {ordered.length === 0 ? (
+        <p className="signin__none">Sign-in is not set up on this server. Its owner opens /setup to add GitHub or Google.</p>
+      ) : (
+        <div className="signin__buttons">
+          {ordered.map((p, i) => (
+            <a
+              key={p}
+              className="b-provider"
+              href={p === "github" ? githubSignInUrl(back) : googleSignInUrl(back)}
+              aria-busy={busy === p || undefined}
+              onClick={(e) => {
+                // A new tab or window keeps this page as it is.
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                chose(p);
+              }}
+              data-autofocus={i === 0 ? "" : undefined}
+            >
+              {p === "github" ? <GitHubMark size={18} /> : <GoogleG size={18} />}
+              <span className="b-provider__text">{busy === p ? `Opening ${PROVIDER_NAME[p]}…` : `Continue with ${PROVIDER_NAME[p]}`}</span>
+              {p === last && ordered.length > 1 && <span className="b-provider__tag">Last used</span>}
+            </a>
+          ))}
+        </div>
+      )}
+      <p className="signin__note">
+        gitring keeps your name, email and avatar. It does not post anything for you. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+      </p>
+    </div>
   );
 }
+
+/** The sign-in panel: a popover from the button that asked for it (or from "Sign in" in the top bar). */
+/** A visible element to anchor a shell popover: the asked one, else the first visible match of `selector`. */
+export function visibleAnchor(asked: HTMLElement | null | undefined, selector: string): HTMLElement | null {
+  if (asked && asked.isConnected && asked.getClientRects().length > 0) return asked;
+  return [...document.querySelectorAll<HTMLElement>(selector)].find((el) => el.getClientRects().length > 0) ?? null;
+}
+
+export function SignInPopover() {
+  const ui = useUi();
+  const me = useMe();
+  const signedIn = Boolean(me?.user);
+  const anchor = useMemo(() => (ui.signIn ? visibleAnchor(ui.signInAnchor, "[data-signin-anchor], [data-palette-anchor]") : null), [ui.signIn, ui.signInAnchor]);
+  useEffect(() => {
+    if (ui.signIn && signedIn) setUi({ signIn: false });
+  }, [ui.signIn, signedIn]);
+  if (!ui.signIn || !anchor || signedIn) return null;
+  return (
+    <Popover anchor={anchor} open onClose={() => setUi({ signIn: false })} labelledBy="signin-title" align="end" width={340}>
+      <h2 className="pop-title" id="signin-title">
+        Sign in to gitring
+      </h2>
+      <SignInChoices reason={ui.signInReason ?? "Sign in to make projects, write tasks and connect your agents."} error={ui.signInError} />
+    </Popover>
+  );
+}
+
+/* ───────────── "you can only view" banner ───────────── */
 
 /** Shown when the caller can only view the open project. */
 export function WatchBanner() {
   const me = useMe();
   const canAct = useCanAct();
   const ready = useStore((s) => s.state !== null);
-  const isSample = useStore((s) => s.projectId === "demo");
   if (!ready || canAct || !me) return null;
   return (
     <div className="acct-watch" role="status">
       <Icon name="eye" />
-      <span>
-        {isSample
-          ? me.user
-            ? "You view the public sample. Copy it to your projects to start agents."
-            : "You view the public sample. Sign in, then copy it to your projects to start agents."
-          : me.user
-            ? "You can view this project. To change it, ask an owner for the member role, or make your own project."
-            : "You can view this project. Sign in to change it."}
-      </span>
+      <span>{me.user ? "You can view this project. To change it, ask an owner for the member role, or make your own project." : "You can view this project. Sign in to change it."}</span>
       {me.user ? (
-        <Button size="sm" variant="primary" icon="plus" onClick={() => navigate(isSample ? "/projects?new=sample" : "/projects?new=1")}>
-          {isSample ? "Copy the sample" : "New project"}
+        <Button size="sm" variant="primary" icon="plus" onClick={() => navigate("/projects?new=1")}>
+          New project
         </Button>
       ) : (
-        <Button size="sm" variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
+        <Button size="sm" variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: "Sign in to change this project or make your own." })}>
           Sign in
         </Button>
       )}

@@ -6,10 +6,12 @@ export type Route =
   | { name: "chart" }
   | { name: "intents"; id?: string }
   | { name: "logbook"; id?: string }
+  | { name: "code"; ref?: string; path?: string }
   | { name: "connect" }
   | { name: "design" }
   | { name: "projects" }
   | { name: "settings" }
+  | { name: "account" }
   | { name: "notfound"; path: string };
 
 function decode(part: string): string {
@@ -21,8 +23,9 @@ function decode(part: string): string {
 }
 
 /**
- * Paths: "/" home, "/overview", "/tasks" and "/tasks/:id", "/history" and "/history/:id", "/connect",
- * "/projects", "/settings". Old paths stay as aliases: "/chart", "/intents/:id", "/logbook/:id".
+ * Paths: "/" home, "/overview", "/tasks" and "/tasks/:id", "/history" and "/history/:id",
+ * "/code", "/code/:ref" and "/code/:ref/<file path>" (ref: main, a work copy id or a commit), "/connect",
+ * "/projects", "/settings", "/account". Old paths stay as aliases: "/chart", "/intents/:id", "/logbook/:id".
  * "/design" exists in development builds only.
  */
 export function parseRoute(pathname: string): Route {
@@ -38,6 +41,8 @@ export function parseRoute(pathname: string): Route {
     case "history":
     case "logbook":
       return { name: "logbook", id: parts[1] };
+    case "code":
+      return { name: "code", ref: parts[1], path: parts.length > 2 ? parts.slice(2).join("/") : undefined };
     case "connect":
       return { name: "connect" };
     case "design":
@@ -47,6 +52,8 @@ export function parseRoute(pathname: string): Route {
       return { name: "projects" };
     case "settings":
       return { name: "settings" };
+    case "account":
+      return { name: "account" };
   }
   return { name: "notfound", path: pathname };
 }
@@ -59,27 +66,49 @@ export function canonicalPath(pathname: string): string | null {
   return m ? ALIASES[m[1]] + m[2] : null;
 }
 
-/** Views that show one project. They need its state; "/", "/projects" and "/design" do not. */
+/** Views that show one project. They need its state; "/", "/projects", "/account" and "/design" do not. */
 export function isProjectRoute(route: Route): boolean {
-  return route.name === "chart" || route.name === "intents" || route.name === "logbook" || route.name === "connect" || route.name === "settings";
+  return (
+    route.name === "chart" ||
+    route.name === "intents" ||
+    route.name === "logbook" ||
+    route.name === "code" ||
+    route.name === "connect" ||
+    route.name === "settings"
+  );
+}
+
+/**
+ * Link to the code view: "/code/main/src/app.js", a work copy ("/code/at_123/src/app.js"),
+ * its diff against its base ("?view=diff") and a line ("#L12" or "#L12-L20").
+ */
+export function codeHref(ref = "main", path?: string, opts: { diff?: boolean; line?: number; endLine?: number } = {}): string {
+  const file = path ? `/${path.split("/").map(encodeURIComponent).join("/")}` : "";
+  const query = opts.diff ? "?view=diff" : "";
+  const hash = opts.line ? `#L${opts.line}${opts.endLine && opts.endLine > opts.line ? `-L${opts.endLine}` : ""}` : "";
+  return `/code/${encodeURIComponent(ref)}${file}${query}${hash}`;
 }
 
 const EVENT = "gitring:navigate";
 /** Query params that belong to the session and survive navigation. */
 const KEEP = ["project"];
 
+/** The URL for an app path: keeps ?project= of the current address. Handles "?query" and "#hash". */
 export function href(to: string): string {
-  const [path, query = ""] = to.split("?");
+  const hashAt = to.indexOf("#");
+  const hash = hashAt >= 0 ? to.slice(hashAt) : "";
+  const rest = hashAt >= 0 ? to.slice(0, hashAt) : to;
+  const [path, query = ""] = rest.split("?");
   const cur = new URLSearchParams(location.search);
   const next = new URLSearchParams(query);
   for (const k of KEEP) if (cur.has(k) && !next.has(k)) next.set(k, cur.get(k)!);
   const q = next.toString();
-  return q ? `${path}?${q}` : path;
+  return `${path}${q ? `?${q}` : ""}${hash}`;
 }
 
 export function navigate(to: string, opts: { replace?: boolean } = {}) {
   const url = href(to);
-  if (url === location.pathname + location.search) return;
+  if (url === location.pathname + location.search + location.hash) return;
   if (opts.replace) history.replaceState(null, "", url);
   else history.pushState(null, "", url);
   window.dispatchEvent(new Event(EVENT));
@@ -119,8 +148,17 @@ export function setSearchParam(name: string, value: string | null) {
   if (value === null) p.delete(name);
   else p.set(name, value);
   const q = p.toString();
-  history.replaceState(null, "", location.pathname + (q ? `?${q}` : ""));
+  history.replaceState(null, "", location.pathname + (q ? `?${q}` : "") + location.hash);
   window.dispatchEvent(new Event(EVENT));
+}
+
+/* Preload: App registers a function that starts loading the code of a view; links call it on hover and focus. */
+let preloader: ((path: string) => void) | null = null;
+export function setPreloader(fn: (path: string) => void) {
+  preloader = fn;
+}
+export function preloadPath(to: string) {
+  preloader?.(to);
 }
 
 interface LinkProps extends Omit<ComponentPropsWithRef<"a">, "href"> {
@@ -128,11 +166,20 @@ interface LinkProps extends Omit<ComponentPropsWithRef<"a">, "href"> {
   replace?: boolean;
 }
 
-export function Link({ to, replace, onClick, ...rest }: LinkProps) {
+/** In-app link: a real <a href> (new tab and copy work), client navigation on a plain click, preload on hover. */
+export function Link({ to, replace, onClick, onMouseEnter, onFocus, ...rest }: LinkProps) {
   return (
     <a
       {...rest}
       href={href(to)}
+      onMouseEnter={(e) => {
+        onMouseEnter?.(e);
+        preloadPath(to);
+      }}
+      onFocus={(e) => {
+        onFocus?.(e);
+        preloadPath(to);
+      }}
       onClick={(e: MouseEvent<HTMLAnchorElement>) => {
         onClick?.(e);
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -141,4 +188,16 @@ export function Link({ to, replace, onClick, ...rest }: LinkProps) {
       }}
     />
   );
+}
+
+/** Props for a menu item or a button that acts as an in-app link (plain click: client navigation). */
+export function linkProps(to: string): { href: string; onSelect: (e: MouseEvent<HTMLElement>) => void } {
+  return {
+    href: href(to),
+    onSelect: (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
+      e.preventDefault();
+      navigate(to);
+    },
+  };
 }

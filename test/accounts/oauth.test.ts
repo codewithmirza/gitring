@@ -86,14 +86,22 @@ describe("URL rules", () => {
   });
 
   it("accepts only clean https URLs with a path as client ID metadata documents", () => {
-    expect(isCimdId("https://app.example/oauth/client.json")).toBe(true);
-    expect(isCimdId("https://app.example")).toBe(false);
-    expect(isCimdId("https://app.example/")).toBe(false);
-    expect(isCimdId("http://app.example/client.json")).toBe(false);
-    expect(isCimdId("https://user:pw@app.example/client.json")).toBe(false);
-    expect(isCimdId("https://app.example/a/../client.json")).toBe(false);
-    expect(isCimdId("https://app.example/client.json#x")).toBe(false);
+    expect(isCimdId("https://app.dev/oauth/client.json")).toBe(true);
+    expect(isCimdId("https://app.dev")).toBe(false);
+    expect(isCimdId("https://app.dev/")).toBe(false);
+    expect(isCimdId("http://app.dev/client.json")).toBe(false);
+    expect(isCimdId("https://user:pw@app.dev/client.json")).toBe(false);
+    expect(isCimdId("https://app.dev/a/../client.json")).toBe(false);
+    expect(isCimdId("https://app.dev/client.json#x")).toBe(false);
     expect(isCimdId("gitring-abc")).toBe(false);
+    // Not into private networks: no IP addresses, no local names, no other ports.
+    expect(isCimdId("https://10.0.0.5/x.json")).toBe(false);
+    expect(isCimdId("https://[::1]/x.json")).toBe(false);
+    expect(isCimdId("https://localhost/x.json")).toBe(false);
+    expect(isCimdId("https://metadata.internal/x.json")).toBe(false);
+    expect(isCimdId("https://intranet/x.json")).toBe(false);
+    expect(isCimdId("https://app.example.com:8443/x.json")).toBe(false);
+    expect(isCimdId("https://claude.ai/oauth/claude-client.json")).toBe(true);
   });
 
   it("decodes HTTP Basic client authentication (form-encoded parts)", () => {
@@ -276,7 +284,42 @@ describe("token endpoint", () => {
     expect(await s.accessUser(String(t3.body.access_token), O)).not.toBeNull();
   });
 
-  it("revokes the whole grant when a rotated refresh token comes back later (stolen token)", async () => {
+  it("keeps one chain per sign-in: the token that a retry replaced ends the sign-in when it comes back", async () => {
+    const { s, tick } = store();
+    const c = await register(s);
+    const t1 = await tokens(s, c.client_id);
+    const r = (refresh: string) => s.token({ grant_type: "refresh_token", refresh_token: refresh, client_id: c.client_id }, null, O);
+    const first = await r(t1.refresh_token); // the answer reaches someone
+    tick(1_000);
+    const second = await r(t1.refresh_token); // a second use within the grace time
+    expect(second.status).toBe(200);
+    // The first successor is no longer the newest: using it ends the whole sign-in (both chains).
+    tick(1_000);
+    const replay = await r(String(first.body.refresh_token));
+    expect(replay.body.error).toBe("invalid_grant");
+    expect(await s.accessUser(String(second.body.access_token), O)).toBeNull();
+    expect((await r(String(second.body.refresh_token))).body.error).toBe("invalid_grant");
+  });
+
+  it("keeps sign-ins of one app on two devices apart", async () => {
+    const { s, tick } = store();
+    const c = await register(s);
+    const laptop = await tokens(s, c.client_id);
+    const phone = await tokens(s, c.client_id);
+    const r = (refresh: string) => s.token({ grant_type: "refresh_token", refresh_token: refresh, client_id: c.client_id }, null, O);
+    const l2 = await r(laptop.refresh_token);
+    const p2 = await r(phone.refresh_token);
+    expect(l2.status).toBe(200);
+    expect(p2.status).toBe(200);
+    // A replay on the laptop ends the laptop's sign-in only.
+    tick(31_000);
+    expect((await r(laptop.refresh_token)).body.error).toBe("invalid_grant");
+    expect(await s.accessUser(String(l2.body.access_token), O)).toBeNull();
+    expect(await s.accessUser(String(p2.body.access_token), O)).not.toBeNull();
+    expect((await r(String(p2.body.refresh_token))).status).toBe(200);
+  });
+
+  it("ends the sign-in when a rotated refresh token comes back later (stolen token)", async () => {
     const { s, tick } = store();
     const c = await register(s);
     const t1 = await tokens(s, c.client_id);
@@ -288,7 +331,8 @@ describe("token endpoint", () => {
     expect(replay.body.error).toBe("invalid_grant");
     expect(await s.accessUser(String(t2.body.access_token), O)).toBeNull();
     expect((await r(String(t2.body.refresh_token))).body.error).toBe("invalid_grant");
-    expect(s.hasGrant("u_1", c.client_id)).toBe(false);
+    // The person's consent stays: signing in again needs no second question.
+    expect(s.hasGrant("u_1", c.client_id)).toBe(true);
   });
 
   it("expires access tokens after an hour and refresh tokens after 30 days without use", async () => {
@@ -355,7 +399,7 @@ describe("token endpoint", () => {
 });
 
 describe("revocation and grants", () => {
-  it("revokes an access token alone, and a refresh token with its grant", async () => {
+  it("revokes an access token alone, and a refresh token with its sign-in", async () => {
     const { s } = store();
     const c = await register(s);
     const t = await tokens(s, c.client_id);
@@ -363,9 +407,10 @@ describe("revocation and grants", () => {
     expect(await s.accessUser(t.access_token, O)).toBeNull();
     const fresh = await s.token({ grant_type: "refresh_token", refresh_token: t.refresh_token, client_id: c.client_id }, null, O);
     expect(fresh.status).toBe(200);
-    expect((await s.revoke({ token: t.refresh_token }, null)).status).toBe(200);
+    const revoked = await s.revoke({ token: String(fresh.body.refresh_token) }, null);
+    expect(revoked).toMatchObject({ status: 200, userId: "u_1" });
     expect(await s.accessUser(String(fresh.body.access_token), O)).toBeNull();
-    expect(s.hasGrant("u_1", c.client_id)).toBe(false);
+    expect(s.hasGrant("u_1", c.client_id)).toBe(true);
     expect((await s.revoke({ token: "gor_unknown" }, null)).status).toBe(200);
   });
 
@@ -399,8 +444,8 @@ describe("revocation and grants", () => {
 });
 
 describe("client ID metadata documents", () => {
-  const ID = "https://agent.example/oauth/client.json";
-  const doc = { client_id: ID, client_name: "Agent", client_uri: "https://agent.example", redirect_uris: ["https://agent.example/cb"] };
+  const ID = "https://agent.dev/oauth/client.json";
+  const doc = { client_id: ID, client_name: "Agent", client_uri: "https://agent.dev", redirect_uris: ["https://agent.dev/cb"] };
 
   function fetcher(answer: () => Response | Promise<Response>) {
     const calls: string[] = [];
@@ -414,7 +459,7 @@ describe("client ID metadata documents", () => {
   it("fetches the document, caches it for a day, and uses it for the whole flow", async () => {
     const { f, calls } = fetcher(() => new Response(JSON.stringify(doc)));
     const { s, tick } = store({ fetch: f });
-    const res = await s.startRequest({ client_id: ID, redirect_uri: "https://agent.example/cb", response_type: "code", code_challenge: await s256(VERIFIER), code_challenge_method: "S256" }, O);
+    const res = await s.startRequest({ client_id: ID, redirect_uri: "https://agent.dev/cb", response_type: "code", code_challenge: await s256(VERIFIER), code_challenge_method: "S256" }, O);
     expect(res.ok && res.request.clientName).toBe("Agent");
     expect((await s.client(ID))?.kind).toBe("cimd");
     expect(calls).toHaveLength(1);
@@ -424,7 +469,7 @@ describe("client ID metadata documents", () => {
   });
 
   it("refuses a document for another id, one with a secret, and one without redirect URIs", async () => {
-    for (const bad of [{ ...doc, client_id: "https://agent.example/other.json" }, { ...doc, client_secret: "x" }, { ...doc, redirect_uris: ["http://evil.example/cb"] }]) {
+    for (const bad of [{ ...doc, client_id: "https://agent.dev/other.json" }, { ...doc, client_secret: "x" }, { ...doc, redirect_uris: ["http://evil.example/cb"] }]) {
       const { f } = fetcher(() => new Response(JSON.stringify(bad)));
       const { s } = store({ fetch: f });
       expect(await s.client(ID)).toBeNull();

@@ -16,7 +16,7 @@ export interface SnapshotLimits {
   maxFiles: number;
 }
 
-export const SNAPSHOT_LIMITS: SnapshotLimits = { maxBytes: 40_000_000, maxFiles: 20_000 };
+export const SNAPSHOT_LIMITS: SnapshotLimits = { maxBytes: 25_000_000, maxFiles: 20_000 };
 
 export class SnapshotTooLarge extends Error {}
 

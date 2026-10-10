@@ -228,6 +228,7 @@
   min-height: 24px;
 }
 .lane__fpath:hover { color: var(--accent); text-decoration: underline; }
+.lane__fpath:focus-visible { outline-offset: 0; }
 .lane__fbar { display: flex; height: 6px; gap: 1px; }
 .lane__fbar .add { background: var(--clear); border-radius: 1px; }
 .lane__fbar .del { background: var(--danger); border-radius: 1px; }
@@ -237,20 +238,44 @@
 .lane__summary { font-size: var(--t-xs); line-height: var(--lh-xs); }
 .lane__corrs { display: grid; gap: var(--s-2); }
 .lane__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-2);
+  display: grid;
+  gap: var(--s-3);
   padding: var(--s-4) var(--s-5) var(--s-5);
   align-content: start;
+  min-width: 0;
 }
+.lane__buttons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.lane__buttons .b-btn { text-decoration: none; }
 .lane.is-ready .lane__actions { background: color-mix(in oklch, var(--clear) 5%, transparent); }
+.lane__panel textarea { min-height: 56px; }
+.lane__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  min-height: 24px;
+  color: var(--accent);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+.lane__toggle .b-icon { transition: transform var(--dur-1) var(--ease-out); }
+.lane__toggle[aria-expanded="true"] .b-icon { transform: rotate(90deg); }
+.lane__retry { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-weight: 500; }
+.lane__fpath { text-decoration: none; }
+
+/* task header panels: change the goal, pause */
+.amend { max-width: 920px; }
+.amend textarea { min-height: 72px; }
+.amend__row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
+.amend__field { display: grid; gap: var(--s-1); min-width: 0; }
+.pause { max-width: 620px; border-color: color-mix(in oklch, var(--danger) 45%, var(--line-strong)); }
 
 @media (max-width: 1180px) {
   .intent { padding: var(--s-6) var(--s-6) var(--s-10); }
   .intent__spec { grid-template-columns: 1fr; gap: var(--s-6); }
 }
 @media (max-width: 760px) {
+  .amend__row { grid-template-columns: minmax(0, 1fr); }
   .intents-view { grid-template-columns: minmax(0, 1fr); }
   .intents-view.has-detail .intents-view__rail { display: none; }
   .intents-view.no-detail .intents-view__main { display: none; }

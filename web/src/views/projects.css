@@ -1,62 +1,97 @@
-/* Projects, new project dialog and project settings. Type sizes: 11, 13, 15. */
+/* Projects, the start picker and project settings. Type sizes: 11, 13, 15. */
 
 .projects, .settings { max-width: 1100px; }
-.projects__actions { display: flex; gap: var(--s-3); margin: var(--s-6) 0 var(--s-2); }
+.projects__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s-4) var(--s-8); }
+.projects__intro { min-width: 0; flex: 1 1 420px; }
+.projects__new { flex: none; }
+.projects__sec { margin-top: var(--s-9); }
+.projects__count { margin-left: var(--s-1); font-family: var(--font-agent); font-size: var(--t-sm); font-weight: 400; color: var(--ink-3); }
 .projects section, .settings section { margin-top: var(--s-8); }
 
-.pj-grid { list-style: none; margin: var(--s-4) 0 0; padding: 0; display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+/* The picker on the page, for a person without projects. */
+.pj-start {
+  max-width: 640px;
+  padding: var(--s-6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-4);
+  background: var(--bg);
+}
+.pj-start .np__title { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 500; }
+.np__lede { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); max-width: 60ch; }
+
+.pj-grid { list-style: none; margin: var(--s-4) 0 0; padding: 0; display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
 .pj-card {
   display: grid;
   gap: var(--s-2);
   width: 100%;
-  text-align: left;
-  padding: var(--s-4);
+  height: 100%;
+  min-height: 108px;
+  align-content: start;
+  padding: var(--s-4) var(--s-5);
   border: 1px solid var(--line);
   border-radius: var(--r-3);
   background: var(--surface-1);
   color: var(--ink-1);
   font: inherit;
-  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
 }
-.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2); }
+a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2); }
 .pj-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .pj-card.is-current { border-color: var(--accent); }
-.pj-card__top { display: flex; align-items: center; gap: var(--s-2); }
-.pj-card__top .b-icon { color: var(--accent); }
-.pj-card__name { font-size: var(--t-md); font-weight: 600; }
-.pj-card__source { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
-.pj-card__meta { font-size: var(--t-xs); color: var(--ink-3); }
+.pj-card__top { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.pj-card__icon { flex: none; color: var(--ink-2); }
+.pj-card__name { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-card__lock { display: inline-flex; color: var(--ink-3); }
+.pj-card__source { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+.pj-card__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.pj-grid--skeleton .pj-card { gap: var(--s-3); }
 
-.np { display: grid; gap: var(--s-4); }
-/* Segmented controls keep their own width inside the grid of a dialog or a settings section. */
-.np > .b-seg, .st-sec > .b-seg { justify-self: start; max-width: 100%; }
-.np__help { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); margin: 0; max-width: 64ch; }
-.np__folder { font: inherit; font-size: var(--t-sm); color: var(--ink-2); }
+/* ───────────── settings ───────────── */
+.np-help, .np__help { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); margin: 0; max-width: 64ch; }
 .np__error { display: flex; align-items: center; gap: var(--s-2); color: var(--danger); font-size: var(--t-sm); margin: 0; }
+/* Segmented controls keep their own width inside the grid of a settings section. */
+.st-sec > .b-seg { justify-self: start; max-width: 100%; }
 
 .st-sec { display: grid; gap: var(--s-3); padding-top: var(--s-6); border-top: 1px solid var(--line); }
+.st-sec > .page__h2 { scroll-margin-top: var(--s-6); }
 .st-row { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); }
 .st-row .b-field { flex: 1 1 260px; min-width: 0; }
 .st-members { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
-.st-members li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
-.st-members__name { font-weight: 500; }
+.st-members li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); min-height: 44px; }
+/* The inline confirm takes its own line under the member. */
+.st-members li:has(.b-confirm) .st-members__act { grid-column: 1 / -1; justify-self: stretch; }
+.st-members li:has(.b-confirm) .b-confirm { display: flex; width: 100%; }
+.st-members__name { font-weight: 500; overflow-wrap: anywhere; }
 .st-members__handle, .st-members__role { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.st-members__act { justify-self: end; }
 .st-danger { border-top-color: color-mix(in oklch, var(--danger) 40%, var(--line)); }
 .st-note { margin-top: var(--s-3); font-size: var(--t-sm); color: var(--ink-3); }
 .st-error { display: flex; align-items: baseline; gap: var(--s-2); margin: 0; color: var(--danger); font-size: var(--t-sm); line-height: var(--lh-sm); }
 .st-error .b-icon { flex: none; transform: translateY(1px); }
+.st-warn { color: var(--caution); }
 .st-checks { display: grid; gap: var(--s-2); justify-items: start; }
 .st-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
-.st-sync { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); }
+.st-sync { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); }
 .st-sync__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
-.st-sync__msg { font-size: var(--t-sm); color: var(--ink-1); }
+.st-sync__msg { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); min-width: 0; overflow-wrap: anywhere; }
 .st-sync__links { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-5); margin: 0; font-size: var(--t-sm); }
+.st-sync__acts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.st-sync__result { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.st-repo { display: grid; gap: var(--s-2); max-width: 560px; }
+.st-repo__info { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.st-repo__warn { color: var(--caution); }
 .st-hooks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
 .st-hook { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); }
 .st-hook__events { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-5); margin: 0; padding: 0; border: 0; min-width: 0; }
 .st-hook__events legend { float: left; margin-right: var(--s-4); padding: 0; }
 .st-hook__events:disabled .b-check { cursor: default; }
+.st-toc { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); margin: var(--s-5) 0 0; padding: 0; list-style: none; font-size: var(--t-sm); }
+.st-toc a { color: var(--ink-2); text-decoration: none; }
+.st-toc a:hover { color: var(--ink-1); text-decoration: underline; }
 
+/* API keys (the key form on the Connect page). */
 .keys { display: grid; gap: var(--s-4); }
 .keys__new { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); }
 .keys__new .b-field { flex: 1 1 240px; }
@@ -71,4 +106,10 @@
 @media (max-width: 760px) {
   .st-members li, .keys__list li { grid-template-columns: minmax(0, 1fr) auto; }
   .st-members__handle, .keys__meta { display: none; }
+  .projects__new { width: 100%; }
+}
+@media (max-width: 600px) {
+  .pj-start { padding: var(--s-4); margin: 0 calc(-1 * var(--s-1)); }
+  .projects .b-btn, .settings .b-btn { min-height: 44px; }
+  .pj-card { min-height: 0; }
 }

@@ -68,6 +68,9 @@ const LIST_TTL_MS = 60_000;
 const guesses = new Map<string, { at: number; value: A.ProjectGuess }>();
 const GUESS_TTL_MS = 5 * 60_000;
 
+/** Short browser caching of a person's own data; Vary keeps one person's answer from another. */
+const PRIVATE_SHORT = { "cache-control": "private, max-age=30", vary: "Cookie, Authorization" };
+
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
@@ -92,7 +95,9 @@ export function githubRoutes(app: Hono<HonoEnv>): void {
     const q = (c.req.query("q") ?? "").trim().toLowerCase();
     const filtered = (v: RepoList): RepoList => (q ? { ...v, repos: v.repos.filter((r) => r.fullName.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q)) } : v);
     const cached = lists.get(user.id);
-    if (cached && c.req.query("refresh") !== "1" && Date.now() - cached.at < LIST_TTL_MS) return json(filtered(cached.value), 200, { "cache-control": "private, max-age=30" });
+    const refresh = c.req.query("refresh") === "1";
+    if (refresh) await directory(c.env).forgetGithubMisses().catch(() => undefined);
+    if (cached && !refresh && Date.now() - cached.at < LIST_TTL_MS) return json(filtered(cached.value), 200, PRIVATE_SHORT);
     let res;
     try {
       res = await withGithub(c.env, user.id, (gh) => listUserRepos(gh));
@@ -110,7 +115,7 @@ export function githubRoutes(app: Hono<HonoEnv>): void {
     };
     lists.set(user.id, { at: Date.now(), value });
     if (lists.size > 2000) lists.delete(lists.keys().next().value!);
-    return json(filtered(value), 200, { "cache-control": "private, max-age=30" });
+    return json(filtered(value), 200, PRIVATE_SHORT);
   });
 
   app.get("/api/github/guess", async (c) => {
@@ -121,12 +126,12 @@ export function githubRoutes(app: Hono<HonoEnv>): void {
     const branch = /^[A-Za-z0-9._/-]{1,100}$/.test(c.req.query("branch") ?? "") ? c.req.query("branch") : undefined;
     const key = `${user.id}|${repo.toLowerCase()}|${branch ?? ""}`;
     const hit = guesses.get(key);
-    if (hit && Date.now() - hit.at < GUESS_TTL_MS) return json(hit.value, 200, { "cache-control": "private, max-age=60" });
+    if (hit && Date.now() - hit.at < GUESS_TTL_MS) return json(hit.value, 200, PRIVATE_SHORT);
     try {
       const value = await guessProject(c.env, user.id, repo, branch);
       guesses.set(key, { at: Date.now(), value });
       if (guesses.size > 2000) guesses.delete(guesses.keys().next().value!);
-      return json(value, 200, { "cache-control": "private, max-age=60" });
+      return json(value, 200, PRIVATE_SHORT);
     } catch (e) {
       const status = (e as { status?: number }).status === 404 ? 404 : e instanceof GithubError ? 502 : 400;
       return json({ error: String((e as Error).message ?? e) }, status);
@@ -183,10 +188,12 @@ async function guessProject(env: Env, userId: string, repo: string, branch?: str
 /** Ask a small model for the install and test commands when the rules found none. */
 async function askModel(env: Env, repo: string, branch: string, userId: string): Promise<{ install?: string; test?: string; why?: string } | null> {
   const files = await readAsPerson(env, userId, async (gh) => {
-    const tree = await gh.json<{ tree: { path: string; type: string }[] }>(`/repos/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
-    const paths = (tree?.tree ?? []).filter((e) => e.type === "blob").map((e) => e.path);
-    const readme = paths.find((p) => /^readme(\.md|\.rst|\.txt)?$/i.test(p));
-    const text = readme ? await gh.text(repo, readme, branch, 60_000) : null;
+    const tree = await gh.json<{ tree: { path: string; type: string; size?: number }[] }>(`/repos/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+    const blobs = (tree?.tree ?? []).filter((e) => e.type === "blob");
+    const paths = blobs.map((e) => e.path);
+    // A README of reasonable size only: the API sends a file whole.
+    const readme = blobs.find((e) => /^readme(\.md|\.rst|\.txt)?$/i.test(e.path) && (e.size ?? 0) <= 200_000)?.path;
+    const text = readme ? await gh.text(repo, readme, branch, 200_000) : null;
     return { paths: paths.slice(0, 300), readme: text?.slice(0, 6000) ?? "" };
   });
   const res = await chat(

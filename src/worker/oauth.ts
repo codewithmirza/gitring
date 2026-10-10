@@ -142,7 +142,20 @@ function consentPage(user: NonNullable<Principal["user"]>, r: { id: string; clie
 </form>`,
     200,
     { "set-cookie": requestCookie(r.id) },
+    // The answer to the form redirects to the app: the policy must allow that place.
+    { formAction: [redirectSource(r.redirectUri)].filter(Boolean) },
   );
+}
+
+/** A CSP source for a redirect URI: its origin (https, loopback http) or its scheme (an app). */
+function redirectSource(uri: string): string {
+  try {
+    const u = new URL(uri);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.origin;
+    return u.protocol;
+  } catch {
+    return "";
+  }
 }
 
 function expiredPage(): Response {
@@ -221,6 +234,8 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
   app.post("/oauth/revoke", async (c) => {
     const form = await formOf(c);
     const res = await directory(c.env).oauthRevoke(form, basicAuth(c.req.header("authorization")));
+    // This isolate forgets the person's cached lookups at once; other isolates within 15 seconds.
+    if (res.userId) forgetPrincipal({ userId: res.userId });
     if (res.body) return json(res.body, res.status, { ...CORS, "cache-control": "no-store" });
     return new Response(null, { status: res.status, headers: { ...CORS, "cache-control": "no-store" } });
   });

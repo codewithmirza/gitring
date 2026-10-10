@@ -165,12 +165,13 @@ export class FakeGithub {
     }
     if (method === "POST" && path === "/git/trees") {
       const base = new Map(this.trees.get(body.base_tree) ?? []);
-      for (const e of body.tree as { path: string; mode: string; sha: string | null }[]) {
+      for (const e of body.tree as { path: string; mode: string; type?: string; sha: string | null }[]) {
         if (e.sha === null) {
           base.delete(e.path);
           for (const k of [...base.keys()]) if (k.startsWith(`${e.path}/`)) base.delete(k);
         } else {
-          if (!this.blobs.has(e.sha)) return json(422, { message: `tree.sha ${e.sha} is not a valid blob` });
+          // Submodules point at commits of other repositories: GitHub does not check them.
+          if (e.type !== "commit" && !this.blobs.has(e.sha)) return json(422, { message: `tree.sha ${e.sha} is not a valid blob` });
           base.set(e.path, { mode: e.mode, sha: e.sha });
         }
       }
@@ -242,7 +243,14 @@ export class FakeGithub {
     m = /^\/git\/blobs\/([0-9a-f]{40})$/.exec(path);
     if (method === "GET" && m) {
       const text = this.blobs.get(m[1]);
-      return text === undefined ? json(404, { message: "Not Found" }) : json(200, { sha: m[1], content: Buffer.from(text).toString("base64"), encoding: "base64" });
+      if (text === undefined) return json(404, { message: "Not Found" });
+      if (String((init?.headers as Record<string, string>)?.Accept ?? "").includes("raw")) return new Response(text, { status: 200 });
+      return json(200, { sha: m[1], content: Buffer.from(text).toString("base64"), encoding: "base64" });
+    }
+    m = /^\/git\/refs\/(heads\/.+)$/.exec(path);
+    if (method === "GET" && m) {
+      const sha = this.refs.get(decodeURIComponent(m[1]));
+      return sha ? json(200, { ref: `refs/${m[1]}`, object: { sha, type: "commit" } }) : json(404, { message: "Not Found" });
     }
     m = /^\/tarball\/([0-9a-f]{40})$/.exec(path);
     if (method === "GET" && m) {

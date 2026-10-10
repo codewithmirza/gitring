@@ -12,10 +12,26 @@ const HEADERS = {
   "X-GitHub-Api-Version": "2022-11-28",
 } as const;
 
-/** ETag cache of GET answers in this isolate: key → { etag, body }. */
+/** ETag cache of GET answers in this isolate: key → { etag, body }, at most 8 MB together. */
 const etags = new Map<string, { etag: string; status: number; body: string; link: string | null }>();
-const ETAG_MAX = 400;
-const ETAG_BODY_MAX = 512_000;
+const ETAG_TOTAL_MAX = 8_000_000;
+const ETAG_BODY_MAX = 256_000;
+let etagBytes = 0;
+
+function remember(key: string, entry: { etag: string; status: number; body: string; link: string | null }): void {
+  const old = etags.get(key);
+  if (old) {
+    etagBytes -= old.body.length;
+    etags.delete(key);
+  }
+  while (etagBytes + entry.body.length > ETAG_TOTAL_MAX && etags.size) {
+    const [k, v] = etags.entries().next().value!;
+    etags.delete(k);
+    etagBytes -= v.body.length;
+  }
+  etags.set(key, entry);
+  etagBytes += entry.body.length;
+}
 
 export class GithubError extends Error {
   constructor(
@@ -60,17 +76,13 @@ export class GithubClient {
     const res = await this.fetcher(url, { headers });
     if (res.status === 304 && known) {
       // Refresh the entry's position (Map keeps insertion order: the oldest entries go first).
-      etags.delete(key);
-      etags.set(key, known);
+      remember(key, known);
       return { status: known.status, body: known.body, link: known.link };
     }
     const body = await res.text();
     const link = res.headers.get("link");
     const etag = res.headers.get("etag");
-    if (res.ok && etag && body.length <= ETAG_BODY_MAX) {
-      if (etags.size >= ETAG_MAX) etags.delete(etags.keys().next().value!);
-      etags.set(key, { etag, status: res.status, body, link });
-    }
+    if (res.ok && etag && body.length <= ETAG_BODY_MAX) remember(key, { etag, status: res.status, body, link });
     return { status: res.status, body, link };
   }
 
@@ -135,4 +147,5 @@ export function githubMessage(status: number, body: string): string {
 /** Forget cached answers (tests). */
 export function clearGithubCache(): void {
   etags.clear();
+  etagBytes = 0;
 }

@@ -6,7 +6,7 @@ import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } fr
 import { atLeast } from "../../../src/core/accounts";
 import type { GithubSyncStatus, ProjectSettings, ProjectSource } from "../../../src/core/types";
 import { store, useStore } from "./store";
-import { getJson, HttpError, send } from "./http";
+import { getJson, HttpError, invalidate, send } from "./http";
 
 export class AccountError extends Error {
   constructor(
@@ -47,6 +47,12 @@ export async function loadMe(opts: { maxAge?: number } = {}): Promise<MeWithInst
  */
 export async function loadProjects(opts: { maxAge?: number } = {}): Promise<ProjectInfo[]> {
   const list = await call<ProjectInfo[]>("GET", "/api/projects", undefined, opts.maxAge ?? 30_000);
+  // A cut answer is not a list: keep the list that the store has (every view reads it as an array),
+  // and do not keep the bad answer for the next caller.
+  if (!Array.isArray(list)) {
+    invalidate("/api/projects");
+    throw new AccountError(0, "gitring did not send the project list. Try again.");
+  }
   store.setProjects(list);
   return list;
 }
@@ -59,6 +65,12 @@ export function signIn(provider: "github" | "google") {
 
 export async function signOut() {
   await call("POST", "/auth/logout").catch(() => undefined);
+  location.href = "/";
+}
+
+/** End every browser session of the person (API keys and connected apps keep working). */
+export async function signOutEverywhere() {
+  await call("POST", "/auth/logout-all").catch(() => undefined);
   location.href = "/";
 }
 

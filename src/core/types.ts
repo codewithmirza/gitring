@@ -83,6 +83,11 @@ export interface GithubSettings {
   mode: GithubSyncMode;
   /** Branch that gitring pushes in pull-request mode. */
   branch: string;
+  /**
+   * The GitHub branch that main follows: changes come from it, "Straight to main" moves it, and pull
+   * requests go to it. Absent: the repository's default branch (an import sets the imported branch).
+   */
+  base?: string;
 }
 
 export type GithubSyncState =
@@ -245,7 +250,7 @@ export interface Project {
     push?: boolean;
     tokenIds?: string[];
     /** A GitHub import: a private repository comes as a snapshot of one commit (public ones keep history). */
-    github?: { repo: string; branch: string; snapshot: boolean };
+    github?: { repo: string; branch: string; snapshot: boolean; tries?: number };
   };
   /** GitHub sync of main (settings.github). */
   github?: GithubSyncStatus;

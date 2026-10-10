@@ -128,12 +128,38 @@ async function forwardRequest(request: Request, url: URL, base: string): Promise
   return new Request(target.toString(), init);
 }
 
+/**
+ * Response headers that agent code may set. Previews share the gitring origin, so every other header
+ * goes: Set-Cookie could replace a person's session, Clear-Site-Data could sign them out, Refresh and
+ * outside redirects could send them elsewhere.
+ */
+const ALLOWED_RESPONSE_HEADERS = new Set([
+  "content-type",
+  "content-length",
+  "content-language",
+  "content-disposition",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "expires",
+  "vary",
+  "location",
+  "x-content-type-options",
+]);
+
 function decorate(res: Response, key: string, base: string, sandbox: boolean): Response {
   if (res.status === 101) return res; // WebSocket upgrade: pass through untouched.
-  const out = new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  const headers = new Headers();
+  for (const [name, value] of res.headers) if (ALLOWED_RESPONSE_HEADERS.has(name.toLowerCase())) headers.append(name, value);
+  const out = new Response(res.body, { status: res.status, statusText: res.statusText, headers });
   out.headers.set(PREVIEW_HEADER, key);
   const location = out.headers.get("location");
-  if (base && location && location.startsWith("/") && !location.startsWith("//")) out.headers.set("location", base + location);
+  if (location) {
+    // Only same-site paths: a preview cannot send people to other sites from the gitring origin.
+    if (location.startsWith("/") && !location.startsWith("//") && !location.startsWith("/\\")) out.headers.set("location", base + location);
+    else if (!/^[a-z][a-z0-9+.-]*:/i.test(location) && !location.startsWith("//")) out.headers.set("location", location);
+    else out.headers.delete("location");
+  }
   if (sandbox) out.headers.append("content-security-policy", SANDBOX_POLICY);
   return out;
 }
