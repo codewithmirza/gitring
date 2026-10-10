@@ -205,7 +205,7 @@ export function TaskComposer({ autoOpen = false }: { autoOpen?: boolean }) {
         setTestOpen(Boolean(snapshot.checkCode || snapshot.checkPath));
         wantFocus.current = true;
         setLocalOpen(true);
-        setError(`The task was not created: ${msg} Your text is safe.`);
+        setError(`The task was not created: ${/[.!?]$/.test(msg.trim()) ? msg.trim() : `${msg.trim()}.`} Your text is safe.`);
       } else {
         updatePending(key, { state: "error", error: msg, draft: snapshot });
       }
