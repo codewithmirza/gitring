@@ -148,7 +148,7 @@ describe("GitHub App setup and sign-in", () => {
   it("keeps only same-site return paths", async () => {
     const dir = make();
     await withGithubApp(dir);
-    for (const bad of ["//evil.example/x", "https://evil.example/", "/\\evil", "/\t/evil.example/", "/\n/evil.example", "/\r\n/evil.example", "javascript:alert(1)", " //evil.example"]) {
+    for (const bad of ["//evil.example/x", "https://evil.example/", "/\\evil", "/\t/evil.example/", "/\n/evil.example", "/\r\n/evil.example", "javascript:alert(1)", " //evil.example", "/.//evil.example/login", "/%2e//evil.example", "/a/..//evil.example", "/./\\evil.example"]) {
       const res = await githubSignIn(dir, { id: 2, login: "sam" }, bad);
       expect(res.returnTo).toBe("/");
     }
@@ -263,6 +263,22 @@ describe("projects and roles", () => {
     expect(robin.admin).toBe(false);
     const p = await dir.createProject({ name: "Private thing", source: { kind: "empty" }, ownerId: robin.id });
     expect(await dir.role(p.id, boss.id)).toBe("owner");
+  });
+
+  it("keeps an owner login with the GitHub account that used it first", async () => {
+    const dir = make({ GITRING_OWNERS: "github:boss, github-id:77" });
+    await withGithubApp(dir);
+    const { user: boss } = await githubSignIn(dir, { id: 31, login: "boss" });
+    expect(boss.admin).toBe(true);
+    // The owner renames the GitHub account; someone else registers the free login "boss".
+    const { user: other } = await githubSignIn(dir, { id: 99, login: "boss" });
+    expect(other.id).not.toBe(boss.id);
+    expect(other.admin).toBe(false);
+    const { user: renamed } = await githubSignIn(dir, { id: 31, login: "boss-new" });
+    expect(renamed.id).toBe(boss.id);
+    // "github-id:<n>" names the account by its id, whatever its login.
+    const { user: byId } = await githubSignIn(dir, { id: 77, login: "anyone" });
+    expect(byId.admin).toBe(true);
   });
 
   it("lets the operator key make projects that no person owns", async () => {

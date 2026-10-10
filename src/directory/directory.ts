@@ -37,6 +37,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS github_links_project ON github_links (project_id)`,
   // Webhook deliveries already handled (GitHub can send one twice; a replay must not open a task twice).
   `CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
+  // A login in GITRING_OWNERS stays with the account that used it first (logins can change hands).
+  `CREATE TABLE IF NOT EXISTS owner_pins (handle TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL, pinned_at INTEGER NOT NULL)`,
   // The public sample left the product (2026-10-10): archive its project.
   `UPDATE projects SET archived = 1 WHERE id = 'demo' AND source LIKE '%"sample"%'`,
 ];
@@ -789,14 +791,31 @@ export class Directory extends DurableObject<Env> {
       .filter(Boolean);
   }
 
+  /**
+   * An owner of the deployment (GITRING_OWNERS): "github:<login>", "github-id:<number>",
+   * "google:<email>" or a bare email. A login matches only the account that matched it first: when an
+   * owner renames their GitHub account, GitHub releases the old login, and whoever registers it later
+   * does not become an owner.
+   */
   private isAdmin(userId: string): boolean {
     const owners = this.owners();
     if (!owners.length) return false;
-    for (const i of this.sql.exec<{ provider: string; login: string | null; email: string | null }>("SELECT provider, login, email FROM identities WHERE user_id = ?", userId)) {
-      if (i.login && owners.includes(`${i.provider}:${i.login.toLowerCase()}`)) return true;
+    for (const i of this.sql.exec<{ provider: string; subject: string; login: string | null; email: string | null }>("SELECT provider, subject, login, email FROM identities WHERE user_id = ?", userId).toArray()) {
+      if (owners.includes(`${i.provider}-id:${String(i.subject).toLowerCase()}`)) return true;
+      const handle = i.login ? `${i.provider}:${i.login.toLowerCase()}` : null;
+      if (handle && owners.includes(handle) && this.ownerPinOk(handle, i.provider, i.subject)) return true;
       if (i.email && (owners.includes(`${i.provider}:${i.email.toLowerCase()}`) || owners.includes(i.email.toLowerCase()))) return true;
     }
     return false;
+  }
+
+  private ownerPinOk(handle: string, provider: string, subject: string): boolean {
+    const pin = this.sql.exec<{ provider: string; subject: string }>("SELECT provider, subject FROM owner_pins WHERE handle = ?", handle).toArray()[0];
+    if (!pin) {
+      this.sql.exec("INSERT OR IGNORE INTO owner_pins (handle, provider, subject, pinned_at) VALUES (?, ?, ?, ?)", handle, provider, String(subject), Date.now());
+      return true;
+    }
+    return pin.provider === provider && pin.subject === String(subject);
   }
 
   private userInfo(userId: string): A.UserInfo | null {
@@ -1103,7 +1122,9 @@ export function safeReturn(to: string): string {
   if (!s.startsWith("/") || s.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(s)) return "/";
   try {
     const u = new URL(s, "https://gitring.invalid");
-    return u.origin === "https://gitring.invalid" ? `${u.pathname}${u.search}${u.hash}` : "/";
+    const out = `${u.pathname}${u.search}${u.hash}`;
+    // Dot segments can turn "/.//evil.example" into "//evil.example": check the result too.
+    return u.origin === "https://gitring.invalid" && out.startsWith("/") && !out.startsWith("//") && !out.includes("\\") ? out : "/";
   } catch {
     return "/";
   }
