@@ -43,7 +43,7 @@ import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
 import { syncToGithub, type UpstreamMark } from "../platform/github/sync";
-import { githubSnapshot, SnapshotTooLarge } from "../platform/github/tarball";
+import { githubSnapshot, SNAPSHOT_LIMITS, SnapshotTooLarge } from "../platform/github/tarball";
 import { upstreamChanges } from "../platform/github/upstream";
 import {
   ACTIVE,
@@ -462,33 +462,68 @@ export class HarborMaster extends DurableObject<Env> {
    * GitHub makes tarballs with `git archive`: files marked export-ignore are missing, and line endings or
    * $Id$ can change. gitring compares each file with the commit's tree (git blob ids) and takes the
    * missing or different files from the Git Data API, so that main has exactly GitHub's files.
+   * Without the tree (GitHub did not answer three times, or the tree is too large to list) the import
+   * attempt fails: a snapshot that gitring could not check is never recorded as GitHub's commit.
+   * One byte budget (the snapshot limits) covers the tarball's files and the files read one by one.
    */
-  private async matchGitTree(repo: string, sha: string, files: FileChange[], token: string): Promise<FileChange[]> {
+  private async matchGitTree(repo: string, sha: string, files: FileChange[], token: string, limits = SNAPSHOT_LIMITS): Promise<FileChange[]> {
     const headers = { "User-Agent": "gitring", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${token}` };
-    const res = await fetch(`https://api.github.com/repos/${repo}/git/trees/${sha}?recursive=1`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
-    if (!res.ok) return files;
-    const tree = await res.json<{ truncated?: boolean; tree?: { path: string; mode: string; type: string; sha: string; size?: number }[] }>();
-    if (tree.truncated || !tree.tree) return files; // very large trees: keep the tarball as it is
-    const want = new Map(tree.tree.filter((e) => e.type === "blob").map((e) => [e.path, e]));
+    const tree = await this.githubTree(repo, sha, headers);
+    const want = new Map(tree.filter((e) => e.type === "blob").map((e) => [e.path, e]));
     const out: FileChange[] = [];
     const fix: { path: string; sha: string; mode: string; size: number }[] = [];
+    const tooLarge = () => new SnapshotTooLarge(`${repo} is larger than ${Math.round(limits.maxBytes / 1e6)} MB. Push it with git instead (history and all files).`);
+    let bytes = 0;
     for (const f of files) {
       const e = want.get(f.path);
       if (!e) continue; // not in the commit (cannot happen for git archive, but stay exact)
-      const bytes = typeof f.content === "string" ? utf8.encode(f.content) : (f.content ?? new Uint8Array());
-      if ((await hashObject("blob", bytes)) === e.sha) out.push({ ...f, mode: e.mode === "100755" ? "100755" : e.mode === "120000" ? "120000" : "100644" });
-      else fix.push({ path: f.path, sha: e.sha, mode: e.mode, size: e.size ?? 0 });
+      const data = typeof f.content === "string" ? utf8.encode(f.content) : (f.content ?? new Uint8Array());
+      if ((await hashObject("blob", data)) === e.sha) {
+        out.push({ ...f, mode: e.mode === "100755" ? "100755" : e.mode === "120000" ? "120000" : "100644" });
+        bytes += data.length;
+      } else fix.push({ path: f.path, sha: e.sha, mode: e.mode, size: e.size ?? 0 });
       want.delete(f.path);
     }
     for (const [path, e] of want) fix.push({ path, sha: e.sha, mode: e.mode, size: e.size ?? 0 });
     if (fix.length > 500) throw new Error(`${fix.length} files of ${repo} differ from its tarball. Push the repository with git instead.`);
+    if (out.length + fix.length > limits.maxFiles) throw new SnapshotTooLarge(`${repo} has more than ${limits.maxFiles} files. Push it with git instead.`);
+    // The sizes in the tree say what the files read one by one add, before gitring reads any of them.
+    if (bytes + fix.reduce((n, x) => n + x.size, 0) > limits.maxBytes) throw tooLarge();
     for (const x of fix) {
       if (x.size > 15_000_000) throw new Error(`${x.path} is larger than 15 MB. Push the repository with git instead.`);
       const blob = await fetch(`https://api.github.com/repos/${repo}/git/blobs/${x.sha}`, { headers: { ...headers, Accept: "application/vnd.github.raw" } });
       if (!blob.ok) throw new Error(`GitHub did not send ${x.path} (${blob.status}).`);
-      out.push({ path: x.path, content: new Uint8Array(await blob.arrayBuffer()), mode: x.mode === "100755" ? "100755" : x.mode === "120000" ? "120000" : "100644" });
+      const content = new Uint8Array(await blob.arrayBuffer());
+      bytes += content.length;
+      if (bytes > limits.maxBytes) throw tooLarge();
+      out.push({ path: x.path, content, mode: x.mode === "100755" ? "100755" : x.mode === "120000" ? "120000" : "100644" });
     }
     return out;
+  }
+
+  /** The file list of a commit (GET /git/trees/{sha}?recursive=1), with two more tries after a GitHub error. */
+  private async githubTree(repo: string, sha: string, headers: Record<string, string>): Promise<{ path: string; mode: string; type: string; sha: string; size?: number }[]> {
+    let last = "";
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, 400 * 3 ** (attempt - 2)));
+      try {
+        const res = await fetch(`https://api.github.com/repos/${repo}/git/trees/${sha}?recursive=1`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
+        if (res.ok) {
+          const tree = await res.json<{ truncated?: boolean; tree?: { path: string; mode: string; type: string; sha: string; size?: number }[] }>();
+          if (tree.truncated) throw new SnapshotTooLarge(`GitHub does not list all files of ${repo}: it has more than the API shows. Push it with git instead.`);
+          if (Array.isArray(tree.tree)) return tree.tree;
+          last = "GitHub sent no file list";
+        } else {
+          last = `GitHub answered ${res.status}`;
+          // The commit is gone or the token may not read it: another try does not help now.
+          if (res.status === 404 || res.status === 401) break;
+        }
+      } catch (e) {
+        if (e instanceof SnapshotTooLarge) throw e;
+        last = String((e as Error)?.message ?? e).slice(0, 120);
+      }
+    }
+    throw new Error(`gitring could not read the file list of ${repo} (${last}).`);
   }
 
   /** The branch the owner pushed: main, master, or the repo's default branch. */
