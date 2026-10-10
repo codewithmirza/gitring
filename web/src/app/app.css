@@ -807,6 +807,12 @@
   /* Toasts stay above the bottom bar. */
   .app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom)); right: var(--s-3); }
   .topbar .topbar__conn, .topbar .topbar__queue, .topbar .topbar__search, .topbar .topbar__themecycle { min-width: 40px; height: 40px; justify-content: center; }
+  /* Room for the name and Sign in: the theme follows the system, a live connection needs no badge, and
+     people who only watch get no decisions button (the decisions page still lists them). */
+  .topbar .topbar__themecycle { display: none; }
+  .topbar .topbar__conn--clear { display: none; }
+  .topbar .topbar__queue--watch { display: none; }
+  .topbar__projname { max-width: 120px; }
   .topbar .acct-me { width: 40px; height: 40px; }
   .topbar .acct-switch { min-height: 40px; }
   .palette__foot { display: none; }

@@ -253,7 +253,7 @@ function Decisions() {
       <button
         {...pop.triggerProps}
         type="button"
-        className={["topbar__queue", needsYou && "has-items"].filter(Boolean).join(" ")}
+        className={["topbar__queue", needsYou && "has-items", !canAct && "topbar__queue--watch"].filter(Boolean).join(" ")}
         aria-label={
           n === 0
             ? "No decisions need you."
