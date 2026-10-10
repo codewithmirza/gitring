@@ -3,8 +3,9 @@
  * commits, refs, pull requests, compare, tarballs) with enough of the REST API for sync and pulls.
  */
 import { createHash } from "node:crypto";
-import type { RepoBackend } from "../../src/platform/repo/backend";
+import type { RepoBackend, TreeEntry } from "../../src/platform/repo/backend";
 import { gzip, tar } from "../../src/platform/checks/tar";
+import { encodeTree, modeToType, normalizeMode, TREE_MODE } from "../../src/core/git/objects";
 import { EmulatorBackend, EmulatorService } from "../support/git-emulator/service";
 import { GitStore, MemoryObjectStore } from "../support/git-emulator/store";
 
@@ -65,6 +66,39 @@ export class FakeGithub {
   private id(): string {
     this.n += 1;
     return createHash("sha1").update(`fake-${this.n}`).digest("hex");
+  }
+
+  /** The git id of a tree (GitHub's tree ids are git's: equal files give an equal id). */
+  private treeId(entries: Map<string, Entry>): string {
+    type Dir = { files: Map<string, Entry>; dirs: Map<string, Dir> };
+    const root: Dir = { files: new Map(), dirs: new Map() };
+    for (const [path, e] of entries) {
+      const parts = path.split("/");
+      let dir = root;
+      for (const name of parts.slice(0, -1)) {
+        let next = dir.dirs.get(name);
+        if (!next) {
+          next = { files: new Map(), dirs: new Map() };
+          dir.dirs.set(name, next);
+        }
+        dir = next;
+      }
+      dir.files.set(parts[parts.length - 1], e);
+    }
+    const build = (dir: Dir): string => {
+      const list: TreeEntry[] = [...dir.files].map(([name, e]) => ({ name, mode: normalizeMode(e.mode), hash: e.sha, type: modeToType(e.mode) }));
+      for (const [name, sub] of dir.dirs) list.push({ name, mode: TREE_MODE, hash: build(sub), type: "tree" });
+      const body = encodeTree(list);
+      return createHash("sha1").update(Buffer.from(`tree ${body.length}\0`)).update(body).digest("hex");
+    };
+    return build(root);
+  }
+
+  /** Store a tree (path → entry) under its git id. */
+  putTree(entries: Map<string, Entry>): string {
+    const sha = this.treeId(entries);
+    this.trees.set(sha, entries);
+    return sha;
   }
 
   /** A commit that GitHub has with this exact id (an import keeps ids). */
@@ -136,7 +170,7 @@ export class FakeGithub {
         tree.set(p, { mode: tree.get(p)?.mode ?? "100644", sha });
       }
     }
-    const treeSha = this.id();
+    const treeSha = this.treeId(tree);
     this.trees.set(treeSha, tree);
     const sha = this.id();
     this.commits.set(sha, { tree: treeSha, parents: [parent], message, author: { name: authorName, email: "pat@example.com", date: "" } });
@@ -175,8 +209,7 @@ export class FakeGithub {
           base.set(e.path, { mode: e.mode, sha: e.sha });
         }
       }
-      const sha = this.id();
-      this.trees.set(sha, base);
+      const sha = this.putTree(base);
       return json(201, { sha });
     }
     if (method === "POST" && path === "/git/commits") {
@@ -238,7 +271,9 @@ export class FakeGithub {
     if (method === "GET" && m) {
       const t = this.trees.get(m[1]);
       if (!t) return json(404, { message: "Not Found" });
-      return json(200, { sha: m[1], truncated: false, tree: [...t].map(([p, e]) => ({ path: p, mode: e.mode, type: e.mode === "160000" ? "commit" : "blob", sha: e.sha })) });
+      // Blobs come with their size, as on GitHub.
+      const size = (e: Entry) => (this.blobs.has(e.sha) ? { size: Buffer.byteLength(this.blobs.get(e.sha)!) } : {});
+      return json(200, { sha: m[1], truncated: false, tree: [...t].map(([p, e]) => ({ path: p, mode: e.mode, type: e.mode === "160000" ? "commit" : "blob", sha: e.sha, ...size(e) })) });
     }
     m = /^\/git\/blobs\/([0-9a-f]{40})$/.exec(path);
     if (method === "GET" && m) {
