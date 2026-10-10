@@ -83,7 +83,8 @@ function s1Files() {
   return m;
 }
 function s2Files() {
-  const m = new Map(main);
+  // KESTREL-7 works on an older main.
+  const m = oldFiles();
   const lines = cart.split("\n");
   lines[41] = "export const coupon = (code) => code === 'SALT' ? 0.8 : 1;";
   m.set("src/cart.js", lines.join("\n"));

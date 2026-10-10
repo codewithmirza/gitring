@@ -291,6 +291,15 @@ export function CodeLines({ text, info, label, wrap, lanes, byLine, head, select
     if (i === -1) return;
     setMarkIdx(i);
     focusAfter.current = focusMark.line;
+    // The mark may be on screen already (no new render then): focus it in the next frame.
+    const id = requestAnimationFrame(() => {
+      const btn = scroller.current?.querySelector<HTMLElement>(`[data-mark="${focusMark.line}"]`);
+      if (btn && focusAfter.current === focusMark.line) {
+        focusAfter.current = null;
+        btn.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusMark?.n]);
   useLayoutEffect(() => {
