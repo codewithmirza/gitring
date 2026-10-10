@@ -15,7 +15,7 @@
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
-import { directory, esc, forgetPrincipal, page, readCookie, type Principal } from "./auth";
+import { directory, esc, forgetPrincipal, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
 import { basicAuth } from "../directory/oauth";
 import { sameString } from "../directory/crypto";
 
@@ -110,18 +110,12 @@ async function signInPage(c: C, clientName: string, reqId: string): Promise<Resp
   const providers = await directory(c.env)
     .providers()
     .catch(() => ({ github: null, google: null }));
-  const back = encodeURIComponent(`/oauth/authorize?req=${reqId}`);
-  const buttons = [
-    providers.github ? `<a class="btn" href="/auth/github/start?return=${back}">Continue with GitHub</a>` : "",
-    providers.google ? `<a class="btn secondary" href="/auth/google/start?return=${back}">Continue with Google</a>` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const buttons = providerButtons({ github: Boolean(providers.github), google: Boolean(providers.google) }, `/oauth/authorize?req=${reqId}`, lastProvider(c.req.raw));
   return page(
     "Connect an app",
     `<h1>Connect ${esc(clientName)} to gitring</h1>
-<p class="muted">Sign in to gitring first. Then gitring asks you to allow the app.</p>
-<div class="card"><p>${buttons || "Sign-in is not set up on this gitring yet."}</p></div>`,
+<p class="muted">Sign in to gitring. Then you allow ${esc(clientName)} to work as you.</p>
+<div class="card">${providers.github || providers.google ? buttons : "<p>Sign-in is not set up on this server.</p>"}</div>`,
     200,
     { "set-cookie": requestCookie(reqId) },
   );
@@ -129,22 +123,21 @@ async function signInPage(c: C, clientName: string, reqId: string): Promise<Resp
 
 function consentPage(user: NonNullable<Principal["user"]>, r: { id: string; clientName: string; clientUri?: string; redirectUri: string }): Response {
   const who = user.identities.find((i) => i.login)?.login ?? user.email ?? user.name;
-  const site = r.clientUri ? `<p class="muted">The app says that it is from <code>${esc(hostOf(r.clientUri))}</code>. gitring did not check this.</p>` : "";
+  const host = hostOf(r.clientUri ?? r.redirectUri);
   return page(
     "Allow the app",
-    `<h1>Allow ${esc(r.clientName)} to use gitring as you?</h1>
-<p class="muted">You are signed in as ${esc(user.name)} (${esc(who)}).</p>
+    `<h1>Allow ${esc(r.clientName)} (${esc(host)}) to use gitring as ${esc(user.name)}?</h1>
+<p class="muted">You are signed in as ${esc(who)}. ${r.clientUri ? `The app says that it is from <code>${esc(hostOf(r.clientUri))}</code>; gitring did not check this.` : ""}</p>
 <div class="card">
 <h2>It can</h2>
-<p>Read the projects that you can see, and their tasks. In projects where you are a member: send plans, write code to work copies, run tests, and ask gitring to merge the work.</p>
+<p>Read your projects and their tasks, send plans, write code to work copies, run tests and ask gitring to merge the work (in projects where you are a member).</p>
 <h2>It cannot</h2>
-<p>Change project settings or members, see your API keys, or act after you remove it. Remove it at any time in Account → Connected apps.</p>
+<p>Change project settings or members, see your API keys, or act after you remove it (Account → Connected apps).</p>
 </div>
-${site}
 <p class="muted">After you allow it, you go back to <code>${esc(hostOf(r.redirectUri))}</code>.</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="req" value="${esc(r.id)}">
-<button type="submit" name="decision" value="allow">Allow</button>
+<button type="submit" name="decision" value="allow" autofocus>Allow</button>
 <button type="submit" name="decision" value="deny" class="btn secondary">Cancel</button>
 </form>`,
     200,

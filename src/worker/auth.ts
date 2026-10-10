@@ -153,6 +153,11 @@ button,.btn{display:inline-block;font:inherit;font-weight:600;padding:9px 16px;b
 input{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 code{font-family:ui-monospace,monospace;font-size:14px;background:color-mix(in srgb,var(--line) 40%,transparent);padding:1px 5px;border-radius:4px;word-break:break-all}
 ol{padding-left:20px}li{margin:4px 0}
+.providers{display:flex;flex-direction:column;gap:10px;max-width:340px}
+.provider{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;border:1px solid #747775;background:#fff;color:#1f1f1f;font:500 15px/20px system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none}
+.provider:hover{background:#f2f2f2}.provider:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.provider svg,.provider img{width:20px;height:20px;flex:none}.provider .last{margin-left:auto;font-size:12px;color:#5f6368}
+@media (prefers-color-scheme:dark){.provider{background:#131314;border-color:#8e918f;color:#e3e3e3}.provider:hover{background:#1f1f20}.provider svg{fill:#fff}.provider .last{color:#9aa0a6}}
 </style></head><body><main>${body}</main></body></html>`;
   return new Response(html, {
     status,
@@ -206,6 +211,36 @@ function browserConversionPage(code: string, state: string): Response {
 })();
 </script>`,
   );
+}
+
+/*
+ * GitHub mark ("mark-github", 16 px) from @primer/octicons (MIT, Copyright GitHub Inc.), unchanged.
+ * Rules: https://github.com/logos (no changes to shape, proportions or color).
+ */
+const GITHUB_MARK =
+  "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656";
+
+/**
+ * "Continue with GitHub" and "Continue with Google" for server pages, with the providers' own marks
+ * (the Google "G" from Google's sign-in assets is /brand/google-g.svg). The provider used last comes first.
+ */
+export function providerButtons(providers: { github: boolean; google: boolean }, returnPath: string, last?: string | null): string {
+  const back = encodeURIComponent(returnPath);
+  const items = [
+    providers.github
+      ? { id: "github", html: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${GITHUB_MARK}"/></svg><span>Continue with GitHub</span>` }
+      : null,
+    providers.google ? { id: "google", html: `<img src="/brand/google-g.svg" alt="" width="20" height="20"><span>Continue with Google</span>` } : null,
+  ].filter((x): x is { id: string; html: string } => Boolean(x));
+  items.sort((a, b) => Number(b.id === last) - Number(a.id === last));
+  return `<div class="providers">${items
+    .map((x) => `<a class="provider" href="/auth/${x.id}/start?return=${back}">${x.html}${x.id === last && items.length > 1 ? '<span class="last">Last used</span>' : ""}</a>`)
+    .join("")}</div>`;
+}
+
+export function lastProvider(req: Request): string | null {
+  const v = readCookie(req, LAST_PROVIDER_COOKIE);
+  return v === "github" || v === "google" ? v : null;
 }
 
 export function esc(s: string): string {
