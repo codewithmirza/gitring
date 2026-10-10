@@ -289,7 +289,11 @@ export class HarborMaster extends DurableObject<Env> {
   private async continueImport(): Promise<void> {
     const p = this.project;
     if (!p?.importing || p.importing.error) return;
-    if (p.importing.github?.snapshot) return this.importGithubSnapshot();
+    if (p.importing.github?.snapshot) {
+      // One snapshot import at a time ("Check now" and the alarm can both ask).
+      this.snapshotRun ??= this.importGithubSnapshot().finally(() => (this.snapshotRun = undefined));
+      return this.snapshotRun;
+    }
     const elapsed = Date.now() - p.importing.startedAt;
     if (p.importing.push) {
       const pushed = await this.pushedBranch();
@@ -379,12 +383,15 @@ export class HarborMaster extends DurableObject<Env> {
    * gitring remembers that this commit is the GitHub commit, so GitHub sync and pulls continue GitHub's
    * history.
    */
+  private snapshotRun?: Promise<void>;
+
   private async importGithubSnapshot(): Promise<void> {
     const p = this.requireProject();
     const g = p.importing?.github;
     if (!g || !p.importing) return;
     const fail = async (error: string) => {
-      p.importing = { ...p.importing!, error };
+      if (!p.importing) return;
+      p.importing = { ...p.importing, error };
       this.db.setMeta("project", p);
       this.addLog({ kind: "system", message: `Import failed: ${error}` });
       this.emit({ type: "snapshot", state: await this.state() });

@@ -22,6 +22,7 @@ import { actorOf, authRoutes, directory, forgetPrincipal, resolvePrincipal, type
 import { mcpChallenge, oauthRoutes } from "./oauth";
 import { githubRoutes, readAsPerson } from "./github";
 import type { RepoJson } from "../platform/github/repos";
+import { GithubClient, GithubError } from "../platform/github/api";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
@@ -221,7 +222,16 @@ app.post("/api/projects", async (c) => {
   if (source.kind === "github") {
     // gitring reads the repository as the person: GitHub shows it only to people who may see it.
     const repo = source.repo;
-    const meta = user ? await readAsPerson(c.env, user.id, (gh) => gh.json<RepoJson>(`/repos/${repo}`)).catch(() => null) : null;
+    // The operator key (scripts) reads as nobody: public repositories only.
+    let meta: RepoJson | null;
+    try {
+      meta = await (user ? readAsPerson(c.env, user.id, (gh) => gh.json<RepoJson>(`/repos/${repo}`)) : new GithubClient(null, { cacheKey: "anon" }).json<RepoJson>(`/repos/${repo}`));
+    } catch (e) {
+      // GitHub limits anonymous calls per address, and Workers share addresses. Artifacts can still
+      // import a public repository from its URL (a private one fails there with a clear reason).
+      if (!(e instanceof GithubError) || (e.status !== 403 && e.status !== 429)) return c.json({ error: `gitring could not ask GitHub about ${repo}. Try again.` }, 502);
+      meta = { full_name: repo, private: false, html_url: `https://github.com/${repo}` };
+    }
     if (!meta) return c.json({ error: `gitring cannot read ${repo}. It is private, or the name is wrong. Connect GitHub, or use Push with git.` }, 404);
     if (meta.archived) return c.json({ error: `${meta.full_name} is archived on GitHub.` }, 400);
     const access = await directory(c.env).githubRepoAccess(meta.full_name).catch(() => ({ ok: false as const, message: "gitring could not ask GitHub.", installUrl: undefined }));
@@ -229,7 +239,8 @@ app.post("/api/projects", async (c) => {
       return c.json({ error: `Install the gitring GitHub app on ${meta.full_name} to import it.`, ...(access.installUrl ? { installUrl: access.installUrl } : {}) }, 403);
     }
     canPush = access.ok && Boolean(meta.permissions?.push || meta.permissions?.admin || meta.permissions?.maintain);
-    source = { kind: "github", repo: meta.full_name, branch: source.branch || meta.default_branch || "main", private: meta.private };
+    const branch = source.branch || meta.default_branch;
+    source = { kind: "github", repo: meta.full_name, ...(branch ? { branch } : {}), private: meta.private };
     visibility = visibility ?? (meta.private ? "private" : "public");
   }
   const dir = directory(c.env);
