@@ -1,0 +1,85 @@
+/* Account page. Type sizes here: 11, 13, 15, 28. */
+
+.acct { max-width: 920px; }
+.acct-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4) var(--s-5);
+  margin-top: var(--s-3);
+}
+.acct-profile__avatar {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.acct-profile__avatar--none { display: grid; place-items: center; color: var(--ink-3); }
+.acct-profile__text { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; }
+.acct-profile__text .page__title { overflow-wrap: anywhere; }
+.acct-profile__meta { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+
+.acct-sec { display: grid; gap: var(--s-4); margin-top: var(--s-9); padding-top: var(--s-6); border-top: 1px solid var(--line); scroll-margin-top: var(--s-6); }
+.acct-sec__head { display: grid; gap: var(--s-1); }
+.acct-sec__lede { max-width: 70ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+
+/* Dense rows: mark, text, actions. */
+.acct-rows { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-3); }
+.acct-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  min-height: 56px;
+  padding: var(--s-3) var(--s-4);
+}
+.acct-row + .acct-row { border-top: 1px solid var(--line); }
+.acct-row__mark { display: grid; place-items: center; width: 28px; height: 28px; color: var(--ink-2); }
+.acct-row__mark--github .brand-mark--github { fill: var(--ink-1); }
+:root[data-theme="day"] .acct-row__mark--github .brand-mark--github { fill: #000000; }
+:root[data-theme="dusk"] .acct-row__mark--github .brand-mark--github,
+:root[data-theme="night"] .acct-row__mark--github .brand-mark--github { fill: #ffffff; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .acct-row__mark--github .brand-mark--github { fill: #000000; }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .acct-row__mark--github .brand-mark--github { fill: #ffffff; }
+}
+.acct-row__text { display: grid; gap: 2px; min-width: 0; }
+.acct-row__name { font-size: var(--t-sm); font-weight: 500; color: var(--ink-1); overflow-wrap: anywhere; }
+.acct-row__host, .acct-row__prefix { font-weight: 400; color: var(--ink-2); }
+.acct-row__prefix { font-size: var(--t-xs); }
+.acct-row__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+.acct-row__acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-2); }
+.acct-row__acts .b-btn { text-decoration: none; }
+
+.acct-empty { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); font-size: var(--t-sm); color: var(--ink-2); }
+.acct-empty .b-btn { text-decoration: none; }
+.acct-error { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2); margin: 0; font-size: var(--t-sm); color: var(--danger); }
+.acct-error .b-icon { flex: none; transform: translateY(2px); }
+.acct-link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
+
+.acct-newkey {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) auto auto;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  justify-content: start;
+}
+.acct-newkey .b-field__label,
+.acct-newkey .b-field__help,
+.acct-newkey .acct-error { grid-column: 1 / -1; }
+.acct-fresh { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--clear); border-radius: var(--r-3); background: var(--clear-tint); }
+.acct-fresh p { margin: 0; font-size: var(--t-sm); font-weight: 500; }
+.acct-fresh .b-btn { justify-self: start; }
+.acct-signin { max-width: 360px; margin-top: var(--s-6); }
+
+@media (max-width: 600px) {
+  .acct-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .acct-row__acts { grid-column: 2; justify-content: flex-start; }
+  .acct-newkey { grid-template-columns: minmax(0, 1fr) auto; }
+  .acct-newkey .b-input { grid-column: 1 / -1; }
+}

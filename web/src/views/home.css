@@ -87,6 +87,28 @@
   font-weight: 500;
 }
 
+.home__text--sm { font-size: var(--t-sm); line-height: var(--lh-sm); }
+
+/* MCP connector: one URL, then the steps for each agent. */
+.home__connect { display: grid; gap: var(--s-4); min-width: 0; }
+.home__url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface-1);
+}
+.home__urllabel { font-size: var(--t-xs); font-weight: 500; color: var(--ink-3); }
+.home__urlvalue { flex: 1 1 260px; min-width: 0; font-size: var(--t-md); color: var(--ink-1); overflow-wrap: anywhere; }
+.home__panel { display: grid; gap: var(--s-3); padding-top: var(--s-2); min-width: 0; }
+.home__list { display: grid; gap: var(--s-2); margin: 0; padding-left: 22px; max-width: 64ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.home__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); }
+.home__row .b-btn { text-decoration: none; }
+.home__actions .b-btn { text-decoration: none; }
+
 .home__foot {
   display: flex;
   flex-wrap: wrap;

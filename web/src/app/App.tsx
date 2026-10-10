@@ -1,33 +1,32 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
-import { Button, ProgressRule, ToastHost, EmptyState, toast } from "../design/components";
+import { Suspense, useEffect, useRef } from "react";
+import { Button, EmptyState, SkeletonPage, SkeletonSplit, ToastHost, toast } from "../design/components";
 import { store, useStore } from "../state/store";
 import { syncProject } from "../state/api";
 import { selectJudgmentQueue } from "../state/selectors";
-import { TopBar } from "./TopBar";
-import { SignInDialog, WatchBanner } from "./Account";
-import { DiffDrawer, FileDrawer, NewIntentDialog, ShortcutsDialog } from "./Dialogs";
-import { canonicalPath, isProjectRoute, Link, navigate, useLocationKey, useRoute, type Route } from "./router";
-import { openNewIntent, openShortcuts, setUi } from "./ui";
-import { ChartView } from "../views/ChartView";
+import { TopBar, ViewNav } from "./TopBar";
+import { SignInPopover, WatchBanner } from "./Account";
+import { CommandPalette } from "./CommandPalette";
+import { ShortcutsPopover } from "./Shortcuts";
+import { canonicalPath, isProjectRoute, Link, navigate, setPreloader, setSearchParam, useLocationKey, useRoute, type Route } from "./router";
+import { getUi, openNewIntent, openPalette, openShortcuts, openSignIn, setUi, takeAfterSignIn } from "./ui";
+import { typing } from "./keys";
+import * as V from "./views";
 import { HomeView } from "../views/HomeView";
 
-const IntentsView = lazy(() => import("../views/IntentsView").then((m) => ({ default: m.IntentsView })));
-const LogbookView = lazy(() => import("../views/LogbookView").then((m) => ({ default: m.LogbookView })));
-const ConnectView = lazy(() => import("../views/ConnectView").then((m) => ({ default: m.ConnectView })));
-const ProjectsView = lazy(() => import("../views/ProjectsView").then((m) => ({ default: m.ProjectsView })));
-const SettingsView = lazy(() => import("../views/SettingsView").then((m) => ({ default: m.SettingsView })));
-// The design page is a development aid. Production builds drop this import, so they have no chunk for it.
-const DesignView = import.meta.env.DEV ? lazy(() => import("../views/DesignView").then((m) => ({ default: m.DesignView }))) : null;
+// Links start loading a view's code on hover and focus.
+setPreloader(V.preloadPath);
 
 const TITLES: Record<Route["name"], string> = {
   home: "Many coding agents, one codebase",
   chart: "Overview",
   intents: "Tasks",
   logbook: "History",
+  code: "Code",
   connect: "Connect",
   design: "Design",
   projects: "Projects",
   settings: "Project settings",
+  account: "Account",
   notfound: "Not found",
 };
 
@@ -35,7 +34,10 @@ const GO: Record<string, string> = {
   o: "/overview",
   t: "/tasks",
   h: "/history",
+  c: "/code",
   k: "/connect",
+  p: "/projects",
+  a: "/account",
   ...(import.meta.env.DEV ? { d: "/design" } : {}),
 };
 
@@ -43,13 +45,25 @@ function useShortcuts() {
   useEffect(() => {
     let gAt = 0;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t?.closest("input, textarea, select, [contenteditable='true']")) return;
+      // Ctrl+K or ⌘K opens and closes the palette from anywhere, also from a text field.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (getUi().palette) setUi({ palette: false });
+        else openPalette();
+        return;
+      }
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
       if (document.querySelector("dialog[open]")) return;
+      // Inside a popover, letters belong to the popover (a menu jumps to an item by its first letter).
+      if ((e.target as HTMLElement | null)?.closest?.(".b-pop")) return;
       if (e.key === "?") {
         e.preventDefault();
         openShortcuts();
+        return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        openPalette();
         return;
       }
       if (e.key === "g") {
@@ -81,7 +95,7 @@ function useShortcuts() {
   }, []);
 }
 
-/** Announce new decisions once: the decisions list is the person's inbox. */
+/** Announce new decisions once: they are the person's inbox. */
 function useQueueToasts() {
   useEffect(() => {
     let seen: Set<string> | null = null;
@@ -100,7 +114,7 @@ function useQueueToasts() {
         seen.add(item.key);
         toast({
           tone: "info",
-          title: item.kind === "pick" ? "Choose a work copy" : "A decision needs a person",
+          title: item.kind === "pick" ? "Choose a work copy" : "A decision needs you",
           text: `“${item.title}”. ${item.detail}.`,
           action: { label: "Compare work copies", onClick: () => navigate(`/tasks/${item.intentId}`) },
         });
@@ -115,9 +129,44 @@ function useLocationSync() {
   const loc = useLocationKey();
   useEffect(() => {
     const path = canonicalPath(location.pathname);
-    if (path) navigate(path + location.search, { replace: true });
+    if (path) navigate(path + location.search + location.hash, { replace: true });
     syncProject();
   }, [loc]);
+}
+
+/**
+ * After the sign-in redirect: finish what the person started (open the composer, the new project picker),
+ * or open the sign-in panel again with the reason when the sign-in failed (?signin_error=…).
+ */
+function useSignInReturn() {
+  const ready = useStore((s) => s.accountReady);
+  const signedIn = useStore((s) => Boolean(s.me?.user));
+  const done = useRef(false);
+  useEffect(() => {
+    if (!ready || done.current) return;
+    done.current = true;
+    const p = new URLSearchParams(location.search);
+    const code = p.get("signin_error");
+    if (code) {
+      const who = p.get("signin_provider") === "google" ? "Google" : p.get("signin_provider") === "github" ? "GitHub" : "The provider";
+      const detail = p.get("signin_message");
+      const text =
+        code === "access_denied"
+          ? "You stopped the sign-in. Nothing changed."
+          : code === "expired"
+            ? "The sign-in took too long. Try again."
+            : `${who} did not sign you in${detail ? `: ${detail.replace(/\.$/, "")}` : ""}. Try again.`;
+      for (const k of ["signin_error", "signin_provider", "signin_message"]) setSearchParam(k, null);
+      if (!signedIn) requestAnimationFrame(() => openSignIn({ error: text }));
+      return;
+    }
+    if (!signedIn) return;
+    const then = takeAfterSignIn();
+    if (!then) return;
+    if (then.kind === "newTask") requestAnimationFrame(() => openNewIntent());
+    else if (then.kind === "newProject") navigate("/projects?new=1");
+    else navigate(then.to);
+  }, [ready, signedIn]);
 }
 
 function NotFound() {
@@ -136,26 +185,36 @@ function View({ route }: { route: Route }) {
     case "home":
       return <HomeView />;
     case "chart":
-      return <ChartView />;
+      return <V.ChartView />;
     case "intents":
-      return <IntentsView id={route.id} />;
+      return <V.IntentsView id={route.id} />;
     case "logbook":
-      return <LogbookView id={route.id} />;
+      return <V.LogbookView id={route.id} />;
+    case "code":
+      return <V.CodeView />;
     case "connect":
-      return <ConnectView />;
+      return <V.ConnectView />;
     case "design":
-      return DesignView ? <DesignView /> : <NotFound />;
+      return V.DesignView ? <V.DesignView /> : <NotFound />;
     case "projects":
-      return <ProjectsView />;
+      return <V.ProjectsView />;
     case "settings":
-      return <SettingsView />;
+      return <V.SettingsView />;
+    case "account":
+      return <V.AccountView />;
     default:
       return <NotFound />;
   }
 }
 
+/** Skeletons in the shape of the view that loads. */
+function ViewSkeleton({ route }: { route: Route }) {
+  if (route.name === "intents" || route.name === "chart" || route.name === "code") return <SkeletonSplit label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
+  return <SkeletonPage label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
+}
+
 /** Before the first project state: load it, or say why there is no project to show. */
-function Booting() {
+function Booting({ route }: { route: Route }) {
   const conn = useStore((s) => s.conn);
   const error = useStore((s) => s.error);
   const signedIn = useStore((s) => Boolean(s.me?.user));
@@ -168,7 +227,7 @@ function Booting() {
             <div className="c-empty__actions">
               <Link to="/projects">Open the projects</Link>
               {!signedIn && (
-                <Button variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
+                <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: "Sign in to open your projects." })}>
                   Sign in
                 </Button>
               )}
@@ -178,12 +237,7 @@ function Booting() {
       </div>
     );
   }
-  return (
-    <div className="booting">
-      <ProgressRule label="Loading the project" />
-      <p>Loading the project…</p>
-    </div>
-  );
+  return <ViewSkeleton route={route} />;
 }
 
 export function App() {
@@ -195,6 +249,12 @@ export function App() {
   useShortcuts();
   useQueueToasts();
   useLocationSync();
+  useSignInReturn();
+
+  // The code of the view for this route starts loading at once, in parallel with the project state.
+  useEffect(() => {
+    V.preloadView(route.name);
+  }, [route.name]);
 
   const key = route.name + ("id" in route ? `:${route.id ?? ""}` : "");
   useEffect(() => {
@@ -210,8 +270,9 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.name]);
 
+  const showNav = needsProject;
   return (
-    <div className="app">
+    <div className={["app", showNav && "app--nav"].filter(Boolean).join(" ")}>
       <a href="#main" className="skip-link">
         Skip to the content
       </a>
@@ -219,18 +280,17 @@ export function App() {
       <main id="main" className={`app__main app__main--${route.name}`} tabIndex={-1}>
         {needsProject && <WatchBanner />}
         {needsProject && !ready ? (
-          <Booting />
+          <Booting route={route} />
         ) : (
-          <Suspense fallback={<ProgressRule label="Loading the view" />}>
-            <View key={key.startsWith("intents") || key.startsWith("logbook") ? route.name : key} route={route} />
+          <Suspense fallback={<ViewSkeleton route={route} />}>
+            <View key={key.startsWith("intents") || key.startsWith("logbook") || key.startsWith("code") ? route.name : key} route={route} />
           </Suspense>
         )}
       </main>
-      <NewIntentDialog />
-      <SignInDialog />
-      <ShortcutsDialog />
-      <FileDrawer />
-      <DiffDrawer />
+      {showNav && <ViewNav route={route} className="viewnav bottomnav" label="Views (bottom)" />}
+      <SignInPopover />
+      <CommandPalette />
+      <ShortcutsPopover />
       <ToastHost />
     </div>
   );

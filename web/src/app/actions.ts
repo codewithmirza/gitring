@@ -21,3 +21,31 @@ export async function launchAllNow(): Promise<boolean> {
     return false;
   }
 }
+
+/** The MCP URL of this gitring. Agents add it as a connector and sign in with OAuth. */
+export function mcpUrl(): string {
+  return `${location.origin}/mcp`;
+}
+
+export async function copyText(text: string, what: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast({ tone: "clear", title: `${what} copied`, text });
+    return true;
+  } catch {
+    toast({ tone: "info", title: `Copy the ${what.toLowerCase()} by hand`, text });
+    return false;
+  }
+}
+
+export const copyMcpUrl = () => copyText(mcpUrl(), "MCP URL");
+
+/** When built-in agents wait for the hourly AI budget, the time they start (else null). */
+export function budgetWait(attempts: { waitsForBudget?: number }[]): number | null {
+  const t = attempts.map((a) => a.waitsForBudget ?? 0).filter((x) => x > Date.now());
+  return t.length ? Math.min(...t) : null;
+}
+
+export function timeOfDay(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
