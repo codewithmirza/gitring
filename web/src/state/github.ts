@@ -69,7 +69,8 @@ async function send<T>(method: string, url: string, body?: unknown, signal?: Abo
   }
   if (!res.ok) {
     const d = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-    const msg = typeof d.error === "string" && d.error ? d.error : typeof d.message === "string" && d.message ? d.message : statusText(res.status);
+    // The Worker writes one plain sentence: `error`, or `reason` (the repository list), or `message`.
+    const msg = [d.error, d.reason, d.message].find((x): x is string => typeof x === "string" && x.length > 0) ?? statusText(res.status);
     throw new RequestError(res.status, msg, d);
   }
   return data as T;

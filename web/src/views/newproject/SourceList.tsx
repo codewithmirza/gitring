@@ -2,8 +2,9 @@
  * One combobox for every source of a new project (WAI-ARIA combobox with a list that is always shown):
  * focus stays in the text field, ↑/↓ move through the rows, Enter picks, Escape closes the panel.
  *
- * Rows: an import row for pasted text (on top), the person's GitHub repositories (filtered at once in
- * memory, then by a server search), and always "Upload a folder", "Push with git", "Empty project".
+ * Rows: an import row for pasted text (on top), the person's GitHub repositories (filtered in memory; a
+ * server search only when GitHub had more than the list), and always "Upload a folder", "Push with git"
+ * and "Empty project" (docked at the foot of the list).
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { GithubRepo } from "../../../../src/core/accounts";
@@ -185,7 +186,16 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
   const q = query.trim();
 
   let ghNote: ReactNode = null;
-  if (signedIn && search.error && !search.base) {
+  if (signedIn && search.error && !search.base && search.error.status === 401) {
+    ghNote = (
+      <span>
+        Your sign-in ended.{" "}
+        <a className="np-linkbtn" href={githubConnectUrl(returnTo)}>
+          Sign in again
+        </a>
+      </span>
+    );
+  } else if (signedIn && search.error && !search.base) {
     ghNote = (
       <span>
         gitring could not load your repositories. {search.error.message}{" "}
@@ -195,7 +205,7 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
       </span>
     );
   } else if (connected && search.base && !search.base.repos.length) {
-    ghNote = <span>The GitHub app sees no repositories yet. Add repositories on GitHub.</span>;
+    ghNote = <span>{search.base.reason ?? "The GitHub app sees no repositories yet. Add repositories on GitHub."}</span>;
   } else if (connected && search.base && q && !repos.length && !pasted && !search.searching) {
     ghNote = (
       <span>

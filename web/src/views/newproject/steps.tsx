@@ -189,7 +189,7 @@ function createProblem(e: RequestError, returnTo: string, onStep: (s: SourceStep
       <a className="b-btn b-btn--secondary b-btn--sm" href={install} target="_blank" rel="noopener noreferrer">
         Install the GitHub App <Icon name="external" size={12} />
       </a>
-    ) : /larger than|too large|20 MB/i.test(e.message) ? (
+    ) : e.status === 404 || /larger than|too large|20 MB/i.test(e.message) ? (
       <Button size="sm" onClick={() => onStep({ kind: "push" })}>
         Push with git instead
       </Button>
@@ -264,13 +264,15 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
     try {
       const install = v.install.trim();
       const test = v.test.trim();
+      // GitHub's own spelling of the name (the guess has it).
+      const full = guess.repo || repo;
       const project = await createProjectFrom({
-        name: v.name.trim() || guess.name || nameOfRepo(repo),
+        name: v.name.trim() || guess.name || nameOfRepo(full),
         visibility: v.visibility,
-        source: { kind: "github", repo, ...(branch ? { branch } : {}) },
+        source: { kind: "github", repo: full, ...(branch ? { branch } : {}) },
         settings: {
           checks: runner === "container" ? { runner: "container", ...(install ? { install } : {}), ...(test ? { test } : {}) } : { runner: "worker" },
-          github: { repo, mode: v.sync, branch: "gitring" },
+          github: { repo: full, mode: v.sync, branch: "gitring" },
         },
       });
       openProject(project.id);
