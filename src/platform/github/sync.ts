@@ -112,6 +112,24 @@ function ghMode(mode: string): string {
   return mode === "40000" ? "040000" : mode;
 }
 
+/**
+ * A branch name as git resolves it: without "refs/heads/", without "." segments and doubled slashes.
+ * Two names that resolve to the same ref are the same branch ("./main" is "main").
+ */
+export function normalizeBranch(name: string): string {
+  return String(name ?? "")
+    .trim()
+    .replace(/^refs\/heads\//, "")
+    .split("/")
+    .filter((seg) => seg !== "" && seg !== ".")
+    .join("/");
+}
+
+/** The ref path of a branch for the Git Data API (one encoded segment per path part). */
+function refPathOf(repo: string, branch: string): string {
+  return `/repos/${repo}/git/refs/heads/${normalizeBranch(branch).split("/").map(encodeURIComponent).join("/")}`;
+}
+
 function ghType(e: TreeEntry): "blob" | "tree" | "commit" {
   return e.type === "tree" ? "tree" : e.type === "gitlink" ? "commit" : "blob";
 }
@@ -185,8 +203,8 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
     const info = await api<{ default_branch?: string; html_url?: string }>("GET", `/repos/${gh.repo}`);
     if (info.status === 404) return fail("error", `GitHub does not show ${gh.repo} to the gitring app. Check the name, and install the app on the repository.`);
     if (info.status >= 400) return fail("error", `GitHub answered ${info.status} for ${gh.repo}.`);
-    const defaultBranch = input.base || info.json.default_branch || "main";
-    if (input.mode === "pull-request" && input.branch === defaultBranch) {
+    const defaultBranch = normalizeBranch(input.base || info.json.default_branch || "main");
+    if (input.mode === "pull-request" && normalizeBranch(input.branch) === defaultBranch) {
       return fail("error", `The pull request branch must not be ${defaultBranch}, the branch that it merges into. Choose another branch in Settings → GitHub.`);
     }
     const html = info.json.html_url || `https://github.com/${gh.repo}`;
@@ -284,7 +302,7 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
 
     // 3a. Straight to main: fast-forward only.
     if (input.mode === "main") {
-      const ref = await api<{ message?: string }>("PATCH", `/repos/${gh.repo}/git/refs/heads/${defaultBranch.split("/").map(encodeURIComponent).join("/")}`, { sha: tip, force: false });
+      const ref = await api<{ message?: string }>("PATCH", refPathOf(gh.repo, defaultBranch), { sha: tip, force: false });
       if (ref.status === 200) return partial({ status: { state: "ok", message: `GitHub ${defaultBranch} has main at ${tip.slice(0, 7)}.`, ...base, branch: defaultBranch, ...done, at: Date.now() }, known });
       if (/protected/i.test(ref.json?.message ?? "")) {
         return fail("blocked", `GitHub protects ${defaultBranch}: the gitring app may not push to it. Use pull request mode, or allow the app in the branch rules.`, { branch: defaultBranch });
@@ -296,21 +314,33 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
     }
 
     // 3b. Pull request: move the branch, then keep one pull request open.
-    const branch = input.branch;
-    const refPath = `/repos/${gh.repo}/git/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}`;
-    // Force-move the branch only when gitring made its tip: commits that people pushed there stay.
-    const current = await api<{ object?: { sha?: string } }>("GET", refPath);
-    const currentTip = current.status === 200 ? current.json?.object?.sha : undefined;
+    const branch = normalizeBranch(input.branch);
+    const refPath = refPathOf(gh.repo, branch);
     const ours = new Set(Object.values(known));
-    const moved =
-      currentTip === tip
-        ? { status: 200, json: {} as { message?: string } }
-        : await api<{ message?: string }>("PATCH", refPath, { sha: tip, force: Boolean(currentTip && ours.has(currentTip)) });
-    if (moved.status === 422 && currentTip && !ours.has(currentTip) && !/reference does not exist|not found/i.test(moved.json?.message ?? "")) {
+    const tipOf = async (): Promise<string | undefined> => {
+      const r = await api<{ object?: { sha?: string } }>("GET", refPath);
+      return r.status === 200 ? r.json?.object?.sha : undefined;
+    };
+    const missingRef = (r: Reply<{ message?: string }>) => r.status === 404 || (r.status === 422 && /reference does not exist|not found/i.test(r.json?.message ?? ""));
+    // The branch moves without force: a commit that a person pushed to it since the last run stays, and
+    // GitHub refuses the move. Force is used only when the tip is gitring's own commit and it did not
+    // move between the read and the refused move; otherwise the tip is read again.
+    let moved: Reply<{ message?: string }> = { status: 200, json: {} };
+    let currentTip: string | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      currentTip = await tipOf();
+      if (currentTip === tip) break;
+      moved = await api<{ message?: string }>("PATCH", refPath, { sha: tip, force: false });
+      if (moved.status !== 422 || missingRef(moved)) break;
+      if (!currentTip || !ours.has(currentTip)) break;
+      if ((await tipOf()) !== currentTip) continue;
+      moved = await api<{ message?: string }>("PATCH", refPath, { sha: tip, force: true });
+      break;
+    }
+    if (moved.status === 422 && !missingRef(moved) && currentTip && !ours.has(currentTip)) {
       return fail("blocked", `Someone pushed commits to ${branch} on GitHub. gitring does not overwrite them: merge or delete the branch, or choose another branch in Settings → GitHub.`, { branch });
     }
-    const missing = moved.status === 404 || (moved.status === 422 && /reference does not exist|not found/i.test(moved.json?.message ?? ""));
-    if (missing) {
+    if (missingRef(moved)) {
       const made = await api<{ message?: string }>("POST", `/repos/${gh.repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: tip });
       if (made.status !== 201) {
         return fail("error", `GitHub did not make the branch ${branch} (${made.status}${made.json?.message ? `: ${made.json.message}` : ""}).`);
@@ -327,6 +357,16 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       const pr = open.json[0];
       return partial({ status: { state: "ok", message: `Pull request #${pr.number} has main at ${tip.slice(0, 7)}.`, ...base, ...done, prUrl: pr.html_url, prNumber: pr.number, at: Date.now() }, known });
     }
+    // A pull request whose files are the files of the base branch changes nothing (the last pull request
+    // was merged with a merge commit): gitring opens none. The next merged task opens the next one.
+    const nothingNew = `GitHub ${defaultBranch} has all merged work. No pull request is necessary.`;
+    const baseTip = (await api<{ object?: { sha?: string } }>("GET", refPathOf(gh.repo, defaultBranch))).json?.object?.sha;
+    if (baseTip === tip) return partial({ status: { state: "ok", message: nothingNew, ...base, ...done, at: Date.now() }, known });
+    if (baseTip) {
+      const treeOf = async (sha: string) => (await api<{ tree?: { sha?: string } }>("GET", `/repos/${gh.repo}/git/commits/${sha}`)).json?.tree?.sha;
+      const [baseTree, tipTree] = await Promise.all([treeOf(baseTip), treeOf(tip)]);
+      if (baseTree && baseTree === tipTree) return partial({ status: { state: "ok", message: nothingNew, ...base, ...done, at: Date.now() }, known });
+    }
     const pr = await api<{ html_url?: string; number?: number; message?: string; errors?: { message?: string }[] }>("POST", `/repos/${gh.repo}/pulls`, {
       title: input.pr.title,
       head: branch,
@@ -338,7 +378,7 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
     }
     const why = [pr.json?.message, ...(pr.json?.errors ?? []).map((e) => e.message)].filter(Boolean).join(" ");
     if (pr.status === 422 && /no commits between/i.test(why)) {
-      return partial({ status: { state: "ok", message: `GitHub ${defaultBranch} has all merged work. No pull request is necessary.`, ...base, ...done, at: Date.now() }, known });
+      return partial({ status: { state: "ok", message: nothingNew, ...base, ...done, at: Date.now() }, known });
     }
     if (pr.status === 403 || pr.status === 404) {
       return partial({

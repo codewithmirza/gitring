@@ -35,6 +35,8 @@ export interface UpstreamInput {
   resolved?: Record<string, string | null>;
   /** At most this many changed paths (default 3000). */
   maxPaths?: number;
+  /** At most this many file bytes read from GitHub in one pull (default MAX_PULL_BYTES). */
+  maxBytes?: number;
   /** The GitHub branch that main follows (default: the repository's default branch). */
   branch?: string;
 }
@@ -52,6 +54,8 @@ export type UpstreamResult =
   | {
       state: "changes";
       head: string;
+      /** The git tree of head (the same id as main's tree when main has exactly GitHub's files). */
+      headTree: string;
       base: string;
       branch: string;
       private: boolean;
@@ -77,6 +81,8 @@ interface TreeItem {
 const MAX_TEXT = 1_000_000;
 /** Larger files do not come in through the API (memory of the project's object): push them with git. */
 export const MAX_PULL_BLOB = 10_000_000;
+/** All file bytes that one pull reads from GitHub, together: the project's object holds them in memory. */
+export const MAX_PULL_BYTES = 25_000_000;
 
 export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamResult> {
   const f = input.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
@@ -139,17 +145,6 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
     for (const p of baseMap.keys()) if (!headMap.has(p)) changed.add(p);
     if (changed.size > (input.maxPaths ?? 3000)) return fail(`GitHub changed ${changed.size} files. That is too many to merge through the API; push the changes to gitring with git.`);
 
-    const blobCache = new Map<string, Uint8Array>();
-    // Raw bytes (no base64 copy in memory).
-    const githubBlob = async (sha: string): Promise<Uint8Array> => {
-      const hit = blobCache.get(sha);
-      if (hit) return hit;
-      const res = await f(`${api}/repos/${input.repo}/git/blobs/${sha}`, { headers: headers("application/vnd.github.raw") });
-      if (res.status !== 200) throw new Error(`gitring cannot read blob ${sha.slice(0, 7)} on GitHub (${res.status}).`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      blobCache.set(sha, bytes);
-      return bytes;
-    };
     const tooLarge = (e: TreeItem | undefined) => (e?.size ?? 0) > MAX_PULL_BLOB;
     const asText = (b: Uint8Array | null): string | null => (b && b.length <= MAX_TEXT && isProbablyText(b) ? new TextDecoder().decode(b) : null);
 
@@ -157,6 +152,10 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
     const conflicts: UpstreamConflict[] = [];
     const gitlinks: Record<string, string | null> = {};
     const key = (e: { sha: string; mode: string } | undefined) => (e ? `${e.sha} ${normMode(e.mode)}` : "-");
+    // 1. Decide per path what to do, from the blob ids alone: which blobs the merge reads, and so how
+    //    many bytes it holds. Over the budget, nothing is read.
+    type Step = { path: string; kind: "take" | "delete" | "merge"; b?: TreeItem; t?: TreeItem; o?: { sha: string; mode: string } };
+    const steps: Step[] = [];
     for (const path of [...changed].sort()) {
       const b = baseMap.get(path);
       const t = headMap.get(path);
@@ -167,7 +166,7 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
         else if (!t) gitlinks[path] = null;
         else {
           gitlinks[path] = null; // a submodule became a file: the file comes in below
-          if (key(o) !== key(t)) changes.push({ path, content: await githubBlob(t.sha), mode: normMode(t.mode) });
+          if (key(o) !== key(t)) steps.push({ path, kind: "take", t });
         }
         continue;
       }
@@ -177,7 +176,7 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
           conflicts.push({ path, theirs: t.sha, diff: `${path}: GitHub's version is larger than ${MAX_PULL_BLOB / 1e6} MB. Push it to gitring with git.` });
           continue;
         }
-        changes.push(t ? { path, content: await githubBlob(t.sha), mode: normMode(t.mode) } : { path, content: null });
+        steps.push(t ? { path, kind: "take", t } : { path, kind: "delete" });
         continue;
       }
       if (key(t) === key(b)) continue;
@@ -185,6 +184,34 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
       // Both sides changed the path.
       if (tooLarge(t) || tooLarge(b)) {
         conflicts.push({ path, theirs: t?.sha ?? null, diff: `${path}: too large to merge through the API.` });
+        continue;
+      }
+      steps.push({ path, kind: "merge", b, t, o });
+    }
+    const planned = steps.reduce((n, s) => n + (s.kind === "take" ? (s.t?.size ?? 0) : (s.b?.size ?? 0) + (s.t?.size ?? 0)), 0);
+    const budget = input.maxBytes ?? MAX_PULL_BYTES;
+    const mb = (n: number) => `${Math.ceil(n / 1e5) / 10} MB`;
+    const tooMuch = (bytes: number) => `GitHub changed ${mb(bytes)} of files. gitring merges at most ${mb(budget)} through the API in one pull; push the changes to gitring with git.`;
+    if (planned > budget) return fail(tooMuch(planned));
+
+    // 2. Read the blobs and merge. Each blob is read once, for the step that needs it, and held only
+    //    as long as that step needs it (the file content that goes into main stays in `changes`).
+    let read = 0;
+    const githubBlob = async (sha: string): Promise<Uint8Array> => {
+      const res = await f(`${api}/repos/${input.repo}/git/blobs/${sha}`, { headers: headers("application/vnd.github.raw") });
+      if (res.status !== 200) throw new Error(`gitring cannot read blob ${sha.slice(0, 7)} on GitHub (${res.status}).`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      read += bytes.length;
+      if (read > budget) throw new Error(tooMuch(read));
+      return bytes;
+    };
+    for (const { path, kind, b, t, o } of steps) {
+      if (kind === "delete") {
+        changes.push({ path, content: null });
+        continue;
+      }
+      if (kind === "take") {
+        changes.push({ path, content: await githubBlob(t!.sha), mode: normMode(t!.mode) });
         continue;
       }
       const baseText = b ? asText(await githubBlob(b.sha)) : "";
@@ -221,6 +248,7 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
     return {
       state: "changes",
       head,
+      headTree,
       base,
       branch,
       private: isPrivate,

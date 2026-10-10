@@ -16,7 +16,7 @@ import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError, type FileChange } from "../platform/repo/backend";
 import { ArtifactsBackend } from "../platform/repo/artifacts";
 import { MemoryTreeCache, readSnapshot, diffSnapshots, type Snapshot } from "../core/git/snapshot";
-import { hashObject, utf8 } from "../core/git/objects";
+import { hashObject, isValidBranchName, utf8 } from "../core/git/objects";
 import { buildImportGraph, graphFromEdges } from "../core/analysis/graph";
 import { isAnalyzable } from "../core/analysis/symbols";
 import { unifiedDiff, isProbablyText, lineDiff } from "../core/text/diff";
@@ -2929,10 +2929,22 @@ export class HarborMaster extends DurableObject<Env> {
       }
       return this.setPull(repo, { state: "conflict", message: `${res.message} The task "Merge GitHub changes into main" asks an agent or a person to merge them.`, headSha: res.head, files: Object.keys(files), intentId, compareUrl: res.compareUrl, at: Date.now() });
     }
-    // New GitHub commits: one merge commit on main, also when main already had every change (then the
-    // commit is empty), so that GitHub's history joins main's and the next sync can fast-forward.
     const n = `${res.commits} commit${res.commits === 1 ? "" : "s"}`;
     const links = Object.keys(res.gitlinks);
+    // Main has exactly GitHub's files (GitHub merged gitring's pull request with a merge commit): no commit.
+    // Main is GitHub's head from now on, so the next sync starts there and opens no empty pull request.
+    if (!res.changes.length && !links.length && res.headTree === main.tree) {
+      const st = this.gh(repo);
+      this.setGh(repo, { known: { ...st.known, [main.sha]: res.head }, last: res.head });
+      this.closeConflictTask(repo, "GitHub has nothing new for this task: main has every GitHub change.");
+      this.addLog({ kind: "system", message: `GitHub ${repo} ${res.branch} has main's files at ${res.head.slice(0, 7)} (${n}). Nothing to merge.` });
+      this.setPull(repo, { state: "up-to-date", message: `main has the files of GitHub ${res.branch} (${res.head.slice(0, 7)}).`, headSha: res.head, mainSha: main.sha, at: Date.now() });
+      // The sync status follows (the pull request is merged: the branch moves, no new pull request opens).
+      if (p.settings.github.mode !== "off" && reason !== "sync") this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+      return;
+    }
+    // New GitHub commits: one merge commit on main, also when main already had every change (then the
+    // commit is empty), so that GitHub's history joins main's and the next sync can fast-forward.
     const message = [
       `Bring GitHub changes into main`,
       "",
@@ -3302,9 +3314,14 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
     const g = raw.github as Partial<T.GithubSettings>;
     const repo = typeof g.repo === "string" ? githubRepoName(g.repo) : undefined;
     if (typeof g.repo === "string" && g.repo.trim() && !repo) throw new Error("Give the GitHub repository as owner/name, or as its https://github.com URL.");
-    const branchName = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(v.trim()) && !v.includes("..") && !v.trim().startsWith("/") ? v.trim() : undefined);
+    // Branch names follow git's rules (git check-ref-format): no "." or ".." segments, no ".lock", no
+    // control characters, spaces, "~", "^", ":", "?", "*", "[", "\\" or "@{", no leading "-" or "/".
+    // "./main" would reach GitHub as "main": a pull request branch that is the base branch.
+    const branchName = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(v.trim()) && isValidBranchName(v.trim()) ? v.trim() : undefined);
     const branch = branchName(g.branch);
     const base = branchName(g.base);
+    const badName = (v: unknown) => typeof v === "string" && v.trim() && !branchName(v);
+    if (badName(g.branch) || badName(g.base)) throw new Error("Give a branch name that git accepts: letters, digits, dots, dashes and slashes, no \"..\", no \".\" segment, no \".lock\".");
     out.github = {
       mode: g.mode === "pull-request" || g.mode === "main" ? g.mode : "off",
       branch: branch ?? DEFAULT_SETTINGS.github.branch,
