@@ -1,12 +1,11 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { AgentInfo, Correction, LogEntry } from "../../../src/core/types";
-import { AttemptBadge, Badge, Button, Callsign, CorrectionNotice, EmptyState, IconButton, LogLine, Panel, RangeIndicator, SectionLabel } from "../design/components";
+import { AttemptBadge, Badge, Callsign, CorrectionNotice, EmptyState, IconButton, LogLine, Panel, RangeIndicator, SectionLabel } from "../design/components";
 import { Icon } from "../design/icons";
 import { useStore } from "../state/store";
 import { byId, indexes, selectVessels, type VesselModel } from "../state/selectors";
-import { modelShort, plural, VERDICT_TEXT } from "../state/format";
-import { Link } from "./router";
-import { openDiff, openFile } from "./ui";
+import { ago, modelShort, plural, VERDICT_TEXT } from "../state/format";
+import { codeHref, Link } from "./router";
 import { useNow } from "./useNow";
 import { useCanAct } from "../state/account";
 
@@ -18,12 +17,15 @@ const VesselRow = memo(function VesselRow({
   v,
   selected,
   names,
+  seen,
   onSelect,
   onHover,
 }: {
   v: VesselModel;
   selected: boolean;
   names: Map<string, string>;
+  /** When gitring last heard from the agent ("2 min ago"). */
+  seen?: string;
   onSelect: (id: string | null) => void;
   onHover?: (id: string | null) => void;
 }) {
@@ -48,6 +50,7 @@ const VesselRow = memo(function VesselRow({
           </span>
         </span>
         <span className="vrow__intent voice-human">{v.intentTitle}</span>
+        {seen && <span className="vrow__seen">seen {seen}</span>}
         {(near.length > 0 || v.corrections.length > 0) && (
           <span className="vrow__signals">
             {near.map((r) => (
@@ -107,6 +110,7 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
           {KIND_TEXT[v.kind]}
           {agent?.client ? ` · ${agent.client}` : ""}
           {v.generation > 1 ? ` · generation ${v.generation}` : ""}
+          {agent ? ` · seen ${ago(agent.lastSeen, now)}` : ""}
         </span>
       </div>
       <Link to={`/tasks/${v.intentId}`} className="vdetail__intent voice-human">
@@ -126,9 +130,11 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
           {attempt.course.files.map((f) => {
             const touched = v.track.includes(f);
             const fp = attempt.footprint.files[f];
+            // A changed file opens as the diff of this work copy; a planned file opens on main.
+            const to = fp ? codeHref(v.attemptId, f, { diff: true }) : codeHref("main", f);
             return (
               <li key={f}>
-                <button type="button" className="filechip" onClick={() => openFile(f)} title={`Read ${f} on main`}>
+                <Link to={to} className="filechip" title={fp ? `Open the change to ${f}` : `Read ${f} on main`}>
                   <Icon name={touched ? "file" : "ring"} size={12} />
                   <span className="voice-agent">{f}</span>
                   {fp && (
@@ -137,7 +143,7 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
                     </span>
                   )}
                   {v.file === f && <span className="filechip__here">here</span>}
-                </button>
+                </Link>
               </li>
             );
           })}
@@ -191,9 +197,10 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
       </div>
 
       <div className="vdetail__actions">
-        <Button size="sm" icon="diff" onClick={() => openDiff(v.attemptId, v.callsign)}>
-          Open diff
-        </Button>
+        <Link to={codeHref(v.attemptId, undefined, { diff: true })} className="b-btn b-btn--secondary b-btn--sm">
+          <Icon name="code" />
+          Open in code
+        </Link>
         <Link to={`/tasks/${v.intentId}`} className="b-btn b-btn--ghost b-btn--sm">
           Compare work copies
         </Link>
@@ -214,6 +221,9 @@ export function TrafficRail({
   focusCorrection?: string | null;
 }) {
   const vessels = useStore((s) => (s.state ? selectVessels(s.state) : EMPTY));
+  const agents = useStore((s) => s.state?.agents);
+  const now = useNow(30_000);
+  const seenBy = useMemo(() => new Map((agents ?? []).map((a) => [a.id, ago(a.lastSeen, now)])), [agents, now]);
   const canAct = useCanAct();
   const names = useMemo(() => new Map(vessels.map((v) => [v.attemptId, v.callsign])), [vessels]);
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -237,7 +247,7 @@ export function TrafficRail({
         ) : (
           <ul role="list" className="traffic__list" aria-label="Agents" ref={listRef}>
             {vessels.map((v) => (
-              <VesselRow key={v.attemptId} v={v} selected={v.attemptId === selected} names={names} onSelect={onSelect} onHover={onHover} />
+              <VesselRow key={v.attemptId} v={v} selected={v.attemptId === selected} names={names} seen={seenBy.get(v.agentId)} onSelect={onSelect} onHover={onHover} />
             ))}
           </ul>
         )}
