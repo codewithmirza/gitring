@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { Button, EmptyState, SkeletonPage, SkeletonSplit, ToastHost, toast } from "../design/components";
 import { store, useStore } from "../state/store";
+import { atLeast } from "../../../src/core/accounts";
 import { syncProject } from "../state/api";
 import { selectJudgmentQueue } from "../state/selectors";
 import { TopBar, ViewNav } from "./TopBar";
@@ -104,7 +105,8 @@ function useQueueToasts() {
       const st = store.get().state;
       if (!st || st === lastState) return;
       lastState = st;
-      const q = selectJudgmentQueue(st);
+      // Only people who can decide get the toast.
+      const q = atLeast(store.get().access, "member") ? selectJudgmentQueue(st) : [];
       if (!seen) {
         seen = new Set(q.map((x) => x.key));
         return;

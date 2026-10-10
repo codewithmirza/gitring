@@ -234,7 +234,7 @@
 .queue__title { font-size: var(--t-md); line-height: 1.3; color: var(--ink-1); }
 .queue__detail { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .queue__acts { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-1); }
-.queue__link { font-size: var(--t-xs); font-weight: 500; }
+.queue__link { display: inline-flex; align-items: center; min-height: 24px; font-size: var(--t-xs); font-weight: 500; }
 .queue__result { grid-column: 1 / -1; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 
 /* project picker (combobox) */

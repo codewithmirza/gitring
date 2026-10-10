@@ -243,15 +243,24 @@ function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void 
 
 function Decisions() {
   const queue = useStore((s) => (s.state ? selectJudgmentQueue(s.state) : EMPTY_Q));
+  const canAct = useCanAct();
   const pop = usePopover();
   const n = queue.length;
+  // The color says "needs you": only for people who can decide (members and owners).
+  const needsYou = n > 0 && canAct;
   return (
     <>
       <button
         {...pop.triggerProps}
         type="button"
-        className={["topbar__queue", n > 0 && "has-items"].filter(Boolean).join(" ")}
-        aria-label={n ? `${n} ${n === 1 ? "decision needs" : "decisions need"} you. Show the decisions.` : "No decisions need you."}
+        className={["topbar__queue", needsYou && "has-items"].filter(Boolean).join(" ")}
+        aria-label={
+          n === 0
+            ? "No decisions need you."
+            : canAct
+              ? `${n} ${n === 1 ? "decision needs" : "decisions need"} you. Show the decisions.`
+              : `${n} ${n === 1 ? "decision waits" : "decisions wait"} for a member. Show the decisions.`
+        }
       >
         <Icon name={n ? "lighthouse" : "check"} />
         <span className="topbar__queuetext">{n ? `${n} ${n === 1 ? "decision" : "decisions"}` : "No decisions"}</span>
@@ -265,9 +274,11 @@ function Decisions() {
         <div className="queue" onKeyDown={(e) => rovingKeys(e, ".queue__primary", { down: ["ArrowDown", "j"], up: ["ArrowUp", "k"] })}>
           <h2 className="pop-title">Decisions</h2>
           <p className="pop-help">
-            {n
-              ? "Each decision has one suggested action. Enter runs it; J and K move. gitring merges all other work by itself."
-              : "No decisions need you now. gitring merges work when its tests pass."}
+            {n === 0
+              ? "No decisions need you now. gitring merges work when its tests pass."
+              : canAct
+                ? "Each decision has one suggested action. Enter runs it; J and K move. gitring merges all other work by itself."
+                : "A member of this project makes these decisions. gitring merges all other work by itself."}
           </p>
           {n > 0 && (
             <ol className="queue__list">
