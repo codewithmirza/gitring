@@ -1093,8 +1093,19 @@ function sameStringSafe(a: string, b: string): boolean {
   return typeof a === "string" && typeof b === "string" && sameString(a, b);
 }
 
-function safeReturn(to: string): string {
-  const s = String(to ?? "/");
-  return s.startsWith("/") && !s.startsWith("//") && !s.includes("\\") ? s.slice(0, 500) : "/";
+/**
+ * A same-site path to come back to after a sign-in, else "/". Browsers drop tabs and line breaks from
+ * URLs and read "\\" as "/", so "/<tab>/evil.example" would leave the site: such paths are refused, and
+ * the result must resolve to this origin.
+ */
+export function safeReturn(to: string): string {
+  const s = String(to ?? "/").slice(0, 500);
+  if (!s.startsWith("/") || s.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(s)) return "/";
+  try {
+    const u = new URL(s, "https://gitring.invalid");
+    return u.origin === "https://gitring.invalid" ? `${u.pathname}${u.search}${u.hash}` : "/";
+  } catch {
+    return "/";
+  }
 }
 

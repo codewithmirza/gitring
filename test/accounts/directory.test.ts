@@ -148,7 +148,7 @@ describe("GitHub App setup and sign-in", () => {
   it("keeps only same-site return paths", async () => {
     const dir = make();
     await withGithubApp(dir);
-    for (const bad of ["//evil.example/x", "https://evil.example/", "/\\evil"]) {
+    for (const bad of ["//evil.example/x", "https://evil.example/", "/\\evil", "/\t/evil.example/", "/\n/evil.example", "/\r\n/evil.example", "javascript:alert(1)", " //evil.example"]) {
       const res = await githubSignIn(dir, { id: 2, login: "sam" }, bad);
       expect(res.returnTo).toBe("/");
     }
