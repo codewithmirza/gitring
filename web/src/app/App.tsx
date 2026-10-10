@@ -255,6 +255,18 @@ export function App() {
   useEffect(() => {
     V.preloadView(route.name);
   }, [route.name]);
+  // When the project shows and the browser is idle, load the views people open next.
+  useEffect(() => {
+    if (!ready) return;
+    // Safari has no requestIdleCallback: a timer stands in.
+    const w = window as Window & { requestIdleCallback?: Window["requestIdleCallback"]; cancelIdleCallback?: Window["cancelIdleCallback"] };
+    const run = () => {
+      V.preloadView("intents");
+      V.preloadView("chart");
+    };
+    const id = w.requestIdleCallback ? w.requestIdleCallback(run, { timeout: 4000 }) : window.setTimeout(run, 1500);
+    return () => (w.cancelIdleCallback ? w.cancelIdleCallback(id) : window.clearTimeout(id));
+  }, [ready]);
 
   const key = route.name + ("id" in route ? `:${route.id ?? ""}` : "");
   useEffect(() => {
@@ -287,7 +299,7 @@ export function App() {
           </Suspense>
         )}
       </main>
-      {showNav && <ViewNav route={route} className="viewnav bottomnav" label="Views (bottom)" />}
+      {showNav && <ViewNav route={route} className="viewnav bottomnav" />}
       <SignInPopover />
       <CommandPalette />
       <ShortcutsPopover />

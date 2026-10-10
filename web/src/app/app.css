@@ -804,6 +804,8 @@
   }
   .bottomnav .viewnav__opt .b-icon { width: 18px; height: 18px; }
   .bottomnav .viewnav__opt[aria-current="page"] { background: transparent; box-shadow: inset 0 2px 0 var(--ink-1); }
+  /* Toasts stay above the bottom bar. */
+  .app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom)); right: var(--s-3); }
   .topbar .topbar__conn, .topbar .topbar__queue, .topbar .topbar__search, .topbar .topbar__themecycle { min-width: 40px; height: 40px; justify-content: center; }
   .topbar .acct-me { width: 40px; height: 40px; }
   .topbar .acct-switch { min-height: 40px; }

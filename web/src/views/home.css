@@ -104,6 +104,7 @@
 .home__urllabel { font-size: var(--t-xs); font-weight: 500; color: var(--ink-3); }
 .home__urlvalue { flex: 1 1 260px; min-width: 0; font-size: var(--t-md); color: var(--ink-1); overflow-wrap: anywhere; }
 .home__panel { display: grid; gap: var(--s-3); padding-top: var(--s-2); min-width: 0; }
+.home__panel[hidden] { display: none; }
 .home__list { display: grid; gap: var(--s-2); margin: 0; padding-left: 22px; max-width: 64ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
 .home__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); }
 .home__row .b-btn { text-decoration: none; }

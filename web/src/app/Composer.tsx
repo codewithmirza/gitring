@@ -375,7 +375,7 @@ export function TaskComposer({ autoOpen = false }: { autoOpen?: boolean }) {
       </div>
       <p className="composer__hint" id={`${uid}-help`}>
         <kbd className="b-kbd">{MOD}</kbd>
-        <kbd className="b-kbd">Enter</kbd> creates · <kbd className="b-kbd">Esc</kbd> closes and keeps the draft
+        <kbd className="b-kbd">Enter</kbd> creates · <kbd className="b-kbd">Esc</kbd> keeps a draft
       </p>
       <Popover {...agents.popoverProps} label="Agents for this task" align="start" width={320}>
         <div className="launch__pop">

@@ -17,12 +17,15 @@ const VesselRow = memo(function VesselRow({
   v,
   selected,
   names,
+  seen,
   onSelect,
   onHover,
 }: {
   v: VesselModel;
   selected: boolean;
   names: Map<string, string>;
+  /** When gitring last heard from the agent ("2 min ago"). */
+  seen?: string;
   onSelect: (id: string | null) => void;
   onHover?: (id: string | null) => void;
 }) {
@@ -47,6 +50,7 @@ const VesselRow = memo(function VesselRow({
           </span>
         </span>
         <span className="vrow__intent voice-human">{v.intentTitle}</span>
+        {seen && <span className="vrow__seen">seen {seen}</span>}
         {(near.length > 0 || v.corrections.length > 0) && (
           <span className="vrow__signals">
             {near.map((r) => (
@@ -217,6 +221,9 @@ export function TrafficRail({
   focusCorrection?: string | null;
 }) {
   const vessels = useStore((s) => (s.state ? selectVessels(s.state) : EMPTY));
+  const agents = useStore((s) => s.state?.agents);
+  const now = useNow(30_000);
+  const seenBy = useMemo(() => new Map((agents ?? []).map((a) => [a.id, ago(a.lastSeen, now)])), [agents, now]);
   const canAct = useCanAct();
   const names = useMemo(() => new Map(vessels.map((v) => [v.attemptId, v.callsign])), [vessels]);
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -240,7 +247,7 @@ export function TrafficRail({
         ) : (
           <ul role="list" className="traffic__list" aria-label="Agents" ref={listRef}>
             {vessels.map((v) => (
-              <VesselRow key={v.attemptId} v={v} selected={v.attemptId === selected} names={names} onSelect={onSelect} onHover={onHover} />
+              <VesselRow key={v.attemptId} v={v} selected={v.attemptId === selected} names={names} seen={seenBy.get(v.agentId)} onSelect={onSelect} onHover={onHover} />
             ))}
           </ul>
         )}

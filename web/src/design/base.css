@@ -34,6 +34,11 @@ body {
   height: 100%;
 }
 
+/* The hidden attribute always hides, also when a class sets display (tab panels, collapsed lists). */
+[hidden] {
+  display: none !important;
+}
+
 h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd, pre {
   margin: 0;
 }
