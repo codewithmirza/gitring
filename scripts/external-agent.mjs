@@ -10,6 +10,7 @@
  *   GITRING_URL=https://gitring.<you>.workers.dev GITRING_KEY=gk_… node scripts/external-agent.mjs   # git mode
  *   … node scripts/external-agent.mjs --mode api                                                     # api mode
  * Options: --mode git|api   --title "..." --project <id> (default: GITRING_PROJECT, else a new private sample)
+ *          --no-log  git mode: do not call gitring_log after the push (gitring reads the push at check and submit)
  * Env: GITRING_KEY, a personal API key (gitring → Connect → API keys). The fork token is never printed.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -107,7 +108,9 @@ if (d.workspace.mode === "git") {
     git(["push", "--quiet", "origin", "HEAD:main"]);
     const head = git(["rev-parse", "HEAD"]);
     say("agent", `pushes ${head.slice(0, 7)} to the fork`);
-    logged = await call("gitring_log", { attemptId: d.attemptId, message: `Footer: ${NOTE}`, files: ["src/render.js"], headSha: head });
+    logged = argv.includes("--no-log")
+      ? { headline: "(no gitring_log: gitring must read the push at gitring_check)" }
+      : await call("gitring_log", { attemptId: d.attemptId, message: `Footer: ${NOTE}`, files: ["src/render.js"], headSha: head });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

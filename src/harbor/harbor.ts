@@ -900,6 +900,7 @@ export class HarborMaster extends DurableObject<Env> {
       a.mode = "git";
       trigger = "push";
       this.db.clearWorktree(a.id); // the push supersedes shadow edits
+      await this.refreshGitBase(a);
     }
     if (a.status === "declared") a.status = "underway";
     a.stats.steps += 1;
@@ -919,6 +920,46 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /**
+   * Git mode: when the agent merged a newer main into its work (git pull), its base is that main commit.
+   * gitring looks for main commits in the pushed history (at most 300 commits back) and moves the base
+   * to the newest one, so that the next merge compares the work with the main that the agent saw.
+   */
+  private async refreshGitBase(a: T.Attempt): Promise<void> {
+    if (a.mode !== "git" || !a.headSha) return;
+    const seq = this.db.getMeta<string[]>("mainSeq") ?? [];
+    const from = seq.indexOf(a.baseSha);
+    const newer = new Map(seq.slice(from + 1).map((sha, i) => [sha, from + 1 + i]));
+    if (!newer.size) return;
+    let best = -1;
+    let bestSha: string | undefined;
+    const seen = new Set<string>();
+    const queue = [a.headSha];
+    while (queue.length && seen.size < 300) {
+      const sha = queue.shift()!;
+      if (seen.has(sha) || sha === a.baseSha) continue;
+      seen.add(sha);
+      const at = newer.get(sha);
+      if (at !== undefined) {
+        if (at > best) {
+          best = at;
+          bestSha = sha;
+        }
+        continue; // older main commits are behind this one
+      }
+      const c = await this.backend.readCommit(a.fork.repo, sha).catch(() => null);
+      if (c) queue.push(...c.parents);
+    }
+    if (!bestSha) return;
+    const commit = await this.backend.readCommit(this.requireProject().repo.name, bestSha).catch(() => null);
+    if (!commit) return;
+    const from7 = a.baseSha.slice(0, 7);
+    a.baseSha = bestSha;
+    a.baseTree = commit.treeHash;
+    this.attemptViews.delete(a.id);
+    this.addLog({ kind: "replot", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${this.callsign(a.id)} merged main into its work: its base moves from ${from7} to ${bestSha.slice(0, 7)}.` });
+  }
+
+  /**
    * Git mode: take the latest push to the work copy, so that an agent that did not report its push with
    * gitring_log is still checked and tested on its own code. Returns true when the head moved.
    */
@@ -929,6 +970,7 @@ export class HarborMaster extends DurableObject<Env> {
     a.headSha = tip;
     this.db.clearWorktree(a.id); // the push supersedes shadow edits
     if (a.status === "declared") a.status = "underway";
+    await this.refreshGitBase(a);
     await this.refreshFootprint(a);
     this.putAttempt(a);
     this.addLog({
