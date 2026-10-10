@@ -140,7 +140,7 @@ Owners change the runner, the commands and the time limit in Settings → Tests.
 
 ## Limits
 
-These are design limits. They are not benchmark results.
+These limits come from the design, not from speed tests.
 
 - **Conflict check**: gitring judges the 20 nearest plans. A collision with any other plan appears later, at the merge, as a text conflict or a failed test.
 - **Merge**: one change merges at a time in each project. Other work waits in the merge queue.
