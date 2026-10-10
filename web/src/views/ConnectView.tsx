@@ -376,7 +376,8 @@ export function ConnectView() {
     const load = () => {
       harborOrNull()
         ?.connect()
-        .then(setInfo)
+        // Fill fields that an older server does not send, so that the page never breaks on them.
+        .then((i) => setInfo({ ...defaultConnectInfo(projectId), ...i, inputs: { ...defaultConnectInfo(projectId).inputs, ...(i?.inputs ?? {}) } }))
         .catch(() => undefined);
     };
     load();
