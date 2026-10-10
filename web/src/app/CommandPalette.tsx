@@ -8,7 +8,8 @@ import { Popover, toast } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import { setTheme, THEMES } from "../design/theme";
 import { useStore } from "../state/store";
-import { selectVessels } from "../state/selectors";
+import { selectVessels, type VesselModel } from "../state/selectors";
+import type { FileNode, Intent } from "../../../src/core/types";
 import { INTENT_STATUS_TEXT, ATTEMPT_STATUS_TEXT } from "../state/format";
 import { openProject, signOut } from "../state/account";
 import { atLeast } from "../../../src/core/accounts";
@@ -26,21 +27,33 @@ interface Item extends PaletteEntry {
   run: () => void;
 }
 
-
 function go(to: string) {
   return () => navigate(to);
 }
 
+const NO_INTENTS: Intent[] = [];
+const NO_FILES: FileNode[] = [];
+const NO_VESSELS: VesselModel[] = [];
+
+/**
+ * The entries come from narrow slices of the store (tasks, files, agents), so a live event that changes
+ * something else (a log line, a check) does not rebuild them while the palette is open.
+ */
 function useEntries(): Item[] {
   const me = useStore((s) => s.me);
   const projects = useStore((s) => s.projects);
-  const st = useStore((s) => s.state);
+  const hasState = useStore((s) => s.state !== null);
+  const intents = useStore((s) => s.state?.intents ?? NO_INTENTS);
+  const files = useStore((s) => s.state?.files ?? NO_FILES);
+  const vessels = useStore((s) => (s.state ? selectVessels(s.state) : NO_VESSELS));
   const access = useStore((s) => s.access);
   const projectId = useStore((s) => s.projectId);
-  return useMemo(() => {
+
+  const base = useMemo(() => {
     const signedIn = Boolean(me?.user);
     const canAct = atLeast(access, "member");
     const owner = atLeast(access, "owner");
+    const st = hasState;
     const out: Item[] = [];
     const cmd = (key: string, title: string, icon: IconName, run: () => void, extra: Partial<Item> = {}) =>
       out.push({ key: `cmd:${key}`, group: "Commands", title, icon, run, ...extra });
@@ -85,12 +98,20 @@ function useEntries(): Item[] {
         run: () => openProject(p.id),
       });
     }
-    if (st) {
-      for (const i of st.intents) {
-        out.push({ key: `task:${i.id}`, group: "Tasks", title: i.title, hint: INTENT_STATUS_TEXT[i.status], keywords: i.goal.slice(0, 160), icon: "amend", to: `/tasks/${i.id}`, run: go(`/tasks/${i.id}`) });
-      }
-      for (const v of selectVessels(st)) {
-        out.push({
+    return out;
+  }, [me, projects, hasState, access, projectId]);
+
+  const tasks = useMemo(
+    () =>
+      intents.map(
+        (i): Item => ({ key: `task:${i.id}`, group: "Tasks", title: i.title, hint: INTENT_STATUS_TEXT[i.status], keywords: i.goal.slice(0, 160), icon: "amend", to: `/tasks/${i.id}`, run: go(`/tasks/${i.id}`) }),
+      ),
+    [intents],
+  );
+  const agents = useMemo(
+    () =>
+      vessels.map(
+        (v): Item => ({
           key: `agent:${v.attemptId}`,
           group: "Agents",
           title: v.callsign,
@@ -99,15 +120,19 @@ function useEntries(): Item[] {
           icon: "compass",
           to: `/overview?v=${v.attemptId}`,
           run: go(`/overview?v=${encodeURIComponent(v.attemptId)}`),
-        });
-      }
-      for (const f of st.files) {
+        }),
+      ),
+    [vessels],
+  );
+  const fileItems = useMemo(
+    () =>
+      files.map((f): Item => {
         const to = codeHref("main", f.path);
-        out.push({ key: `file:${f.path}`, group: "Files", title: f.path, icon: "file", to, run: go(to) });
-      }
-    }
-    return out;
-  }, [me, projects, st, access, projectId]);
+        return { key: `file:${f.path}`, group: "Files", title: f.path, icon: "file", to, run: go(to) };
+      }),
+    [files],
+  );
+  return useMemo(() => [...base, ...tasks, ...agents, ...fileItems], [base, tasks, agents, fileItems]);
 }
 
 function Highlight({ text, hits }: { text: string; hits: number[] }) {
