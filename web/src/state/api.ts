@@ -368,11 +368,19 @@ class LiveSocket {
         /* ignore malformed frames */
       }
     });
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (e: CloseEvent) => {
       if (this.ws !== ws) return;
       this.ws = null;
       this.clearTimers();
       if (this.stopped || this.paused) return;
+      // The server closed it on purpose: the access changed (4403) or the sign-in ended (4401). A new
+      // connection would get the same answer; a full load shows the right page instead.
+      if (e.code === 4401 || e.code === 4403) {
+        this.stopped = true;
+        store.setConn("offline", e.code === 4401 ? "Your sign-in ended. The page loads again." : "Your access to this project changed. The page loads again.");
+        setTimeout(() => location.reload(), 1200);
+        return;
+      }
       this.scheduleRetry();
     });
     ws.addEventListener("error", () => {

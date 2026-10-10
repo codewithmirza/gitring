@@ -28,6 +28,17 @@ export function directory(env: Env) {
   return env.DIRECTORY.get(env.DIRECTORY.idFromName("directory"));
 }
 
+/**
+ * Close the live connections of a person on every project of theirs (sign-out, a revoked key, a lost
+ * role). Each connection comes back through the Worker, which checks the access again.
+ */
+export async function closeUserSockets(env: Env, userId: string, code: 4401 | 4403 = 4401): Promise<void> {
+  const projects = await directory(env)
+    .listProjects(userId)
+    .catch(() => [] as A.ProjectInfo[]);
+  await Promise.all(projects.map((p) => env.HARBOR.get(env.HARBOR.idFromName(p.id)).closeSockets({ userId }, code).catch(() => undefined)));
+}
+
 export function readCookie(req: Request, name: string): string | null {
   const raw = req.headers.get("cookie") ?? "";
   for (const part of raw.split(";")) {
@@ -430,6 +441,8 @@ export function authRoutes(app: Hono<HonoEnv>): void {
     if (p.session) {
       forgetPrincipal({ session: p.session });
       await directory(c.env).endSession(p.session);
+      // Other tabs of this browser connect again and get "sign in".
+      if (p.user) c.executionCtx.waitUntil(closeUserSockets(c.env, p.user.id, 4401));
     }
     return new Response(null, { status: 204, headers: { "set-cookie": sessionCookie("", 0) } });
   });
@@ -440,6 +453,7 @@ export function authRoutes(app: Hono<HonoEnv>): void {
     if (!p.user || p.via !== "session") return c.json({ error: "Sign in first." }, 401);
     const ended = await directory(c.env).endAllSessions(p.user.id);
     forgetPrincipal({ userId: p.user.id });
+    c.executionCtx.waitUntil(closeUserSockets(c.env, p.user.id, 4401));
     return new Response(JSON.stringify({ ended }), { status: 200, headers: { "content-type": "application/json", "set-cookie": sessionCookie("", 0) } });
   });
 

@@ -167,6 +167,10 @@ export interface ConnectInfo {
   artifacts: { namespace: string; repo: string; remote?: string; backend: string };
   /** Inputs this deployment has set up. */
   inputs: { slack: boolean; githubIssues: boolean };
+  /** The Slack command URL of this project (members only; it carries the project's key). */
+  slackUrl?: string;
+  /** A plain GitHub repository webhook for this project (members only; it carries the project's key). */
+  githubHookUrl?: string;
   /** The GitHub App of this deployment (sign-in, issues, sync). */
   githubApp: { slug: string; installUrl: string } | null;
 }

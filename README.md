@@ -100,8 +100,8 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
 | `GITRING_OWNERS` | Owners of the deployment: they open `/setup` and act on every project. |
 | `GITRING_KEY` | Optional operator key for scripts. It acts as an owner on every project. |
 | `GITRING_CONTACT` | Optional contact address on the privacy and terms pages. |
-| `GITHUB_WEBHOOK_SECRET` | Optional. A plain repository webhook (without the app): `/hooks/github?project=<id>`. |
-| `SLACK_SIGNING_SECRET` | Optional. The Slack slash command: `/hooks/slack?project=<id>`. |
+| `GITHUB_WEBHOOK_SECRET` | Optional. A plain repository webhook (without the app). The Connect page of a project shows its URL (`/hooks/github?project=<id>&key=…`). |
+| `SLACK_SIGNING_SECRET` | Optional. The Slack slash command. The Connect page of a project shows its command URL (`/hooks/slack?project=<id>&key=…`). |
 
 ## Accounts and projects
 
@@ -212,8 +212,8 @@ Rights: linking a repository needs read rights on GitHub; turning sync on needs 
 |---|---|
 | `POST /hooks/intents` | Any app with a member's API key: `{ project, title, goal, checks?, source?, launch? }` → a new task |
 | `POST /hooks/github-app` | The gitring GitHub App: an issue labeled `gitring` by a project member → a task in each project that imports or links the repository; a push to a followed branch → GitHub changes come into main. Each delivery counts once. |
-| `POST /hooks/github` | A plain repository webhook (`GITHUB_WEBHOOK_SECRET`, `?project=`) → the same |
-| `POST /hooks/slack` | Slash command `/gitring Add a dark mode — Readers can switch…` (`SLACK_SIGNING_SECRET`, `?project=`) |
+| `POST /hooks/github` | A plain repository webhook (`GITHUB_WEBHOOK_SECRET`; the URL from the Connect page holds the project and its key) → a task, for the project's own repository only. Each delivery counts once. |
+| `POST /hooks/slack` | Slash command `/gitring Add a dark mode — Readers can switch…` (`SLACK_SIGNING_SECRET`; the command URL from the Connect page holds the project and its key). Each signed request counts once. |
 | **Out** | Project webhooks (Settings → Webhooks) get `landing` (a merge), `correction` (a change request), `decision` and `intent` events as JSON or Slack messages |
 
 ## Security

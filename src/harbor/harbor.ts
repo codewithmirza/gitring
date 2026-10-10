@@ -11,6 +11,7 @@ import type * as T from "../core/types";
 import { DEFAULT_SETTINGS, withDefaults } from "../core/types";
 import { Db } from "./store";
 import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
+import { hmacSha256Hex } from "../directory/crypto";
 import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError, type FileChange } from "../platform/repo/backend";
@@ -696,9 +697,10 @@ export class HarborMaster extends DurableObject<Env> {
     const batch = this.outbox;
     this.outbox = [];
     const data = JSON.stringify(batch.length === 1 ? batch[0] : batch);
-    // Viewers (people who only watch a public project) do not get member-only settings.
-    const viewerBatch = batch.some((e) => e.type === "snapshot") ? batch.map(forViewer) : batch;
-    const viewerData = viewerBatch === batch ? data : JSON.stringify(viewerBatch.length === 1 ? viewerBatch[0] : viewerBatch);
+    // Viewers (people who only watch a public project) do not get member-only data: every event goes
+    // through forViewer, the one place that decides what they see.
+    const viewerBatch = batch.map(forViewer);
+    const viewerData = viewerBatch.every((e, i) => e === batch[i]) ? data : JSON.stringify(viewerBatch.length === 1 ? viewerBatch[0] : viewerBatch);
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(this.ctx.getTags(ws).includes("viewer") ? viewerData : data);
@@ -786,16 +788,39 @@ export class HarborMaster extends DurableObject<Env> {
     if (request.headers.get("Upgrade") === "websocket") {
       const projectId = url.searchParams.get("project") ?? "";
       await this.ensure(projectId);
-      // The Worker checked the role and says it here (only the Worker can reach this object).
+      // The Worker checked the role and says it here (only the Worker can reach this object). The tags
+      // name the role and the person, so that a change of access closes the right sockets.
       const viewer = url.searchParams.get("role") === "viewer";
+      const user = url.searchParams.get("user") ?? "";
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
-      this.ctx.acceptWebSocket(server, [viewer ? "viewer" : "member"]);
+      this.ctx.acceptWebSocket(server, [viewer ? "viewer" : "member", user ? `u:${user}` : "anon"]);
       const snapshot: T.GitringEvent = { type: "snapshot", state: await this.state() };
       server.send(JSON.stringify(viewer ? forViewer(snapshot) : snapshot));
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response("Not found", { status: 404 });
+  }
+
+  /**
+   * Access changed: close the live connections that it concerns, so that each one connects again and
+   * gets its role checked (a removed member, a signed-out person, a project that became private or
+   * archived). The close code tells the browser what to do: 4401 sign in, 4403 the access changed.
+   */
+  async closeSockets(who: { userId?: string; viewers?: boolean; all?: boolean }, code: 4401 | 4403 = 4403): Promise<number> {
+    let n = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const tags = this.ctx.getTags(ws);
+      const hit = who.all || (who.userId && tags.includes(`u:${who.userId}`)) || (who.viewers && tags.includes("viewer"));
+      if (!hit) continue;
+      try {
+        ws.close(code, code === 4401 ? "Sign in again." : "Your access to this project changed.");
+        n++;
+      } catch {
+        /* already closed */
+      }
+    }
+    return n;
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -2635,6 +2660,10 @@ export class HarborMaster extends DurableObject<Env> {
     const providers = await this.directory()
       .providers()
       .catch(() => ({ github: null }));
+    const [slackKey, githubKey] = await Promise.all([
+      this.env.SLACK_SIGNING_SECRET ? hookKey(this.env.SLACK_SIGNING_SECRET, "slack", p.id) : null,
+      this.env.GITHUB_WEBHOOK_SECRET ? hookKey(this.env.GITHUB_WEBHOOK_SECRET, "github", p.id) : null,
+    ]);
     return {
       projectId: p.id,
       mcpUrl: `${origin}/mcp`,
@@ -2642,8 +2671,16 @@ export class HarborMaster extends DurableObject<Env> {
       intentsUrl: `${origin}/hooks/intents`,
       artifacts: { namespace: p.repo.namespace, repo: p.repo.name, remote: p.repo.remote, backend: p.repo.backend },
       inputs: { slack: Boolean(this.env.SLACK_SIGNING_SECRET), githubIssues: Boolean(providers.github?.webhook) },
+      ...(slackKey ? { slackUrl: `${origin}/hooks/slack?project=${encodeURIComponent(p.id)}&key=${slackKey}` } : {}),
+      ...(githubKey ? { githubHookUrl: `${origin}/hooks/github?project=${encodeURIComponent(p.id)}&key=${githubKey}` } : {}),
       githubApp: providers.github ? { slug: providers.github.slug, installUrl: providers.github.installUrl } : null,
     };
+  }
+
+  /** The GitHub repository of this project: the linked one, else the imported one. */
+  async githubRepoOf(): Promise<string | null> {
+    const p = this.requireProject();
+    return p.settings.github.repo || (p.source?.kind === "github" ? p.source.repo : null) || null;
   }
 
   private directory() {
@@ -3280,13 +3317,28 @@ export class HarborMaster extends DurableObject<Env> {
 
 /* ════════════════════════════ module helpers ════════════════════════════ */
 
+/**
+ * The key in a plain webhook URL of one project (/hooks/slack, /hooks/github): the shared secret of the
+ * deployment, bound to the project. Someone who knows the shared secret still cannot aim a hook at
+ * another project.
+ */
+export async function hookKey(secret: string, kind: "slack" | "github", projectId: string): Promise<string> {
+  return (await hmacSha256Hex(secret, `hook:${kind}:${projectId}`)).slice(0, 32);
+}
+
 /** The project state for a viewer: outbound webhook addresses (they can hold secrets) stay with members. */
 export function viewerState(state: T.ProjectState): T.ProjectState {
   return { ...state, project: { ...state.project, settings: { ...state.project.settings, webhooks: [] } } };
 }
 
+/** One event as a viewer gets it. Add a case here for every event that carries member-only data. */
 function forViewer(ev: T.GitringEvent): T.GitringEvent {
-  return ev.type === "snapshot" ? { ...ev, state: viewerState(ev.state) } : ev;
+  switch (ev.type) {
+    case "snapshot":
+      return { ...ev, state: viewerState(ev.state) };
+    default:
+      return ev;
+  }
 }
 
 /** GitHub state of one linked repository (meta "gh:<owner/name>"). */

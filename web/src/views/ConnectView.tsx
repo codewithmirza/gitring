@@ -736,7 +736,6 @@ export function ConnectView() {
     null,
     2,
   );
-  const slackUrl = `${location.origin}/hooks/slack?project=${encodeURIComponent(project)}`;
 
   return (
     <div className="page connect">
@@ -845,10 +844,16 @@ git push gitring HEAD:${branch}
                 where you are a member. gitring opens a task.
               </p>
             )}
-            {info.inputs.slack && (
+            {info.githubHookUrl && (
+              <p>
+                <strong>A repository webhook</strong> (without the GitHub App): add a webhook for issues to the project's own repository, with the payload URL{" "}
+                <span className="code-inline">{info.githubHookUrl}</span> and the deployment's webhook secret. The URL holds this project's key: do not share it.
+              </p>
+            )}
+            {info.inputs.slack && info.slackUrl && (
               <p>
                 <strong>Slack.</strong> The command <span className="code-inline">/gitring Add a dark mode — Readers can switch to a dark theme.</span> opens a
-                task. Set the command URL to <span className="code-inline">{slackUrl}</span>.
+                task. Set the command URL to <span className="code-inline">{info.slackUrl}</span>. The URL holds this project's key: do not share it.
               </p>
             )}
           </>

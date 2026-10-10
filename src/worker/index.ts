@@ -18,7 +18,7 @@ import { servePreview } from "../platform/checks/preview";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
-import { actorOf, authRoutes, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
+import { actorOf, authRoutes, closeUserSockets, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, oauthRoutes } from "./oauth";
 import { githubRoutes, readAsPerson } from "./github";
 import type { RepoJson } from "../platform/github/repos";
@@ -30,7 +30,7 @@ import { clientAddress, limitFor, overLimit, tooMany } from "./limits";
 import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
-import { viewerState } from "../harbor/harbor";
+import { hookKey, viewerState } from "../harbor/harbor";
 import { BUILD_ID } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
 export { Directory } from "../directory/directory";
@@ -194,7 +194,11 @@ app.post("/api/keys", async (c) => {
 app.delete("/api/keys/:id", async (c) => {
   const user = needUser(c);
   const ok = await directory(c.env).revokeKey(user.id, c.req.param("id"));
-  if (ok) forgetPrincipal({ userId: user.id });
+  if (ok) {
+    forgetPrincipal({ userId: user.id });
+    // A script that watched a project with this key connects again, and the key fails then.
+    c.executionCtx.waitUntil(closeUserSockets(c.env, user.id, 4401));
+  }
   return ok ? c.body(null, 204) : c.json({ error: "Unknown key." }, 404);
 });
 
@@ -341,6 +345,8 @@ app.patch("/api/projects/:p", async (c) => {
     }
     const out = await directory(c.env).updateProject(id, body);
     forgetRoles(id);
+    // A project that became private: people who only watched it connect again and get the answer "sign in" or "no access".
+    if (body.visibility === "private") await harbor(c.env, id).closeSockets({ viewers: true }).catch(() => undefined);
     return c.json(out);
   } catch (e) {
     return err(c, e);
@@ -353,6 +359,7 @@ app.delete("/api/projects/:p", async (c) => {
     await directory(c.env).archiveProject(id);
     forgetRoles(id);
     readyProjects.delete(id);
+    await harbor(c.env, id).closeSockets({ all: true }).catch(() => undefined);
     return c.body(null, 204);
   } catch (e) {
     return err(c, e);
@@ -370,12 +377,15 @@ app.post("/api/projects/:p/members", async (c) => {
   try {
     const out = await directory(c.env).addMember(id, body.who ?? "", body.role ?? "member");
     forgetRoles(id);
-    // A viewer does not act for the project: when gitring checked this person's GitHub rights for the
-    // link, it stops doing so.
-    if (body.role === "viewer") {
-      const who = String(body.who ?? "").trim().replace(/^@/, "").toLowerCase();
-      const demoted = out.find((m) => m.userId && m.handle.toLowerCase() === who)?.userId;
-      if (demoted) await harbor(c.env, id).githubActorLeft(demoted).catch(() => undefined);
+    const who = String(body.who ?? "").trim().replace(/^@/, "").toLowerCase();
+    const changed = out.find((m) => m.userId && m.handle.toLowerCase() === who)?.userId;
+    if (changed) {
+      const h = harbor(c.env, id);
+      // The person's live connections connect again with the new role.
+      await h.closeSockets({ userId: changed }).catch(() => undefined);
+      // A viewer does not act for the project: when gitring checked this person's GitHub rights for the
+      // link, it stops doing so.
+      if (body.role === "viewer") await h.githubActorLeft(changed).catch(() => undefined);
     }
     return c.json(out);
   } catch (e) {
@@ -390,8 +400,13 @@ app.delete("/api/projects/:p/members/:who", async (c) => {
     const leaving = (await directory(c.env).members(id)).find((m) => m.userId && (m.userId === who || m.handle.toLowerCase() === who.toLowerCase()))?.userId;
     const out = await directory(c.env).removeMember(id, who);
     forgetRoles(id);
-    // The person is no longer a member: gitring stops checking their GitHub rights for the link.
-    if (leaving) await harbor(c.env, id).githubActorLeft(leaving).catch(() => undefined);
+    if (leaving) {
+      const h = harbor(c.env, id);
+      // Their live connections close now (a private project stops streaming to them at once); gitring
+      // also stops checking their GitHub rights for the link.
+      await h.closeSockets({ userId: leaving }).catch(() => undefined);
+      await h.githubActorLeft(leaving).catch(() => undefined);
+    }
     return c.json(out);
   } catch (e) {
     return err(c, e);
@@ -613,7 +628,11 @@ app.post("/api/projects/:p/github/pull", async (c) => {
 app.get("/api/projects/:p/connect", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "viewer");
-    return c.json(await h.connectInfo(new URL(c.req.url).origin));
+    const info = await h.connectInfo(new URL(c.req.url).origin);
+    if (atLeast(h.role, "member")) return c.json(info);
+    // Viewers get the public addresses only: no repository names, and no hook URLs with keys.
+    const { artifacts: _artifacts, slackUrl: _slack, githubHookUrl: _github, ...pub } = info;
+    return c.json({ ...pub, artifacts: { namespace: "", repo: "", backend: info.artifacts.backend } });
   } catch (e) {
     return err(c, e);
   }
@@ -694,6 +713,8 @@ app.get("/ws/:p", async (c) => {
   const url = new URL(c.req.url);
   url.searchParams.set("project", id);
   url.searchParams.set("role", role);
+  // The person behind the socket: a change of their access closes it (see closeSockets).
+  url.searchParams.set("user", c.get("principal").user?.id ?? "");
   return harbor(c.env, id).fetch(new Request(url.toString(), c.req.raw));
 });
 
@@ -835,18 +856,26 @@ app.post("/hooks/github", async (c) => {
   } catch {
     body = null;
   }
+  // The URL carries the project and its key (Connect page): the shared secret alone aims at no project.
+  const id = projectId(c.req.query("project"));
+  const key = c.req.query("key") ?? "";
+  if (!key || !sameString(key, await hookKey(c.env.GITHUB_WEBHOOK_SECRET, "github", id))) return c.json({ error: "The key in the webhook URL is not valid. Copy the URL from the project's Connect page." }, 401);
   const why = gitringIssue(event, body);
   if (why === null) return c.json({ ignored: true });
   if (why) return c.json({ ignored: true, reason: why });
-  const id = projectId(c.req.query("project"));
+  // GitHub sends a delivery again when the first answer was slow: each one opens one task.
+  const delivery = c.req.header("x-github-delivery") ?? "";
+  if (delivery && !(await directory(c.env).firstDelivery(`hook:${delivery}`))) return c.json({ ignored: true, reason: "This delivery was handled before." });
   if (!(await directory(c.env).exists(id))) return c.json({ error: "Unknown project." }, 404);
   const h = harbor(c.env, id);
   await h.ensure(id);
-  const intent = await h.createIntent(
-    { title: body!.issue!.title, goal: body!.issue!.body || body!.issue!.title, source: { kind: "webhook", ref: `github:${body!.repository?.full_name ?? ""}#${body!.issue!.number ?? ""}` } },
-    { kind: "system", id: "github", name: "GitHub" },
-  );
-  return c.json({ intent: intent.id }, 201);
+  // Only the project's own repository opens tasks here.
+  const repo = body!.repository?.full_name ?? "";
+  const own = await h.githubRepoOf();
+  if (!own || own.toLowerCase() !== repo.toLowerCase()) return c.json({ error: `This project is not linked to ${repo || "that repository"}.` }, 403);
+  const res = await h.githubIssueIntent({ repo, private: body!.repository?.private, title: body!.issue!.title, goal: body!.issue!.body || body!.issue!.title, number: body!.issue!.number });
+  if ("refused" in res) return c.json({ ignored: true, reason: res.refused });
+  return c.json({ intent: res.intent.id }, 201);
 });
 
 /** Slack slash command: /gitring <intent title> — <goal>. Needs SLACK_SIGNING_SECRET and ?project=. */
@@ -864,6 +893,13 @@ app.post("/hooks/slack", async (c) => {
   const [titleRaw, ...rest] = text.split(/\s+[—-]{1,2}\s+/);
   const title = titleRaw ?? text;
   const id = projectId(c.req.query("project"));
+  // The command URL carries the project and its key (Connect page).
+  const key = c.req.query("key") ?? "";
+  if (!key || !sameString(key, await hookKey(c.env.SLACK_SIGNING_SECRET, "slack", id))) {
+    return c.json({ response_type: "ephemeral", text: "The key in the command URL is not valid. Copy the URL from the project's Connect page in gitring." });
+  }
+  // Slack sends a command again when the first answer was slow: the same signed request opens one task.
+  if (!(await directory(c.env).firstDelivery(`slack:${sig}`))) return c.json({ response_type: "ephemeral", text: "gitring already opened this task." });
   if (!(await directory(c.env).exists(id))) return c.json({ response_type: "ephemeral", text: "This Slack command points to a project that does not exist. Fix ?project= in the command URL." });
   const h = harbor(c.env, id);
   await h.ensure(id);
