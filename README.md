@@ -72,7 +72,7 @@ Tests:
 ```bash
 npm test               # unit tests (Vitest)
 npm run typecheck
-GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run e2e:scenario   # built-in AI agents on a new sample project
+GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run e2e:scenario   # built-in AI agents on a new test project (the bookshop in sample/)
 GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run e2e:guard      # rebase and the stale-write guard
 GITRING_URL=https://<your-worker> GITRING_KEY=gk_… node scripts/redo-agent.mjs   # two outside agents, one line, redo by the same agent
 ```
@@ -88,7 +88,7 @@ npm run deploy                                # vite build + wrangler deploy
 
 Then open `https://<your-worker>/setup?token=<GITRING_SETUP_TOKEN>`:
 
-1. **GitHub**: one click creates a GitHub App for your Worker (sign-in, issue webhooks, GitHub sync). GitHub shows the app before it creates it.
+1. **GitHub**: one click creates a GitHub App for your Worker (sign-in, repository lists and imports, issue and push webhooks, GitHub sync). GitHub shows the app before it creates it.
 2. **Google**: create an OAuth client of type Web application, with the redirect URI that the page shows, and paste its ID and secret.
 
 Push to deploy with Workers Builds: production branch `main`, build command `npm run build`, deploy command `npx wrangler deploy`, root directory empty.
@@ -105,18 +105,18 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
 
 ## Accounts and projects
 
-- People sign in with GitHub or Google. Roles per project: **owner** (settings, members), **member** (tasks, agents, merges), **viewer** (watch).
-- A project starts from one of these sources. Main lives in Cloudflare Artifacts for all of them.
+- People sign in with GitHub or Google. Account adds the other sign-in, connects or disconnects GitHub, lists API keys and connected apps (MCP clients), and signs out everywhere.
+- Roles per project: **owner** (settings, members), **member** (tasks, agents, merges), **viewer** (watch). Anyone can watch a public project; only members act on it.
+- **New project** is one search field. It lists the GitHub repositories where the gitring app is installed and you have access, a pasted URL, a folder, `git push` and an empty project. For a repository, gitring guesses the name, the branch, the install and test commands (from lockfiles and manifests: Node, Python, Go, Rust, Ruby, Java, Deno, Make; a small model reads the README only when the rules find no test command) and the GitHub sync mode. One button creates the project.
 
   | Source | How |
   |---|---|
+  | GitHub repository | Public: Artifacts imports it with its history. Private: gitring reads the branch tip through the GitHub App (one commit, at most 25 MB, checked file by file against GitHub's tree). Code of a private repository only goes into a private project. |
   | Import URL | Artifacts imports a public https repository (GitHub, GitLab, Bitbucket or any host), with its history. |
-  | git push | gitring makes an empty repository and shows the owner a push command with a 24-hour token. Use it for private repositories from any host. |
+  | git push | gitring makes an empty repository and shows the owner a push command with a 24-hour token. Use it for large or private repositories on any host. |
   | Folder | The browser uploads a folder (without `.git`, dependencies and build output; at most 20 MB) as the first commit. |
   | Empty | A README. Agents write the code. |
-  | Sample | A copy of the sample bookshop with five tasks and their tests. |
-- Anyone can watch a public project. Only members act on it.
-- Personal API keys (Connect → API keys) let MCP clients, hooks and scripts act as you.
+- gitring keeps the GitHub App token of a person sealed (AES-GCM), refreshes it before it expires (one refresh at a time: GitHub refresh tokens work once), and asks GitHub as that person, so lists and guesses show only what the person may see.
 - Built-in AI agents have an hourly budget: `AI_AGENTS_PER_USER_HOUR` per person and `AI_AGENTS_PER_HOUR` for the deployment (`wrangler.jsonc`). Over the budget, agents wait and start by themselves.
 
 ## Tests of the work
@@ -125,23 +125,29 @@ gitring merges work only when its tests pass: once on the work copy, and again o
 
 | Runner | Where | Used by |
 |---|---|---|
-| container | A Cloudflare container per work copy (Node.js 24 on Debian). gitring copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Imported, pushed, uploaded and empty projects |
-| worker | A Dynamic Worker runs `tests/*.test.js` with gitring's small test harness. No dependencies, no network. | The sample |
+| container | A Cloudflare container per work copy (Node.js 24 on Debian). gitring copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Every project (the default) |
+| worker | A Dynamic Worker runs `tests/*.test.js` with gitring's small test harness. No dependencies, no network. | Small JavaScript projects without dependencies (the scripts' test bookshop) |
 
-Owners change the runner, the commands and the time limit in Settings → Tests. Test containers have no direct Internet access: a Worker entrypoint lets requests to package registries (npm, PyPI, Go proxy, Debian) pass and refuses all other hosts.
+Owners change the runner, the commands and the time limit in Settings → Tests. Test containers have no direct Internet access: a Worker entrypoint lets requests to package registries (npm, PyPI, Go proxy, Debian, crates.io, RubyGems, Maven, Gradle, JSR) pass and refuses all other hosts.
 
 ## Connect agents
 
-gitring speaks MCP (streamable HTTP) at `/mcp`. Every call needs a personal API key: `Authorization: Bearer gk_…`.
+gitring speaks MCP (streamable HTTP) at `https://<your-worker>/mcp`. Add it as a connector; the client signs you in with OAuth, and you allow it once:
+
+| Client | How |
+|---|---|
+| Claude (claude.ai, desktop) | Settings → Connectors → Add custom connector → paste the URL → Connect → Allow. |
+| Claude Code | `claude mcp add --transport http --scope user gitring https://<your-worker>/mcp`, then `/mcp` to sign in. |
+| Cursor | The "Add to Cursor" button on the Connect page, or `.cursor/mcp.json` → `{ "mcpServers": { "gitring": { "url": "https://<your-worker>/mcp" } } }` |
+| Codex | `codex mcp add gitring --url https://<your-worker>/mcp`, then `codex mcp login gitring`. |
+
+OAuth 2.1 details: protected resource metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp`, server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, dynamic client registration (RFC 7591) and client ID metadata documents, authorization code with PKCE (S256 only), tokens bound to `<origin>/mcp` (RFC 8707), revocation (RFC 7009). Access tokens last one hour. Refresh tokens last 30 days and rotate at each use: each sign-in of an app is one token family, and a refresh token that comes back after its rotation ends that family. Only hashes of codes and tokens are stored. Account → Connected apps shows each app with its last use; Revoke ends its tokens.
+
+Scripts and hooks send a personal API key instead (Account → API keys): `Authorization: Bearer gk_…`.
 
 ```bash
-export GITRING_KEY=gk_…
-claude mcp add --transport http gitring https://<your-worker>/mcp --header "Authorization: Bearer $GITRING_KEY"   # Claude Code
+claude mcp add --transport http gitring https://<your-worker>/mcp --header "Authorization: Bearer $GITRING_KEY"   # Claude Code with a key
 ```
-
-Codex: `~/.codex/config.toml` → `[mcp_servers.gitring]` with `url = "https://<your-worker>/mcp"` and `bearer_token_env_var = "GITRING_KEY"`.
-
-Cursor: `.cursor/mcp.json` → `{ "mcpServers": { "gitring": { "url": "https://<your-worker>/mcp", "headers": { "Authorization": "Bearer ${env:GITRING_KEY}" } } } }`
 
 | Tool | What it does |
 |---|---|
@@ -161,7 +167,7 @@ Two modes:
 - **api mode** (default): the agent reads and writes files through gitring. gitring holds the working tree, rebases it when main moves, and merges writes made from an old copy.
 - **git mode**: `gitring_declare` returns a remote for the work copy and a token (6 hours). The agent clones, commits and pushes with plain git. gitring reads the latest push at `gitring_check` and `gitring_submit`; `gitring_log` with the head SHA gets a conflict check at once. When the agent merges main into its work (`gitring_update`, then `git pull`), gitring moves the base of the work copy to that main.
 
-Try an outside agent end to end: `GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run agent:external` (git mode, on a new private sample project). Add `-- --mode api` for api mode, or `-- --no-log` to skip `gitring_log`.
+Try an outside agent end to end: `GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run agent:external` (git mode, on a new private test project made from the bookshop in sample/). Add `-- --mode api` for api mode, or `-- --no-log` to skip `gitring_log`.
 
 **Claude Code hook**: change requests can also arrive in the middle of a task, after each file edit. Add this to `.claude/settings.json` in the agent's repository, and give your repository folder as `workdir` in `gitring_declare`:
 
@@ -184,33 +190,39 @@ When the work of an outside agent cannot merge on the new main (a text conflict,
 
 The same agent gets the work back at most 3 times. Work of built-in agents is always done again by a built-in agent.
 
-## Send merged code to GitHub
+## Send merged code to GitHub, bring GitHub changes in
 
-Settings → GitHub links a project to a GitHub repository and chooses where merged code goes:
+Settings → GitHub links a project to a GitHub repository (a GitHub import links its repository) and chooses where merged code goes:
 
 | Mode | What happens |
 |---|---|
 | Off | Merged code stays in Cloudflare Artifacts. Clone it from the Artifacts remote. |
-| Pull request | After each merge, gitring pushes main to a branch (default `gitring`) and keeps one pull request open to the default branch. People merge it on GitHub. Use "Create a merge commit", so that the next pull request shows only new work. |
-| Straight to main | After each merge, gitring fast-forwards the default branch. If a person pushed to it, gitring stops and says so. |
+| Pull request | After each merge, gitring pushes main to a branch (default `gitring`) and keeps one pull request open to the followed branch. People merge it on GitHub ("Create a merge commit", so that the next pull request shows only new work). gitring never overwrites commits that people push to its branch. |
+| Straight to main | After each merge, gitring fast-forwards the followed branch. When GitHub has commits that gitring does not have, gitring brings them in first. |
 
-gitring makes one GitHub commit for each merge with the GitHub Git Data API, with installation tokens of the gitring GitHub App. To link a repository:
+The followed branch is the imported branch (default: the repository's default branch). gitring makes one GitHub commit for each merge with the GitHub Git Data API and installation tokens of the gitring GitHub App, in batches of 200.
 
-1. Install the GitHub App on the repository.
-2. Sign in with GitHub as a person who can push to the repository. gitring checks this, so that no project can push to the repositories of other people.
-3. For pull request mode, the app needs the "Pull requests: Read and write" permission. Without it, gitring pushes the branch and shows a link to open the pull request by hand.
+**Bring GitHub changes in**: a push to the followed branch (webhook), "Bring GitHub changes in now" in Settings, or a blocked sync starts a pull. gitring compares the last GitHub commit that main has with GitHub's branch, takes GitHub's version of files that only GitHub changed, merges text where both changed different lines (3-way), and commits one "Bring GitHub changes into main" commit; on GitHub it becomes a merge commit, so GitHub's history stays whole. When GitHub and main changed the same lines, gitring opens a task with GitHub's diff for an agent or a person; when it merges, the rest of the changes come in. Work in progress moves onto the new main, and its agents get a change request. Pulls run in the merge queue, one at a time.
 
-Sync works for projects that share history with the GitHub repository (a project imported from it). gitring does not yet bring commits that people push to GitHub into gitring.
+Rights: linking a repository needs read rights on GitHub; turning sync on needs push rights and the app on the repository. gitring checks them as the person (their GitHub token), and checks again once a day before it pushes, or reads a private repository.
 
 ## Hooks: other apps in and out
 
 | In | |
 |---|---|
 | `POST /hooks/intents` | Any app with a member's API key: `{ project, title, goal, checks?, source?, launch? }` → a new task |
-| `POST /hooks/github-app` | The gitring GitHub App: an issue labeled `gitring` by a project member → a task in each project imported from that repository |
+| `POST /hooks/github-app` | The gitring GitHub App: an issue labeled `gitring` by a project member → a task in each project that imports or links the repository; a push to a followed branch → GitHub changes come into main. Each delivery counts once. |
 | `POST /hooks/github` | A plain repository webhook (`GITHUB_WEBHOOK_SECRET`, `?project=`) → the same |
 | `POST /hooks/slack` | Slash command `/gitring Add a dark mode — Readers can switch…` (`SLACK_SIGNING_SECRET`, `?project=`) |
 | **Out** | Project webhooks (Settings → Webhooks) get `landing` (a merge), `correction` (a change request), `decision` and `intent` events as JSON or Slack messages |
+
+## Security
+
+- Sessions, API keys, OAuth codes and tokens: only SHA-256 hashes are stored. Provider credentials and GitHub tokens are sealed with AES-GCM (key from `GITRING_SECRET`).
+- Sign-ins are bound to the browser that started them (a cookie with the OAuth state); an OAuth consent is bound the same way. Browser sessions cannot make cross-site writes.
+- Rate limits per Cloudflare location (Workers Rate Limiting): sign-in starts and client registration 20 a minute per address, OAuth token calls 120, MCP 600 a minute per person, the API 1200.
+- The web app has a strict Content Security Policy (inline scripts allowed by hash only); server pages allow no scripts except one by nonce. Live previews of agent code run sandboxed and can set no cookies or other headers on the gitring origin.
+- Viewers of public projects do not see webhook addresses. Code of a private GitHub repository never goes into a public project.
 
 ## Project layout
 
@@ -223,10 +235,11 @@ src/harbor      HarborMaster: the project coordinator (one Durable Object for ea
 src/vessel      Vessel: the built-in agent runner (Workers AI)
 src/directory   Directory: the account store (people, sessions, API keys, projects, roles)
 src/drydock     Drydock: test containers; Seawall: their outbound network filter
-src/platform    Artifacts backend, GitHub sync, Workers AI calls, Dynamic Worker tests and previews
-src/worker      routes, sign-in, MCP server, hooks
+src/platform    Artifacts backend, GitHub (client, repository lists, imports, sync, pulls), Workers AI calls,
+                Dynamic Worker tests and previews
+src/worker      routes, sign-in, OAuth server for MCP clients, MCP server, GitHub routes, rate limits, hooks
 web/src         React web app and its design system (/design opens it in local development)
-sample          the sample project: a small bookshop on Workers and its tasks with tests
+sample          a test bookshop with five tasks and their tests (the scripts upload it as a project)
 scripts         outside agents (MCP, git or api mode), redo test, Claude Code hook demo, e2e runs
 test            unit tests (Vitest); test/support holds an Artifacts test double
 ```
