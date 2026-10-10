@@ -93,3 +93,141 @@ export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new Blob([bytes as unknown as ArrayBuffer]).stream().pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
+
+/* ───────────── reading (GitHub tarballs) ───────────── */
+
+export interface TarItem {
+  path: string;
+  type: "file" | "dir" | "symlink" | "other";
+  /** Octal mode from the header (0o755 for executables). */
+  mode: number;
+  size: number;
+  /** Symlink target. */
+  linkname?: string;
+  /** File bytes (files only). */
+  data?: Uint8Array;
+}
+
+const dec = new TextDecoder();
+
+function cstr(b: Uint8Array, start: number, len: number): string {
+  const s = b.subarray(start, start + len);
+  const end = s.indexOf(0);
+  return dec.decode(end < 0 ? s : s.subarray(0, end));
+}
+
+function num(b: Uint8Array, start: number, len: number): number {
+  // GNU base-256 for large values: the first byte has the high bit set.
+  if (b[start] & 0x80) {
+    let n = 0;
+    for (let i = start + 1; i < start + len; i++) n = n * 256 + b[i];
+    return n;
+  }
+  const t = cstr(b, start, len).trim();
+  return t ? parseInt(t, 8) : 0;
+}
+
+/** PAX records: "<len> key=value\n" … */
+function paxRecords(data: Uint8Array): Record<string, string> {
+  const out: Record<string, string> = {};
+  let i = 0;
+  while (i < data.length) {
+    const sp = data.indexOf(0x20, i);
+    if (sp < 0) break;
+    const len = parseInt(dec.decode(data.subarray(i, sp)), 10);
+    if (!len || i + len > data.length) break;
+    const rec = dec.decode(data.subarray(sp + 1, i + len - 1));
+    const eq = rec.indexOf("=");
+    if (eq > 0) out[rec.slice(0, eq)] = rec.slice(eq + 1);
+    i += len;
+  }
+  return out;
+}
+
+/** Pull exact byte counts out of a stream of chunks. */
+class ByteReader {
+  private chunks: Uint8Array[] = [];
+  private have = 0;
+  private done = false;
+  constructor(private readonly reader: ReadableStreamDefaultReader<Uint8Array>) {}
+
+  /** Exactly n bytes, or null at the end of the stream. */
+  async read(n: number): Promise<Uint8Array | null> {
+    while (this.have < n && !this.done) {
+      const { value, done } = await this.reader.read();
+      if (done) this.done = true;
+      else if (value?.length) {
+        this.chunks.push(value);
+        this.have += value.length;
+      }
+    }
+    if (this.have < n) return null;
+    const out = new Uint8Array(n);
+    let at = 0;
+    while (at < n) {
+      const c = this.chunks[0];
+      const take = Math.min(c.length, n - at);
+      out.set(c.subarray(0, take), at);
+      at += take;
+      if (take === c.length) this.chunks.shift();
+      else this.chunks[0] = c.subarray(take);
+    }
+    this.have -= n;
+    return out;
+  }
+
+  async skip(n: number): Promise<boolean> {
+    while (n > 0) {
+      const step = Math.min(n, 1 << 20);
+      if (!(await this.read(step))) return false;
+      n -= step;
+    }
+    return true;
+  }
+}
+
+/**
+ * Read a tar stream (ustar, PAX and GNU long names). `want(path, size)` decides per file whether its
+ * bytes are kept; skipped files still count in the yielded items, without data.
+ */
+export async function* readTar(stream: ReadableStream<Uint8Array>, want: (path: string, size: number) => boolean = () => true): AsyncGenerator<TarItem> {
+  const r = new ByteReader(stream.getReader());
+  let pax: Record<string, string> = {};
+  let longName: string | undefined;
+  let longLink: string | undefined;
+  for (;;) {
+    const h = await r.read(BLOCK);
+    if (!h || h.every((b) => b === 0)) return;
+    const type = String.fromCharCode(h[156] || 0x30);
+    const size = num(h, 124, 12);
+    const padded = Math.ceil(size / BLOCK) * BLOCK;
+    if (type === "x" || type === "g" || type === "L" || type === "K") {
+      const body = await r.read(padded);
+      if (!body) return;
+      const data = body.subarray(0, size);
+      if (type === "x") pax = paxRecords(data);
+      else if (type === "L") longName = cstr(data, 0, data.length);
+      else if (type === "K") longLink = cstr(data, 0, data.length);
+      // "g" (global, such as GitHub's commit comment) applies to nothing here.
+      continue;
+    }
+    const prefix = cstr(h, 345, 155);
+    const name = cstr(h, 0, 100);
+    const path = pax.path ?? longName ?? (prefix ? `${prefix}/${name}` : name);
+    const linkname = pax.linkpath ?? longLink ?? cstr(h, 157, 100);
+    const realSize = pax.size ? Number(pax.size) : size;
+    const realPadded = Math.ceil(realSize / BLOCK) * BLOCK;
+    pax = {};
+    longName = longLink = undefined;
+    const mode = num(h, 100, 8);
+    const kind: TarItem["type"] = type === "0" || type === "\0" || type === "7" ? "file" : type === "5" ? "dir" : type === "2" ? "symlink" : "other";
+    if (kind === "file" && want(path, realSize)) {
+      const body = await r.read(realPadded);
+      if (!body) return;
+      yield { path, type: kind, mode, size: realSize, data: body.subarray(0, realSize) };
+    } else {
+      if (!(await r.skip(realPadded))) return;
+      yield { path, type: kind, mode, size: realSize, ...(kind === "symlink" ? { linkname } : {}) };
+    }
+  }
+}

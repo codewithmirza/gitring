@@ -17,7 +17,7 @@ import type * as A from "../core/accounts";
 import { PROJECT_ID } from "../core/accounts";
 import type { ProjectSource } from "../core/types";
 import { rand } from "../harbor/ids";
-import { githubAppJwt, randomToken, seal, sha256B64url, unseal } from "./crypto";
+import { githubAppJwt, randomToken, sameString, seal, sha256B64url, unseal } from "./crypto";
 import { OAuthStore, type JsonObject, type PendingRequest, type TokenAnswer } from "./oauth";
 
 const SCHEMA = [
@@ -32,6 +32,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS budgets (owner TEXT PRIMARY KEY, starts TEXT NOT NULL)`,
+  // Projects linked to a GitHub repository (lowercase "owner/name"): a push webhook reaches them.
+  `CREATE TABLE IF NOT EXISTS github_links (repo TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY (repo, project_id))`,
+  `CREATE INDEX IF NOT EXISTS github_links_project ON github_links (project_id)`,
   // The public sample left the product (2026-10-10): archive its project.
   `UPDATE projects SET archived = 1 WHERE id = 'demo' AND source LIKE '%"sample"%'`,
 ];
@@ -104,7 +107,7 @@ type ProjectRow = {
 
 type StateData =
   | { kind: "manifest"; origin: string }
-  | { kind: "signin"; provider: A.Provider; origin: string; returnTo: string; verifier?: string; nonce?: string };
+  | { kind: "signin"; provider: A.Provider; origin: string; returnTo: string; verifier?: string; nonce?: string; linkUserId?: string };
 
 /** A profile from a provider, after the code exchange. */
 interface Profile {
@@ -115,7 +118,29 @@ interface Profile {
   email?: string;
   emailVerified?: boolean;
   avatar?: string;
+  /** GitHub only: the user token of the GitHub App (sealed before it is stored). */
+  github?: GithubUserToken;
 }
+
+/**
+ * A GitHub App user token. GitHub gives an access token for 8 hours and a single-use refresh token for
+ * 6 months (or one access token without expiry, when the app turned expiry off).
+ */
+export interface GithubUserToken {
+  access: string;
+  refresh?: string;
+  /** ms since epoch; absent: no expiry. */
+  expiresAt?: number;
+  refreshExpiresAt?: number;
+}
+
+export type GithubUserTokenResult =
+  | { ok: true; token: string; login: string; expiresAt: number | null }
+  | { ok: false; state: "not-connected" | "expired" | "no-app" | "error"; reason: string };
+
+const GITHUB_TOKEN_PURPOSE = "github-user-v1";
+/** Refresh an access token when it has less than this left. */
+const GITHUB_REFRESH_EARLY_MS = 5 * 60_000;
 
 export type GithubRepoAccess =
   | { ok: true; token: string; expiresAt: number; permissions: Record<string, string> }
@@ -127,6 +152,8 @@ export class Directory extends DurableObject<Env> {
   private readonly oauth: OAuthStore;
   /** Installation tokens per repository (lowercase "owner/name"). */
   private readonly repoTokens = new Map<string, { token: string; expiresAt: number; permissions: Record<string, string> }>();
+  /** GitHub token calls per GitHub account run one at a time: refresh tokens are single-use. */
+  private readonly githubRefreshes = new Map<string, Promise<GithubUserTokenResult>>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -274,6 +301,136 @@ export class Directory extends DurableObject<Env> {
     return { ok: false, message: `Your GitHub account (${logins.join(", ")}) cannot push to ${repo}.` };
   }
 
+  /** A project links a GitHub repository (or none). Worker-only, RPC from the project coordinator. */
+  async githubLink(projectId: string, repo: string | null): Promise<void> {
+    this.sql.exec("DELETE FROM github_links WHERE project_id = ?", projectId);
+    if (repo) this.sql.exec("INSERT OR REPLACE INTO github_links (repo, project_id) VALUES (?, ?)", repo.toLowerCase(), projectId);
+  }
+
+  /** Projects (not archived) that link this GitHub repository. */
+  async githubLinkedProjects(repo: string): Promise<string[]> {
+    return this.sql
+      .exec<{ project_id: string }>("SELECT l.project_id FROM github_links l JOIN projects p ON p.id = l.project_id WHERE l.repo = ? AND p.archived = 0", String(repo ?? "").toLowerCase())
+      .toArray()
+      .map((r) => r.project_id);
+  }
+
+  /* ════════════════════ GitHub user tokens (repository list, imports) ════════════════════ */
+
+  /** The GitHub sign-in of a person that holds a token (the newest one when there are several). */
+  private githubIdentity(userId: string): { subject: string; login: string; token: string | null } | null {
+    const rows = this.sql
+      .exec<{ subject: string; login: string | null; token: string | null }>("SELECT subject, login, token FROM identities WHERE user_id = ? AND provider = 'github' ORDER BY token IS NULL", userId)
+      .toArray();
+    const r = rows[0];
+    return r ? { subject: r.subject, login: r.login ?? "", token: r.token } : null;
+  }
+
+  /** The GitHub connection of a person, without a call to GitHub. */
+  async githubConnection(userId: string): Promise<A.GithubConnection> {
+    const id = this.githubIdentity(userId);
+    if (!id) return { connected: false, reason: "Connect GitHub to see your repositories." };
+    if (!id.token) return { connected: false, login: id.login, reason: "Connect GitHub again: gitring has no GitHub token for you." };
+    const t = await this.openToken(id.token);
+    if (!t) return { connected: false, login: id.login, reason: "Connect GitHub again." };
+    if (t.refreshExpiresAt && t.refreshExpiresAt < Date.now()) return { connected: false, login: id.login, reason: "Your GitHub sign-in expired. Connect GitHub again." };
+    return { connected: true, login: id.login };
+  }
+
+  private async openToken(sealed: string): Promise<GithubUserToken | null> {
+    try {
+      return await unseal<GithubUserToken>(this.secret(), sealed, GITHUB_TOKEN_PURPOSE);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A valid GitHub user token for a person (Worker-only, RPC). Refreshes it when it has less than five
+   * minutes left, or when the caller saw GitHub refuse it (`invalid`). One refresh at a time per
+   * account: GitHub refresh tokens work once, so a second parallel refresh would sign the person out.
+   */
+  async githubUserToken(userId: string, invalid?: string): Promise<GithubUserTokenResult> {
+    const first = this.githubIdentity(userId);
+    if (!first) return { ok: false, state: "not-connected", reason: "Connect GitHub to see your repositories." };
+    // Calls for the same GitHub account run one after the other: the second one sees the token that the
+    // first one refreshed.
+    const subject = first.subject;
+    const prev = this.githubRefreshes.get(subject) ?? Promise.resolve(null as unknown as GithubUserTokenResult);
+    const run = prev.catch(() => undefined).then(() => this.githubUserTokenNow(userId, invalid));
+    this.githubRefreshes.set(subject, run);
+    try {
+      return await run;
+    } finally {
+      if (this.githubRefreshes.get(subject) === run) this.githubRefreshes.delete(subject);
+    }
+  }
+
+  private async githubUserTokenNow(userId: string, invalid?: string): Promise<GithubUserTokenResult> {
+    const id = this.githubIdentity(userId);
+    if (!id) return { ok: false, state: "not-connected", reason: "Connect GitHub to see your repositories." };
+    if (!id.token) return { ok: false, state: "expired", reason: "Connect GitHub again." };
+    const t = await this.openToken(id.token);
+    if (!t) return { ok: false, state: "expired", reason: "Connect GitHub again." };
+    const stale = invalid !== undefined && sameStringSafe(invalid, t.access);
+    const expiring = t.expiresAt !== undefined && t.expiresAt - Date.now() < GITHUB_REFRESH_EARLY_MS;
+    if (!stale && !expiring) return { ok: true, token: t.access, login: id.login, expiresAt: t.expiresAt ?? null };
+    if (!t.refresh) {
+      // No refresh token: the token cannot be renewed. Forget it so the person connects again.
+      this.sql.exec("UPDATE identities SET token = NULL WHERE provider = 'github' AND subject = ?", id.subject);
+      return { ok: false, state: "expired", reason: "GitHub refused the saved sign-in. Connect GitHub again." };
+    }
+    return this.refreshGithub(id.subject, id.login, t);
+  }
+
+  private async refreshGithub(subject: string, login: string, t: GithubUserToken): Promise<GithubUserTokenResult> {
+    const app = await this.githubApp().catch(() => null);
+    if (!app) return { ok: false, state: "no-app", reason: "This gitring has no GitHub App." };
+    if (t.refreshExpiresAt && t.refreshExpiresAt < Date.now()) {
+      this.sql.exec("UPDATE identities SET token = NULL WHERE provider = 'github' AND subject = ?", subject);
+      return { ok: false, state: "expired", reason: "Your GitHub sign-in expired. Connect GitHub again." };
+    }
+    let answer: GithubTokenAnswer;
+    try {
+      const res = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "gitring" },
+        body: JSON.stringify({ client_id: app.clientId, client_secret: app.clientSecret, grant_type: "refresh_token", refresh_token: t.refresh }),
+      });
+      answer = await res.json<GithubTokenAnswer>();
+    } catch (e) {
+      // A network failure is not a refusal: keep the tokens, try again on the next call.
+      return { ok: false, state: "error", reason: `gitring could not reach GitHub: ${String((e as Error).message ?? e)}` };
+    }
+    if (!answer.access_token) {
+      // bad_refresh_token and similar: the refresh token is used or revoked.
+      this.sql.exec("UPDATE identities SET token = NULL WHERE provider = 'github' AND subject = ?", subject);
+      return { ok: false, state: "expired", reason: "GitHub asks you to sign in again. Connect GitHub again." };
+    }
+    const next = githubUserToken(answer);
+    this.sql.exec("UPDATE identities SET token = ? WHERE provider = 'github' AND subject = ?", await seal(this.secret(), next, GITHUB_TOKEN_PURPOSE), subject);
+    return { ok: true, token: next.access, login, expiresAt: next.expiresAt ?? null };
+  }
+
+  /** Disconnect GitHub: revoke the token at GitHub and forget it. The GitHub sign-in stays. */
+  async githubDisconnect(userId: string): Promise<void> {
+    const app = await this.githubApp().catch(() => null);
+    const rows = this.sql.exec<{ subject: string; token: string | null }>("SELECT subject, token FROM identities WHERE user_id = ? AND provider = 'github'", userId).toArray();
+    for (const r of rows) {
+      if (!r.token) continue;
+      const t = await this.openToken(r.token);
+      this.sql.exec("UPDATE identities SET token = NULL WHERE provider = 'github' AND subject = ?", r.subject);
+      if (t && app) {
+        // DELETE /applications/{client_id}/token revokes this one token (best effort).
+        await fetch(`https://api.github.com/applications/${encodeURIComponent(app.clientId)}/token`, {
+          method: "DELETE",
+          headers: { ...GITHUB_HEADERS, Authorization: `Basic ${btoa(`${app.clientId}:${app.clientSecret}`)}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: t.access }),
+        }).catch(() => undefined);
+      }
+    }
+  }
+
   async setGoogle(cfg: GoogleConfig): Promise<void> {
     const clientId = String(cfg.clientId ?? "").trim();
     const clientSecret = String(cfg.clientSecret ?? "").trim();
@@ -382,12 +539,17 @@ export class Directory extends DurableObject<Env> {
 
   /* ════════════════════ sign-in ════════════════════ */
 
-  async signInUrl(provider: A.Provider, origin: string, returnTo: string): Promise<string> {
+  /**
+   * The provider's sign-in URL. With `linkUserId` (a signed-in person adds a sign-in), the provider
+   * account joins that person instead of signing in.
+   */
+  async signInUrl(provider: A.Provider, origin: string, returnTo: string, linkUserId?: string): Promise<string> {
     const back = safeReturn(returnTo);
+    const link = linkUserId && this.userInfo(linkUserId) ? { linkUserId } : {};
     if (provider === "github") {
       const gh = await this.getSealed<GithubAppConfig>("github_app");
       if (!gh) throw new Error("GitHub sign-in is not set up on this gitring yet.");
-      const state = this.putState({ kind: "signin", provider, origin, returnTo: back });
+      const state = this.putState({ kind: "signin", provider, origin, returnTo: back, ...link });
       const q = new URLSearchParams({ client_id: gh.clientId, redirect_uri: `${origin}/auth/github/callback`, state, allow_signup: "true" });
       return `https://github.com/login/oauth/authorize?${q}`;
     }
@@ -395,7 +557,7 @@ export class Directory extends DurableObject<Env> {
     if (!gg) throw new Error("Google sign-in is not set up on this gitring yet.");
     const verifier = randomToken(48);
     const nonce = randomToken(16);
-    const state = this.putState({ kind: "signin", provider, origin, returnTo: back, verifier, nonce });
+    const state = this.putState({ kind: "signin", provider, origin, returnTo: back, verifier, nonce, ...link });
     const q = new URLSearchParams({
       client_id: gg.clientId,
       redirect_uri: `${origin}/auth/google/callback`,
@@ -410,17 +572,75 @@ export class Directory extends DurableObject<Env> {
     return `https://accounts.google.com/o/oauth2/v2/auth?${q}`;
   }
 
-  /** Finish a sign-in: exchange the code, upsert the person, open a session. */
-  async finishSignIn(provider: A.Provider, code: string, state: string): Promise<{ token: string; returnTo: string; user: A.UserInfo }> {
+  /**
+   * Finish a sign-in, and answer what went wrong instead of throwing (the Worker sends the person back to
+   * the page they came from, with the reason).
+   */
+  async completeSignIn(
+    provider: A.Provider,
+    code: string,
+    state: string,
+  ): Promise<{ ok: true; token: string | null; returnTo: string; user: A.UserInfo; linked?: boolean } | { ok: false; code: "expired" | "taken" | "failed"; message: string; returnTo: string }> {
+    let returnTo = "/";
+    try {
+      const st = this.peekState(state);
+      if (st.kind === "signin") returnTo = st.returnTo;
+    } catch {
+      return { ok: false, code: "expired", message: "The sign-in took too long, or it was used already. Try again.", returnTo };
+    }
+    try {
+      return { ok: true, ...(await this.finishSignIn(provider, code, state)) };
+    } catch (e) {
+      const message = String((e as Error).message ?? e);
+      return { ok: false, code: /belongs to another gitring account/.test(message) ? "taken" : "failed", message, returnTo };
+    }
+  }
+
+  /** The page a sign-in returns to; uses the state up (the provider answered with an error). */
+  async abandonSignIn(state: string): Promise<string> {
+    try {
+      const st = this.takeState(state);
+      return st.kind === "signin" ? st.returnTo : "/";
+    } catch {
+      return "/";
+    }
+  }
+
+  /** The providers and the GitHub connection of a person, in one call (GET /api/me). */
+  async meInfo(userId: string | null): Promise<{ providers: ProvidersInfo; github?: A.GithubConnection }> {
+    const providers = await this.providers();
+    return { providers, ...(userId ? { github: await this.githubConnection(userId) } : {}) };
+  }
+
+  /**
+   * Finish a sign-in: exchange the code, upsert the person, open a session. A link (a signed-in person
+   * added a sign-in) adds the provider account to that person and opens no new session (`token` null).
+   */
+  async finishSignIn(provider: A.Provider, code: string, state: string): Promise<{ token: string | null; returnTo: string; user: A.UserInfo; linked?: boolean }> {
     const st = this.takeState(state);
     if (st.kind !== "signin" || st.provider !== provider) throw new Error("This sign-in link does not match. Start again.");
     const profile = provider === "github" ? await this.githubProfile(code, st.origin) : await this.googleProfile(code, st.origin, st.verifier ?? "");
+    if (st.linkUserId) {
+      const owner = this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = ? AND subject = ?", profile.provider, profile.subject).toArray()[0]?.user_id;
+      if (owner && owner !== st.linkUserId) {
+        throw new Error(`This ${provider === "github" ? "GitHub" : "Google"} account belongs to another gitring account. Sign in with it, or remove it there first.`);
+      }
+      await this.upsert(profile, st.linkUserId);
+      return { token: null, returnTo: st.returnTo, user: this.userInfo(st.linkUserId)!, linked: true };
+    }
     const userId = await this.upsert(profile);
     const token = randomToken(32);
     const now = Date.now();
     this.sql.exec("DELETE FROM sessions WHERE expires_at < ?", now);
     this.sql.exec("INSERT INTO sessions (hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", await sha256B64url(token), userId, now, now + SESSION_MS);
     return { token, returnTo: st.returnTo, user: this.userInfo(userId)! };
+  }
+
+  /** Sign out everywhere: end every browser session of the person. API keys and connected apps stay. */
+  async endAllSessions(userId: string): Promise<number> {
+    const n = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM sessions WHERE user_id = ?", userId).one().n;
+    this.sql.exec("DELETE FROM sessions WHERE user_id = ?", userId);
+    return n;
   }
 
   private async githubProfile(code: string, origin: string): Promise<Profile> {
@@ -431,13 +651,13 @@ export class Directory extends DurableObject<Env> {
       headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "gitring" },
       body: JSON.stringify({ client_id: gh.clientId, client_secret: gh.clientSecret, code, redirect_uri: `${origin}/auth/github/callback` }),
     });
-    const t = await tok.json<{ access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string }>();
+    const t = await tok.json<GithubTokenAnswer>();
     if (!t.access_token) throw new Error(`GitHub refused the sign-in: ${t.error_description ?? t.error ?? tok.status}.`);
     const res = await fetch("https://api.github.com/user", { headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${t.access_token}` } });
     if (!res.ok) throw new Error(`GitHub did not return the profile (status ${res.status}).`);
     const u = await res.json<{ id: number; login: string; name?: string | null; email?: string | null; avatar_url?: string }>();
-    // The access token proves who signed in; gitring does not keep it.
-    return { provider: "github", subject: String(u.id), name: u.name || u.login, login: u.login, email: u.email ?? undefined, avatar: u.avatar_url };
+    // gitring keeps the user token sealed: it lists the repositories that the person can import.
+    return { provider: "github", subject: String(u.id), name: u.name || u.login, login: u.login, email: u.email ?? undefined, avatar: u.avatar_url, github: githubUserToken(t) };
   }
 
   private async googleProfile(code: string, origin: string, verifier: string): Promise<Profile> {
@@ -464,11 +684,14 @@ export class Directory extends DurableObject<Env> {
     return { provider: "google", subject: u.sub, name: u.name || u.email, email: u.email.toLowerCase(), emailVerified: true, avatar: u.picture };
   }
 
-  /** Find or create the person for a provider profile; link by a verified email when possible. */
-  private async upsert(p: Profile): Promise<string> {
+  /**
+   * Find or create the person for a provider profile; link by a verified email when possible.
+   * `linkTo`: the signed-in person who adds this sign-in (the caller checked that it is free).
+   */
+  private async upsert(p: Profile, linkTo?: string): Promise<string> {
     const now = Date.now();
     const known = this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = ? AND subject = ?", p.provider, p.subject).toArray()[0];
-    let userId = known?.user_id;
+    let userId = linkTo ?? known?.user_id;
     if (!userId && p.email && (p.emailVerified || p.provider === "github")) {
       userId = this.sql.exec<{ id: string }>("SELECT id FROM users WHERE lower(email) = ?", p.email.toLowerCase()).toArray()[0]?.id;
     }
@@ -484,14 +707,16 @@ export class Directory extends DurableObject<Env> {
         userId,
       );
     }
+    // GitHub: the user token, sealed (AES-GCM). Google: no token (sign-in only).
+    const sealedToken = p.github ? await seal(this.secret(), p.github, GITHUB_TOKEN_PURPOSE) : null;
     this.sql.exec(
-      // The token column stays for older rows; gitring keeps no provider tokens.
-      "INSERT INTO identities (provider, subject, user_id, login, email, token) VALUES (?, ?, ?, ?, ?, NULL) ON CONFLICT (provider, subject) DO UPDATE SET login = excluded.login, email = excluded.email, token = NULL",
+      "INSERT INTO identities (provider, subject, user_id, login, email, token) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (provider, subject) DO UPDATE SET user_id = excluded.user_id, login = excluded.login, email = excluded.email, token = excluded.token",
       p.provider,
       p.subject,
       userId,
       p.login ?? null,
       p.email ?? null,
+      sealedToken,
     );
     // Invites by login or email become memberships.
     const handles = [p.login && `github:${p.login.toLowerCase()}`, p.email && `email:${p.email.toLowerCase()}`].filter(Boolean) as string[];
@@ -629,9 +854,12 @@ export class Directory extends DurableObject<Env> {
     if (!l) return [];
     const userId = this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND lower(login) = ?", l).toArray()[0]?.user_id ?? null;
     const out: string[] = [];
+    const repo = /github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i.exec(url)?.[1]?.toLowerCase() ?? "";
+    const linked = new Set(repo ? this.sql.exec<{ project_id: string }>("SELECT project_id FROM github_links WHERE repo = ?", repo).toArray().map((r) => r.project_id) : []);
     for (const row of this.sql.exec<ProjectRow>("SELECT * FROM projects WHERE archived = 0").toArray()) {
       const s = JSON.parse(row.source) as ProjectSource;
-      if (s.kind !== "git" || normalizeRemote(s.url) !== want) continue;
+      const match = (s.kind === "git" && normalizeRemote(s.url) === want) || (s.kind === "github" && s.repo.toLowerCase() === repo) || linked.has(row.id);
+      if (!match) continue;
       const role = userId ? this.roleIn(row, userId) : null;
       const invited = this.sql.exec<{ role: A.Role }>("SELECT role FROM members WHERE project_id = ? AND handle = ?", row.id, `github:${l}`).toArray()[0]?.role ?? null;
       if ((role === "owner" || role === "member") || invited === "owner" || invited === "member") out.push(row.id);
@@ -644,8 +872,11 @@ export class Directory extends DurableObject<Env> {
     return rows.map((r) => this.info(r, userId)).filter((p) => p.role !== null);
   }
 
-  /** Make a project. ownerId null: the operator key made it, and no person owns it (deployment owners act on it). */
-  async createProject(input: { name: string; visibility?: A.Visibility; source: ProjectSource; ownerId: string | null }): Promise<A.ProjectInfo> {
+  /**
+   * Make a project. ownerId null: the operator key made it, and no person owns it (deployment owners act
+   * on it). `id`: a free id that a guess offered (it must start with the name's slug); otherwise a new one.
+   */
+  async createProject(input: { name: string; visibility?: A.Visibility; source: ProjectSource; ownerId: string | null; id?: string }): Promise<A.ProjectInfo> {
     const owner = input.ownerId === null ? null : this.userInfo(input.ownerId);
     if (input.ownerId !== null && !owner) throw new Error("Sign in first.");
     const name = String(input.name ?? "").trim().slice(0, 80);
@@ -655,8 +886,10 @@ export class Directory extends DurableObject<Env> {
       if (n >= MAX_PROJECTS_PER_USER) throw new Error(`You have ${MAX_PROJECTS_PER_USER} projects. Archive one first.`);
     }
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "project";
-    let id = `${base}-${rand(4)}`;
-    while (this.projectRow(id)) id = `${base}-${rand(4)}`;
+    const taken = (x: string) => Boolean(this.sql.exec("SELECT id FROM projects WHERE id = ?", x).toArray()[0]);
+    const asked = input.id && PROJECT_ID.test(input.id) && input.id.startsWith(`${base}-`) ? input.id : undefined;
+    let id = asked && !taken(asked) ? asked : `${base}-${rand(4)}`;
+    while (taken(id)) id = `${base}-${rand(4)}`;
     if (!PROJECT_ID.test(id)) throw new Error("gitring could not make an id for this name. Use letters and digits.");
     const now = Date.now();
     this.sql.exec(
@@ -774,6 +1007,30 @@ function normalizeRemote(url: string): string {
 }
 
 /** Only same-site paths may follow a sign-in. */
+/** GitHub's answer at https://github.com/login/oauth/access_token (code exchange and refresh). */
+interface GithubTokenAnswer {
+  access_token?: string;
+  refresh_token?: string;
+  /** Seconds. */
+  expires_in?: number;
+  refresh_token_expires_in?: number;
+  error?: string;
+  error_description?: string;
+}
+
+function githubUserToken(t: GithubTokenAnswer, now = Date.now()): GithubUserToken {
+  return {
+    access: t.access_token!,
+    ...(t.refresh_token ? { refresh: t.refresh_token } : {}),
+    ...(t.expires_in ? { expiresAt: now + t.expires_in * 1000 } : {}),
+    ...(t.refresh_token_expires_in ? { refreshExpiresAt: now + t.refresh_token_expires_in * 1000 } : {}),
+  };
+}
+
+function sameStringSafe(a: string, b: string): boolean {
+  return typeof a === "string" && typeof b === "string" && sameString(a, b);
+}
+
 function safeReturn(to: string): string {
   const s = String(to ?? "/");
   return s.startsWith("/") && !s.startsWith("//") && !s.includes("\\") ? s.slice(0, 500) : "/";

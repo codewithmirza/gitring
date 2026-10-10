@@ -10,7 +10,7 @@ import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
 import { DEFAULT_SETTINGS, withDefaults } from "../core/types";
 import { Db } from "./store";
-import { callsignFor, colorFor, newId, repoSafe } from "./ids";
+import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError } from "../platform/repo/backend";
@@ -43,6 +43,8 @@ import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
 import { syncToGithub } from "../platform/github/sync";
+import { githubSnapshot } from "../platform/github/tarball";
+import { upstreamChanges } from "../platform/github/upstream";
 import {
   ACTIVE,
   WAITING,
@@ -52,6 +54,7 @@ import {
   failureSummary,
   fileNodes,
   footprintOf,
+  langOf,
   latestCheck,
   median,
   notices,
@@ -207,18 +210,35 @@ export class HarborMaster extends DurableObject<Env> {
     this.project = draft;
     this.db.setMeta("generation", generation);
 
-    if (source.kind === "git") {
-      const url = normalizeGitUrl(source.url);
+    // A public repository (any git host, or GitHub): Artifacts imports it with its history.
+    if (source.kind === "git" || (source.kind === "github" && !source.private)) {
+      const url = source.kind === "git" ? normalizeGitUrl(source.url) : `https://github.com/${source.repo}`;
+      const branch = source.branch;
       const res = await this.env.ARTIFACTS.import({
-        source: { url, ...(source.branch ? { branch: source.branch } : {}), depth: 200 },
+        source: { url, ...(branch ? { branch } : {}), depth: 200 },
         target: { name: repoName, opts: { description: `gitring project ${opts.projectId} (import of ${url})` } },
       });
       draft.repo.remote = res.remote;
-      draft.repo.defaultBranch = source.branch || res.defaultBranch || "main";
-      draft.importing = { url, startedAt: Date.now() };
+      draft.repo.defaultBranch = branch || res.defaultBranch || "main";
+      draft.importing = { url, startedAt: Date.now(), ...(source.kind === "github" ? { github: { repo: source.repo, branch: branch ?? "", snapshot: false } } : {}) };
       this.db.setMeta("project", draft);
       this.addLog({ kind: "system", message: `Import starts: ${url} into Cloudflare Artifacts (${repoName}).` });
       await this.ctx.storage.setAlarm(Date.now() + 2000);
+      const state = await this.state();
+      this.emit({ type: "snapshot", state });
+      return state;
+    }
+
+    // A private GitHub repository: gitring reads one commit through the GitHub App (Artifacts imports
+    // public remotes only), in the background.
+    if (source.kind === "github") {
+      const handle = await this.backend.ensureRepo(repoName, { description: `gitring project ${opts.projectId} (import of github.com/${source.repo})` });
+      draft.repo.remote = handle.remote;
+      draft.repo.defaultBranch = source.branch || "main";
+      draft.importing = { url: `https://github.com/${source.repo}`, startedAt: Date.now(), github: { repo: source.repo, branch: source.branch ?? "", snapshot: true } };
+      this.db.setMeta("project", draft);
+      this.addLog({ kind: "system", message: `Import starts: github.com/${source.repo} (private) through the gitring GitHub App.` });
+      await this.ctx.storage.setAlarm(Date.now() + 200);
       const state = await this.state();
       this.emit({ type: "snapshot", state });
       return state;
@@ -269,6 +289,7 @@ export class HarborMaster extends DurableObject<Env> {
   private async continueImport(): Promise<void> {
     const p = this.project;
     if (!p?.importing || p.importing.error) return;
+    if (p.importing.github?.snapshot) return this.importGithubSnapshot();
     const elapsed = Date.now() - p.importing.startedAt;
     if (p.importing.push) {
       const pushed = await this.pushedBranch();
@@ -309,7 +330,7 @@ export class HarborMaster extends DurableObject<Env> {
       return;
     }
     // Main is the branch the owner asked for, else the remote's default branch.
-    const asked = p.source?.kind === "git" ? p.source.branch : undefined;
+    const asked = p.source?.kind === "git" || p.source?.kind === "github" ? p.source.branch : undefined;
     const candidates = asked ? [asked] : [...new Set([remoteDefault, p.repo.defaultBranch, "main", "master", "trunk", "develop"].filter(Boolean))];
     let sha: string | null = null;
     for (const branch of candidates) {
@@ -341,6 +362,8 @@ export class HarborMaster extends DurableObject<Env> {
     const url = p.importing?.url ?? "";
     // Push tokens open the canonical repo; after the adoption only gitring writes to it.
     for (const id of p.importing?.tokenIds ?? []) await this.backend.revokeToken(p.repo.name, id).catch(() => false);
+    // A public GitHub import keeps GitHub's commit ids: GitHub has this commit.
+    if (p.importing?.github && !p.importing.github.snapshot) this.db.setMeta("githubLast", sha);
     p.importing = undefined;
     this.db.setMeta("project", p);
     this.db.setMeta("mainSeq", [sha]);
@@ -349,6 +372,52 @@ export class HarborMaster extends DurableObject<Env> {
     this.addLog({ kind: "system", message: `${url === "git push" ? "Push received" : `Import done: ${url}`} at ${sha.slice(0, 7)} on ${branch} (${main.files.length} files). Write tasks for agents.` });
     this.persistStats();
     this.emit({ type: "snapshot", state: await this.state() });
+  }
+
+  /**
+   * Import a private GitHub repository: the commit at the branch tip, as files, in one gitring commit.
+   * gitring remembers that this commit is the GitHub commit, so GitHub sync and pulls continue GitHub's
+   * history.
+   */
+  private async importGithubSnapshot(): Promise<void> {
+    const p = this.requireProject();
+    const g = p.importing?.github;
+    if (!g || !p.importing) return;
+    const fail = async (error: string) => {
+      p.importing = { ...p.importing!, error };
+      this.db.setMeta("project", p);
+      this.addLog({ kind: "system", message: `Import failed: ${error}` });
+      this.emit({ type: "snapshot", state: await this.state() });
+    };
+    try {
+      const access = await this.directory().githubRepoAccess(g.repo);
+      if (!access.ok) return fail(access.installUrl ? `${access.message} Install the app: ${access.installUrl}` : access.message);
+      const headers = { "User-Agent": "gitring", Accept: "application/vnd.github.sha", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${access.token}` };
+      let branch = g.branch;
+      if (!branch) {
+        const info = await fetch(`https://api.github.com/repos/${g.repo}`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
+        branch = info.ok ? ((await info.json<{ default_branch?: string }>()).default_branch ?? "main") : "main";
+      }
+      const res = await fetch(`https://api.github.com/repos/${g.repo}/commits/${encodeURIComponent(branch)}`, { headers });
+      const githubSha = (await res.text()).trim();
+      if (!res.ok || !/^[0-9a-f]{40}$/.test(githubSha)) return fail(`GitHub has no branch "${branch}" in ${g.repo}.`);
+      const snap = await githubSnapshot({ repo: g.repo, sha: githubSha, token: access.token });
+      if (!snap.files.length) return fail(`${g.repo} has no files on ${branch}.`);
+      p.repo.defaultBranch = branch;
+      const seed = await this.backend.commit({
+        repo: p.repo.name,
+        branch,
+        parent: "",
+        changes: snap.files,
+        message: `Import ${g.repo}\n\nThe files of ${branch} at ${githubSha} on GitHub (${snap.files.length} files).\n\nGitring-Seed: github\nGitring-GitHub: ${g.repo}@${githubSha}`,
+        author: GITRING_AUTHOR,
+      });
+      this.db.setMeta("githubKnown", { [seed.sha]: githubSha });
+      this.db.setMeta("githubLast", githubSha);
+      await this.adoptMain(branch, seed.sha);
+    } catch (e) {
+      return fail(String((e as Error)?.message ?? e).slice(0, 300));
+    }
   }
 
   /** The branch the owner pushed: main, master, or the repo's default branch. */
@@ -1750,6 +1819,10 @@ export class HarborMaster extends DurableObject<Env> {
     if (p.settings.github.mode !== "off" && p.settings.github.repo) {
       this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
     }
+    // The task that merged GitHub's conflicting changes is in: bring the rest of the GitHub changes in.
+    if (this.db.getMeta<{ intentId: string }>("githubConflict")?.intentId === intent.id && p.settings.github.repo) {
+      this.ctx.waitUntil(this.githubPull({ reason: "task" }).catch((e) => console.warn("github pull failed", String(e))));
+    }
     await this.upstreamCorrections(a, newMain);
   }
 
@@ -2381,6 +2454,46 @@ export class HarborMaster extends DurableObject<Env> {
     return { landing, note, diff: await this.attemptDiff(landing.attemptId) };
   }
 
+  /** Changes on every start of this object: versions of work copies are counted in memory. */
+  private readonly bootId = rand(6);
+
+  /**
+   * A cheap version of a ref for HTTP caching (ETag), without reading files: main and commits are their
+   * commit ids; a work copy is its id, base, last push and edit counter. Null: unknown ref.
+   */
+  async refVersion(ref: string): Promise<string | null> {
+    const p = this.requireProject();
+    if (ref === "main") return p.mainSha || null;
+    if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+    const a = this.attempts.get(ref);
+    if (!a) return null;
+    return `${a.id}@${a.baseSha.slice(0, 10)}.${(a.headSha ?? "").slice(0, 10)}.${this.attemptVersion.get(a.id) ?? 0}.${this.bootId}`;
+  }
+
+  /** The files of main, a work copy (base + its work) or a commit, for the code view. */
+  async tree(ref: string): Promise<T.TreeResponse> {
+    const p = this.requireProject();
+    if (ref === "main" || ref === p.mainSha) {
+      const m = await this.loadMain();
+      return { ref, sha: m.sha, files: m.files };
+    }
+    const a = this.attempts.get(ref);
+    if (a) {
+      const view = await this.attemptView(a);
+      const base = await this.treeText(p.repo.name, a.baseTree);
+      const deleted = new Set(view.changed.filter((ch) => ch.head === null).map((ch) => ch.path));
+      // Text files come from the view; other files (binary, very large) stay as they are on the base.
+      const paths = new Set([...view.files.keys(), ...[...base.snapshot.keys()].filter((path) => !deleted.has(path))]);
+      const files = [...paths].sort().map((path) => ({ path, size: view.files.get(path)?.length ?? 0, lang: langOf(path) }));
+      return { ref, sha: (await this.refVersion(ref)) ?? a.id, files };
+    }
+    if (!/^[0-9a-f]{40}$/.test(ref)) throw new Error(`Unknown ref ${ref}. Use main, a work copy id or a commit id.`);
+    const commit = await this.backend.readCommit(p.repo.name, ref);
+    if (!commit) throw new Error(`Commit ${ref.slice(0, 7)} is not in this project.`);
+    const tt = await this.treeText(p.repo.name, commit.treeHash);
+    return { ref, sha: ref, files: fileNodes(tt.snapshot, tt.text) };
+  }
+
   async file(ref: string, path: string): Promise<string | null> {
     const p = this.requireProject();
     if (ref === "main" || ref === p.mainSha) return (await this.loadMain()).text.get(normPath(path)) ?? null;
@@ -2431,11 +2544,13 @@ export class HarborMaster extends DurableObject<Env> {
   async githubStatus(): Promise<T.GithubSyncStatus> {
     const p = this.requireProject();
     const g = p.settings.github;
-    if (g.mode === "off") return { state: "off", message: "GitHub sync is off. Merged code stays in Cloudflare Artifacts.", mode: "off", ...(g.repo ? { repo: g.repo } : {}) };
+    const pull = g.repo ? this.db.getMeta<T.GithubPullStatus>("githubPull") : undefined;
+    const withPull = (st: T.GithubSyncStatus): T.GithubSyncStatus => (pull ? { ...st, pull } : st);
+    if (g.mode === "off") return withPull({ state: "off", message: "GitHub sync is off. Merged code stays in Cloudflare Artifacts.", mode: "off", ...(g.repo ? { repo: g.repo } : {}) });
     if (!g.repo) return { state: "not-linked", message: "Link a GitHub repository to send merged code to GitHub.", mode: g.mode };
     const st = p.github;
-    if (st && st.repo === g.repo && st.mode === g.mode) return st;
-    return { state: "pending", message: "gitring sends main to GitHub after the next merge, or when you choose Sync now.", repo: g.repo, mode: g.mode, branch: g.mode === "main" ? undefined : g.branch };
+    if (st && st.repo === g.repo && st.mode === g.mode) return withPull(st);
+    return withPull({ state: "pending", message: "gitring sends main to GitHub after the next merge, or when you choose Sync now.", repo: g.repo, mode: g.mode, branch: g.mode === "main" ? undefined : g.branch });
   }
 
   private githubRun?: Promise<T.GithubSyncStatus>;
@@ -2481,6 +2596,7 @@ export class HarborMaster extends DurableObject<Env> {
         mode,
         branch,
         known,
+        upstreamOf: this.db.getMeta<Record<string, string>>("githubUpstreamOf") ?? {},
         pr: {
           title: `gitring: merged work for ${p.name}`,
           body: [
@@ -2495,7 +2611,16 @@ export class HarborMaster extends DurableObject<Env> {
     // Keep the most recent pairs only.
     const pairs = Object.entries(out.known);
     this.db.setMeta("githubKnown", Object.fromEntries(pairs.slice(-1000)));
+    if (out.status.state === "ok" && out.status.githubSha) this.db.setMeta("githubLast", out.status.githubSha);
     const st = this.setGithub(out.status);
+    // Straight to main, and GitHub has commits that gitring does not have: bring them in, then send again.
+    if (st.state === "blocked" && !this.pullRun) {
+      this.ctx.waitUntil(
+        this.githubPull({ reason: "sync" })
+          .then((after) => (after.pull?.state === "merged" ? this.githubSync() : undefined))
+          .catch((e) => console.warn("github pull failed", String(e))),
+      );
+    }
     if (st.state === "ok" && st.githubSha !== before?.githubSha) {
       this.addLog({ kind: "system", message: `GitHub ${repo}: ${st.message}` });
     } else if (st.state !== "ok" && (st.state !== before?.state || st.message !== before?.message)) {
@@ -2506,10 +2631,173 @@ export class HarborMaster extends DurableObject<Env> {
 
   private setGithub(st: T.GithubSyncStatus): T.GithubSyncStatus {
     const p = this.requireProject();
-    p.github = st;
+    const { pull: _pull, ...rest } = st;
+    p.github = rest;
     this.db.setMeta("project", p);
-    this.emit({ type: "github", github: st });
-    return st;
+    const pull = this.db.getMeta<T.GithubPullStatus>("githubPull");
+    const out = pull && p.settings.github.repo ? { ...rest, pull } : rest;
+    this.emit({ type: "github", github: out });
+    return out;
+  }
+
+  private setPull(pull: T.GithubPullStatus): void {
+    this.db.setMeta("githubPull", pull);
+    const p = this.requireProject();
+    this.emit({ type: "github", github: { ...(p.github ?? { state: "off", message: "" }), pull } });
+  }
+
+  /* ───────────── bring GitHub changes into main ───────────── */
+
+  private pullRun?: Promise<void>;
+
+  /** A GitHub commit that main has: the last pull, the last sync, or the import. */
+  private githubSince(): string | null {
+    const p = this.requireProject();
+    const known = this.db.getMeta<Record<string, string>>("githubKnown") ?? {};
+    return known[p.mainSha] ?? this.db.getMeta<string>("githubLast") ?? null;
+  }
+
+  /**
+   * Bring new commits of the GitHub default branch into main (webhook, Pull now, a merged conflict task,
+   * or a blocked sync). One run at a time; answers the GitHub status with the pull result.
+   */
+  async githubPull(opts: { reason?: "webhook" | "manual" | "task" | "sync" } = {}): Promise<T.GithubSyncStatus> {
+    const p = this.requireProject();
+    const repo = p.settings.github.repo;
+    if (!repo) throw new Error("Link a GitHub repository first (Settings → GitHub).");
+    if (p.importing) return this.githubStatus();
+    if (!this.pullRun) {
+      this.pullRun = this.githubPullOnce(repo, opts.reason ?? "manual")
+        .catch((e) => this.setPull({ state: "error", message: `gitring could not bring the GitHub changes in: ${String((e as Error)?.message ?? e).slice(0, 200)}`, at: Date.now() }))
+        .finally(() => (this.pullRun = undefined));
+    }
+    await this.pullRun;
+    return this.githubStatus();
+  }
+
+  private async githubPullOnce(repo: string, reason: string, again = 0): Promise<void> {
+    const p = this.requireProject();
+    const since = this.githubSince();
+    if (!since) {
+      return this.setPull({ state: "error", message: "gitring does not know which GitHub commit main came from. Bringing changes in works for projects imported from GitHub.", at: Date.now() });
+    }
+    this.setPull({ ...(this.db.getMeta<T.GithubPullStatus>("githubPull") ?? { message: "" }), state: "pending", message: "gitring reads the GitHub changes.", at: Date.now() });
+    const access = await this.directory()
+      .githubRepoAccess(repo)
+      .catch(() => ({ ok: false as const, state: "error" as const, message: "gitring could not ask GitHub for access.", installUrl: undefined as string | undefined }));
+    // Public repositories work without the app (GitHub's limits for anonymous calls apply).
+    const token = access.ok ? access.token : null;
+    const main = await this.loadMain();
+    const conflict = this.db.getMeta<{ head: string; files: Record<string, string | null>; intentId: string }>("githubConflict");
+    const conflictIntent = conflict ? this.intents.get(conflict.intentId) : undefined;
+    const resolved = conflict && conflictIntent?.status === "landed" ? conflict.files : undefined;
+    const res = await upstreamChanges({ repo, token, backend: this.backend, source: p.repo.name, main: main.snapshot, since, resolved });
+    if (res.state === "error") {
+      const hint = !access.ok && access.installUrl ? ` Install the gitring GitHub App on ${repo} for private repositories.` : "";
+      return this.setPull({ state: "error", message: `${res.message}${hint}`, at: Date.now() });
+    }
+    if (res.state === "up-to-date") {
+      this.closeConflictTask(conflict, conflictIntent, "GitHub has nothing new for this task: main has every GitHub change.");
+      return this.setPull({ state: "up-to-date", message: res.message, headSha: res.head, at: Date.now() });
+    }
+    if (res.state === "conflict") {
+      const files = Object.fromEntries(res.conflicts.map((c) => [c.path, c.theirs]));
+      const same = conflict && conflictIntent && !["landed", "parked", "merged-into"].includes(conflictIntent.status) && Object.keys(files).every((f) => f in conflict.files);
+      let intentId = conflict?.intentId;
+      if (!same) {
+        const diffs = res.conflicts.map((c) => c.diff).join("\n");
+        const intent = await this.createIntent(
+          {
+            title: `Merge GitHub changes into main (${res.conflicts.length} file${res.conflicts.length === 1 ? "" : "s"})`,
+            goal: [
+              `GitHub ${repo} ${res.branch} has ${res.commits} new commit${res.commits === 1 ? "" : "s"} (${res.compareUrl}).`,
+              `In ${res.conflicts.map((c) => c.path).join(", ")}, GitHub and main changed the same lines.`,
+              "Apply GitHub's change below to main's version of these files. Keep the work that is on main.",
+              "When this task merges, gitring brings the other GitHub changes in.",
+              "",
+              diffs.length > 2600 ? `${diffs.slice(0, 2600)}\n… (the full change: ${res.compareUrl})` : diffs,
+            ].join("\n"),
+            priority: "high",
+            source: { kind: "webhook", ref: `github:${repo}` },
+          },
+          { kind: "system", id: "github", name: "GitHub" },
+        );
+        intentId = intent.id;
+        this.db.setMeta("githubConflict", { head: res.head, files, intentId });
+      }
+      return this.setPull({ state: "conflict", message: `${res.message} The task "Merge GitHub changes into main" asks an agent or a person to merge them.`, headSha: res.head, files: Object.keys(files), intentId, compareUrl: res.compareUrl, at: Date.now() });
+    }
+    // Clean: commit GitHub's changes on main.
+    if (!res.changes.length) {
+      this.db.setMeta("githubLast", res.head);
+      this.closeConflictTask(conflict, conflictIntent, "main has every GitHub change now.");
+      return this.setPull({ state: "up-to-date", message: res.message, headSha: res.head, at: Date.now() });
+    }
+    const n = `${res.commits} commit${res.commits === 1 ? "" : "s"}`;
+    const message = [
+      `Bring GitHub changes into main`,
+      "",
+      `${n} from ${repo} ${res.branch} (${res.base.slice(0, 7)}..${res.head.slice(0, 7)}).${res.authors.length ? ` Changes by ${res.authors.join(", ")}.` : ""}`,
+      ...(res.skipped.length ? [`Submodules stay as they are: ${res.skipped.slice(0, 5).join(", ")}.`] : []),
+      "",
+      `Gitring-Upstream: ${repo}@${res.head}`,
+    ].join("\n");
+    let committed: { sha: string; tree: string };
+    try {
+      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes: res.changes, message, author: GITRING_AUTHOR });
+    } catch (err) {
+      // A merge moved main while gitring read GitHub: read again on the new main.
+      if ((err instanceof RepoConflictError || String(err).includes("RepoConflict")) && again < 2) return this.githubPullOnce(repo, reason, again + 1);
+      throw err;
+    }
+    const before = p.mainSha;
+    p.mainSha = committed.sha;
+    p.mainTree = committed.tree;
+    this.db.setMeta("project", p);
+    this.db.setMeta("mainSeq", [...(this.db.getMeta<string[]>("mainSeq") ?? []), committed.sha]);
+    const upstreamOf = this.db.getMeta<Record<string, string>>("githubUpstreamOf") ?? {};
+    upstreamOf[committed.sha] = res.head;
+    this.db.setMeta("githubUpstreamOf", Object.fromEntries(Object.entries(upstreamOf).slice(-200)));
+    this.db.setMeta("githubLast", res.head);
+    this.closeConflictTask(conflict, conflictIntent, "GitHub's changes are in main now.");
+    const files = res.changes.map((c) => c.path);
+    const newMain = await this.loadMain();
+    this.emit({ type: "main", sha: newMain.sha, tree: newMain.tree, files: newMain.files, imports: newMain.imports });
+    this.addLog({ kind: "system", message: `GitHub changes merged into main: ${n} from ${repo} ${res.branch} (${committed.sha.slice(0, 7)}, ${files.length} file${files.length === 1 ? "" : "s"}).`, files });
+    this.setPull({ state: "merged", message: `main has ${n} from GitHub ${res.branch} (${res.head.slice(0, 7)}).`, headSha: res.head, mainSha: committed.sha, compareUrl: res.compareUrl, at: Date.now() });
+    this.webhook("main", { reason: "github", mainBefore: before, mainSha: committed.sha, files });
+    await this.mainMovedUnder(newMain, { title: `GitHub changes (${repo})`, files });
+    // Send the merge back, so the GitHub branch has main again (fast-forward or the pull request).
+    if (p.settings.github.mode !== "off" && reason !== "sync") this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+  }
+
+  /** The conflict task is done or not needed any more. */
+  private closeConflictTask(conflict: { intentId: string } | undefined, intent: T.Intent | undefined, why: string): void {
+    if (!conflict) return;
+    this.db.setMeta("githubConflict", undefined);
+    if (intent && !["landed", "parked", "merged-into"].includes(intent.status)) {
+      this.park(intent.id, why, { kind: "system", id: "github", name: "GitHub" }).catch(() => undefined);
+    }
+  }
+
+  /** Main moved without a merged task (GitHub changes): move API-mode work along and tell the agents. */
+  private async mainMovedUnder(main: MainView, change: { title: string; files: string[] }): Promise<void> {
+    const landedInfo = { intentTitle: change.title, files: change.files, signatureChanges: [] };
+    for (const other of this.attempts.values()) {
+      if (!ACTIVE.has(other.status) || other.status === "landing") continue;
+      const oIntent = this.intents.get(other.intentId);
+      const oAgent = this.agents.get(other.agentId);
+      if (!oIntent || !oAgent) continue;
+      const moved = await this.replot(other, main).catch(() => undefined);
+      const v = vesselView(other, oIntent, oAgent, (await this.attemptView(other)).signatures, main.signatures, WAITING.has(other.status) ? "waiting" : "active");
+      if (moved && (moved.merged.length || moved.reapply.length)) {
+        this.issueCorrection(other.id, undefined, draftReplotCorrection(v, landedInfo, { mainSha: main.sha, merged: moved.merged, reapply: moved.reapply }), "R1-landed-has-way", "github", moved.reapply.length ? 90 : 70);
+        continue;
+      }
+      if (other.footprint && Object.keys(other.footprint.files).some((f) => change.files.includes(f))) {
+        this.issueCorrection(other.id, undefined, draftUpstreamCorrection(v, landedInfo), "R1-landed-has-way", "github");
+      }
+    }
   }
 
   /* ════════════════════════════ Claude Code hook ════════════════════════════ */
@@ -2603,8 +2891,10 @@ export class HarborMaster extends DurableObject<Env> {
     const g = p.settings.github;
     const githubChanged = Boolean(patch.github) && (g.repo !== oldGithub.repo || g.mode !== oldGithub.mode || g.branch !== oldGithub.branch);
     if (patch.github && g.repo?.toLowerCase() !== oldGithub.repo?.toLowerCase()) {
-      this.db.setMeta("githubKnown", {});
+      // Another repository: nothing that gitring knew about the old one applies.
+      for (const k of ["githubKnown", "githubLast", "githubUpstreamOf", "githubConflict", "githubPull"]) this.db.setMeta(k, undefined);
       p.github = undefined;
+      this.ctx.waitUntil(this.directory().githubLink(p.id, g.repo ?? null).catch(() => undefined));
     }
     this.db.setMeta("project", p);
     this.addLog({ kind: "system", message: `Settings change: ${Object.keys(patch).join(", ")}.` });

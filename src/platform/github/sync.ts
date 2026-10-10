@@ -34,6 +34,12 @@ export interface SyncInput {
   branch: string;
   /** Pairs from earlier runs: gitring commit → GitHub commit. */
   known: Record<string, string>;
+  /**
+   * gitring commits that brought GitHub changes into main → the GitHub commit they brought in. On GitHub
+   * such a commit becomes a merge commit with that second parent, so GitHub's history stays whole and
+   * the default branch can fast-forward.
+   */
+  upstreamOf?: Record<string, string>;
   pr: { title: string; body: string };
   /** At most this many commits in one run. */
   maxCommits?: number;
@@ -228,7 +234,7 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       const commit = await api<{ sha?: string; message?: string }>("POST", `/repos/${gh.repo}/git/commits`, {
         message: meta.message,
         tree: treeSha,
-        parents: [parentGh],
+        parents: input.upstreamOf?.[meta.hash] && input.upstreamOf[meta.hash] !== parentGh ? [parentGh, input.upstreamOf[meta.hash]] : [parentGh],
         author: { name: meta.author.name, email: meta.author.email, date: iso(meta.authoredAt) },
         committer: { name: meta.committer.name, email: meta.committer.email, date: iso(meta.committedAt) },
       });

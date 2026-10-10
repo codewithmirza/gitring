@@ -36,7 +36,12 @@ export class Db {
     const rows = this.sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = ?", key).toArray();
     return rows.length ? (JSON.parse(rows[0].value) as T) : undefined;
   }
+  /** `undefined` removes the key. */
   setMeta(key: string, value: unknown): void {
+    if (value === undefined) {
+      this.sql.exec("DELETE FROM meta WHERE key = ?", key);
+      return;
+    }
     this.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, JSON.stringify(value));
   }
 

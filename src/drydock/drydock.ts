@@ -34,6 +34,19 @@ export const REGISTRY_HOSTS = [
   "codeload.github.com",
   "objects.githubusercontent.com",
   "release-assets.githubusercontent.com",
+  // Rust, Ruby, Java (Maven, Gradle) and Deno registries.
+  "index.crates.io",
+  "static.crates.io",
+  "rubygems.org",
+  "index.rubygems.org",
+  "repo.maven.apache.org",
+  "repo1.maven.org",
+  "services.gradle.org",
+  "downloads.gradle.org",
+  "plugins.gradle.org",
+  "plugins-artifacts.gradle.org",
+  "jsr.io",
+  "npm.jsr.io",
 ];
 
 export function registryAllowed(host: string): boolean {

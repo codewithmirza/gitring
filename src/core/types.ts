@@ -116,6 +116,29 @@ export interface GithubSyncStatus {
   /** Open the pull request by hand (the app has no pull-request permission). */
   compareUrl?: string;
   at?: Millis;
+  /** Changes on GitHub that gitring brings into main (pull). */
+  pull?: GithubPullStatus;
+}
+
+/**
+ * Bringing GitHub changes into main:
+ *   up-to-date  main has everything on the GitHub default branch
+ *   merged      gitring merged new GitHub commits into main
+ *   conflict    GitHub and main changed the same lines; a task asks an agent or a person to merge them
+ *   error       gitring could not read GitHub (the message says why)
+ */
+export interface GithubPullStatus {
+  state: "up-to-date" | "merged" | "conflict" | "error" | "pending";
+  message: string;
+  /** The GitHub commit that main has now (or would have, for a conflict). */
+  headSha?: string;
+  /** main after the merge. */
+  mainSha?: string;
+  /** Conflict: the files, and the task that merges them. */
+  files?: string[];
+  intentId?: string;
+  compareUrl?: string;
+  at: Millis;
 }
 
 /** Files of a ref (GET /api/projects/:p/tree?ref=main | <work copy id> | <commit sha>). */
@@ -215,7 +238,15 @@ export interface Project {
    * Set while main is empty: Artifacts imports the repository (git), or gitring waits for the owner's
    * first `git push` (push). Main fills when it is done.
    */
-  importing?: { url: string; startedAt: Millis; error?: string; push?: boolean; tokenIds?: string[] };
+  importing?: {
+    url: string;
+    startedAt: Millis;
+    error?: string;
+    push?: boolean;
+    tokenIds?: string[];
+    /** A GitHub import: a private repository comes as a snapshot of one commit (public ones keep history). */
+    github?: { repo: string; branch: string; snapshot: boolean };
+  };
   /** GitHub sync of main (settings.github). */
   github?: GithubSyncStatus;
 }

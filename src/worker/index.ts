@@ -20,6 +20,8 @@ import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, oauthRoutes } from "./oauth";
+import { githubRoutes, readAsPerson } from "./github";
+import type { RepoJson } from "../platform/github/repos";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
@@ -75,12 +77,35 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+/*
+ * Roles change rarely and every project request needs one, so this isolate keeps them for ROLE_TTL_MS
+ * (a role change in this isolate clears them at once: forgetRoles). Without the cache, each request
+ * makes one more round trip to the Directory.
+ */
+const ROLE_TTL_MS = 15_000;
+const roles = new Map<string, { until: number; role: A.Role | null }>();
+
+function forgetRoles(projectIdToForget?: string): void {
+  if (!projectIdToForget) return roles.clear();
+  for (const k of roles.keys()) if (k.startsWith(`${projectIdToForget}\u0000`)) roles.delete(k);
+}
+
+async function roleOf(env: Env, id: string, userId: string | null): Promise<A.Role | null> {
+  const key = `${id}\u0000${userId ?? ""}`;
+  const hit = roles.get(key);
+  if (hit && hit.until > Date.now()) return hit.role;
+  const role = await directory(env).role(id, userId);
+  if (roles.size > 5000) roles.clear();
+  roles.set(key, { until: Date.now() + ROLE_TTL_MS, role });
+  return role;
+}
+
 /** The caller's role on a project; refuse when it is below `need`. */
 async function access(c: C, raw: string | undefined, need: A.Role): Promise<{ id: string; role: A.Role }> {
   const id = projectId(raw);
   const p = c.get("principal");
   if (p.via === "operator") return { id, role: "owner" };
-  const role = await directory(c.env).role(id, p.user?.id ?? null);
+  const role = await roleOf(c.env, id, p.user?.id ?? null);
   if (!role) throw new HTTPError(p.user ? 404 : 401, p.user ? "This project does not exist, or you have no access to it." : "Sign in to open this project.");
   if (!atLeast(role, need)) {
     throw new HTTPError(p.user ? 403 : 401, p.user ? `You need the ${need} role on this project. Ask an owner.` : "Sign in to do this.");
@@ -88,10 +113,17 @@ async function access(c: C, raw: string | undefined, need: A.Role): Promise<{ id
   return { id, role };
 }
 
+/** Projects that this isolate saw ready: later requests skip the check (one round trip less). */
+const readyProjects = new Set<string>();
+
 async function ready(c: C, raw: string | undefined, need: A.Role) {
   const { id, role } = await access(c, raw, need);
   const h = harbor(c.env, id);
-  await h.ensure(id);
+  if (!readyProjects.has(id)) {
+    await h.ensure(id);
+    if (readyProjects.size > 5000) readyProjects.clear();
+    readyProjects.add(id);
+  }
   return Object.assign(h, { role });
 }
 
@@ -124,6 +156,7 @@ app.get("/api/health", async (c) =>
 
 authRoutes(app);
 oauthRoutes(app);
+githubRoutes(app);
 
 /* ───────────── API keys ───────────── */
 
@@ -154,23 +187,57 @@ app.post("/api/projects", async (c) => {
   const principal = c.get("principal");
   // People own their projects. The operator key (scripts) makes projects that no person owns.
   const user = principal.via === "operator" ? null : needUser(c);
-  const body = await c.req.json<{ name?: string; visibility?: A.Visibility; source?: T.ProjectSource; files?: SeedFile[] }>().catch(() => ({}) as Record<string, never>);
+  const body = await c.req
+    .json<{ name?: string; id?: string; visibility?: A.Visibility; source?: T.ProjectSource; files?: SeedFile[]; settings?: Partial<T.ProjectSettings> }>()
+    .catch(() => ({}) as Record<string, never>);
   let source: T.ProjectSource;
   try {
     source = parseSource(body.source, body.files);
   } catch (e) {
     return err(c, e);
   }
+  let visibility = body.visibility;
+  let canPush = false;
+  if (source.kind === "github") {
+    // gitring reads the repository as the person: GitHub shows it only to people who may see it.
+    const repo = source.repo;
+    const meta = user ? await readAsPerson(c.env, user.id, (gh) => gh.json<RepoJson>(`/repos/${repo}`)).catch(() => null) : null;
+    if (!meta) return c.json({ error: `gitring cannot read ${repo}. It is private, or the name is wrong. Connect GitHub, or use Push with git.` }, 404);
+    if (meta.archived) return c.json({ error: `${meta.full_name} is archived on GitHub.` }, 400);
+    const access = await directory(c.env).githubRepoAccess(meta.full_name).catch(() => ({ ok: false as const, message: "gitring could not ask GitHub.", installUrl: undefined }));
+    if (meta.private && !access.ok) {
+      return c.json({ error: `Install the gitring GitHub app on ${meta.full_name} to import it.`, ...(access.installUrl ? { installUrl: access.installUrl } : {}) }, 403);
+    }
+    canPush = access.ok && Boolean(meta.permissions?.push || meta.permissions?.admin || meta.permissions?.maintain);
+    source = { kind: "github", repo: meta.full_name, branch: source.branch || meta.default_branch || "main", private: meta.private };
+    visibility = visibility ?? (meta.private ? "private" : "public");
+  }
   const dir = directory(c.env);
   let info: A.ProjectInfo;
   try {
-    info = await dir.createProject({ name: body.name ?? "", visibility: body.visibility, source, ownerId: user?.id ?? null });
+    const name = body.name ?? (source.kind === "github" ? source.repo.split("/")[1] : "");
+    info = await dir.createProject({ name, id: body.id, visibility, source, ownerId: user?.id ?? null });
+    forgetRoles(info.id);
   } catch (e) {
     return err(c, e);
   }
   try {
     const files = source.kind === "upload" && Array.isArray(body.files) ? body.files : undefined;
-    const st = await harbor(c.env, info.id).init({ projectId: info.id, name: info.name, source, ownerId: user?.id, files });
+    const h = harbor(c.env, info.id);
+    let st = await h.init({ projectId: info.id, name: info.name, source, ownerId: user?.id, files });
+    // Settings from the guess step, in the same request: checks, and GitHub sync for a repository that
+    // the person can push to (a pull request by default).
+    const wanted: Partial<T.ProjectSettings> = {};
+    if (body.settings?.checks) wanted.checks = body.settings.checks;
+    if (body.settings?.redo) wanted.redo = body.settings.redo;
+    if (source.kind === "github") {
+      const mode = body.settings?.github?.mode ?? (canPush ? "pull-request" : "off");
+      wanted.github = { repo: source.repo, mode: canPush ? mode : "off", branch: body.settings?.github?.branch ?? "gitring" };
+    }
+    if (Object.keys(wanted).length) {
+      await h.updateSettings(wanted);
+      st = (await h.state()) as unknown as typeof st;
+    }
     return c.json({ project: info, state: st }, 201);
   } catch (e) {
     await dir.dropProject(info.id).catch(() => undefined);
@@ -188,6 +255,12 @@ function parseSource(raw: unknown, files?: unknown): T.ProjectSource {
     case "upload": {
       if (!Array.isArray(files) || !files.length) throw new HTTPError(400, "Send the files of the folder.");
       return { kind: "upload", files: files.length };
+    }
+    case "github": {
+      const repo = githubRepoName(String(s.repo ?? ""));
+      if (!repo) throw new HTTPError(400, "Give the GitHub repository as owner/name or as its GitHub URL.");
+      const branch = typeof s.branch === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(s.branch) ? s.branch : undefined;
+      return { kind: "github", repo, ...(branch ? { branch } : {}) };
     }
     case "git": {
       const url = normalizeGitUrl(String(s.url ?? ""));
@@ -210,7 +283,9 @@ app.patch("/api/projects/:p", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
   const body = await c.req.json<{ name?: string; visibility?: A.Visibility }>().catch(() => ({}));
   try {
-    return c.json(await directory(c.env).updateProject(id, body));
+    const out = await directory(c.env).updateProject(id, body);
+    forgetRoles(id);
+    return c.json(out);
   } catch (e) {
     return err(c, e);
   }
@@ -220,6 +295,8 @@ app.delete("/api/projects/:p", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
   try {
     await directory(c.env).archiveProject(id);
+    forgetRoles(id);
+    readyProjects.delete(id);
     return c.body(null, 204);
   } catch (e) {
     return err(c, e);
@@ -235,7 +312,9 @@ app.post("/api/projects/:p/members", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
   const body = await c.req.json<{ who?: string; role?: A.Role }>().catch(() => ({}) as { who?: string; role?: A.Role });
   try {
-    return c.json(await directory(c.env).addMember(id, body.who ?? "", body.role ?? "member"));
+    const out = await directory(c.env).addMember(id, body.who ?? "", body.role ?? "member");
+    forgetRoles(id);
+    return c.json(out);
   } catch (e) {
     return err(c, e);
   }
@@ -244,7 +323,9 @@ app.post("/api/projects/:p/members", async (c) => {
 app.delete("/api/projects/:p/members/:who", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
   try {
-    return c.json(await directory(c.env).removeMember(id, c.req.param("who")));
+    const out = await directory(c.env).removeMember(id, c.req.param("who"));
+    forgetRoles(id);
+    return c.json(out);
   } catch (e) {
     return err(c, e);
   }
@@ -344,16 +425,54 @@ app.get("/api/projects/:p/landings/:id", async (c) => {
   }
 });
 
+/*
+ * Files of a ref, for the code view. A commit id never changes: the browser keeps the answer for a year.
+ * main and work copies change: the browser asks again with If-None-Match and gets 304 when nothing moved.
+ */
+function cacheHeaders(ref: string, etag: string): Record<string, string> {
+  const immutable = /^[0-9a-f]{40}$/.test(ref);
+  return { etag, "cache-control": immutable ? "private, max-age=31536000, immutable" : "private, no-cache", vary: "Cookie, Authorization" };
+}
+
+function notModified(c: C, etag: string): boolean {
+  const inm = c.req.header("if-none-match") ?? "";
+  return inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag);
+}
+
+app.get("/api/projects/:p/tree", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "viewer");
+    const ref = c.req.query("ref") ?? "main";
+    const version = await h.refVersion(ref);
+    if (!version) return c.json({ error: `Unknown ref ${ref}.` }, 404);
+    const etag = `"t-${version}"`;
+    if (notModified(c, etag)) return c.body(null, 304, cacheHeaders(ref, etag));
+    return c.json(await h.tree(ref), 200, cacheHeaders(ref, etag));
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
 app.get("/api/projects/:p/file", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "viewer");
-    const text = await h.file(c.req.query("ref") ?? "main", c.req.query("path") ?? "");
+    const ref = c.req.query("ref") ?? "main";
+    const path = c.req.query("path") ?? "";
+    const version = await h.refVersion(ref);
+    const etag = version ? `"f-${version}-${await shortHash(path)}"` : "";
+    if (etag && notModified(c, etag)) return c.body(null, 304, cacheHeaders(ref, etag));
+    const text = await h.file(ref, path);
     if (text === null) return c.text("Not found", 404);
-    return c.text(text, 200, { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" });
+    return c.text(text, 200, { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff", ...(etag ? cacheHeaders(ref, etag) : { "cache-control": "private, no-cache" }) });
   } catch (e) {
     return err(c, e, 500);
   }
 });
+
+async function shortHash(s: string): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+  return [...d.subarray(0, 6)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** Built-in agent status: phase, step, last error. Members only: it shows model replies. */
 app.get("/api/projects/:p/attempts/:id/vessel", async (c) => {
@@ -408,6 +527,16 @@ app.post("/api/projects/:p/github/sync", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "owner");
     return c.json(await h.githubSync());
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/** Bring GitHub changes into main now (members). */
+app.post("/api/projects/:p/github/pull", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "member");
+    return c.json(await h.githubPull({ reason: "manual" }));
   } catch (e) {
     return err(c, e);
   }
@@ -546,6 +675,26 @@ app.post("/hooks/github-app", async (c) => {
   if (!sameString(sig, await hmacSha256Hex(gh.webhookSecret, raw))) return c.json({ error: "Bad signature." }, 401);
   const event = c.req.header("x-github-event");
   if (event === "ping") return c.json({ ok: true });
+  if (event === "push") {
+    // A push to the default branch: projects that link the repository bring the changes into main.
+    let push: { ref?: string; repository?: { full_name?: string; default_branch?: string } } = {};
+    try {
+      push = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "Bad JSON." }, 400);
+    }
+    const repo = push.repository?.full_name ?? "";
+    if (!repo || !push.repository?.default_branch || push.ref !== `refs/heads/${push.repository.default_branch}`) return c.json({ ignored: true, reason: "Not the default branch." });
+    const ids = await directory(c.env).githubLinkedProjects(repo);
+    for (const id of ids) {
+      c.executionCtx.waitUntil(
+        harbor(c.env, id)
+          .githubPull({ reason: "webhook" })
+          .catch((e) => console.warn("github pull failed", id, String(e))),
+      );
+    }
+    return c.json({ projects: ids.length }, ids.length ? 202 : 200);
+  }
   let body: GithubIssueEvent | null = null;
   try {
     body = JSON.parse(raw) as GithubIssueEvent;

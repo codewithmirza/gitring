@@ -9,11 +9,13 @@ describe("privacy and terms", () => {
     expect(termsBody(null)).toContain("Contact the owner of this deployment.");
   });
 
-  it("states the Google scopes, Limited Use and that no provider tokens are kept", () => {
+  it("states the Google scopes, Limited Use, and how the GitHub token is kept", () => {
     const p = privacyBody(null);
     expect(p).toContain("<code>openid</code>, <code>email</code>, <code>profile</code>");
     expect(p).toContain("Limited Use");
-    expect(p).toContain("does not keep the provider's access tokens");
+    expect(p).toContain("does not keep Google's access tokens");
+    expect(p).toContain("encrypted (AES-GCM)");
+    expect(p).toContain("Connected apps");
   });
 
   it("links the two pages to each other", () => {

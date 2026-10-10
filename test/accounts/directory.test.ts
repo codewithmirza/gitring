@@ -135,12 +135,14 @@ describe("GitHub App setup and sign-in", () => {
     expect(res.returnTo).toBe("/intents");
     expect(res.user.name).toBe("Robin Q");
     expect(res.user.identities).toEqual([{ provider: "github", login: "Robin", email: undefined }]);
-    expect((await dir.sessionUser(res.token))?.id).toBe(res.user.id);
-    // The privacy page says it: gitring keeps no provider access tokens.
+    expect((await dir.sessionUser(res.token!))?.id).toBe(res.user.id);
+    // The privacy page says it: gitring keeps the GitHub token sealed, never in clear text.
     const rows = (dir as unknown as { sql: { exec(q: string): { toArray(): { token: string | null }[] } } }).sql.exec("SELECT token FROM identities").toArray();
-    expect(rows).toEqual([{ token: null }]);
-    await dir.endSession(res.token);
-    expect(await dir.sessionUser(res.token)).toBeNull();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].token).toBeTruthy();
+    expect(rows[0].token).not.toContain("gho_");
+    await dir.endSession(res.token!);
+    expect(await dir.sessionUser(res.token!)).toBeNull();
   });
 
   it("keeps only same-site return paths", async () => {
@@ -338,5 +340,119 @@ describe("AI budget", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("GitHub user tokens", () => {
+  function tokenRow(dir: Directory): string | null {
+    return (dir as unknown as { sql: { exec(q: string): { toArray(): { token: string | null }[] } } }).sql.exec("SELECT token FROM identities WHERE provider = 'github'").toArray()[0]?.token ?? null;
+  }
+
+  it("keeps the token sealed and gives it back while it is fresh", async () => {
+    const dir = make();
+    await withGithubApp(dir);
+    const res = await githubSignIn(dir, { id: 11, login: "robin" });
+    expect(await dir.githubConnection(res.user.id)).toEqual({ connected: true, login: "robin" });
+    const t = await dir.githubUserToken(res.user.id);
+    expect(t).toMatchObject({ ok: true, token: "gho_robin", login: "robin" });
+    expect(tokenRow(dir)).not.toContain("gho_robin");
+  });
+
+  it("refreshes an expiring token once, also when two calls come at the same time", async () => {
+    const dir = make();
+    await withGithubApp(dir);
+    routes["https://github.com/login/oauth/access_token"] = { json: { access_token: "gho_first", expires_in: 60, refresh_token: "ghr_1", refresh_token_expires_in: 15_811_200 } };
+    routes["https://api.github.com/user"] = { json: { id: 12, login: "sam" } };
+    const url = await dir.signInUrl("github", ORIGIN, "/");
+    const res = await dir.finishSignIn("github", "code", stateOf(url));
+    let refreshes = 0;
+    routes["https://github.com/login/oauth/access_token"] = (init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      expect(body).toMatchObject({ grant_type: "refresh_token", refresh_token: "ghr_1", client_id: "Iv1.abc" });
+      refreshes++;
+      return { json: { access_token: "gho_second", expires_in: 28_800, refresh_token: "ghr_2", refresh_token_expires_in: 15_811_200 } };
+    };
+    const [a, b] = await Promise.all([dir.githubUserToken(res.user.id), dir.githubUserToken(res.user.id)]);
+    expect(a).toMatchObject({ ok: true, token: "gho_second" });
+    expect(b).toMatchObject({ ok: true, token: "gho_second" });
+    expect(refreshes).toBe(1);
+    // Fresh now: no further refresh.
+    expect(await dir.githubUserToken(res.user.id)).toMatchObject({ ok: true, token: "gho_second" });
+    expect(refreshes).toBe(1);
+    // GitHub refused the token (revoked): the caller says so, and gitring refreshes again.
+    routes["https://github.com/login/oauth/access_token"] = { json: { access_token: "gho_third", expires_in: 28_800, refresh_token: "ghr_3" } };
+    expect(await dir.githubUserToken(res.user.id, "gho_second")).toMatchObject({ ok: true, token: "gho_third" });
+  });
+
+  it("forgets a token that GitHub will not refresh, and says to connect again", async () => {
+    const dir = make();
+    await withGithubApp(dir);
+    routes["https://github.com/login/oauth/access_token"] = { json: { access_token: "gho_x", expires_in: 10, refresh_token: "ghr_used" } };
+    routes["https://api.github.com/user"] = { json: { id: 13, login: "lee" } };
+    const url = await dir.signInUrl("github", ORIGIN, "/");
+    const res = await dir.finishSignIn("github", "code", stateOf(url));
+    routes["https://github.com/login/oauth/access_token"] = { json: { error: "bad_refresh_token", error_description: "The refresh token passed is incorrect or expired." } };
+    expect(await dir.githubUserToken(res.user.id)).toMatchObject({ ok: false, state: "expired" });
+    expect(tokenRow(dir)).toBeNull();
+    expect(await dir.githubConnection(res.user.id)).toMatchObject({ connected: false, login: "lee" });
+  });
+
+  it("keeps the token when GitHub cannot be reached during a refresh", async () => {
+    const dir = make();
+    await withGithubApp(dir);
+    routes["https://github.com/login/oauth/access_token"] = { json: { access_token: "gho_y", expires_in: 10, refresh_token: "ghr_y" } };
+    routes["https://api.github.com/user"] = { json: { id: 14, login: "kim" } };
+    const url = await dir.signInUrl("github", ORIGIN, "/");
+    const res = await dir.finishSignIn("github", "code", stateOf(url));
+    routes["https://github.com/login/oauth/access_token"] = () => {
+      throw new Error("network down");
+    };
+    expect(await dir.githubUserToken(res.user.id)).toMatchObject({ ok: false, state: "error" });
+    expect(tokenRow(dir)).toBeTruthy();
+  });
+
+  it("disconnects: revokes the token at GitHub and forgets it; GitHub sign-in still works", async () => {
+    const dir = make();
+    await withGithubApp(dir);
+    const res = await githubSignIn(dir, { id: 15, login: "ana" });
+    routes["https://api.github.com/applications/"] = { status: 204, json: {} };
+    await dir.githubDisconnect(res.user.id);
+    const del = calls.find((c) => c.url.startsWith("https://api.github.com/applications/Iv1.abc/token"));
+    expect(del?.init?.method).toBe("DELETE");
+    expect(JSON.parse(String(del?.init?.body))).toEqual({ access_token: "gho_ana" });
+    expect(tokenRow(dir)).toBeNull();
+    expect(await dir.githubUserToken(res.user.id)).toMatchObject({ ok: false, state: "expired" });
+    const again = await githubSignIn(dir, { id: 15, login: "ana" });
+    expect(again.user.id).toBe(res.user.id);
+    expect(await dir.githubConnection(res.user.id)).toEqual({ connected: true, login: "ana" });
+  });
+
+  it("links GitHub to a person who signed in with Google, and refuses a GitHub account of another person", async () => {
+    const dir = make({ GITRING_OWNERS: "" });
+    await withGithubApp(dir);
+    await dir.setGoogle({ clientId: "abc.apps.googleusercontent.com", clientSecret: "secret-123456" });
+    const g = await googleSignIn(dir, { sub: "g-1", email: "mira@example.com", name: "Mira" });
+    routes["https://github.com/login/oauth/access_token"] = { json: { access_token: "gho_mira", expires_in: 28_800, refresh_token: "ghr_m" } };
+    routes["https://api.github.com/user"] = { json: { id: 21, login: "mira-gh", email: "other@example.com" } };
+    const url = await dir.signInUrl("github", ORIGIN, "/account", g.user.id);
+    const linked = await dir.completeSignIn("github", "code", stateOf(url));
+    expect(linked).toMatchObject({ ok: true, token: null, linked: true, returnTo: "/account" });
+    expect((await dir.githubConnection(g.user.id)).login).toBe("mira-gh");
+    // Someone else signs in with GitHub and tries to link mira-gh to their account.
+    const other = await githubSignIn(dir, { id: 22, login: "theo" });
+    routes["https://api.github.com/user"] = { json: { id: 21, login: "mira-gh" } };
+    const url2 = await dir.signInUrl("github", ORIGIN, "/account", other.user.id);
+    expect(await dir.completeSignIn("github", "code", stateOf(url2))).toMatchObject({ ok: false, code: "taken", returnTo: "/account" });
+  });
+
+  it("answers an expired sign-in without throwing, and ends every session on request", async () => {
+    const dir = make();
+    await withGithubApp(dir);
+    expect(await dir.completeSignIn("github", "code", "no-such-state")).toMatchObject({ ok: false, code: "expired", returnTo: "/" });
+    const a = await githubSignIn(dir, { id: 31, login: "jo" });
+    const b = await githubSignIn(dir, { id: 31, login: "jo" });
+    expect(await dir.endAllSessions(a.user.id)).toBe(2);
+    expect(await dir.sessionUser(a.token!)).toBeNull();
+    expect(await dir.sessionUser(b.token!)).toBeNull();
   });
 });
