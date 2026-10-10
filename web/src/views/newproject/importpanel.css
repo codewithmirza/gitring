@@ -1,0 +1,30 @@
+/* The overview panel while main is empty (ImportPanel). The main look of .importpanel lives in chart.css. */
+.importpanel__acts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.importpanel__error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-3);
+  border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent);
+  border-radius: var(--r-2);
+  background: var(--danger-tint);
+  color: var(--ink-1);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+.importpanel__error > .b-icon { flex: none; margin-top: 4px; color: var(--danger); }
+.importpanel__progress { position: relative; height: 2px; overflow: hidden; border-radius: 1px; background: var(--line); }
+.importpanel__progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: var(--accent);
+  animation: b-slide 1.6s var(--ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .importpanel__progress::after { animation: none; left: 0; width: 100%; opacity: .5; }
+}

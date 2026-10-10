@@ -1,0 +1,430 @@
+/*
+ * New project: the anchored panel with a tail, the source combobox, the guess step, sign-in choices,
+ * inline confirms and the repository field. Type sizes: 10, 11, 13, 15. Hairlines, not shadows; only the
+ * panel (an overlay) has --shadow-overlay.
+ */
+
+/* ───────────── anchored panel ───────────── */
+.np-pop {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-4);
+  background: var(--bg);
+  color: var(--ink-1);
+  box-shadow: var(--shadow-overlay);
+  transform-origin: var(--tail) 0;
+  animation: np-grow 150ms var(--ease-out);
+}
+.np-pop.is-above {
+  transform-origin: var(--tail) 100%;
+  animation-name: np-grow-up;
+}
+.np-pop__tail {
+  position: absolute;
+  z-index: 1;
+  left: calc(var(--tail) - 7px);
+  width: 14px;
+  height: 14px;
+  background: var(--bg);
+  border: 1px solid var(--overlay-border);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.np-pop.is-below .np-pop__tail { top: -8px; border-right-color: transparent; border-bottom-color: transparent; }
+.np-pop.is-above .np-pop__tail { bottom: -8px; border-left-color: transparent; border-top-color: transparent; }
+.np-pop__body {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4) var(--s-4) var(--s-5);
+  border-radius: inherit;
+}
+@keyframes np-grow {
+  from { opacity: 0; transform: translateY(-4px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes np-grow-up {
+  from { opacity: 0; transform: translateY(4px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ───────────── picker ───────────── */
+.np { display: flex; flex-direction: column; min-height: 0; gap: var(--s-3); }
+.np__title { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--ink-1); }
+.np-wait { padding: var(--s-2) 0; }
+.np-mark { flex: none; }
+
+.np-src { display: flex; flex-direction: column; min-height: 0; gap: var(--s-2); }
+.np-search { position: relative; display: flex; align-items: center; }
+.np-search__icon { position: absolute; left: 11px; color: var(--ink-3); pointer-events: none; }
+.np-search__input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 36px 0 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--ink-1);
+  font-size: var(--t-md);
+}
+.np-search__input::placeholder { color: var(--ink-3); opacity: 1; }
+.np-search__input:hover { border-color: var(--ink-3); }
+.np-search__busy {
+  position: absolute;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: np-spin .8s linear infinite;
+}
+@keyframes np-spin { to { transform: rotate(360deg); } }
+
+.np-hint { display: flex; align-items: baseline; gap: var(--s-1); margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--caution); }
+.np-hint .b-icon { flex: none; transform: translateY(2px); }
+
+.np-list {
+  display: grid;
+  align-content: start;
+  gap: var(--s-2);
+  min-height: 0;
+  max-height: min(440px, calc(var(--pop-max, 100vh) - 140px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 0 calc(-1 * var(--s-2));
+  padding: 0 var(--s-2) 2px;
+}
+.np-group { display: grid; gap: 1px; }
+.np-group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 28px;
+  padding: var(--s-2) var(--s-3) var(--s-1);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.np-group__act {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px 0 -4px auto;
+  border-radius: var(--r-2);
+  color: var(--ink-3);
+}
+.np-group__act:hover { background: var(--surface-2); color: var(--ink-1); }
+
+.np-opt {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-2);
+  color: var(--ink-1);
+  cursor: pointer;
+  user-select: none;
+}
+.np-opt.is-active { background: var(--surface-2); }
+.np-opt.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.np-opt__icon { flex: none; margin-top: 2px; color: var(--ink-3); }
+.np-opt.is-active .np-opt__icon { color: var(--ink-1); }
+.np-opt__main { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.np-opt__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px var(--s-2);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.np-opt__text {
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-opt__ext { display: inline-block; color: var(--ink-3); }
+.np-opt__enter { flex: none; align-self: center; }
+.np-opt--lead .np-opt__title { color: var(--accent); }
+.np-opt--lead { border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--line)); }
+.np-opt--quiet .np-opt__title { font-weight: 400; color: var(--ink-2); }
+.np-opt--skeleton { cursor: default; }
+
+/* The sources without GitHub stay docked at the foot of the list, always in view. */
+.np-group--dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 0 calc(-1 * var(--s-2));
+  padding: 0 var(--s-2) var(--s-1);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.np-dock { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.np-opt--tile {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-1);
+  min-height: 0;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+}
+.np-opt--tile .np-opt__icon { margin-top: 0; }
+.np-opt--tile .np-opt__title { font-size: var(--t-xs); line-height: var(--lh-xs); }
+.np-opt--tile.is-active { border-color: var(--accent); background: var(--accent-tint); }
+.np-opt--tile.is-active::before { display: none; }
+.np-dock__hint { min-height: 16px; margin: var(--s-2) 0 0; padding: 0 var(--s-1); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.np-repo__owner { color: var(--ink-3); }
+.np-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-1);
+  font-family: var(--font-system);
+  font-size: var(--t-2xs);
+  line-height: 1;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.np-note { padding: var(--s-2) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.np-linkbtn {
+  display: inline;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* Skeletons: the shape of the rows that come. */
+.np-skel {
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--ink-3) 20%, transparent);
+  animation: np-pulse 1.4s ease-in-out infinite;
+}
+.np-skel--thin { height: 8px; margin-top: 6px; }
+.np-skel--icon { width: 16px; height: 16px; flex: none; }
+.np-skel--label { width: 72px; flex: none; margin-top: 11px; }
+@keyframes np-pulse { 50% { opacity: .5; } }
+
+/* ───────────── step: guesses and one button ───────────── */
+.np-step { display: grid; gap: var(--s-4); min-width: 0; }
+.np-step__head { display: grid; gap: var(--s-1); min-width: 0; }
+.np-back {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  min-height: 24px;
+  padding: 0 var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  border-radius: var(--r-2);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+.np-back:hover { color: var(--ink-1); background: var(--surface-2); }
+.np-step__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-2);
+  font-size: var(--t-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.np-step__repo { font-size: var(--t-sm); font-weight: 500; }
+.np-step__note { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.np-step__pick { display: grid; gap: var(--s-3); justify-items: start; }
+
+.np-rows { display: grid; gap: var(--s-2); min-width: 0; }
+.np-rows__wait { min-height: 120px; }
+.np-rows__skel { display: grid; gap: var(--s-2); }
+.np-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: start; gap: var(--s-3); min-width: 0; }
+.np-row__label { padding-top: 7px; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.np-row__value { display: grid; gap: 3px; justify-items: start; min-width: 0; }
+.np-row__value > .b-seg { max-width: 100%; flex-wrap: wrap; }
+.np-row__hint { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); overflow-wrap: anywhere; }
+.np-row__text { padding-top: 7px; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
+/* A value you can edit in place: it reads as text, with a dashed underline; focus shows the full field. */
+.np-in {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  border: 1px solid transparent;
+  border-bottom: 1px dashed var(--line-strong);
+  border-radius: var(--r-2) var(--r-2) 0 0;
+  background: transparent;
+  color: var(--ink-1);
+  font-size: var(--t-sm);
+  transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.np-in::placeholder { color: var(--ink-3); opacity: 1; }
+.np-in:hover { background: var(--surface-1); border-bottom-style: solid; }
+.np-in:focus { border: 1px solid var(--line-strong); border-radius: var(--r-2); background: var(--surface-2); }
+.np-in[aria-invalid="true"] { border-color: var(--danger); border-bottom-style: solid; }
+.np-reasons {
+  display: grid;
+  gap: 2px;
+  margin: var(--s-1) 0 0;
+  padding: var(--s-1) 0 var(--s-1) var(--s-3);
+  list-style: none;
+  border-left: 2px solid var(--line);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--ink-3);
+}
+
+.np-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent);
+  border-radius: var(--r-2);
+  background: var(--danger-tint);
+  color: var(--ink-1);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+}
+.np-error > .b-icon { flex: none; margin-top: 4px; color: var(--danger); }
+.np-error__body { display: grid; gap: var(--s-2); min-width: 0; overflow-wrap: anywhere; }
+.np-error__acts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.np-error__acts .b-btn { text-decoration: none; }
+
+.np-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3); }
+.np-actions__key, .np-actions__why { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+
+/* ───────────── sign-in choices ───────────── */
+.np-signin { display: grid; gap: var(--s-3); }
+.np-signin__text { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.np-signin__note { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.np-provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-2);
+  background: var(--bg);
+  color: var(--ink-1);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  text-decoration: none;
+}
+.np-provider:hover { background: var(--surface-2); }
+
+/* ───────────── inline confirm ───────────── */
+.np-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  max-width: 100%;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+  border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent);
+  border-radius: var(--r-2);
+  background: var(--danger-tint);
+  animation: b-fade-in var(--dur-1) var(--ease-out);
+}
+.np-confirm__q { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); min-width: 0; overflow-wrap: anywhere; }
+.np-confirm__acts { display: inline-flex; gap: var(--s-2); }
+
+/* ───────────── repository field ───────────── */
+.np-select { position: relative; width: 100%; min-width: 0; }
+.np-select__field { position: relative; display: flex; align-items: center; }
+.np-select__mark { position: absolute; left: 10px; color: var(--ink-2); pointer-events: none; }
+.np-select__input { padding-left: 32px; padding-right: 34px; }
+.np-select__toggle {
+  position: absolute;
+  right: 4px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-2);
+  color: var(--ink-2);
+}
+.np-select__toggle:hover { background: var(--surface-1); color: var(--ink-1); }
+.np-select__pop {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-1);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--r-3);
+  background: var(--bg);
+  box-shadow: var(--shadow-overlay);
+  animation: b-fade-in var(--dur-1) var(--ease-out);
+}
+.np-select__pop[hidden] { display: none; }
+
+/* ───────────── phones and touch ───────────── */
+@media (max-width: 600px) {
+  .np-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .np-row__label, .np-row__text { padding-top: 0; }
+  .np-in { margin-left: 0; height: 44px; }
+  .np-opt { min-height: 52px; }
+  .np-back { min-height: 44px; }
+  .np-group__act { width: 44px; height: 44px; }
+  .np-provider { height: 48px; }
+  .np-select__toggle { width: 40px; height: 40px; right: 2px; }
+  /* 16 px text keeps iOS from zooming into a focused field. */
+  .np-search__input, .np-in, .np-select__input { font-size: 16px; }
+  .np-search__input { height: 48px; }
+  .np .b-btn, .np-confirm .b-btn { min-height: 44px; }
+  .np-pop__body { padding: var(--s-4) var(--s-4) var(--s-5); }
+}
+@media (pointer: coarse) {
+  .np-actions__key, .np-opt__enter { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-pop, .np-pop.is-above { animation: b-fade-in 120ms var(--ease-out); }
+  .np-skel, .np-search__busy { animation: none; }
+  .np-confirm, .np-select__pop { animation: none; }
+}
