@@ -37,8 +37,8 @@ export function tooMany(retryAfterS = 60, cors = false): Response {
 }
 
 /** Which limit a path falls under (null: none). */
-export function limitFor(method: string, path: string): LimitKind | null {
-  if (path === "/oauth/register" || /^\/auth\/[^/]+\/start$/.test(path) || (path === "/oauth/authorize" && method === "POST")) return "auth";
+export function limitFor(_method: string, path: string): LimitKind | null {
+  if (path === "/oauth/register" || path === "/oauth/authorize" || /^\/auth\/[^/]+\/start$/.test(path)) return "auth";
   if (path === "/oauth/token" || path === "/oauth/revoke") return "token";
   if (path.startsWith("/api/") && path !== "/api/health") return "api";
   return null;

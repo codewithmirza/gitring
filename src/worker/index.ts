@@ -198,7 +198,10 @@ app.delete("/api/keys/:id", async (c) => {
 
 /* ───────────── projects ───────────── */
 
-app.get("/api/projects", async (c) => c.json(await directory(c.env).listProjects(c.get("principal").user?.id ?? null)));
+app.get("/api/projects", async (c) => {
+  const p = c.get("principal");
+  return c.json(await directory(c.env).listProjects(p.user?.id ?? null, p.via === "operator"));
+});
 
 app.post("/api/projects", async (c) => {
   const principal = c.get("principal");

@@ -867,8 +867,10 @@ export class Directory extends DurableObject<Env> {
     return out;
   }
 
-  async listProjects(userId: string | null): Promise<A.ProjectInfo[]> {
+  /** Projects that a person can see. `all`: every project (the operator key acts as the deployment). */
+  async listProjects(userId: string | null, all = false): Promise<A.ProjectInfo[]> {
     const rows = this.sql.exec<ProjectRow>("SELECT * FROM projects WHERE archived = 0 ORDER BY created_at DESC").toArray();
+    if (all) return rows.map((r) => ({ ...this.info(r, null), role: "owner" as const }));
     return rows.map((r) => this.info(r, userId)).filter((p) => p.role !== null);
   }
 

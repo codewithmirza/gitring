@@ -53,6 +53,7 @@ export async function projectFor(label, headers = authHeaders()) {
   const name = `${label} ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
   const made = await post("/api/projects", headers, { name, visibility: "private", source: { kind: "upload" }, files: filesOf(join(SAMPLE, "repo")) });
   const id = made.project.id;
+  console.error(`gitring: new test project ${id} (archive it when you are done: DELETE /api/projects/${id})`);
   await post(`/api/projects/${id}/settings`, headers, { checks: { runner: "worker" }, intentsInRepo: true }, "PUT");
   const intents = JSON.parse(readFileSync(join(SAMPLE, "intents.json"), "utf8"));
   for (const it of intents) {
