@@ -61,16 +61,16 @@ export function ImportPanel() {
           <span>{importing.error}</span>
         </p>
         <p className="importpanel__text">Check again in a moment. If the repository is private and not on GitHub, push it with git into a new project.</p>
-        <div className="importpanel__acts">
-          <Button icon="reload" busy={busy === "check"} onClick={() => void check()}>
-            Check again
-          </Button>
-          {canAct && (
+        {canAct && (
+          <div className="importpanel__acts">
+            <Button icon="reload" busy={busy === "check"} onClick={() => void check()}>
+              Check again
+            </Button>
             <Button icon="plus" onClick={() => navigate("/projects?new=1")}>
               New project
             </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -81,11 +81,13 @@ export function ImportPanel() {
         <h2 className="importpanel__title">gitring imports {from}</h2>
         <p className="importpanel__text">Cloudflare Artifacts copies the repository with its history. The overview fills when the import is done. A large repository takes some minutes.</p>
         <div className="importpanel__progress" aria-hidden="true" />
-        <div className="importpanel__acts">
-          <Button size="sm" icon="reload" busy={busy === "check"} onClick={() => void check()}>
-            Check now
-          </Button>
-        </div>
+        {canAct && (
+          <div className="importpanel__acts">
+            <Button size="sm" icon="reload" busy={busy === "check"} onClick={() => void check()}>
+              Check now
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -125,11 +127,13 @@ export function ImportPanel() {
       ) : (
         <p className="importpanel__note">The owner of this project pushes the repository.</p>
       )}
-      <div className="importpanel__acts">
-        <Button size="sm" icon="reload" busy={busy === "check"} onClick={() => void check()}>
-          I pushed. Check now
-        </Button>
-      </div>
+      {canAct && (
+        <div className="importpanel__acts">
+          <Button size="sm" icon="reload" busy={busy === "check"} onClick={() => void check()}>
+            I pushed. Check now
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
