@@ -237,6 +237,8 @@ export class HarborMaster extends DurableObject<Env> {
       draft.repo.remote = handle.remote;
       draft.repo.defaultBranch = source.branch || "main";
       draft.importing = { url: `https://github.com/${source.repo}`, startedAt: Date.now(), github: { repo: source.repo, branch: source.branch ?? "", snapshot: true } };
+      // Private code: the project stays private, whatever happens to the link later.
+      draft.privateCode = { repo: source.repo, at: Date.now() };
       this.db.setMeta("project", draft);
       this.addLog({ kind: "system", message: `Import starts: github.com/${source.repo} (private) through the gitring GitHub App.` });
       await this.ctx.storage.setAlarm(Date.now() + 200);
@@ -437,6 +439,7 @@ export class HarborMaster extends DurableObject<Env> {
       const snap = await githubSnapshot({ repo: g.repo, sha: githubSha, token: access.token });
       if (!snap.files.length) return fail(`${g.repo} has no files on ${branch}.`);
       const files = await this.matchGitTree(g.repo, githubSha, snap.files, access.token);
+      this.holdPrivate(g.repo);
       const seed = await this.backend.commit({
         repo: p.repo.name,
         branch,
@@ -2647,10 +2650,26 @@ export class HarborMaster extends DurableObject<Env> {
     for (const k of ["githubKnown", "githubLast", "githubUpstreamOf", "githubConflict", "githubPull"]) this.db.setMeta(k, undefined);
   }
 
-  /** What gitring knows about the linked repository (the Worker asks before a project goes public). */
-  async githubFacts(): Promise<{ repo?: string; private?: boolean }> {
-    const repo = this.requireProject().settings.github.repo;
-    return repo ? { repo, private: this.gh(repo).private } : {};
+  /**
+   * What gitring knows about the linked repository (the Worker asks before a project goes public, and
+   * when an owner changes the GitHub settings): whether it is private, whether private code came into
+   * the project, and the person whose GitHub rights gitring checks for the link.
+   */
+  async githubFacts(): Promise<{ repo?: string; private?: boolean; privateCode?: boolean; actor?: { userId: string; gone?: string } }> {
+    const p = this.requireProject();
+    const repo = p.settings.github.repo;
+    const privateCode = Boolean(p.privateCode);
+    if (!repo) return { privateCode };
+    const st = this.gh(repo);
+    return { repo, private: st.private, privateCode, ...(st.actor ? { actor: { userId: st.actor.userId, ...(st.actor.gone ? { gone: st.actor.gone } : {}) } } : {}) };
+  }
+
+  /** Private code (or a private issue) came in from `repo`: the project stays private from now on. */
+  private holdPrivate(repo: string): void {
+    const p = this.requireProject();
+    if (p.privateCode) return;
+    p.privateCode = { repo, at: Date.now() };
+    this.db.setMeta("project", p);
   }
 
   /**
@@ -2667,26 +2686,69 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /**
-   * Does the person behind the link still have the rights on GitHub (push for sync, read for pulls of a
-   * private repository)? GitHub is asked at most once a day. Links made with the operator key have no
-   * person to check.
+   * A person left the project (or is a viewer now). When gitring checked their GitHub rights for the
+   * link, it stops: sync and pulls of a private repository wait until an owner saves the GitHub settings
+   * again, and that owner's rights count then.
    */
-  private async githubRights(repo: string, need: "read" | "push"): Promise<{ ok: true } | { ok: false; message: string }> {
+  async githubActorLeft(userId: string): Promise<void> {
+    const p = this.requireProject();
+    const repo = p.settings.github.repo;
+    if (!repo || !userId) return;
+    const st = this.gh(repo);
+    if (!st.actor || st.actor.userId !== userId || st.actor.gone) return;
+    const gone = `The person whose GitHub rights gitring checked for ${repo} is no longer a member of this project. An owner saves the GitHub settings again (Settings → GitHub); then that owner's GitHub rights count.`;
+    this.setGh(repo, { actor: { ...st.actor, read: false, push: false, gone } });
+    this.addLog({ kind: "system", message: `GitHub ${repo}: ${gone}` });
+    if (p.settings.github.mode !== "off") this.setGithub({ state: "error", message: gone, repo, mode: p.settings.github.mode, at: Date.now() });
+  }
+
+  /**
+   * Does the person behind the link still have the rights on GitHub (push for sync, read for pulls of a
+   * private repository)? GitHub is asked at most once a day; with `fresh`, it is asked now (a private
+   * repository: a read that GitHub allowed earlier does not count). Links made with the operator key
+   * have no person to check.
+   */
+  private async githubRights(repo: string, need: "read" | "push", fresh = false): Promise<{ ok: true } | { ok: false; message: string }> {
     const st = this.gh(repo);
     const actor = st.actor;
     if (!actor) return { ok: true };
-    const fresh = Date.now() - actor.checkedAt < 24 * 3600_000;
-    if (fresh && actor[need]) return { ok: true };
+    if (actor.gone) return { ok: false, message: actor.gone };
+    const recent = Date.now() - actor.checkedAt < 24 * 3600_000;
+    if (!fresh && recent && actor[need]) return { ok: true };
     try {
       const perm = await this.directory().githubPermission(actor.userId, repo);
       this.setGh(repo, { actor: { ...actor, checkedAt: Date.now(), read: perm.read, push: perm.push }, ...(perm.private !== undefined ? { private: perm.private } : {}) });
       if (perm[need]) return { ok: true };
       return { ok: false, message: `The person who linked ${repo} can no longer ${need === "push" ? "push to" : "read"} it on GitHub (${perm.message}) An owner links it again in Settings → GitHub.` };
     } catch (e) {
-      // GitHub did not answer: a recent good answer still counts (a week), so a short outage stops nothing.
-      if (actor[need] && Date.now() - actor.checkedAt < 7 * 24 * 3600_000) return { ok: true };
+      // GitHub did not answer. For a push, a recent good answer still counts (a week), so a short outage
+      // stops nothing. For a private repository's code, nothing comes in without an answer.
+      if (!fresh && actor[need] && Date.now() - actor.checkedAt < 7 * 24 * 3600_000) return { ok: true };
       return { ok: false, message: `gitring could not check the GitHub rights for ${repo}: ${String((e as Error)?.message ?? e).slice(0, 120)}` };
     }
+  }
+
+  /**
+   * An issue of the repository becomes a task. An issue of a private repository goes only into a private
+   * project, and only when the person behind the link can read the repository now: the issue text is
+   * private too, and from then on the project stays private.
+   */
+  async githubIssueIntent(input: { repo: string; private?: boolean; title: string; goal: string; number?: number }): Promise<{ intent: T.Intent } | { refused: string }> {
+    const p = this.requireProject();
+    const repo = input.repo;
+    const isPrivate = input.private ?? this.gh(repo).private ?? false;
+    if (isPrivate) {
+      if ((await this.directory().visibilityOf(p.id)) === "public") return { refused: `${repo} is private on GitHub, and this project is public. The issue does not become a task.` };
+      const rights = await this.githubRights(repo, "read", true);
+      if (!rights.ok) return { refused: rights.message };
+      this.setGh(repo, { private: true });
+      this.holdPrivate(repo);
+    }
+    const intent = await this.createIntent(
+      { title: input.title, goal: input.goal || input.title, source: { kind: "webhook", ref: `github:${repo}#${input.number ?? ""}` } },
+      { kind: "system", id: "github", name: "GitHub" },
+    );
+    return { intent };
   }
 
   /** The GitHub sync status for people (settings and the overview). */
@@ -2865,10 +2927,14 @@ export class HarborMaster extends DurableObject<Env> {
     }
     const st0 = this.gh(repo);
     this.setPull(repo, { ...(st0.pull ?? { message: "" }), state: "pending", message: "gitring reads the GitHub changes.", at: Date.now() });
-    // A private repository: the person behind the link must still be able to read it.
+    // A private repository: the person behind the link must be able to read it now (GitHub is asked on
+    // every pull). When gitring does not know yet whether it is private, the daily check runs here and
+    // the answer of GitHub below decides.
+    let checkedNow = false;
     if (st0.private !== false) {
-      const rights = await this.githubRights(repo, "read");
+      const rights = await this.githubRights(repo, "read", st0.private === true);
       if (!rights.ok) return this.setPull(repo, { state: "error", message: rights.message, at: Date.now() });
+      checkedNow = st0.private === true;
     }
     const access = await this.directory()
       .githubRepoAccess(repo)
@@ -2891,8 +2957,14 @@ export class HarborMaster extends DurableObject<Env> {
       const hint = !access.ok && access.installUrl ? ` Install the gitring GitHub App on ${repo} for private repositories.` : "";
       return this.setPull(repo, { state: "error", message: `${res.message}${hint}`, at: Date.now() });
     }
-    // Private code never flows into a public project.
+    // What GitHub says now counts: a repository that turned private is private from this pull on.
     this.setGh(repo, { private: res.private });
+    if (res.private && !checkedNow) {
+      // The read that GitHub allowed at link time does not count: the person must read it now.
+      const rights = await this.githubRights(repo, "read", true);
+      if (!rights.ok) return this.setPull(repo, { state: "error", message: rights.message, at: Date.now() });
+    }
+    // Private code never flows into a public project.
     if (res.private && (await this.directory().visibilityOf(p.id)) === "public") {
       return this.setPull(repo, { state: "error", message: `${repo} is private on GitHub, and this project is public. Make the project private to bring the changes in.`, at: Date.now() });
     }
@@ -2900,6 +2972,8 @@ export class HarborMaster extends DurableObject<Env> {
       this.closeConflictTask(repo, "GitHub has nothing new for this task: main has every GitHub change.");
       return this.setPull(repo, { state: "up-to-date", message: res.message, headSha: res.head, at: Date.now() });
     }
+    // From here on, GitHub's content goes into the project (a task's text, or main).
+    if (res.private) this.holdPrivate(repo);
     if (res.state === "conflict") {
       const files = Object.fromEntries(res.conflicts.map((c) => [c.path, c.theirs]));
       const open = conflict && conflictIntent && !["landed", "parked", "merged-into"].includes(conflictIntent.status);
@@ -3191,8 +3265,13 @@ interface GithubRepoState {
   /** Open conflict: GitHub's head then, the conflicting files (GitHub's blob ids) and the task. */
   conflict?: { head: string; files: Record<string, string | null>; intentId: string };
   pull?: T.GithubPullStatus;
-  /** The person whose GitHub rights gitring re-checks, and the last answer. */
-  actor?: { userId: string; checkedAt: number; read: boolean; push: boolean };
+  /**
+   * The person whose GitHub rights gitring re-checks, and the last answer. `gone`: the person left the
+   * project; the sentence says so, and nothing is pushed or read for a private repository until an
+   * owner saves the GitHub settings again.
+   */
+  actor?: { userId: string; checkedAt: number; read: boolean; push: boolean; gone?: string };
+  /** Whether GitHub showed the repository as private the last time gitring asked. */
   private?: boolean;
 }
 

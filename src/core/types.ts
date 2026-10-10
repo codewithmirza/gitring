@@ -254,6 +254,11 @@ export interface Project {
   };
   /** GitHub sync of main (settings.github). */
   github?: GithubSyncStatus;
+  /**
+   * Code or an issue of a private GitHub repository came into this project (an import, a pull, a task).
+   * Set once, never cleared: the project stays private, also after an unlink or a relink.
+   */
+  privateCode?: { repo: string; at: Millis };
 }
 
 /* ───────────────────────────── intent ───────────────────────────── */

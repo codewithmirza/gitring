@@ -220,18 +220,27 @@ app.post("/api/projects", async (c) => {
   }
   let visibility = body.visibility;
   let canPush = false;
+  // GitHub source: did GitHub show the repository to the person (or to nobody, for a public one)?
+  let verified = false;
   if (source.kind === "github") {
     // gitring reads the repository as the person: GitHub shows it only to people who may see it.
     const repo = source.repo;
+    const anon = () => new GithubClient(null, { cacheKey: "anon" }).json<RepoJson>(`/repos/${repo}`);
     // The operator key (scripts) reads as nobody: public repositories only.
-    let meta: RepoJson | null;
+    let meta: (Omit<RepoJson, "private"> & { private?: boolean }) | null;
     try {
-      meta = await (user ? readAsPerson(c.env, user.id, (gh) => gh.json<RepoJson>(`/repos/${repo}`)) : new GithubClient(null, { cacheKey: "anon" }).json<RepoJson>(`/repos/${repo}`));
+      meta = await (user ? readAsPerson(c.env, user.id, (gh) => gh.json<RepoJson>(`/repos/${repo}`)) : anon());
+      verified = true;
     } catch (e) {
-      // GitHub limits anonymous calls per address, and Workers share addresses. Artifacts can still
-      // import a public repository from its URL (a private one fails there with a clear reason).
       if (!(e instanceof GithubError) || (e.status !== 403 && e.status !== 429)) return c.json({ error: `gitring could not ask GitHub about ${repo}. Try again.` }, 502);
-      meta = { full_name: repo, private: false, html_url: `https://github.com/${repo}` };
+      // GitHub limits anonymous calls per address, and Workers share addresses. One cheap read without a
+      // token (an answer with a known ETag costs no quota) says whether the repository is public. Without
+      // an answer, the facts stay unknown: Artifacts imports public repositories only, so a private one
+      // fails there, and gitring records no read right for the person.
+      const probe = await anon().catch(() => undefined);
+      if (probe === null) return c.json({ error: `gitring cannot read ${repo}. It is private, or the name is wrong. Connect GitHub, or use Push with git.` }, 404);
+      verified = Boolean(probe);
+      meta = probe ?? { full_name: repo, html_url: `https://github.com/${repo}` };
     }
     if (!meta) return c.json({ error: `gitring cannot read ${repo}. It is private, or the name is wrong. Connect GitHub, or use Push with git.` }, 404);
     if (meta.archived) return c.json({ error: `${meta.full_name} is archived on GitHub.` }, 400);
@@ -239,9 +248,9 @@ app.post("/api/projects", async (c) => {
     if (meta.private && !access.ok) {
       return c.json({ error: `Install the gitring GitHub app on ${meta.full_name} to import it.`, ...(access.installUrl ? { installUrl: access.installUrl } : {}) }, 403);
     }
-    canPush = access.ok && Boolean(meta.permissions?.push || meta.permissions?.admin || meta.permissions?.maintain);
+    canPush = verified && access.ok && Boolean(meta.permissions?.push || meta.permissions?.admin || meta.permissions?.maintain);
     const branch = source.branch || meta.default_branch;
-    source = { kind: "github", repo: meta.full_name, ...(branch ? { branch } : {}), private: meta.private };
+    source = { kind: "github", repo: meta.full_name, ...(branch ? { branch } : {}), ...(meta.private !== undefined ? { private: meta.private } : {}) };
     // Code of a private repository only goes into a private project.
     visibility = meta.private ? "private" : (visibility ?? "public");
   }
@@ -269,8 +278,9 @@ app.post("/api/projects", async (c) => {
     }
     if (Object.keys(wanted).length) {
       await h.updateSettings(wanted);
-      // The importer is the person whose GitHub rights gitring re-checks for sync and pulls.
-      if (source.kind === "github" && user) await h.setGithubActor(user.id, { read: true, push: canPush, private: Boolean(source.private) });
+      // The importer is the person whose GitHub rights gitring re-checks for sync and pulls. A read that
+      // GitHub did not confirm is not recorded: the first pull asks GitHub.
+      if (source.kind === "github" && user) await h.setGithubActor(user.id, { read: verified, push: canPush, ...(source.private !== undefined ? { private: source.private } : {}) });
       st = (await h.state()) as unknown as typeof st;
     }
     return c.json({ project: info, state: st }, 201);
@@ -318,13 +328,14 @@ app.patch("/api/projects/:p", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
   const body = await c.req.json<{ name?: string; visibility?: A.Visibility }>().catch(() => ({}) as { name?: string; visibility?: A.Visibility });
   try {
-    // Code of a private GitHub repository never goes into a public project.
+    // Code of a private GitHub repository never goes into a public project: not while the repository is
+    // linked, and not after an unlink or a relink (the code stays in main).
     if (body.visibility === "public") {
       const info = await directory(c.env).project(id, c.get("principal").user?.id ?? null);
       const facts = await harbor(c.env, id)
         .githubFacts()
-        .catch(() => ({}) as { private?: boolean });
-      if ((info?.source.kind === "github" && info.source.private) || facts.private) {
+        .catch(() => ({}) as { private?: boolean; privateCode?: boolean });
+      if ((info?.source.kind === "github" && info.source.private) || facts.private || facts.privateCode) {
         return c.json({ error: "This project holds code of a private GitHub repository. It stays private." }, 400);
       }
     }
@@ -359,6 +370,13 @@ app.post("/api/projects/:p/members", async (c) => {
   try {
     const out = await directory(c.env).addMember(id, body.who ?? "", body.role ?? "member");
     forgetRoles(id);
+    // A viewer does not act for the project: when gitring checked this person's GitHub rights for the
+    // link, it stops doing so.
+    if (body.role === "viewer") {
+      const who = String(body.who ?? "").trim().replace(/^@/, "").toLowerCase();
+      const demoted = out.find((m) => m.userId && m.handle.toLowerCase() === who)?.userId;
+      if (demoted) await harbor(c.env, id).githubActorLeft(demoted).catch(() => undefined);
+    }
     return c.json(out);
   } catch (e) {
     return err(c, e);
@@ -368,8 +386,12 @@ app.post("/api/projects/:p/members", async (c) => {
 app.delete("/api/projects/:p/members/:who", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
   try {
-    const out = await directory(c.env).removeMember(id, c.req.param("who"));
+    const who = c.req.param("who");
+    const leaving = (await directory(c.env).members(id)).find((m) => m.userId && (m.userId === who || m.handle.toLowerCase() === who.toLowerCase()))?.userId;
+    const out = await directory(c.env).removeMember(id, who);
     forgetRoles(id);
+    // The person is no longer a member: gitring stops checking their GitHub rights for the link.
+    if (leaving) await harbor(c.env, id).githubActorLeft(leaving).catch(() => undefined);
     return c.json(out);
   } catch (e) {
     return err(c, e);
@@ -625,21 +647,30 @@ app.put("/api/projects/:p/settings", async (c) => {
       const branch = typeof raw.branch === "string" ? raw.branch.trim() : current.branch;
       const base = "base" in raw ? (typeof raw.base === "string" ? raw.base.trim() : "") : (current.base ?? "");
       const relinked = Boolean(repo) && repo!.toLowerCase() !== current.repo?.toLowerCase();
-      // Pushing needs a person who can push on GitHub now: turning sync on, or changing where it goes.
-      const pushes = Boolean(repo) && mode !== "off" && (relinked || current.mode === "off" || branch !== current.branch || base !== (current.base ?? ""));
+      // Pushing needs a person who can push on GitHub now: turning sync on, or changing where or how it
+      // goes (the mode, the pull request branch, the base branch).
+      const pushes = Boolean(repo) && mode !== "off" && (relinked || current.mode === "off" || mode !== current.mode || branch !== current.branch || base !== (current.base ?? ""));
       const principal = c.get("principal");
-      if (repo && (relinked || pushes) && principal.via !== "operator") {
-        const user = needUser(c);
-        const perm = await directory(c.env).githubPermission(user.id, repo);
-        if (pushes && !perm.installed) return c.json({ error: `Install the gitring GitHub App on ${repo} first.`, ...(perm.installUrl ? { installUrl: perm.installUrl } : {}) }, 403);
-        if (pushes && !perm.push) return c.json({ error: perm.message }, 403);
-        if (!perm.read) return c.json({ error: perm.message, ...(perm.installUrl ? { installUrl: perm.installUrl } : {}) }, 403);
-        if (perm.private && (await directory(c.env).visibilityOf(projectId(c.req.param("p")))) === "public") {
-          return c.json({ error: `${repo} is private on GitHub, and this project is public. Make the project private first.` }, 400);
+      if (repo && principal.via !== "operator") {
+        // The person behind the link left the project: the owner who saves the settings takes their place.
+        const facts = await h.githubFacts().catch(() => ({}) as Awaited<ReturnType<typeof h.githubFacts>>);
+        const actorGone = Boolean(facts.actor?.gone) && facts.repo?.toLowerCase() === repo.toLowerCase();
+        if (relinked || pushes || actorGone) {
+          const user = needUser(c);
+          const perm = await directory(c.env).githubPermission(user.id, repo);
+          const needPush = pushes || (actorGone && mode !== "off");
+          if (needPush && !perm.installed) return c.json({ error: `Install the gitring GitHub App on ${repo} first.`, ...(perm.installUrl ? { installUrl: perm.installUrl } : {}) }, 403);
+          if (needPush && !perm.push) return c.json({ error: perm.message }, 403);
+          if (!perm.read) return c.json({ error: perm.message, ...(perm.installUrl ? { installUrl: perm.installUrl } : {}) }, 403);
+          // A public project links a repository only when GitHub says that it is public.
+          if (perm.private !== false && (await directory(c.env).visibilityOf(projectId(c.req.param("p")))) === "public") {
+            const why = perm.private ? `${repo} is private on GitHub, and this project is public.` : `gitring could not find out whether ${repo} is private on GitHub.`;
+            return c.json({ error: `${why} Make the project private first.` }, 400);
+          }
+          const out = await h.updateSettings(body);
+          await h.setGithubActor(user.id, { read: perm.read, push: perm.push, ...(perm.private !== undefined ? { private: perm.private } : {}) });
+          return c.json(out);
         }
-        const out = await h.updateSettings(body);
-        await h.setGithubActor(user.id, { read: perm.read, push: perm.push, ...(perm.private !== undefined ? { private: perm.private } : {}) });
-        return c.json(out);
       }
     }
     return c.json(await h.updateSettings(body));
@@ -716,7 +747,7 @@ app.post("/hooks/intents", async (c) => {
 interface GithubIssueEvent {
   action?: string;
   issue?: { title: string; body?: string; html_url?: string; number?: number; labels?: { name: string }[] };
-  repository?: { full_name?: string };
+  repository?: { full_name?: string; private?: boolean };
   sender?: { login?: string; id?: number };
 }
 
@@ -776,15 +807,18 @@ app.post("/hooks/github-app", async (c) => {
   const repo = body!.repository?.full_name ?? "";
   const ids = await directory(c.env).projectsForGithubLogin(`https://github.com/${repo}`, body!.sender?.login ?? "", body!.sender?.id);
   const opened: string[] = [];
+  const refused: string[] = [];
+  // An issue of a private repository is private too: it goes only into a private project whose link
+  // holder can read the repository now (the project decides).
   for (const id of ids) {
-    const h = harbor(c.env, id);
-    const intent = await h.createIntent(
-      { title: body!.issue!.title, goal: body!.issue!.body || body!.issue!.title, source: { kind: "webhook", ref: `github:${repo}#${body!.issue!.number ?? ""}` } },
-      { kind: "system", id: "github", name: "GitHub" },
-    );
-    opened.push(`${id}/${intent.id}`);
+    const issue = { repo, private: body!.repository?.private, title: body!.issue!.title, goal: body!.issue!.body || body!.issue!.title, number: body!.issue!.number };
+    const res = await harbor(c.env, id)
+      .githubIssueIntent(issue)
+      .catch((e) => ({ refused: String((e as Error)?.message ?? e).slice(0, 200) }));
+    if ("intent" in res) opened.push(`${id}/${res.intent.id}`);
+    else refused.push(`${id}: ${res.refused}`);
   }
-  return c.json({ intents: opened }, opened.length ? 201 : 200);
+  return c.json({ intents: opened, ...(refused.length ? { refused } : {}) }, opened.length ? 201 : 200);
 });
 
 /** A plain GitHub repository webhook (no app): needs GITHUB_WEBHOOK_SECRET and ?project=. */
