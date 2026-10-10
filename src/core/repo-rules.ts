@@ -31,3 +31,18 @@ export function textEligible(path: string): boolean {
   return !OPAQUE_DIRS.test(path) && !OPAQUE_EXT.test(path);
 }
 
+
+/**
+ * "owner/name" of a GitHub repository, from "owner/name", "https://github.com/owner/name(.git)" or
+ * "git@github.com:owner/name.git". null when the text names no GitHub repository.
+ */
+export function githubRepoName(raw: string): string | null {
+  const t = String(raw ?? "").trim();
+  const m =
+    /^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/i.exec(t) ??
+    /^git@github\.com:([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?$/i.exec(t) ??
+    /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100}?)$/.exec(t);
+  if (!m) return null;
+  if (m[2] === "." || m[2] === "..") return null;
+  return `${m[1]}/${m[2]}`;
+}

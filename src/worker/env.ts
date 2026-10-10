@@ -1,6 +1,5 @@
 import type { HarborMaster } from "../harbor/harbor";
 import type { Vessel } from "../vessel/vessel";
-import type { Sector } from "../sim/sector";
 import type { Directory } from "../directory/directory";
 import type { Drydock } from "../drydock/drydock";
 
@@ -8,7 +7,6 @@ import type { Drydock } from "../drydock/drydock";
 export interface Env {
   HARBOR: DurableObjectNamespace<HarborMaster>;
   VESSEL: DurableObjectNamespace<Vessel>;
-  SECTOR: DurableObjectNamespace<Sector>;
   DIRECTORY: DurableObjectNamespace<Directory>;
   /** Check containers (Cloudflare Containers): one per attempt. */
   DRYDOCK: DurableObjectNamespace<Drydock>;

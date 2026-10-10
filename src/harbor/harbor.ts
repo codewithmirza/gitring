@@ -8,7 +8,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
-import { DEFAULT_SETTINGS } from "../core/types";
+import { DEFAULT_SETTINGS, withDefaults } from "../core/types";
 import { Db } from "./store";
 import { callsignFor, colorFor, newId, repoSafe } from "./ids";
 import type { Env } from "../worker/env";
@@ -38,7 +38,7 @@ import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
 import { merge3 } from "../core/text/merge3";
 import { landingMessage, landingNote, intentFile } from "../core/logbook";
-import { MAX_TEXT_BYTES, MAX_TEXT_FILES, normalizeGitUrl, textEligible } from "../core/repo-rules";
+import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
@@ -122,7 +122,6 @@ export class HarborMaster extends DurableObject<Env> {
   private radar = new Map<string, T.RadarPair>();
   private stats: T.HarborStats = emptyStats();
   private checkLatencies: number[] = [];
-  private sim?: T.SimStats;
 
   private backendCache?: RepoBackend;
   private treeCache = new MemoryTreeCache(5000);
@@ -147,6 +146,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   private load(): void {
     this.project = this.db.getMeta<T.Project>("project");
+    if (this.project) this.project.settings = withDefaults(this.project.settings);
     for (const i of this.db.all<T.Intent>("intents")) this.intents.set(i.id, i);
     for (const a of this.db.all<T.Attempt>("attempts")) this.attempts.set(a.id, a);
     for (const g of this.db.all<T.AgentInfo>("agents")) this.agents.set(g.id, g);
@@ -159,8 +159,6 @@ export class HarborMaster extends DurableObject<Env> {
     this.stats = this.db.getMeta<T.HarborStats>("stats") ?? emptyStats();
     this.checkLatencies = this.db.getMeta<number[]>("latencies") ?? [];
     this.seq = this.db.getMeta<number>("seq") ?? 0;
-    this.sim = this.db.getMeta<T.SimStats>("sim");
-    if (this.sim?.running && !this.simRun) this.sim = { ...this.sim, running: false };
   }
 
   private get backend(): RepoBackend {
@@ -443,7 +441,6 @@ export class HarborMaster extends DurableObject<Env> {
     this.attemptVersion.clear();
     this.forks.clear();
     this.treeTexts.clear();
-    this.sim = undefined;
     return this.init({ projectId: id, name: this.project?.name, source: { kind: "sample" }, ownerId: this.project?.ownerId });
   }
 
@@ -678,7 +675,6 @@ export class HarborMaster extends DurableObject<Env> {
       files: main.files,
       imports: main.imports,
       stats: { ...this.stats, medianCheckLatencyMs: median(this.checkLatencies) },
-      sim: this.sim,
     };
   }
 
@@ -1746,7 +1742,7 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId: a.id,
       agentId: a.agentId,
       intentId: intent.id,
-      message: `"${intent.title}" lands on main by ${method} (${committed.sha.slice(0, 7)}). Checks ${run.passed}/${run.passed + run.failed} pass. Human merge fixes: 0.`,
+      message: `"${intent.title}" lands on main by ${method} (${committed.sha.slice(0, 7)}). Checks ${run.passed}/${run.passed + run.failed} pass.`,
       files: result.touched,
     });
     this.persistStats();
@@ -2258,15 +2254,42 @@ export class HarborMaster extends DurableObject<Env> {
     return { key: await contentKey(js), files: Object.fromEntries(js) };
   }
 
-  async connectInfo(origin: string): Promise<{ mcpUrl: string; hookUrl: string; gitRemoteExample?: string; projectKeyHint: string; artifacts: { namespace: string; repo: string; remote?: string; backend: string } }> {
+  async connectInfo(origin: string): Promise<T.ConnectInfo> {
     const p = await this.ensure(this.project?.id ?? "demo");
+    const providers = await this.directory()
+      .providers()
+      .catch(() => ({ github: null }));
     return {
+      projectId: p.id,
       mcpUrl: `${origin}/mcp`,
-      hookUrl: `${origin}/hooks/claude-code?project=${encodeURIComponent(p.id)}`,
-      gitRemoteExample: p.repo.remote ? p.repo.remote.replace(/\/[^/]+\.git$/, `/${p.repo.name}-a_xxxxxx.git`) : undefined,
-      projectKeyHint: `Set GITRING_KEY to a personal API key (above). Project id: ${this.project?.id ?? ""}.`,
+      hookUrl: `${origin}/hooks/claude/${encodeURIComponent(p.id)}`,
+      intentsUrl: `${origin}/hooks/intents`,
       artifacts: { namespace: p.repo.namespace, repo: p.repo.name, remote: p.repo.remote, backend: p.repo.backend },
+      inputs: { slack: Boolean(this.env.SLACK_SIGNING_SECRET), githubIssues: Boolean(providers.github?.webhook) },
+      githubApp: providers.github ? { slug: providers.github.slug, installUrl: providers.github.installUrl } : null,
     };
+  }
+
+  private directory() {
+    return this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"));
+  }
+
+  /* ════════════════════════════ GitHub sync ════════════════════════════ */
+
+  /** The GitHub sync status for people (settings and the overview). */
+  async githubStatus(): Promise<T.GithubSyncStatus> {
+    const p = this.requireProject();
+    const g = p.settings.github;
+    if (g.mode === "off") return { state: "off", message: "GitHub sync is off. Merged code stays in Cloudflare Artifacts.", mode: "off", ...(g.repo ? { repo: g.repo } : {}) };
+    if (!g.repo) return { state: "not-linked", message: "Link a GitHub repository to send merged code to GitHub.", mode: g.mode };
+    const st = p.github;
+    if (st && st.repo === g.repo && st.mode === g.mode) return st;
+    return { state: "pending", message: "gitring sends main to GitHub after the next merge, or when you choose Sync now.", repo: g.repo, mode: g.mode, branch: g.mode === "main" ? undefined : g.branch };
+  }
+
+  /** Send main to GitHub now (settings.github). */
+  async githubSync(): Promise<T.GithubSyncStatus> {
+    return this.githubStatus();
   }
 
   /* ════════════════════════════ Claude Code hook ════════════════════════════ */
@@ -2382,146 +2405,6 @@ export class HarborMaster extends DurableObject<Env> {
     }
   }
 
-  /* ════════════════════════════ scale simulation (Sector shards) ════════════════════════════ */
-
-  private simRun?: { id: string; stop: boolean };
-
-  async simStart(input: { agents?: number; sectors?: number; coordinate?: boolean; seconds?: number }): Promise<T.SimStats> {
-    await this.ensure(this.project?.id ?? "demo");
-    if (this.simRun) this.simRun.stop = true;
-    const run = { id: newId("sim"), stop: false };
-    this.simRun = run;
-    const agents = Math.max(10, Math.min(100_000, Math.round(input.agents ?? 10_000)));
-    const sectors = Math.max(1, Math.min(64, Math.round(input.sectors ?? 16)));
-    const coordinate = input.coordinate ?? true;
-    const seconds = Math.max(10, Math.min(600, input.seconds ?? 180));
-    const perSector = Math.ceil(agents / sectors);
-    const modules = Math.max(4, Math.round(perSector / 12));
-    const pid = this.requireProject().id;
-    const stubs = Array.from({ length: sectors }, (_, i) => this.env.SECTOR.get(this.env.SECTOR.idFromName(`${pid}:sim:${i}`)));
-    // Baseline shard: same density, no course checks.
-    const baseline = this.env.SECTOR.get(this.env.SECTOR.idFromName(`${pid}:sim:baseline`));
-    const seed = Date.now() % 100_000;
-    await Promise.all([
-      ...stubs.map((s, i) => s.configure({ sector: i, sectors, modules, filesPerModule: 40, agents: perSector, seed, coordinate })),
-      baseline.configure({ sector: 99, sectors: 1, modules, filesPerModule: 40, agents: Math.min(perSector, 4000), seed, coordinate: false }),
-    ]);
-    const startedAt = Date.now();
-    this.sim = {
-      running: true,
-      agents,
-      sectors,
-      courseChecksPerSec: 0,
-      correctionsPerSec: 0,
-      landingsPerSec: 0,
-      conflictsAtLanding: 0,
-      collisionsAvoided: 0,
-      p50CheckMs: 0,
-      p99CheckMs: 0,
-      startedAt,
-      elapsedMs: 0,
-      coordinate,
-      ticks: 0,
-      totalCourseChecks: 0,
-      totalLandings: 0,
-    };
-    this.emit({ type: "sim", sim: this.sim });
-    this.addLog({ kind: "system", message: `Simulation starts: ${agents.toLocaleString("en-US")} agents over ${sectors} sector${sectors > 1 ? "s" : ""}. Course checks run in each sector in parallel.` });
-    const loop = async () => {
-      const totals = { checks: 0, corrections: 0, landings: 0, conflicts: 0, avoided: 0, baseLandings: 0, baseConflicts: 0 };
-      const window: { at: number; checks: number; corrections: number; replots: number; landings: number; perSector: number[] }[] = [];
-      let lat: number[] = [];
-      let ticks = 0;
-      while (!run.stop && Date.now() - startedAt < seconds * 1000) {
-        const tickStart = Date.now();
-        const timed = await Promise.all([
-          Promise.all(stubs.map(async (s) => { const t0 = Date.now(); const r = await s.tick(); return { r, ms: Date.now() - t0 }; })),
-          baseline.tick(),
-        ]);
-        const results = timed[0].map((x) => x.r);
-        const base = timed[1];
-        // Amortized cost per course check, from wall time around each sector RPC (Workers freeze timers during compute).
-        for (const x of timed[0]) if (x.r.courseChecks > 0) lat.push(Math.round((x.ms / x.r.courseChecks) * 1000) / 1000);
-        void tickStart;
-        ticks += 1;
-        const now = Date.now();
-        let checks = 0;
-        let corrections = 0;
-        let replots = 0;
-        let landings = 0;
-        for (const r of results) {
-          checks += r.courseChecks;
-          corrections += r.corrections;
-          replots += r.replots ?? 0;
-          landings += r.landings;
-          totals.conflicts += r.conflictsAtLanding;
-          totals.avoided += r.collisionsAvoided;
-        }
-        totals.checks += checks;
-        totals.corrections += corrections;
-        totals.landings += landings;
-        totals.baseLandings += base.landings;
-        totals.baseConflicts += base.conflictsAtLanding;
-        window.push({ at: now, checks, corrections, replots, landings, perSector: results.map((r) => r.courseChecks) });
-        while (window.length > 2 && now - window[0].at > 5000) window.shift();
-        const span = Math.max(0.25, (now - window[0].at) / 1000 + 0.001);
-        const sum = (k: "checks" | "corrections" | "replots" | "landings") => window.slice(1).reduce((m, w) => m + w[k], 0);
-        if (lat.length > 20_000) lat = lat.slice(-5000);
-        const sorted = [...lat].sort((a, b) => a - b);
-        const pct = (q: number) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : 0);
-        const perSecSector = stubs.map((_, i) => Math.round(window.slice(1).reduce((m, w) => m + (w.perSector[i] ?? 0), 0) / span));
-        this.sim = {
-          running: true,
-          agents,
-          sectors,
-          courseChecksPerSec: Math.round(sum("checks") / span),
-          correctionsPerSec: Math.round(sum("corrections") / span),
-          replotsPerSec: Math.round(sum("replots") / span),
-          landingsPerSec: Math.round(sum("landings") / span),
-          conflictsAtLanding: totals.conflicts,
-          collisionsAvoided: totals.avoided,
-          p50CheckMs: round(pct(0.5)),
-          p99CheckMs: round(pct(0.99)),
-          startedAt,
-          elapsedMs: now - startedAt,
-          coordinate,
-          conflictRate: totals.landings ? round(totals.conflicts / totals.landings) : 0,
-          baselineConflictRate: totals.baseLandings ? round(totals.baseConflicts / totals.baseLandings) : 0,
-          sectorLoad: perSecSector,
-          ticks,
-          totalCourseChecks: totals.checks,
-          totalLandings: totals.landings,
-        };
-        this.emit({ type: "sim", sim: this.sim });
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      if (this.simRun === run) {
-        this.sim = { ...this.sim!, running: false };
-        this.db.setMeta("sim", this.sim);
-        this.emit({ type: "sim", sim: this.sim });
-        this.addLog({
-          kind: "system",
-          message: `Simulation ends: ${totals.checks.toLocaleString("en-US")} course checks, ${totals.landings.toLocaleString("en-US")} landings. Conflicts at landing: ${pctText(this.sim.conflictRate)} with gitring, ${pctText(this.sim.baselineConflictRate)} without.`,
-        });
-        this.simRun = undefined;
-      }
-    };
-    this.ctx.waitUntil(loop().catch((e) => console.error("sim failed", e)));
-    return this.sim;
-  }
-
-  async simStop(): Promise<T.SimStats | undefined> {
-    if (this.simRun) this.simRun.stop = true;
-    if (this.sim) {
-      this.sim = { ...this.sim, running: false };
-      this.db.setMeta("sim", this.sim);
-      this.emit({ type: "sim", sim: this.sim });
-    }
-    return this.sim;
-  }
-
-  /* ════════════════════════════ helpers ════════════════════════════ */
-
   async version(): Promise<string> {
     return BUILD_ID;
   }
@@ -2562,7 +2445,6 @@ function emptyStats(): T.HarborStats {
     landings: 0,
     landedByMethod: { "fast-forward": 0, merge: 0, rederive: 0 },
     rederives: 0,
-    humanMergeFixes: 0,
     medianCheckLatencyMs: 0,
   };
 }
@@ -2658,6 +2540,20 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
       ...(secs !== undefined ? { timeoutSec: Math.round(secs) } : {}),
     };
   }
+  if (raw.github && typeof raw.github === "object") {
+    const g = raw.github as Partial<T.GithubSettings>;
+    const repo = typeof g.repo === "string" ? githubRepoName(g.repo) : undefined;
+    if (typeof g.repo === "string" && g.repo.trim() && !repo) throw new Error("Give the GitHub repository as owner/name, or as its https://github.com URL.");
+    const branch = typeof g.branch === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(g.branch.trim()) && !g.branch.includes("..") ? g.branch.trim() : undefined;
+    out.github = {
+      mode: g.mode === "pull-request" || g.mode === "main" ? g.mode : "off",
+      branch: branch ?? DEFAULT_SETTINGS.github.branch,
+      ...(repo ? { repo } : {}),
+    };
+  }
+  if (raw.redo === "agent-first" || raw.redo === "agent-only" || raw.redo === "builtin") out.redo = raw.redo;
+  const wait = num(raw.redoWaitMinutes, 5, 120);
+  if (wait !== undefined) out.redoWaitMinutes = Math.round(wait);
   if (Array.isArray(raw.webhooks)) {
     out.webhooks = raw.webhooks
       .filter((w) => w && typeof w.url === "string" && /^https:\/\/[^\s/]+\.[^\s]+$/.test(w.url))
@@ -2770,9 +2666,6 @@ function round(x: number): number {
   return Math.round(x * 1000) / 1000;
 }
 
-function pctText(x: number | undefined): string {
-  return `${((x ?? 0) * 100).toFixed(1)}%`;
-}
 
 function findText(sha: string, trees: TreeText[]): string | undefined {
   for (const t of trees) {
@@ -2794,7 +2687,7 @@ function slackText(event: string, p: Record<string, unknown>): string {
   if (event === "landing") {
     const l = p.landing as T.Landing;
     const i = p.intent as { title: string };
-    return `:anchor: *${i.title}* landed on main by ${l.method} (\`${String(p.mainSha).slice(0, 7)}\`) · ${p.callsign} · checks ${l.checks.passed}/${l.checks.passed + l.checks.failed} · human merge fixes: 0`;
+    return `:anchor: *${i.title}* landed on main by ${l.method} (\`${String(p.mainSha).slice(0, 7)}\`) · ${p.callsign} · checks ${l.checks.passed}/${l.checks.passed + l.checks.failed}`;
   }
   if (event === "correction") {
     const c = p.correction as T.Correction;

@@ -61,7 +61,87 @@ export interface ProjectSettings {
   webhooks: WebhookTarget[];
   /** How gitring runs checks. Absent: the gitring test harness in a Dynamic Worker (the sample). */
   checks?: CheckSettings;
+  /** Where merged code goes on GitHub. */
+  github: GithubSettings;
+  /** Who does a task again when the work of an outside agent cannot merge. */
+  redo: RedoPolicy;
+  /** agent-first: minutes to wait for the outside agent before a built-in agent starts (5–120). */
+  redoWaitMinutes: number;
 }
+
+/**
+ * GitHub sync of main:
+ *   off           merged code stays in Cloudflare Artifacts
+ *   pull-request  gitring pushes each merge to `branch` and keeps one pull request open to the default branch
+ *   main          gitring pushes each merge to the default branch (fast-forward only)
+ */
+export type GithubSyncMode = "off" | "pull-request" | "main";
+
+export interface GithubSettings {
+  /** "owner/name" on github.com. Absent: not linked (a GitHub import links its repository). */
+  repo?: string;
+  mode: GithubSyncMode;
+  /** Branch that gitring pushes in pull-request mode. */
+  branch: string;
+}
+
+export type GithubSyncState =
+  | "off" // mode off
+  | "not-linked" // no GitHub repository
+  | "no-app" // the deployment has no GitHub App
+  | "not-installed" // the GitHub App is not on the repository
+  | "pending" // a sync runs
+  | "ok" // GitHub has main
+  | "blocked" // GitHub moved and gitring cannot fast-forward it (main mode)
+  | "error";
+
+export interface GithubSyncStatus {
+  state: GithubSyncState;
+  /** One sentence for people. */
+  message: string;
+  /** Repository, "owner/name". */
+  repo?: string;
+  mode?: GithubSyncMode;
+  /** Branch on GitHub that gitring updates. */
+  branch?: string;
+  /** The gitring main commit that GitHub has now. */
+  syncedSha?: string;
+  /** The GitHub commit for syncedSha. */
+  githubSha?: string;
+  /** Open pull request (pull-request mode). */
+  prUrl?: string;
+  prNumber?: number;
+  /** Install the GitHub App on the repository (state not-installed). */
+  installUrl?: string;
+  /** Open the pull request by hand (the app has no pull-request permission). */
+  compareUrl?: string;
+  at?: Millis;
+}
+
+/** What the Connect page needs: endpoints of this deployment and which inputs it has. */
+export interface ConnectInfo {
+  projectId: string;
+  /** MCP endpoint (streamable HTTP). */
+  mcpUrl: string;
+  /** Claude Code PostToolUse hook for this project. */
+  hookUrl: string;
+  /** Endpoint that opens a task from any app. */
+  intentsUrl: string;
+  artifacts: { namespace: string; repo: string; remote?: string; backend: string };
+  /** Inputs this deployment has set up. */
+  inputs: { slack: boolean; githubIssues: boolean };
+  /** The GitHub App of this deployment (sign-in, issues, sync). */
+  githubApp: { slug: string; installUrl: string } | null;
+}
+
+/**
+ * Redo when the work of an outside agent (MCP or git) cannot merge on the new main:
+ *   agent-first  the same agent gets the work back; after redoWaitMinutes without an answer, a built-in agent does it
+ *   agent-only   the same agent gets the work back; without an answer, a person decides
+ *   builtin      a built-in agent does the task again at once
+ * Work of built-in agents is always done again by a built-in agent.
+ */
+export type RedoPolicy = "agent-first" | "agent-only" | "builtin";
 
 /**
  * Check runners:
@@ -124,6 +204,8 @@ export interface Project {
    * first `git push` (push). Main fills when it is done.
    */
   importing?: { url: string; startedAt: Millis; error?: string; push?: boolean; tokenIds?: string[] };
+  /** GitHub sync of main (settings.github). */
+  github?: GithubSyncStatus;
 }
 
 /* ───────────────────────────── intent ───────────────────────────── */
@@ -179,12 +261,12 @@ export interface Intent {
   landedSha?: string;
   /** How many built-in agents a launch starts by default (best-of-N). */
   suggestedFanout?: number;
-  source: { kind: "ui" | "mcp" | "webhook" | "seed" | "sim"; ref?: string };
+  source: { kind: "ui" | "mcp" | "webhook" | "seed"; ref?: string };
 }
 
 /* ───────────────────────────── agents ───────────────────────────── */
 
-export type AgentKind = "builtin" | "mcp" | "git" | "sim";
+export type AgentKind = "builtin" | "mcp" | "git";
 
 export interface AgentInfo {
   id: string;
@@ -559,7 +641,6 @@ export interface ProjectState {
   /** Import edges of main, as [from, to] paths. */
   imports: [string, string][];
   stats: HarborStats;
-  sim?: SimStats;
 }
 
 export interface HarborStats {
@@ -573,36 +654,7 @@ export interface HarborStats {
   rederives: number;
   /** Times gitring moved in-flight work onto a new main (re-plot). */
   replots?: number;
-  humanMergeFixes: number; // the number we keep at zero
   medianCheckLatencyMs: number;
-}
-
-export interface SimStats {
-  running: boolean;
-  agents: number;
-  sectors: number;
-  courseChecksPerSec: number;
-  correctionsPerSec: number;
-  /** Work in progress moved onto a new main per second (re-plots). */
-  replotsPerSec?: number;
-  landingsPerSec: number;
-  conflictsAtLanding: number;
-  collisionsAvoided: number;
-  p50CheckMs: number;
-  p99CheckMs: number;
-  startedAt?: Millis;
-  elapsedMs: number;
-  /** Course checks on (gitring) or off (baseline). */
-  coordinate?: boolean;
-  /** Conflicts at landing per landing, with gitring. */
-  conflictRate?: number;
-  /** Conflicts at landing per landing in a baseline shard with no course checks. */
-  baselineConflictRate?: number;
-  /** Course checks per second per sector (for the density view). */
-  sectorLoad?: number[];
-  ticks?: number;
-  totalCourseChecks?: number;
-  totalLandings?: number;
 }
 
 export type GitringEventType =
@@ -618,7 +670,7 @@ export type GitringEventType =
   | "radar"
   | "main"
   | "stats"
-  | "sim";
+  | "github";
 
 export type GitringEvent =
   | { type: "snapshot"; state: ProjectState }
@@ -633,7 +685,7 @@ export type GitringEvent =
   | { type: "radar"; pairs: RadarPair[] }
   | { type: "main"; sha: string; tree: string; files: FileNode[]; imports: [string, string][] }
   | { type: "stats"; stats: HarborStats }
-  | { type: "sim"; sim: SimStats };
+  | { type: "github"; github: GithubSyncStatus };
 
 /* ───────────────────────────── agent protocol (MCP + built-in vessels) ───────────────────────────── */
 
@@ -756,4 +808,18 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   intentsInRepo: true,
   thresholds: DEFAULT_THRESHOLDS,
   webhooks: [],
+  github: { mode: "off", branch: "gitring" },
+  redo: "agent-first",
+  redoWaitMinutes: 15,
 };
+
+/** Settings of a stored project, with defaults for fields added after the project was made. */
+export function withDefaults(s: Partial<ProjectSettings> | undefined): ProjectSettings {
+  const base = { ...DEFAULT_SETTINGS, ...(s ?? {}) } as ProjectSettings;
+  return {
+    ...base,
+    thresholds: { ...DEFAULT_THRESHOLDS, ...(s?.thresholds ?? {}) },
+    webhooks: Array.isArray(s?.webhooks) ? s!.webhooks : [],
+    github: { ...DEFAULT_SETTINGS.github, ...(s?.github ?? {}) },
+  };
+}

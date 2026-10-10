@@ -78,7 +78,7 @@ export interface GoogleConfig {
 }
 
 export interface ProvidersInfo {
-  github: { slug: string; appId: number; htmlUrl: string; installUrl: string } | null;
+  github: { slug: string; appId: number; htmlUrl: string; installUrl: string; webhook: boolean } | null;
   google: { clientId: string } | null;
 }
 
@@ -152,7 +152,7 @@ export class Directory extends DurableObject<Env> {
     const gh = await this.getSealed<GithubAppConfig>("github_app").catch(() => undefined);
     const gg = await this.getSealed<GoogleConfig>("google").catch(() => undefined);
     return {
-      github: gh ? { slug: gh.slug, appId: gh.id, htmlUrl: gh.htmlUrl, installUrl: `https://github.com/apps/${gh.slug}/installations/new` } : null,
+      github: gh ? { slug: gh.slug, appId: gh.id, htmlUrl: gh.htmlUrl, installUrl: `https://github.com/apps/${gh.slug}/installations/new`, webhook: Boolean(gh.webhookSecret) } : null,
       google: gg ? { clientId: gg.clientId } : null,
     };
   }

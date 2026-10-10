@@ -19,7 +19,6 @@
     "bindings": [
       { "name": "HARBOR", "class_name": "HarborMaster" },
       { "name": "VESSEL", "class_name": "Vessel" },
-      { "name": "SECTOR", "class_name": "Sector" },
       { "name": "DIRECTORY", "class_name": "Directory" },
       { "name": "DRYDOCK", "class_name": "Drydock" }
     ]
@@ -35,7 +34,9 @@
     // People, sessions, API keys, projects, roles and sealed provider credentials.
     { "tag": "v4", "new_sqlite_classes": ["Directory"] },
     // Check containers (one per attempt).
-    { "tag": "v5", "new_sqlite_classes": ["Drydock"] }
+    { "tag": "v5", "new_sqlite_classes": ["Drydock"] },
+    // The scale simulation left the product.
+    { "tag": "v6", "deleted_classes": ["Sector"] }
   ],
   "vars": {
     "ARTIFACTS_NAMESPACE": "gitring",

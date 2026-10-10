@@ -26,7 +26,6 @@ import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
-export { Sector } from "../sim/sector";
 export { Directory } from "../directory/directory";
 export { Drydock, Seawall } from "../drydock/drydock";
 
@@ -353,13 +352,14 @@ app.get("/api/projects/:p/file", async (c) => {
   }
 });
 
+/** Built-in agent status: phase, step, last error. Members only: it shows model replies. */
 app.get("/api/projects/:p/attempts/:id/vessel", async (c) => {
-  const { id } = await access(c, c.req.param("p"), "viewer");
+  const { id } = await access(c, c.req.param("p"), "member");
   const stub = c.env.VESSEL.get(c.env.VESSEL.idFromName(`${id}:${c.req.param("id")}`));
   return c.json((await stub.status()) ?? { phase: "none" });
 });
 
-/* ───────────── sample reset, launch all, simulation, settings ───────────── */
+/* ───────────── sample reset, launch all, settings ───────────── */
 
 app.post("/api/projects/:p/reset", async (c) => {
   try {
@@ -401,20 +401,20 @@ app.post("/api/projects/:p/launch-all", async (c) => {
   }
 });
 
-app.post("/api/projects/:p/sim/start", async (c) => {
+/** GitHub sync status (members) and Sync now (owners). */
+app.get("/api/projects/:p/github", async (c) => {
   try {
-    const h = await ready(c, c.req.param("p"), "owner");
-    const body = await c.req.json<{ agents?: number; sectors?: number; coordinate?: boolean; seconds?: number }>().catch(() => ({}));
-    return c.json(await h.simStart(body));
+    const h = await ready(c, c.req.param("p"), "member");
+    return c.json(await h.githubStatus());
   } catch (e) {
     return err(c, e);
   }
 });
 
-app.post("/api/projects/:p/sim/stop", async (c) => {
+app.post("/api/projects/:p/github/sync", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "owner");
-    return c.json((await h.simStop()) ?? { running: false });
+    return c.json(await h.githubSync());
   } catch (e) {
     return err(c, e);
   }
