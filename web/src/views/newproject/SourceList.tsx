@@ -10,8 +10,9 @@ import type { GithubRepo } from "../../../../src/core/accounts";
 import { Icon, type IconName } from "../../design/icons";
 import { githubConnectUrl, mergeRepos, useDelayedFlag, useRepoSearch } from "../../state/github";
 import type { MeWithInstall } from "../../state/account";
-import { GithubMark, LockIcon, RepoIcon, SearchIcon } from "./marks";
-import { agoIso, rankRepos, readPasted } from "./match";
+import { GithubMark, SearchIcon } from "./marks";
+import { rankRepos, readPasted } from "./match";
+import { RepoRow } from "./RepoRow";
 
 export type SourceOption =
   | { key: string; kind: "import-github"; repo: string; known?: GithubRepo }
@@ -273,7 +274,15 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
           spellCheck={false}
           enterKeyHint="go"
         />
-        {search.searching && <span className="np-search__busy" aria-hidden="true" />}
+        {search.searching || search.loading ? (
+          <span className="np-search__busy" aria-hidden="true" />
+        ) : (
+          connected && (
+            <button type="button" className="np-search__act" onMouseDown={(e) => e.preventDefault()} onClick={search.reload} aria-label="Read the repositories from GitHub again" title="Read the repositories from GitHub again">
+              <Icon name="reload" size={14} />
+            </button>
+          )
+        )}
       </div>
       <p id={statusId} className="vh" role="status" aria-live="polite">
         {statusText}
@@ -302,6 +311,8 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
           ))}
         </div>
       )}
+      {/* Notes stay outside the listbox: a listbox holds options and groups only. */}
+      {ghNote && <div className="np-note np-note--top">{ghNote}</div>}
       <div id={listId} role="listbox" aria-label="Sources" className="np-list">
         {importRows.length > 0 && (
           <div role="group" aria-labelledby={`${base}-g-text`} className="np-group">
@@ -342,11 +353,6 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
             <div id={`${base}-g-gh`} role="presentation" className="np-group__head">
               <GithubMark size={12} />
               <span>GitHub{login ? ` · @${login}` : ""}</span>
-              {connected && (
-                <button type="button" className="np-group__act" onMouseDown={(e) => e.preventDefault()} onClick={search.reload} aria-label="Load the repositories again">
-                  <Icon name="reload" size={12} />
-                </button>
-              )}
             </div>
             {skeleton &&
               [0, 1, 2].map((i) => (
@@ -389,7 +395,6 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
                     ? row(o, <RepoRow repo={o.repo} />)
                     : null,
             )}
-            {ghNote && <div className="np-note">{ghNote}</div>}
           </div>
         )}
 
@@ -422,25 +427,3 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
   );
 }
 
-export function RepoRow({ repo }: { repo: GithubRepo }) {
-  const slash = repo.fullName.indexOf("/");
-  return (
-    <>
-      {repo.private ? <LockIcon className="np-opt__icon" /> : <RepoIcon className="np-opt__icon" />}
-      <span className="np-opt__main">
-        <span className="np-opt__title">
-          <span className="voice-agent np-repo">
-            <span className="np-repo__owner">{repo.fullName.slice(0, slash + 1)}</span>
-            {repo.fullName.slice(slash + 1)}
-          </span>
-          {repo.private && <span className="np-tag">private</span>}
-          {!repo.canPush && <span className="np-tag">read only</span>}
-        </span>
-        <span className="np-opt__text">
-          {[repo.defaultBranch, repo.language, repo.pushedAt && `pushed ${agoIso(repo.pushedAt)}`].filter(Boolean).join(" · ")}
-          {repo.description ? <span className="np-opt__desc"> · {repo.description}</span> : null}
-        </span>
-      </span>
-    </>
-  );
-}

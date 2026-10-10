@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GithubRepo, GithubRepoList, OAuthGrantInfo, ProjectGuess, ProjectInfo, Visibility } from "../../../src/core/accounts";
 import type { GithubSyncStatus, ProjectSettings, ProjectSource } from "../../../src/core/types";
-import { loadProjects, type UploadFile } from "./account";
+import type { UploadFile } from "./account";
 
 export class RequestError extends Error {
   constructor(
@@ -262,10 +262,13 @@ export interface NewProjectInput {
   files?: UploadFile[];
 }
 
-/** Create a project. The project list loads again; the answer is the new project. */
+/**
+ * Create a project; the answer is the new project. The caller opens it with a full page load, which reads
+ * the project list again, so no list request goes out here (it would race the page change).
+ */
 export async function createProjectFrom(input: NewProjectInput): Promise<ProjectInfo> {
   const res = await send<{ project: ProjectInfo }>("POST", "/api/projects", input);
-  await loadProjects().catch(() => undefined);
+  if (!res?.project?.id) throw new RequestError(0, "gitring did not send the new project. Open your projects and look for it.");
   return res.project;
 }
 

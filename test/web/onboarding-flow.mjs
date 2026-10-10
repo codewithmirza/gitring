@@ -214,6 +214,8 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   check(body?.visibility === "private", "…and the visibility");
   await page.getByText("gitring imports mirza/gitring from GitHub").waitFor({ timeout: 8000 });
   check(true, "the overview shows the import panel");
+  l = await log();
+  check(count(l, "GET", /^\/api\/projects$/) === 2, "creating sends no extra list request (the new page loads the list once)", count(l, "GET", /^\/api\/projects$/));
   await ctx.close();
 }
 
@@ -275,6 +277,64 @@ step("B2. A link to one repository (?new=1&repo=owner/name)");
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/overview\?project=ml-notes-/, { timeout: 8000 });
   check(true, "Enter creates the project");
+  await ctx.close();
+}
+
+/* ═════════════ B3. upload a folder, push with git, empty project ═════════════ */
+step("B3. Upload a folder, push with git, empty project");
+{
+  const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const root = await mkdtemp(path.join(tmpdir(), "np-upload-"));
+  const dir = path.join(root, "my-site");
+  for (const [f, text] of [
+    ["README.md", "# My site\n"],
+    ["src/index.js", "export default {};\n"],
+    ["node_modules/x/index.js", "module.exports = 1;\n"],
+    [".git/config", "[core]\n"],
+  ]) {
+    await mkdir(path.dirname(path.join(dir, f)), { recursive: true });
+    await writeFile(path.join(dir, f), text);
+  }
+  await reset();
+  const { ctx, page } = await open("github");
+  await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
+  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("option", { name: /Upload a folder/ }).click();
+  await (await chooser).setFiles(dir);
+  await page.getByRole("heading", { name: "Upload a folder" }).waitFor();
+  check(await shows(page.getByText(/2 files, 1 KB\. 2 files stay out/)), "the folder summary counts kept and skipped files");
+  const a = await active(page);
+  check(a?.value === "my-site", "the name comes from the folder and has focus", a);
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/overview\?project=my-site-/, { timeout: 8000 });
+  let id = new URL(page.url()).searchParams.get("project");
+  let body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
+  const paths = (body?.files ?? []).map((f) => f.path).sort();
+  check(body?.source?.kind === "upload" && JSON.stringify(paths) === JSON.stringify(["README.md", "src/index.js"]), "the upload sends the kept files only", paths);
+  check(body?.visibility === "private", "an upload is private by default");
+
+  await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
+  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  await page.getByRole("option", { name: /Push with git/ }).click();
+  await page.getByRole("heading", { name: "Push with git" }).waitFor();
+  await page.keyboard.type("Shop");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/overview\?project=shop-/, { timeout: 8000 });
+  id = new URL(page.url()).searchParams.get("project");
+  body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
+  check(body?.source?.kind === "push" && body.name === "Shop", "typing replaces the default name; push creates a push project", body);
+  await page.getByRole("heading", { name: "Push your repository" }).waitFor();
+  await page.getByRole("button", { name: "Show the push command" }).click();
+  check(await shows(page.getByText(/git push https:\/\/x:tok_123@artifacts\.example/)), "the overview shows the push command");
+
+  await page.goto(`${BASE}/projects?new=empty`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Empty project" }).waitFor();
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/overview\?project=new-project-/, { timeout: 8000 });
+  check(await shows(page.getByRole("heading", { name: "Main has no files yet" })), "an empty project asks for the first task");
   await ctx.close();
 }
 

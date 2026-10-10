@@ -88,6 +88,18 @@
   animation: np-spin .8s linear infinite;
 }
 @keyframes np-spin { to { transform: rotate(360deg); } }
+.np-search__act {
+  position: absolute;
+  right: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-2);
+  color: var(--ink-3);
+}
+.np-search__act:hover { background: var(--surface-1); color: var(--ink-1); }
+.np-note--top { padding: 0 var(--s-1); }
 
 .np-hint { display: flex; align-items: baseline; gap: var(--s-1); margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--caution); }
 
@@ -134,17 +146,6 @@
   font-weight: 500;
   color: var(--ink-3);
 }
-.np-group__act {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin: -4px 0 -4px auto;
-  border-radius: var(--r-2);
-  color: var(--ink-3);
-}
-.np-group__act:hover { background: var(--surface-2); color: var(--ink-1); }
-
 .np-opt {
   position: relative;
   display: flex;
@@ -432,7 +433,7 @@
   .np-in { margin-left: 0; height: 44px; }
   .np-opt { min-height: 52px; }
   .np-back { min-height: 44px; }
-  .np-group__act { width: 44px; height: 44px; }
+  .np-search__act { width: 40px; height: 40px; right: 4px; }
   .np-chip { height: 44px; border-radius: 22px; padding: 0 var(--s-4); }
   .np-provider { height: 48px; }
   .np-select__toggle { width: 40px; height: 40px; right: 2px; }

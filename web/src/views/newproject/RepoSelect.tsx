@@ -11,7 +11,7 @@ import type { MeWithInstall } from "../../state/account";
 import { githubConnectUrl, mergeRepos, useDelayedFlag, useRepoSearch } from "../../state/github";
 import { GithubMark } from "./marks";
 import { rankRepos } from "./match";
-import { RepoRow } from "./SourceList";
+import { RepoRow } from "./RepoRow";
 import "./newproject.css";
 
 type Opt = { key: string; kind: "repo"; repo: GithubRepo } | { key: string; kind: "typed"; repo: string } | { key: string; kind: "connect" } | { key: string; kind: "install"; url: string };
@@ -198,7 +198,7 @@ export function RepoSelect({ id, value, onChange, me, returnTo, disabled, descri
           <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
         </button>
       </div>
-      <div id={listId} role="listbox" aria-label="Your GitHub repositories" className="np-select__pop" hidden={!open}>
+      <div className="np-select__pop" hidden={!open}>
         {open && skeleton && (
           <div className="np-opt np-opt--skeleton" aria-hidden="true">
             <span className="np-skel np-skel--icon" />
@@ -207,8 +207,10 @@ export function RepoSelect({ id, value, onChange, me, returnTo, disabled, descri
             </span>
           </div>
         )}
-        {open &&
-          options.map((o, i) => (
+        {/* The listbox holds options only; the notes below it are plain text. */}
+        <div id={listId} role="listbox" aria-label="Your GitHub repositories">
+          {open &&
+            options.map((o, i) => (
             <div
               key={o.key}
               id={optId(o.key)}
@@ -251,6 +253,7 @@ export function RepoSelect({ id, value, onChange, me, returnTo, disabled, descri
               )}
             </div>
           ))}
+        </div>
         {open && search.error && !search.base && <div className="np-note">gitring could not load your repositories. {search.error.message}</div>}
         {open && connected && search.base && !repos.length && !typed && <div className="np-note">No repository matches. Type owner/name.</div>}
       </div>
