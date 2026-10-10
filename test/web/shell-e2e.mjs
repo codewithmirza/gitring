@@ -221,10 +221,10 @@ for (const [w, h] of [
 
   await page.getByRole("button", { name: "Change the goal" }).click();
   const amend = page.getByRole("form", { name: "Change the goal" });
-  await amend.locator("textarea").fill("Add a search to the shop. Match titles and authors.");
+  await amend.locator("textarea").fill("Add a search to the app. Match titles and tags.");
   await amend.getByRole("button", { name: "Save as version 2" }).click();
   await page.getByText("Goal changed (version 2)").waitFor({ timeout: 4000 });
-  ok(await page.getByText("Match titles and authors").first().isVisible(), "the goal changes in place");
+  ok(await page.getByText("Match titles and tags").first().isVisible(), "the goal changes in place");
 
   await lane.getByRole("button", { name: /Show the diff/ }).click();
   await lane.locator(".b-diff__file").first().waitFor({ timeout: 4000 });

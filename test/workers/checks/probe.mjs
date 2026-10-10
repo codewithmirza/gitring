@@ -5,6 +5,9 @@
 const base = (process.argv[2] ?? "http://localhost:8790").replace(/\/$/, "");
 let failures = 0;
 
+// tests/greet.test.js of the greeter registers this many tests (GREETER_TEST_COUNT in test/checks/greeter.ts).
+const GREETER_TESTS = 4;
+
 function check(label, condition, detail = "") {
   console.log(`${condition ? "ok  " : "FAIL"}  ${label}${condition || !detail ? "" : `\n      ${detail}`}`);
   if (!condition) failures += 1;
@@ -20,38 +23,21 @@ const summary = (run) => `ok=${run.ok} passed=${run.passed} failed=${run.failed}
 const failing = (run) => run.cases.filter((c) => !c.ok);
 
 // ── check runner ──
-const seed = await checks("seed");
-check(`seed: app tests pass (${summary(seed)})`, seed.ok && seed.passed === 6 && !seed.error);
+const greeter = await checks("greeter");
+check(`greeter has no harness/test.js: gitring injects its harness, the app tests pass (${summary(greeter)})`, greeter.ok && greeter.passed === GREETER_TESTS && !greeter.error);
 
-const all = await checks("seed+checks");
-const appOk = all.cases.filter((c) => c.file === "tests/app.test.js").every((c) => c.ok);
-const intentFiles = new Set(failing(all).map((c) => c.file));
-check(`seed + 5 intent checks: app passes, every intent check fails (${summary(all)})`, !all.ok && !all.error && appOk && intentFiles.size === 5, [...intentFiles].join(", "));
-
-for (const slug of ["currency", "dark-mode", "search", "staff-picks", "api-item"]) {
-  const run = await checks(`solution:${slug}`);
-  check(`solution ${slug} alone: app + own check pass (${summary(run)})`, run.ok && run.failed === 0, JSON.stringify(failing(run)));
-}
-for (const slug of ["search", "staff-picks"]) {
-  const run = await checks(`adapted:${slug}`);
-  check(`adapted ${slug} on seed + currency: all pass (${summary(run)})`, run.ok && run.failed === 0, JSON.stringify(failing(run)));
-}
-
-const landed = await checks("landed");
-check(`landed tree (validated order): all 6 files, 39 tests pass (${summary(landed)})`, landed.ok && landed.passed === 39 && landed.testPaths.length === 6, JSON.stringify(failing(landed)));
-
-const noHarness = await checks("no-harness");
-check(`no harness/test.js: gitring injects its harness (${summary(noHarness)})`, noHarness.ok && noHarness.passed === 6);
+const ownHarness = await checks("own-harness");
+check(`greeter with its own harness/test.js: the repo's copy runs the tests (${summary(ownHarness)})`, ownHarness.ok && ownHarness.passed === GREETER_TESTS && !ownHarness.error);
 
 const brokenTest = await checks("broken-test");
 check(
   `syntax error in one test file: error + the other files still run (${summary(brokenTest)})`,
-  !brokenTest.ok && /SyntaxError/.test(brokenTest.error ?? "") && brokenTest.passed === 6 && failing(brokenTest).length === 1 && failing(brokenTest)[0].file === "tests/broken.test.js",
+  !brokenTest.ok && /SyntaxError/.test(brokenTest.error ?? "") && brokenTest.passed === GREETER_TESTS && failing(brokenTest).length === 1 && failing(brokenTest)[0].file === "tests/broken.test.js",
   JSON.stringify(brokenTest.cases),
 );
 
 const brokenSrc = await checks("broken-src");
-check(`syntax error in src/render.js: runner error at src/render.js (${summary(brokenSrc)})`, !brokenSrc.ok && /src\/render\.js/.test(brokenSrc.error ?? "") && brokenSrc.passed === 0);
+check(`syntax error in src/greet.js: runner error at src/greet.js (${summary(brokenSrc)})`, !brokenSrc.ok && /src\/greet\.js/.test(brokenSrc.error ?? "") && brokenSrc.passed === 0);
 
 const hang = await checks("hang");
 const never = hang.cases.find((c) => c.name === "never ends");
@@ -68,26 +54,23 @@ async function preview(path, init) {
   return { status: res.status, headers: res.headers, text: await res.text() };
 }
 
-const home = await preview("/preview/seed/");
-check(`preview seed: 200 HTML page with the shop name, x-gitring-preview set`, home.status === 200 && home.text.includes("Saltmarsh Books") && /text\/html/.test(home.headers.get("content-type")) && !!home.headers.get("x-gitring-preview"));
+const home = await preview("/preview/greeter/");
+check(`preview greeter: 200 HTML page with the greeting, x-gitring-preview set`, home.status === 200 && home.text.includes("Hello, world!") && /text\/html/.test(home.headers.get("content-type")) && !!home.headers.get("x-gitring-preview"));
 
-const searched = await preview("/preview/landed/?q=tide&currency=EUR");
-check(`preview landed ?q=tide&currency=EUR: filtered list in euros`, searched.text.includes("€18.39") && searched.text.includes("A Small Book of Tides") && !searched.text.includes("Knots for Small Boats"));
+const named = await preview("/preview/greeter/?name=Ada&greeting=Hey");
+check(`preview greeter ?name=Ada&greeting=Hey: the query string reaches the app`, named.text.includes("Hey, Ada!") && !named.text.includes("Hello, world!"));
 
-const dark = await preview("/preview/landed/");
-check(`preview landed: dark mode toggle, search form, currency links, staff pick badges`, dark.text.includes('class="theme-toggle"') && dark.text.includes('role="search"') && dark.text.includes("currency=INR") && (dark.text.match(/Staff pick/g) ?? []).length === 3);
+const item = await preview("/preview/greeter/api/greetings/1");
+check(`preview greeter /api/greetings/1: JSON of one greeting`, item.status === 200 && JSON.parse(item.text).greeting === "Hi");
 
-const item = await preview("/preview/landed/api/products/3");
-check(`preview landed /api/products/3: JSON of book 3`, item.status === 200 && JSON.parse(item.text).id === 3);
+const missing = await preview("/preview/greeter/api/greetings/99");
+check(`preview greeter /api/greetings/99: 404 JSON`, missing.status === 404 && typeof JSON.parse(missing.text).error === "string");
 
-const missing = await preview("/preview/landed/api/products/99");
-check(`preview landed /api/products/99: 404 JSON`, missing.status === 404 && typeof JSON.parse(missing.text).error === "string");
-
-const bare = await preview("/preview/landed?currency=INR");
-check(`bare prefix redirects to the prefix with a slash`, bare.status === 302 && bare.headers.get("location") === "/preview/landed/?currency=INR", `${bare.status} ${bare.headers.get("location")}`);
+const bare = await preview("/preview/greeter?greeting=Hi");
+check(`bare prefix redirects to the prefix with a slash`, bare.status === 302 && bare.headers.get("location") === "/preview/greeter/?greeting=Hi", `${bare.status} ${bare.headers.get("location")}`);
 
 const thrown = await preview("/preview/app-throws/");
-check(`app that throws: friendly 500 page, message escaped`, thrown.status === 500 && thrown.text.includes("The preview did not start.") && thrown.text.includes("The &lt;shop&gt; is closed &amp; locked"), thrown.text.slice(0, 300));
+check(`app that throws: friendly 500 page, message escaped`, thrown.status === 500 && thrown.text.includes("The preview did not start.") && thrown.text.includes("The &lt;greeter&gt; is closed &amp; locked"), thrown.text.slice(0, 300));
 
 const syntax = await preview("/preview/app-syntax/");
 check(`app with a syntax error: friendly 500 page with the SyntaxError`, syntax.status === 500 && /SyntaxError/.test(syntax.text), syntax.text.slice(0, 300));

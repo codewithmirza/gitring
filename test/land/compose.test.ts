@@ -55,7 +55,7 @@ const RENDER = [
   'import { formatPrice } from "./products.js";',
   "",
   "export function header() {",
-  "  return `<header><h1>Bookshop</h1></header>`;",
+  "  return `<header><h1>Catalog</h1></header>`;",
   "}",
   "",
   "export function renderItem(p) {",
@@ -120,8 +120,8 @@ describe("compose", () => {
   it("conflict: both sides edit the same header line", async () => {
     const { snap, io } = store();
     const base = snap({ "src/render.js": RENDER });
-    const main = snap({ "src/render.js": sub(RENDER, "<h1>Bookshop</h1>", '<h1>Bookshop</h1><button id="theme">Dark</button>') });
-    const attempt = snap({ "src/render.js": sub(RENDER, "<h1>Bookshop</h1>", '<h1>Bookshop</h1><input type="search">') });
+    const main = snap({ "src/render.js": sub(RENDER, "<h1>Catalog</h1>", '<h1>Catalog</h1><button id="theme">Dark</button>') });
+    const attempt = snap({ "src/render.js": sub(RENDER, "<h1>Catalog</h1>", '<h1>Catalog</h1><input type="search">') });
     const out = await compose({ base, main, attempt, ...io });
     expect(out).toMatchObject({ method: "merge", clean: false, changes: [], touched: ["src/render.js"] });
     expect(out.conflicts).toEqual([{ path: "src/render.js", reason: "both-modified", detail: "1 conflict region at base lines 4." }]);
@@ -130,7 +130,7 @@ describe("compose", () => {
   it("identical results on both sides need no change", async () => {
     const { snap, io } = store();
     const base = snap({ "src/render.js": RENDER, "src/styles.js": STYLES, "old.txt": "x\n" });
-    const same = sub(RENDER, "Bookshop", "Book shop");
+    const same = sub(RENDER, "Catalog", "Product catalog");
     const main = snap({ "src/render.js": same, "src/styles.js": STYLES + "/* main */\n" });
     const attempt = snap({ "src/render.js": same, "src/styles.js": STYLES });
     const out = await compose({ base, main, attempt, ...io });
@@ -214,7 +214,7 @@ describe("compose", () => {
   it("never mutates its inputs", async () => {
     const { snap, io } = store();
     const base = snap({ "src/render.js": RENDER, "src/products.js": PRODUCTS });
-    const main = snap({ "src/render.js": sub(RENDER, "Bookshop", "Books"), "src/products.js": PRODUCTS });
+    const main = snap({ "src/render.js": sub(RENDER, "Catalog", "Products"), "src/products.js": PRODUCTS });
     const attempt = snap({ "src/render.js": sub(RENDER, "p.title", "p.title.toUpperCase()"), "src/new.js": "x\n" });
     const copy = (s: Snapshot) => JSON.stringify([...s.entries()]);
     const before = [copy(base), copy(main), copy(attempt)];

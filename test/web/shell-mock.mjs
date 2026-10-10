@@ -77,7 +77,7 @@ function reset() {
     baseSha: "a1b2c3d4e5",
     baseTree: "t1",
     status,
-    course: course(["Add a search field to the header", "Filter the books by title"], ["src/search.js", "src/render/header.js"]),
+    course: course(["Add a search field to the header", "Filter the items by title"], ["src/search.js", "src/render/header.js"]),
     footprint: fp({ "src/search.js": { status: "A", hunks: [], additions: 40, deletions: 0 }, "src/render/header.js": { status: "M", hunks: [[10, 18]], additions: 6, deletions: 2 } }),
     corrections: [],
     lineage: { generation: 1 },
@@ -94,7 +94,7 @@ function reset() {
   const state = {
     project: {
       id: "shop",
-      name: "Saltmarsh shop",
+      name: "Catalog",
       repo: { backend: "artifacts", namespace: "gitring", name: "shop", defaultBranch: "main" },
       mainSha: "a1b2c3d4e5f6",
       mainTree: "t1",
@@ -117,7 +117,7 @@ function reset() {
     intents: [
       intent("i_search", "Add a search to the shop", "judging"),
       intent("i_dark", "Add a dark mode", "underway"),
-      intent("i_stock", "Show the stock count on each book", "open"),
+      intent("i_stock", "Show the stock count on each item", "open"),
       intent("i_footer", "Fix the footer links", "landed", { landedSha: "f00d1234" }),
     ],
     attempts: [
@@ -228,7 +228,7 @@ function reset() {
       { id: "gr_2", clientId: "cursor", clientName: "Cursor", clientUri: "https://cursor.com", scope: "projects", createdAt: NOW - 24 * 60 * min },
     ],
     projects: [
-      { id: "shop", name: "Saltmarsh shop", visibility: "private", source: { kind: "github", repo: "mirza/shop" }, createdAt: NOW - 3 * 24 * 60 * min, role: "owner" },
+      { id: "shop", name: "Catalog", visibility: "private", source: { kind: "github", repo: "mirza/shop" }, createdAt: NOW - 3 * 24 * 60 * min, role: "owner" },
       { id: "docs", name: "Docs site", visibility: "public", source: { kind: "upload", files: 40 }, createdAt: NOW - 9 * 24 * 60 * min, role: "member" },
       { id: "infra", name: "Infra scripts", visibility: "private", source: { kind: "push" }, createdAt: NOW - 20 * 24 * 60 * min, role: "owner" },
     ],
@@ -250,9 +250,9 @@ function broadcast(ev) {
 
 /** Files of main for the code route. */
 const SHOP_FILES = new Map([
-  ["README.md", "# Bookshop\n\nA small shop that sells books.\n"],
-  ["src/index.js", "export const books = [];\n"],
-  ["src/render/header.js", "export function header() {\n  return \"<h1>Bookshop</h1>\";\n}\n"],
+  ["README.md", "# Catalog\n\nA small app that lists products.\n"],
+  ["src/index.js", "export const items = [];\n"],
+  ["src/render/header.js", "export function header() {\n  return \"<h1>Catalog</h1>\";\n}\n"],
   ["src/theme.css", ":root { --ink: #111; }\n"],
 ]);
 
@@ -437,7 +437,7 @@ const server = http.createServer(async (req, res) => {
     if (diff) {
       return json(res, 200, {
         files: [
-          { path: "src/search.js", status: "A", additions: 3, deletions: 0, diff: "@@ -0,0 +1,3 @@\n+export function search(q) {\n+  return books.filter((b) => b.title.includes(q));\n+}\n" },
+          { path: "src/search.js", status: "A", additions: 3, deletions: 0, diff: "@@ -0,0 +1,3 @@\n+export function search(q) {\n+  return items.filter((i) => i.title.includes(q));\n+}\n" },
           { path: "src/render/header.js", status: "M", additions: 1, deletions: 1, diff: "@@ -10,3 +10,3 @@\n const a = 1;\n-const b = 2;\n+const b = search(q);\n const c = 3;\n" },
         ],
       });

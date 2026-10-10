@@ -59,7 +59,7 @@ export interface ProjectSettings {
   thresholds: PolicyThresholds;
   /** Outbound webhooks (Slack, CI, mirrors). */
   webhooks: WebhookTarget[];
-  /** How gitring runs checks. Absent: the gitring test harness in a Dynamic Worker (the sample). */
+  /** How gitring runs checks. Absent: the gitring test harness in a Dynamic Worker. */
   checks?: CheckSettings;
   /** Where merged code goes on GitHub. */
   github: GithubSettings;

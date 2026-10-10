@@ -12,12 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
-    "types": "wrangler types src/worker/env.generated.d.ts --include-runtime false",
-    "agent:external": "node scripts/external-agent.mjs",
-    "agent:hook": "node scripts/hook-demo.mjs",
-    "sample:build": "node sample/build.mjs",
-    "e2e:scenario": "node scripts/e2e-scenario.mjs",
-    "e2e:guard": "node scripts/e2e-guard.mjs"
+    "types": "wrangler types src/worker/env.generated.d.ts --include-runtime false"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

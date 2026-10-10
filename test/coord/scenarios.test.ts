@@ -1,5 +1,5 @@
 /**
- * End-to-end course checks on the bookshop demo: candidates → facts → (rules | Clef) → policy →
+ * End-to-end course checks on the catalog app: candidates → facts → (rules | Clef) → policy →
  * correction text. This is the pipeline the HarborMaster runs.
  */
 import { describe, expect, it } from "vitest";

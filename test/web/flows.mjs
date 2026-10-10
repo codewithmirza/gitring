@@ -25,7 +25,7 @@ await expect(page.getByText("2 decisions").isVisible(), "judgment queue shows 2 
 step("land PETREL-2");
 await page.locator(".lane").first().getByRole("button", { name: "Land attempt" }).click();
 await page.getByRole("dialog", { name: /Land PETREL-2/ }).waitFor();
-await page.getByLabel("Why this attempt?").fill("Smaller diff. The search form stays on the shelf page.");
+await page.getByLabel("Why this attempt?").fill("Smaller diff. The search form stays on the list page.");
 await page.getByRole("dialog").getByRole("button", { name: "Land attempt" }).click();
 await page.getByText(/Landed on main/).first().waitFor({ timeout: 5000 });
 await expect(page.locator(".lane.is-landed").count().then((n) => n === 1), "one lane shows landed");
@@ -39,7 +39,7 @@ await page.waitForTimeout(400);
 await expect(page.locator(".lrows > li").count().then((n) => n === 4), "logbook lists 4 landings");
 await page.locator(".lrows > li").first().locator("a").click();
 await page.waitForTimeout(800);
-await expect(page.getByText("Smaller diff. The search form stays on the shelf page.", { exact: false }).first().isVisible(), "why trail shows the decision");
+await expect(page.getByText("Smaller diff. The search form stays on the list page.", { exact: false }).first().isVisible(), "why trail shows the decision");
 await expect(page.locator(".b-diff__file").count().then((n) => n >= 3), "why trail shows the landing diff");
 
 // 3. Create and launch a new intent with the keyboard shortcut.

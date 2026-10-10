@@ -268,7 +268,7 @@ describe("other corrections", () => {
 
   it("upstream: a vessel that changes the function body keeps the new parameter list", () => {
     const d = draftUpstreamCorrection(darkModeVessel(), {
-      intentTitle: "Search books by title or author",
+      intentTitle: "Search items by title or tag",
       files: ["src/render.js"],
       signatureChanges: [{ symbol: "src/render.js#header", signature: "header(query)" }],
     });

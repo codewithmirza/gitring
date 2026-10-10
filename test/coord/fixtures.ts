@@ -1,5 +1,5 @@
 /**
- * Test fixtures: the bookshop demo app and its traffic.
+ * Test fixtures: a small Worker app that lists products, and its traffic.
  *
  *   src/index.js     fetch handler: "/" HTML page, "/api/products" JSON  → imports render.js, products.js
  *   src/render.js    layout: header() lines 8–20, renderItem(p) 22–30 (calls formatPrice(p.cents)),
@@ -50,13 +50,13 @@ export function fakeGraph(edges: [string, string][]): ImportGraph {
   };
 }
 
-export const BOOKSHOP_EDGES: [string, string][] = [
+export const APP_EDGES: [string, string][] = [
   ["src/index.js", "src/render.js"],
   ["src/index.js", "src/products.js"],
   ["src/render.js", "src/products.js"],
   ["src/render.js", "src/styles.js"],
 ];
-export const graph = fakeGraph(BOOKSHOP_EDGES);
+export const graph = fakeGraph(APP_EDGES);
 
 export function makeIntent(id: string, title: string, goal: string, extra: Partial<Intent> = {}): Intent {
   return {
@@ -111,7 +111,7 @@ export function makeAttempt(spec: VesselSpec): Attempt {
     id: spec.attemptId,
     intentId: spec.intent.id,
     agentId: spec.agent.id,
-    fork: { repo: `bookshop-${spec.attemptId}` },
+    fork: { repo: `fork-${spec.attemptId}` },
     mode: "api",
     baseSha: "a".repeat(40),
     baseTree: "b".repeat(40),
@@ -147,7 +147,7 @@ export function vessel(spec: VesselSpec): VesselView {
   });
 }
 
-/* ───────────────────────────── the demo traffic ───────────────────────────── */
+/* ───────────────────────────── the traffic ───────────────────────────── */
 
 export const intents = {
   currency: makeIntent(
@@ -158,17 +158,17 @@ export const intents = {
   staffPicks: makeIntent(
     "int_staffpicks",
     "Add staff picks",
-    "Show a staff picks section under the product list with three books and their prices.",
+    "Show a staff picks section under the product list with three items and their prices.",
   ),
   darkMode: makeIntent(
     "int_darkmode",
     "Add dark mode",
-    "Add a dark mode to the bookshop page. The page follows the color scheme of the user, and a toggle in the header switches between light and dark.",
+    "Add a dark mode to the catalog page. The page follows the color scheme of the user, and a toggle in the header switches between light and dark.",
   ),
   darkTheme: makeIntent(
     "int_darktheme",
     "Add a dark theme toggle",
-    "Let users switch the bookshop page to a dark theme with a toggle in the header. Remember the choice of the user.",
+    "Let users switch the catalog page to a dark theme with a toggle in the header. Remember the choice of the user.",
   ),
   search: makeIntent("int_search", "Add search", "Add a search box to the header that filters the product list by title."),
   apiItem: makeIntent("int_apiitem", "Add a JSON endpoint for one product", "Serve /api/products/:id as JSON from the fetch handler."),

@@ -162,7 +162,7 @@ for (const [w, h] of [
   } else {
     const tag = "code 1280px";
     await page.getByRole("tree").waitFor();
-    ok(await page.locator(".cv-static").getByText("Saltmarsh shop").count(), `${tag}: README shows under the file list`);
+    ok(await page.locator(".cv-static").getByText("Catalog").count(), `${tag}: README shows under the file list`);
     ok(await page.getByRole("heading", { name: "Where agents work" }).isVisible(), `${tag}: "Where agents work" shows`);
     let l = await log();
     ok(!count(l, /\/tree\?ref=main/), `${tag}: main's tree comes from the live state (no request)`);

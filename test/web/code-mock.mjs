@@ -41,7 +41,7 @@ const cart = Array.from({ length: 60 }, (_, i) => {
 }).join("\n") + "\n";
 
 const main = new Map([
-  ["README.md", "# Saltmarsh shop\n\nA small shop on Cloudflare Workers. Run `npm test`.\n\n```js\nimport { total } from './src/cart.js';\n```\n\n- Cart\n- **Coupons**\n"],
+  ["README.md", "# Catalog\n\nA small app on Cloudflare Workers. Run `npm test`.\n\n```js\nimport { total } from './src/cart.js';\n```\n\n- Cart\n- **Coupons**\n"],
   ["package.json", '{\n  "name": "shop",\n  "version": "1.0.0",\n  "scripts": { "test": "node --test" },\n  "private": true\n}\n'],
   ["src/cart.js", cart],
   ["src/products.js", "export function price(item) {\n  return item.cents / 100;\n}\n"],
@@ -145,7 +145,7 @@ function makeState() {
   return {
     project: {
       id: "shop",
-      name: "Saltmarsh shop",
+      name: "Catalog",
       repo: { backend: "artifacts", namespace: "gitring", name: "shop", defaultBranch: "main" },
       mainSha: MAIN,
       mainTree: "t1",
@@ -326,7 +326,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (p === "/api/projects" && req.method === "GET") {
     done(200);
-    return send(res, 200, [{ id: "shop", name: "Saltmarsh shop", visibility: "private", source: { kind: "github", repo: "robin/shop" }, createdAt: NOW - 3 * 86400000, role: "owner" }]);
+    return send(res, 200, [{ id: "shop", name: "Catalog", visibility: "private", source: { kind: "github", repo: "robin/shop" }, createdAt: NOW - 3 * 86400000, role: "owner" }]);
   }
   const m = /^\/api\/projects\/shop(\/.*)?$/.exec(p);
   if (m) {

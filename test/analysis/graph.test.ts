@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildImportGraph, emptyGraph, graphFromEdges } from "../../src/core/analysis/graph";
-import { demoFiles } from "./fixtures";
+import { appFiles } from "./fixtures";
 
-describe("buildImportGraph: demo app", () => {
-  const graph = buildImportGraph(demoFiles());
+describe("buildImportGraph: the app", () => {
+  const graph = buildImportGraph(appFiles());
 
   it("has one edge per resolved import", () => {
     expect(graph.edges).toEqual([

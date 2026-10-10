@@ -25,7 +25,7 @@ const DAY = 86_400_000;
 const REPOS = [
   { fullName: "mirza/gitring", private: true, defaultBranch: "main", description: "Many coding agents, one codebase.", language: "TypeScript", pushedAt: iso(2 * 3600_000), htmlUrl: "https://github.com/mirza/gitring", canPush: true, sizeKb: 4200 },
   { fullName: "mirza/gitring-web", private: false, defaultBranch: "main", description: "The web app of gitring.", language: "TypeScript", pushedAt: iso(DAY), htmlUrl: "https://github.com/mirza/gitring-web", canPush: true, sizeKb: 900 },
-  { fullName: "mirza/bookshop", private: false, defaultBranch: "main", description: "A small bookshop on Cloudflare Workers.", language: "JavaScript", pushedAt: iso(3 * DAY), htmlUrl: "https://github.com/mirza/bookshop", canPush: true, sizeKb: 120 },
+  { fullName: "mirza/greeter", private: false, defaultBranch: "main", description: "A small greeting app on Cloudflare Workers.", language: "JavaScript", pushedAt: iso(3 * DAY), htmlUrl: "https://github.com/mirza/greeter", canPush: true, sizeKb: 120 },
   { fullName: "mirza/ml-notes", private: true, defaultBranch: "trunk", description: "Python notebooks and tests.", language: "Python", pushedAt: iso(9 * DAY), htmlUrl: "https://github.com/mirza/ml-notes", canPush: true, sizeKb: 3100 },
   { fullName: "mirza/dotfiles", private: false, defaultBranch: "master", description: "Shell configuration.", language: "Shell", pushedAt: iso(40 * DAY), htmlUrl: "https://github.com/mirza/dotfiles", canPush: true, sizeKb: 60 },
   { fullName: "acme/payments", private: true, defaultBranch: "main", description: "Payment service.", language: "Go", pushedAt: iso(5 * 3600_000), htmlUrl: "https://github.com/acme/payments", canPush: false, sizeKb: 8800 },
@@ -145,7 +145,7 @@ function guessFor(repo) {
   if (r.fullName === "acme/locked") return { status: 403, body: { error: "An owner of acme must approve the GitHub app.", installUrl: INSTALL_URL } };
   if (r.fullName === "mirza/broken") return { status: 502, body: { error: "GitHub did not answer. Try again." } };
   const python = r.language === "Python";
-  const worker = r.fullName === "mirza/bookshop";
+  const worker = r.fullName === "mirza/greeter";
   return {
     status: 200,
     body: {

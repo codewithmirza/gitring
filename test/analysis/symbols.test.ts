@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { analyzeModule, extractSymbols, isAnalyzable, resolveImport, stripTypeScript } from "../../src/core/analysis/symbols";
 import { ALL_FILES, INDEX_JS, PRODUCTS_JS, RENDER_JS } from "./fixtures";
 
-describe("extractSymbols: demo app", () => {
+describe("extractSymbols: the app", () => {
   it("reads products.js: data, formatPrice(cents), findProduct(id)", () => {
     const s = extractSymbols("src/products.js", PRODUCTS_JS);
     expect(s.parseError).toBeUndefined();
@@ -278,7 +278,7 @@ export function parse(input: string | number): number {
 
 export const priceOf = <T extends Product>(p: T, opts?: PriceOptions): string => formatPrice(p.cents, opts?.currency);
 
-export abstract class Shelf<T> implements Iterable<T> {
+export abstract class Stack<T> implements Iterable<T> {
   private readonly items: T[] = [];
   static count = 0;
   constructor(public name: string, protected limit?: number) {}
@@ -302,7 +302,7 @@ const lookup = new Map<string, Product>();
   it("reads declarations, params without types, imports and exports", () => {
     const s = extractSymbols("src/price.ts", TS);
     expect(s.parseError).toBeUndefined();
-    expect(Object.keys(s.decls).sort()).toEqual(["Shelf", "Tone", "config", "formatPrice", "lookup", "parse", "priceOf"]);
+    expect(Object.keys(s.decls).sort()).toEqual(["Stack", "Tone", "config", "formatPrice", "lookup", "parse", "priceOf"]);
     expect(s.decls.formatPrice).toEqual({
       name: "formatPrice",
       kind: "function",
@@ -313,7 +313,7 @@ const lookup = new Map<string, Product>();
     });
     expect(s.decls.parse).toMatchObject({ params: ["input"], range: [16, 18] });
     expect(s.decls.priceOf).toMatchObject({ kind: "const", params: ["p", "opts"], exported: true });
-    expect(s.decls.Shelf).toMatchObject({ kind: "class", exported: true });
+    expect(s.decls.Stack).toMatchObject({ kind: "class", exported: true });
     // type-only imports stay imports: they are dependencies for the import graph
     expect(s.imports).toEqual([
       { from: "./types", names: [{ imported: "Product", local: "Product" }] },
@@ -325,7 +325,7 @@ const lookup = new Map<string, Product>();
         ],
       },
     ]);
-    expect(Object.keys(s.exports).sort()).toEqual(["Shelf", "formatPrice", "parse", "priceOf"]);
+    expect(Object.keys(s.exports).sort()).toEqual(["Stack", "formatPrice", "parse", "priceOf"]);
     expect(s.references.formatPrice).toEqual(["toMoney"]);
     expect(s.references.priceOf).toEqual(["formatPrice"]);
     expect(s.references.config).toEqual(["Tone", "Tone.Info"]);

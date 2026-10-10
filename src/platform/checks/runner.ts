@@ -48,10 +48,10 @@ const MAX_TEXT = 2_000;
 
 /**
  * The test harness that gitring injects when a tree has no harness/test.js.
- * Same source as demo/repo/harness/test.js (a test keeps the two equal).
+ * A tree that has its own harness/test.js keeps it.
  */
-export const HARNESS_SOURCE = String.raw`// Saltmarsh Books test harness: a tiny test API with no dependencies.
-// It runs in Node (tests/run.mjs) and in workerd (the gitring check runner).
+export const HARNESS_SOURCE = String.raw`// gitring test harness: a tiny test API with no dependencies.
+// It runs in workerd (the gitring check runner) and in Node.
 //
 //   test(name, fn)    Register a test. fn can be async.
 //   expect(actual)    toBe, toEqual, toContain, toMatch, toBeTruthy, toBeFalsy, toThrow, and .not

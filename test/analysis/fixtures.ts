@@ -1,5 +1,5 @@
 /**
- * Fixtures: the gitring demo app (a tiny bookshop Worker in plain ES modules, no build step).
+ * Fixtures: a tiny Worker app that lists products (plain ES modules, no build step).
  * Line numbers matter in the tests; keep these texts stable.
  */
 
@@ -17,9 +17,9 @@ export const toCRLF = (text: string): string => text.replace(/\n/g, "\r\n");
 // 7  export function formatPrice(cents) {
 // 11 export function findProduct(id) {
 export const PRODUCTS_JS = `export const PRODUCTS = [
-  { id: "atlas", title: "The Atlas of Remote Islands", author: "Judith Schalansky", cents: 2400 },
-  { id: "lighthouse", title: "To the Lighthouse", author: "Virginia Woolf", cents: 1500 },
-  { id: "sea", title: "The Sea, the Sea", author: "Iris Murdoch", cents: 1800 },
+  { id: "kettle", title: "Enamel kettle", cents: 2400 },
+  { id: "lantern", title: "Brass lantern", cents: 1500 },
+  { id: "mug", title: "Stoneware mug", cents: 1800 },
 ];
 
 export function formatPrice(cents) {
@@ -47,10 +47,10 @@ function renderItem(p) {
 
 export function renderPage({ products, query }) {
   const items = products.map(renderItem).join("\\n");
-  const heading = query ? \`Results for "\${escapeHtml(query)}"\` : "All books";
+  const heading = query ? \`Results for "\${escapeHtml(query)}"\` : "All products";
   return \`<!doctype html>
 <html>
-  <head><title>Bookshop</title><style>\${STYLES}</style></head>
+  <head><title>Catalog</title><style>\${STYLES}</style></head>
   <body>
     <h1>\${heading}</h1>
     <ul>\${items}</ul>
@@ -98,13 +98,13 @@ test("renders a heading", () => {
 });
 `;
 
-export const README_MD = `# Bookshop
+export const README_MD = `# Catalog
 
 A tiny Worker app.
 `;
 
-/** The demo tree: path → text. */
-export function demoFiles(): Map<string, string> {
+/** The app tree: path → text. */
+export function appFiles(): Map<string, string> {
   return new Map([
     ["src/products.js", PRODUCTS_JS],
     ["src/render.js", RENDER_JS],
@@ -116,4 +116,4 @@ export function demoFiles(): Map<string, string> {
   ]);
 }
 
-export const ALL_FILES = new Set(demoFiles().keys());
+export const ALL_FILES = new Set(appFiles().keys());

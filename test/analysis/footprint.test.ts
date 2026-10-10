@@ -14,7 +14,7 @@ const PRODUCTS_CURRENCY = replaceOnce(
   `export function formatPrice(cents, currency = "USD") {\n  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);`,
 );
 
-describe("computeFootprint: demo scenarios", () => {
+describe("computeFootprint: scenarios", () => {
   it("(a) flags an interface change of formatPrice", () => {
     const f = fp([{ path: "src/products.js", base: PRODUCTS_JS, head: PRODUCTS_CURRENCY }]);
     expect(f.files).toEqual({ "src/products.js": { status: "M", hunks: [[7, 8]], additions: 2, deletions: 2 } });
@@ -96,14 +96,14 @@ describe("computeFootprint: demo scenarios", () => {
   it("(e) gives base hunks for edits at the top, middle and end, insertions and deletions", () => {
     let head = replaceOnce(PRODUCTS_JS, "export const PRODUCTS = [", "export const PRODUCTS = Object.freeze([");
     head = replaceOnce(head, "];\n", "]);\n\nconst PAGE_SIZE = 20;\n");
-    head = replaceOnce(head, `  { id: "sea", title: "The Sea, the Sea", author: "Iris Murdoch", cents: 1800 },\n`, "");
+    head = replaceOnce(head, `  { id: "mug", title: "Stoneware mug", cents: 1800 },\n`, "");
     head = replaceOnce(head, "  return PRODUCTS.find((p) => p.id === id);\n}\n", "  return PRODUCTS.find((p) => p.id === id) ?? null;\n}\n");
     const f = fp([{ path: "src/products.js", base: PRODUCTS_JS, head }]);
     expect(f.files["src/products.js"]).toEqual({
       status: "M",
       hunks: [
         [1, 1], // top: replaced
-        [4, 5], // middle: "sea" deleted, "];" replaced by "]);"
+        [4, 5], // middle: "mug" deleted, "];" replaced by "]);"
         [6, 6], // pure insertion after base line 6 (the blank line keeps its place): PAGE_SIZE + a blank line
         [12, 12], // end: replaced
       ],
@@ -116,7 +116,7 @@ describe("computeFootprint: demo scenarios", () => {
   });
 
   it("(e) reports a pure deletion in the middle of a declaration", () => {
-    const head = replaceOnce(PRODUCTS_JS, `  { id: "lighthouse", title: "To the Lighthouse", author: "Virginia Woolf", cents: 1500 },\n`, "");
+    const head = replaceOnce(PRODUCTS_JS, `  { id: "lantern", title: "Brass lantern", cents: 1500 },\n`, "");
     const f = fp([{ path: "src/products.js", base: PRODUCTS_JS, head }]);
     expect(f.files["src/products.js"]).toEqual({ status: "M", hunks: [[3, 3]], additions: 0, deletions: 1 });
     expect(f.symbols).toEqual({ ...none, modified: ["src/products.js#PRODUCTS"] });
@@ -182,7 +182,7 @@ describe("computeFootprint: references", () => {
   });
 
   it("records where each referenced symbol is used (a local call stays in its own file)", () => {
-    const head = replaceOnce(RENDER_JS, "</ul>", "</ul>\n  <p>${products.length} books</p>");
+    const head = replaceOnce(RENDER_JS, "</ul>", "</ul>\n  <p>${products.length} products</p>");
     const f = fp([{ path: "src/render.js", base: RENDER_JS, head }]);
     expect(f.symbols.referenced).toContain("src/render.js#renderItem");
     for (const k of f.symbols.referenced) expect(f.symbols.referencedIn?.[k]).toEqual(["src/render.js"]);
@@ -217,7 +217,7 @@ describe("computeFootprint: files", () => {
   });
 
   it("gives non-analyzable files a file touch and no symbols", () => {
-    const f = fp([{ path: "README.md", base: "# Bookshop\n", head: "# Bookshop\n\nfunction notCode() {}\n" }]);
+    const f = fp([{ path: "README.md", base: "# Catalog\n", head: "# Catalog\n\nfunction notCode() {}\n" }]);
     expect(f.files["README.md"]).toEqual({ status: "M", hunks: [[1, 1]], additions: 2, deletions: 0 });
     expect(f.symbols).toEqual(none);
   });
@@ -244,7 +244,7 @@ describe("computeFootprint: files", () => {
 
   it("is deterministic across input order", () => {
     const a: FileVersions = { path: "src/products.js", base: PRODUCTS_JS, head: PRODUCTS_CURRENCY };
-    const b: FileVersions = { path: "src/render.js", base: RENDER_JS, head: RENDER_JS.replace("All books", "Every book") };
+    const b: FileVersions = { path: "src/render.js", base: RENDER_JS, head: RENDER_JS.replace("All products", "Every product") };
     expect(JSON.stringify(fp([a, b]))).toBe(JSON.stringify(fp([b, a])));
   });
 });

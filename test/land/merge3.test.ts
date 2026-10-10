@@ -6,7 +6,7 @@ const RENDER = [
   'import { css } from "./styles.js";', // 2
   "", // 3
   "export function header() {", // 4
-  '  return `<header><h1>Bookshop</h1></header>`;', // 5
+  '  return `<header><h1>Catalog</h1></header>`;', // 5
   "}", // 6
   "", // 7
   "export function renderItem(p) {", // 8
@@ -31,14 +31,14 @@ const insertAfter = (text: string, n: number, ...add: string[]) => {
 
 describe("merge3 (ours = main, theirs = attempt)", () => {
   it("is clean when only one side changed, or both made the same change", () => {
-    const main = replaceLine(RENDER, 5, "  return `<header><h1>Bookshop</h1><nav></nav></header>`;");
+    const main = replaceLine(RENDER, 5, "  return `<header><h1>Catalog</h1><nav></nav></header>`;");
     expect(merge3(RENDER, main, RENDER)).toEqual({ clean: true, content: main, conflicts: [] });
     expect(merge3(RENDER, RENDER, main)).toEqual({ clean: true, content: main, conflicts: [] });
     expect(merge3(RENDER, main, main)).toEqual({ clean: true, content: main, conflicts: [] });
   });
 
   it("merges changes in different regions of the file", () => {
-    const main = replaceLine(RENDER, 5, "  return `<header class=dark><h1>Bookshop</h1></header>`;");
+    const main = replaceLine(RENDER, 5, "  return `<header class=dark><h1>Catalog</h1></header>`;");
     const attempt = replaceLine(RENDER, 9, "  return `<li>${p.title} ${formatPrice(p.cents, currency)}</li>`;");
     const out = merge3(RENDER, main, attempt);
     expect(out.clean).toBe(true);
@@ -58,24 +58,24 @@ describe("merge3 (ours = main, theirs = attempt)", () => {
   });
 
   it("reports a conflict with git-style markers and the base range", () => {
-    const main = replaceLine(RENDER, 5, "  return `<header class=dark><h1>Bookshop</h1></header>`;");
-    const attempt = replaceLine(RENDER, 5, "  return `<header><h1>Bookshop</h1><input type=search></header>`;");
+    const main = replaceLine(RENDER, 5, "  return `<header class=dark><h1>Catalog</h1></header>`;");
+    const attempt = replaceLine(RENDER, 5, "  return `<header><h1>Catalog</h1><input type=search></header>`;");
     const out = merge3(RENDER, main, attempt);
     expect(out.clean).toBe(false);
     expect(out.conflicts).toEqual([
       {
         baseRange: [5, 5],
-        ours: ["  return `<header class=dark><h1>Bookshop</h1></header>`;"],
-        theirs: ["  return `<header><h1>Bookshop</h1><input type=search></header>`;"],
+        ours: ["  return `<header class=dark><h1>Catalog</h1></header>`;"],
+        theirs: ["  return `<header><h1>Catalog</h1><input type=search></header>`;"],
       },
     ]);
     const lines = out.content.split("\n");
     const at = lines.indexOf(MARKER_OURS);
     expect(lines.slice(at, at + 5)).toEqual([
       "<<<<<<< main",
-      "  return `<header class=dark><h1>Bookshop</h1></header>`;",
+      "  return `<header class=dark><h1>Catalog</h1></header>`;",
       "=======",
-      "  return `<header><h1>Bookshop</h1><input type=search></header>`;",
+      "  return `<header><h1>Catalog</h1><input type=search></header>`;",
       ">>>>>>> attempt",
     ]);
     expect(lines[at - 1]).toBe("export function header() {");

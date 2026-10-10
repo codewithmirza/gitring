@@ -65,16 +65,13 @@ The local server keeps its own storage (`.wrangler/state`), so sign-in on localh
 - **GitHub**: the button makes a second app, `git-ring localhost`, with localhost callback URLs and no webhook (GitHub cannot reach your computer).
 - **Google**: add the origin `http://localhost:5173` and the redirect URI `http://localhost:5173/auth/google/callback` to your OAuth client, then paste its ID and secret.
 
-Scripts and MCP clients do not need sign-in: use `GITRING_URL=http://localhost:5173 GITRING_KEY=<GITRING_KEY from .dev.vars>`. On a computer behind a proxy, add `NODE_USE_ENV_PROXY=1`.
+MCP clients and your own scripts do not need sign-in: send the `GITRING_KEY` from `.dev.vars` as `Authorization: Bearer <key>` to `http://localhost:5173`.
 
 Tests:
 
 ```bash
 npm test               # unit tests (Vitest)
 npm run typecheck
-GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run e2e:scenario   # built-in AI agents on a new test project (the bookshop in sample/)
-GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run e2e:guard      # rebase and the stale-write guard
-GITRING_URL=https://<your-worker> GITRING_KEY=gk_… node scripts/redo-agent.mjs   # two outside agents, one line, redo by the same agent
 ```
 
 ## Deploy to Cloudflare
@@ -126,7 +123,7 @@ gitring merges work only when its tests pass: once on the work copy, and again o
 | Runner | Where | Used by |
 |---|---|---|
 | container | A Cloudflare container per work copy (Node.js 24 on Debian). gitring copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Every project (the default) |
-| worker | A Dynamic Worker runs `tests/*.test.js` with gitring's small test harness. No dependencies, no network. | Small JavaScript projects without dependencies (the scripts' test bookshop) |
+| worker | A Dynamic Worker runs `tests/*.test.js` with gitring's small test harness. No dependencies, no network. | Small JavaScript projects without dependencies |
 
 Owners change the runner, the commands and the time limit in Settings → Tests. Test containers have no direct Internet access: a Worker entrypoint lets requests to package registries (npm, PyPI, Go proxy, Debian, crates.io, RubyGems, Maven, Gradle, JSR) pass and refuses all other hosts.
 
@@ -167,16 +164,12 @@ Two modes:
 - **api mode** (default): the agent reads and writes files through gitring. gitring holds the working tree, rebases it when main moves, and merges writes made from an old copy.
 - **git mode**: `gitring_declare` returns a remote for the work copy and a token (6 hours). The agent clones, commits and pushes with plain git. gitring reads the latest push at `gitring_check` and `gitring_submit`; `gitring_log` with the head SHA gets a conflict check at once. When the agent merges main into its work (`gitring_update`, then `git pull`), gitring moves the base of the work copy to that main.
 
-Try an outside agent end to end: `GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run agent:external` (git mode, on a new private test project made from the bookshop in sample/). Add `-- --mode api` for api mode, or `-- --no-log` to skip `gitring_log`.
-
 **Claude Code hook**: change requests can also arrive in the middle of a task, after each file edit. Add this to `.claude/settings.json` in the agent's repository, and give your repository folder as `workdir` in `gitring_declare`:
 
 ```json
 { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command",
   "command": "curl -s -X POST -H 'content-type: application/json' -H \"Authorization: Bearer $GITRING_KEY\" --data-binary @- 'https://<your-worker>/hooks/claude/<project-id>'" } ] } ] } }
 ```
-
-See it work: `GITRING_URL=https://<your-worker> GITRING_KEY=gk_… npm run agent:hook`.
 
 ## Redo when work cannot merge
 
@@ -242,8 +235,7 @@ src/platform    Artifacts backend, GitHub (client, repository lists, imports, sy
                 Dynamic Worker tests and previews
 src/worker      routes, sign-in, OAuth server for MCP clients, MCP server, GitHub routes, rate limits, hooks
 web/src         React web app and its design system (/design opens it in local development)
-sample          a test bookshop with five tasks and their tests (the scripts upload it as a project)
-scripts         outside agents (MCP, git or api mode), redo test, Claude Code hook demo, e2e runs
+scripts         palette.py prints the colors of the day, dusk and night themes with their contrast ratios
 test            unit tests (Vitest); test/support holds an Artifacts test double
 ```
 

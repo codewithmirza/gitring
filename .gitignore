@@ -10,7 +10,6 @@ coverage/
 .vite/
 src/worker/env.generated.d.ts
 tmp/
-test/fixtures/sample-probe.json
 
 # Local-only files. Never commit.
 private/

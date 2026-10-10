@@ -11,16 +11,16 @@ describe("splitTask", () => {
   });
 
   it("takes the title from the first line of a pasted text", () => {
-    expect(splitTask("Add a search\nMatch titles and authors.\nShow 20 results.", "")).toEqual({
+    expect(splitTask("Add a search\nMatch titles and tags.\nShow 20 results.", "")).toEqual({
       title: "Add a search",
-      goal: "Match titles and authors.\nShow 20 results.",
+      goal: "Match titles and tags.\nShow 20 results.",
     });
   });
 
   it("takes the title from the first sentence of the goal when there is no title", () => {
-    expect(splitTask("", "Show the stock count on each book. Read it from products.js.")).toEqual({
-      title: "Show the stock count on each book.",
-      goal: "Show the stock count on each book. Read it from products.js.",
+    expect(splitTask("", "Show the stock count on each item. Read it from products.js.")).toEqual({
+      title: "Show the stock count on each item.",
+      goal: "Show the stock count on each item. Read it from products.js.",
     });
   });
 

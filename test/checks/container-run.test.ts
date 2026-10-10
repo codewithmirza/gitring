@@ -52,7 +52,7 @@ describe("rankForBrief", () => {
       ["src/search/index.ts", "x"],
       ["docs/intro.md", "x"],
     ]);
-    const intent = { title: "Search by author", goal: "Find books by author in the search box." } as Intent;
+    const intent = { title: "Search by name", goal: "Find items by name in the search box." } as Intent;
     const order = rankForBrief(files, intent, new Set(["src/cart/checkout.ts"])).map(([p]) => p);
     expect(order[0]).toBe("src/cart/checkout.ts");
     expect(order.indexOf("package.json")).toBeLessThan(order.indexOf("docs/intro.md"));

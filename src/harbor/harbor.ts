@@ -175,7 +175,6 @@ export class HarborMaster extends DurableObject<Env> {
 
   /**
    * Create the canonical repo in Artifacts from a source:
-   *   sample  the sample codebase and its intents (one seed commit)
    *   empty   a README in one commit
    *   git     Artifacts imports a public https remote (history kept); main = the remote's default branch
    *   push    an empty repo; the owner pushes to it with plain git (gitring adopts the pushed branch)
