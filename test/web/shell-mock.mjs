@@ -248,6 +248,14 @@ function broadcast(ev) {
   for (const ws of sockets) if (ws.readyState === 1) ws.send(msg);
 }
 
+/** Files of main for the code route. */
+const SHOP_FILES = new Map([
+  ["README.md", "# Bookshop\n\nA small shop that sells books.\n"],
+  ["src/index.js", "export const books = [];\n"],
+  ["src/render/header.js", "export function header() {\n  return \"<h1>Bookshop</h1>\";\n}\n"],
+  ["src/theme.css", ":root { --ink: #111; }\n"],
+]);
+
 function json(res, status, body, headers = {}) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...headers });
   res.end(status === 204 ? undefined : JSON.stringify(body));
@@ -436,9 +444,27 @@ const server = http.createServer(async (req, res) => {
     }
     if (rest === "/settings") return json(res, 200, st.project.settings);
     if (rest === "/github") return json(res, 200, st.project.github);
+    // The code view (its own checks live in code-e2e.mjs): a small tree of main, so the route renders.
+    if (rest === "/tree") {
+      return json(res, 200, {
+        ref: url.searchParams.get("ref") ?? "main",
+        sha: st.project.mainSha,
+        files: [...SHOP_FILES.keys()].map((path) => ({ path, size: SHOP_FILES.get(path).length })),
+      });
+    }
+    if (rest === "/file") {
+      const text = SHOP_FILES.get(url.searchParams.get("path") ?? "");
+      if (text === undefined) return json(res, 404, { error: "No such file." });
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      return res.end(text);
+    }
+    console.log("mock 404", method, p + url.search);
     return json(res, 404, { error: "Not in the mock." });
   }
-  if (p.startsWith("/api/")) return json(res, 404, { error: "Not in the mock." });
+  if (p.startsWith("/api/")) {
+    console.log("mock 404", method, p + url.search);
+    return json(res, 404, { error: "Not in the mock." });
+  }
   if (p.startsWith("/preview/")) {
     res.writeHead(200, { "content-type": "text/html" });
     return res.end(`<!doctype html><title>Preview</title><body style="font:14px system-ui;padding:16px">Preview of ${p.split("/")[3] ?? "work copy"}</body>`);

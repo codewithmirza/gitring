@@ -102,7 +102,8 @@ for (const [w, h] of [
   await rows.first().waitFor();
   ok((await rows.count()) === 2, `${tag}: two merges`);
   const days = await page.locator(".lday__label").allTextContents();
-  ok(days.includes("Today") && days.includes("Yesterday"), `${tag}: rows grouped by day`, days.join(","));
+  // The merges are 1 h and 26 h old: two day groups, the newer one today or (right after midnight) yesterday.
+  ok(days.length === 2 && days[0] !== days[1] && /^(Today|Yesterday)$/.test(days[0]), `${tag}: rows grouped by day`, days.join(","));
   const fileHref = await page.locator(".lrow__file").first().getAttribute("href");
   ok(fileHref?.startsWith(`/code/${MAIN}/`) && fileHref.includes("project=shop"), `${tag}: rows link to their files in the code view`, fileHref);
   await noOverflow(page, tag);
