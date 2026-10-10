@@ -1928,8 +1928,8 @@ export class HarborMaster extends DurableObject<Env> {
       });
       const again = moved?.reapply.map((r) => r.path) ?? [];
       steps =
-        `gitring moved your work copy onto the new main.` +
-        (again.length ? ` Read ${again.join(", ")} again, and make your change on the new text.` : "") +
+        (moved ? `gitring moved your work copy onto the new main.` : `Your work copy is on main ${main.sha.slice(0, 7)}.`) +
+        (again.length ? ` Read ${again.join(", ")} again, and make your change on the new text.` : " Fix the code so that the tests pass.") +
         ` Then call gitring_check and gitring_submit again.`;
     } else {
       steps = `Call gitring_update to get the new main. Merge it into your work, fix the conflicts, run the tests, push, then call gitring_submit again.`;
@@ -2029,9 +2029,23 @@ export class HarborMaster extends DurableObject<Env> {
     const agent = this.agents.get(a.agentId);
     const policy = this.requireProject().settings.redo;
     // Work of an outside agent goes back to that agent first (redo policy), at most 3 times.
-    if (agent && agent.kind !== "builtin" && policy !== "builtin" && (a.returns ?? 0) < 3) {
-      await this.returnToAgent(a, reason, policy);
-      return;
+    if (agent && agent.kind !== "builtin" && policy !== "builtin") {
+      if ((a.returns ?? 0) < 3) {
+        await this.returnToAgent(a, reason, policy);
+        return;
+      }
+      if (policy === "agent-only") {
+        // Three tries by the agent failed, and no built-in agent may take the task: a person decides.
+        a.status = "stale";
+        this.putAttempt(a);
+        const it = this.intents.get(a.intentId)!;
+        it.status = "judging";
+        this.putIntent(it);
+        this.stats.escalations += 1;
+        this.persistStats();
+        this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `The work of ${this.callsign(a.id)} did not merge after 3 tries. A person must decide on "${it.title}".` });
+        return;
+      }
     }
     a.status = "stale";
     this.putAttempt(a);

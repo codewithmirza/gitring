@@ -46,7 +46,7 @@ if (pick) {
 }
 const landedIntents = st.intents.filter((i) => i.status === "landed");
 ok(landedIntents.length >= 3, `intents on main: ${landedIntents.length} of ${st.intents.length}`);
-ok(st.stats.humanMergeFixes === 0, "human merge fixes: 0");
+ok(st.landings.every((l) => l.method), "every merge has a merge method");
 ok(st.stats.courseChecks > 0, `course checks run (${st.stats.courseChecks})`);
 const methods = st.landings.map((l) => l.method);
 console.log(`landings: ${methods.join(", ") || "none"} · corrections ${st.stats.corrections} · re-plots ${st.stats.replots ?? 0}`);

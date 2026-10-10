@@ -43,7 +43,7 @@ const res = await client.callTool({
 });
 const text = res.content?.[0]?.text ?? "";
 const json = JSON.parse(text.slice(text.lastIndexOf("\n\n") + 2));
-console.log(`Claude Code declares: ${json.callsign} on "${json.intent.title}" (${json.attemptId}). Course check: ${json.clearance.verdict}.`);
+console.log(`Claude Code sends a plan: ${json.callsign} on "${json.intent.title}" (${json.attemptId}). Conflict check: ${json.clearance.verdict}.`);
 await client.close();
 
 async function hook(event) {

@@ -50,7 +50,7 @@ async function call(name, args) {
     /* text-only answer */
   }
   const headline = (cut >= 0 ? text.slice(0, cut) : text).split("\n").filter(Boolean);
-  if (text.startsWith("GITRING COURSE CORRECTION")) {
+  if (text.startsWith("GITRING CHANGE REQUEST")) {
     for (const l of headline.slice(1, -1)) say("gitring", `correction ${l.replace(/^- /, "")}`.slice(0, 260));
   }
   return { text, json, headline: headline[headline.length - 1] ?? "" };
@@ -132,7 +132,7 @@ for (let i = 0; i < 40; i++) {
   const a = st.attempts.find((x) => x.id === d.attemptId);
   const landing = st.landings.find((l) => l.attemptId === d.attemptId);
   if (landing) {
-    say("gitring", `lands "${title}" by ${landing.method} as ${landing.mainAfter.slice(0, 7)}. Checks ${landing.checks.passed}/${landing.checks.passed + landing.checks.failed}. Human merge fixes: 0.`);
+    say("gitring", `merges "${title}" by ${landing.method} as ${landing.mainAfter.slice(0, 7)}. Tests ${landing.checks.passed}/${landing.checks.passed + landing.checks.failed}.`);
     break;
   }
   if (a && ["ready", "stale", "rederiving", "failed"].includes(a.status) && i > 3) {
