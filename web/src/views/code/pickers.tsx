@@ -290,6 +290,113 @@ export function FileFinder({
   );
 }
 
+/* ───────────── a short action menu ───────────── */
+
+export interface MenuAction {
+  key: string;
+  label: string;
+  /** Key hint shown at the end of the row. */
+  keys?: string;
+  onSelect?: () => void;
+  href?: string;
+  external?: boolean;
+  disabled?: boolean;
+}
+
+/** "More": a menu that grows from its button. ↑/↓ move, Enter chooses, Escape closes (WAI-ARIA menu button). */
+export function MoreMenu({ label = "More", actions, className }: { label?: string; actions: MenuAction[]; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement | null>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  const items = () => [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? [])];
+  const close = (focusBack = true) => {
+    setOpen(false);
+    if (focusBack) requestAnimationFrame(() => btn.current?.focus());
+  };
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const list = items();
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    let next = -1;
+    if (e.key === "ArrowDown") next = (i + 1) % list.length;
+    else if (e.key === "ArrowUp") next = (i - 1 + list.length) % list.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = list.length - 1;
+    else if (e.key === "Tab") {
+      close(false);
+      return;
+    } else return;
+    e.preventDefault();
+    list[next]?.focus();
+  };
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={["cv-tool", className].filter(Boolean).join(" ")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" && !open) {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        {label}
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" className="cv-tool__caret">
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </button>
+      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} label={`${label} actions`} align="end">
+        <div className="cv-menu" role="menu" aria-label={`${label} actions`} ref={menu} onKeyDown={onKey}>
+          {actions.map((a, i) => {
+            const body = (
+              <>
+                <span className="cv-menu__label">{a.label}</span>
+                {a.keys && <kbd className="b-kbd">{a.keys}</kbd>}
+              </>
+            );
+            const common = {
+              role: "menuitem",
+              tabIndex: -1,
+              className: "cv-menu__item",
+              "aria-disabled": a.disabled || undefined,
+              ...(i === actions.findIndex((x) => !x.disabled) ? { "data-autofocus": true } : {}),
+            } as const;
+            return a.href ? (
+              <a
+                key={a.key}
+                {...common}
+                href={a.disabled ? undefined : a.href}
+                target={a.external ? "_blank" : undefined}
+                rel={a.external ? "noopener noreferrer" : undefined}
+                onClick={() => close(false)}
+              >
+                {body}
+              </a>
+            ) : (
+              <button
+                key={a.key}
+                type="button"
+                {...common}
+                onClick={() => {
+                  if (a.disabled) return;
+                  close();
+                  a.onSelect?.();
+                }}
+              >
+                {body}
+              </button>
+            );
+          })}
+        </div>
+      </Popover>
+    </>
+  );
+}
+
 /* ───────────── go to line ───────────── */
 
 /** "12", "10-20", "L10-L20", "10:20" → a range within 1…max. */

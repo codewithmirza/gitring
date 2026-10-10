@@ -166,8 +166,9 @@ for (const [w, h] of [
     let l = await log();
     ok(!count(l, /\/tree\?ref=main/), `${tag}: main's tree comes from the live state (no request)`);
 
-    // Open a file from the tree with the keyboard.
-    await page.getByRole("treeitem", { name: /^src, folder/ }).click();
+    // Open a file from the tree (folders where agents work are open already).
+    const src = page.getByRole("treeitem", { name: /^src, folder/ });
+    ok((await src.getAttribute("aria-expanded")) === "true", `${tag}: folders where agents work start open`);
     await page.getByRole("treeitem", { name: /^cart\.js/ }).click();
     await page.waitForURL(/\/code\/main\/src\/cart\.js/);
     await page.locator(".cv-line").first().waitFor();
@@ -209,6 +210,19 @@ for (const [w, h] of [
     await lineBox.press("Enter");
     await page.waitForURL(/#L45$/);
     ok(true, `${tag}: l goes to a line`);
+
+    // More: the rare actions, in a menu that grows from its button.
+    const more = page.getByRole("button", { name: "More" });
+    await more.click();
+    const menu = page.getByRole("menu", { name: "More actions" });
+    await menu.waitFor();
+    ok((await focused(page)).role === "menuitem", `${tag}: the menu puts the focus on its first item`);
+    await page.keyboard.press("ArrowDown");
+    ok(/Copy path/.test((await focused(page)).label), `${tag}: ↓ moves in the menu`);
+    await page.keyboard.press("Enter");
+    await page.getByText("Path copied").waitFor();
+    ok(!(await menu.count()) && (await more.getAttribute("aria-expanded")) === "false", `${tag}: choosing an item closes the menu`);
+    ok((await page.evaluate(() => navigator.clipboard.readText()).catch(() => "")) === "src/cart.js", `${tag}: Copy path copies the path`);
 
     // y copies a link with the commit.
     await page.locator("body").press("y");

@@ -44,7 +44,7 @@ import { CodeLink } from "./code/CodeLink";
 import { resolveRef, useAttemptDiff, useDelayedFlag, useFileText, useHarbor, useTree, type RefInfo } from "./code/data";
 import { languageOf } from "./code/highlight";
 import { absoluteUrl, codeUrl, goCode, useCodeLocation, type CodeLocation } from "./code/links";
-import { FileFinder, LinePicker, RefPicker, type RefOption } from "./code/pickers";
+import { FileFinder, LinePicker, MoreMenu, RefPicker, type RefOption } from "./code/pickers";
 import { allFolders, ancestors, baseName, buildTree, flattenTree, foldersToShow, looksBinary } from "./code/tree";
 import type { DiffFile } from "../state/api";
 import "./code/code.css";
@@ -457,7 +457,9 @@ export function CodeView() {
 
   const [filter, setFilter] = useState("");
   const dFilter = useDeferredValue(filter);
-  const rows = useMemo(() => flattenTree(root, expanded, { filter: dFilter, only: null }), [root, expanded, dFilter]);
+  // The diff lists only changed files: all their folders show open.
+  const diffOnly = useMemo(() => (diffMode ? new Set(files.map((f) => f.path)) : null), [diffMode, files]);
+  const rows = useMemo(() => flattenTree(root, expanded, { filter: dFilter, only: diffOnly }), [root, expanded, dFilter, diffOnly]);
 
   const onToggle = useCallback((dir: string, open?: boolean) => {
     setExpanded((s) => {
@@ -1092,10 +1094,29 @@ export function CodeView() {
                 })}
               </nav>
               <span className="cv-filehead__meta">
-                {text?.status === "ready" && <span>{plural(lineCount, "line")}</span>}
+                {text?.status === "ready" && (
+                  <button ref={lineBtn} type="button" className="cv-metabtn" aria-haspopup="dialog" aria-expanded={lineOpen} onClick={() => setLineOpen(!lineOpen)} title="Go to a line (l)">
+                    {plural(lineCount, "line")}
+                  </button>
+                )}
                 {fileSize ? <span>{kb(fileSize)}</span> : null}
                 <span>{langLabel(undefined, path)}</span>
+                <span className="cv-copied" role="status" aria-live="polite">
+                  {copied === "path" ? "Path copied" : copied === "file" ? "File copied" : copied === "link" ? "Link copied" : copied?.endsWith(":fail") ? "Copying did not work. Select the text and copy it." : ""}
+                </span>
               </span>
+              <LinePicker
+                anchor={lineBtn.current}
+                open={lineOpen}
+                onClose={() => setLineOpen(false)}
+                max={Math.max(1, lineCount)}
+                onGo={(r) => {
+                  setLineOpen(false);
+                  selectLines(r);
+                  setFlash(r);
+                  jumpTo(r[0]);
+                }}
+              />
               <span className="cv-filehead__acts">
                 <button
                   type="button"
@@ -1107,40 +1128,23 @@ export function CodeView() {
                 >
                   Wrap
                 </button>
-                <button ref={lineBtn} type="button" className="cv-tool" aria-haspopup="dialog" aria-expanded={lineOpen} disabled={text?.status !== "ready"} onClick={() => setLineOpen(!lineOpen)} title="Go to a line (l)">
-                  Line
+                <button type="button" className="cv-tool" onClick={copyPermalink} title="Copy a link with the commit (y)">
+                  Copy link
                 </button>
-                <LinePicker
-                  anchor={lineBtn.current}
-                  open={lineOpen}
-                  onClose={() => setLineOpen(false)}
-                  max={Math.max(1, lineCount)}
-                  onGo={(r) => {
-                    setLineOpen(false);
-                    selectLines(r);
-                    setFlash(r);
-                    jumpTo(r[0]);
-                  }}
-                />
-                <button type="button" className="cv-tool" onClick={() => copy("path", path)} aria-live="polite">
-                  {copied === "path" ? "Copied" : "Copy path"}
-                </button>
-                <button type="button" className="cv-tool" disabled={text?.status !== "ready"} onClick={() => text?.status === "ready" && copy("file", text.data)} aria-live="polite">
-                  {copied === "file" ? "Copied" : "Copy file"}
-                </button>
-                <button type="button" className="cv-tool" onClick={copyPermalink} title="Copy a link with the commit (y)" aria-live="polite">
-                  {copied === "link" ? "Copied" : copied === "link:fail" ? "Select the address to copy" : "Copy link"}
-                </button>
-                {rawHref && (
-                  <a className="cv-tool" href={rawHref} target="_blank" rel="noopener">
-                    Raw
-                  </a>
-                )}
-                {githubHref && (
+                {githubHref && !narrow && (
                   <a className="cv-tool" href={githubHref} target="_blank" rel="noopener noreferrer">
                     Open on GitHub
                   </a>
                 )}
+                <MoreMenu
+                  actions={[
+                    { key: "line", label: "Go to line", keys: "l", disabled: text?.status !== "ready", onSelect: () => setLineOpen(true) },
+                    { key: "path", label: "Copy path", onSelect: () => copy("path", path) },
+                    { key: "file", label: "Copy file", disabled: text?.status !== "ready", onSelect: () => text?.status === "ready" && copy("file", text.data) },
+                    ...(rawHref ? [{ key: "raw", label: "Open raw text", href: rawHref, external: true }] : []),
+                    ...(githubHref && narrow ? [{ key: "gh", label: "Open on GitHub", href: githubHref, external: true }] : []),
+                  ]}
+                />
               </span>
             </header>
           )}
@@ -1235,33 +1239,35 @@ function RefOverview({
     .filter(([, fm]) => fm.work.length || fm.keepOut.length)
     .sort((a, b) => b[1].work.length - a[1].work.length || a[0].localeCompare(b[0]))
     .slice(0, 12);
+  const mergeFiles = commitChanged && (
+    <ul className="cv-over__files" role="list">
+      {Object.entries(commitChanged).map(([p, t]) => (
+        <li key={p}>
+          <span className={`cv-own cv-own--${t.status}`} aria-hidden="true">
+            {t.status}
+          </span>
+          {t.status === "D" ? (
+            <span className="voice-agent">{p}</span>
+          ) : (
+            <CodeLink to={{ ref: info.kind === "commit" ? info.ref : "main", path: p }} className="voice-agent">
+              {p}
+            </CodeLink>
+          )}
+          <span className="vh">{t.status === "A" ? ", added" : t.status === "D" ? ", deleted" : ", changed"}</span>
+        </li>
+      ))}
+    </ul>
+  );
   return (
     <div className="cv-scroll">
       <article className="cv-over">
-        {info.kind === "commit" || commitChanged ? (
+        {info.kind === "commit" ? (
           <>
             <p className="cv-over__eyebrow">
-              <Icon name="commit" size={12} /> {info.kind === "commit" ? `Commit ${shortSha(info.sha)}` : "main"}
+              <Icon name="commit" size={12} /> Commit {shortSha(info.sha)} · an earlier state of main
             </p>
             <h2 className="cv-over__title">{mergeTitle ? <>Main after “<span className="voice-human">{mergeTitle}</span>”</> : "Files of this commit"}</h2>
-            {commitChanged && (
-              <ul className="cv-over__files" role="list">
-                {Object.entries(commitChanged).map(([p, t]) => (
-                  <li key={p}>
-                    <span className={`cv-own cv-own--${t.status}`} aria-hidden="true">
-                      {t.status}
-                    </span>
-                    {t.status === "D" ? (
-                      <span className="voice-agent">{p}</span>
-                    ) : (
-                      <CodeLink to={{ ref: info.kind === "commit" ? info.ref : "main", path: p }} className="voice-agent">
-                        {p}
-                      </CodeLink>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {mergeFiles}
           </>
         ) : (
           <>
@@ -1279,12 +1285,23 @@ function RefOverview({
                     <CodeLink to={{ ref: "main", path: p }} className="voice-agent">
                       {p}
                     </CodeLink>
-                    <span className="cv-over__who">{fm.work.map((w) => w.wc.callsign).join(", ")}</span>
+                    <span className="cv-over__who">
+                      {fm.work.map((w) => `${w.wc.callsign}${w.touch ? "" : " (plan)"}`).join(", ")}
+                      {fm.keepOut.length ? ` · ${plural(fm.keepOut.length, "change request")}` : ""}
+                    </span>
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="cv-note">No agent works on main now. Choose a file, or press t to find one.</p>
+            )}
+            {mergeTitle && commitChanged && (
+              <>
+                <h2 className="cv-over__h">
+                  Last merge: <span className="voice-human">{mergeTitle}</span>
+                </h2>
+                {mergeFiles}
+              </>
             )}
           </>
         )}

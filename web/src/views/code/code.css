@@ -289,11 +289,39 @@
 .cv-crumbs__file { font-weight: 600; color: var(--ink-1); overflow-wrap: anywhere; }
 .cv-crumbs__sep { padding: 0 2px; color: var(--ink-3); }
 .cv-filehead__meta { display: inline-flex; gap: var(--s-3); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
-.cv-filehead__acts { display: inline-flex; flex-wrap: wrap; gap: var(--s-1); margin-left: auto; }
-.cv-tool { min-height: 28px; padding: 0 8px; font-size: var(--t-xs); color: var(--ink-2); }
-.cv-tool[aria-pressed="true"] { color: var(--ink-1); background: var(--surface-2); border-color: var(--ink-3); }
+.cv-filehead__acts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; }
+/* File actions are quiet: no border until hover; the toggled one shows its state. */
+.cv-tool { min-height: 28px; padding: 0 8px; border-color: transparent; background: transparent; font-size: var(--t-xs); color: var(--ink-2); }
+.cv-tool:hover { color: var(--ink-1); }
+.cv-tool[aria-pressed="true"] { color: var(--ink-1); background: var(--surface-2); border-color: var(--line-strong); }
+.cv-tool[aria-expanded="true"] { color: var(--ink-1); background: var(--surface-2); }
 .cv-tool:disabled,
 .cv-tool[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.cv-tool__caret path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.cv-metabtn { min-height: 24px; padding: 0 2px; border-radius: var(--r-1); color: var(--ink-3); font-size: var(--t-xs); text-decoration: underline dotted; text-underline-offset: 3px; }
+.cv-metabtn:hover { color: var(--ink-1); text-decoration-style: solid; }
+.cv-copied { color: var(--clear); font-weight: 500; }
+.cv-copied:empty { display: none; }
+.cv-menu { display: grid; gap: 1px; min-width: 200px; padding: 2px; }
+.cv-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 32px;
+  padding: 4px var(--s-3);
+  border-radius: var(--r-2);
+  color: var(--ink-1);
+  font-size: var(--t-sm);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.cv-menu__item:hover,
+.cv-menu__item:focus { background: var(--surface-2); }
+.cv-menu__item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.cv-menu__item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.cv-menu__label { flex: 1; }
 
 .cv-ctx {
   display: grid;
@@ -306,9 +334,19 @@
   color: var(--ink-2);
 }
 .cv-ctx__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.cv-ctx__item { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 24px; }
+.cv-ctx__item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 8px;
+  min-height: 24px;
+  padding: 2px 0;
+}
+.cv-ctx__item > .cv-dot,
+.cv-ctx__item > .cv-keep,
+.cv-ctx__item > .b-icon { align-self: center; justify-self: center; }
 .cv-ctx__item strong { color: var(--ink-1); font-weight: 600; }
-.cv-ctx__acts { display: inline-flex; gap: var(--s-3); margin-left: auto; }
+.cv-ctx__acts { display: inline-flex; flex-wrap: wrap; gap: var(--s-3); justify-self: end; }
 .cv-ctx__act { font-size: var(--t-xs); }
 .cv-ctx__more { justify-self: start; }
 .cv-linkbtn { min-height: 24px; color: var(--accent); font-size: inherit; text-decoration: underline; text-decoration-color: color-mix(in oklch, currentColor 38%, transparent); text-underline-offset: 3px; }
@@ -559,7 +597,8 @@
 /* ───────────── touch, phones, motion ───────────── */
 @media (pointer: coarse) {
   .cv-iconbtn, .cv-refbtn, .cv-findbtn, .cv-tool, .cv-seg__opt { min-height: 44px; }
-  .cv-opt { min-height: 44px; }
+  .cv-opt, .cv-menu__item { min-height: 44px; }
+  .cv-metabtn { min-height: 44px; }
   .cv-linkbtn, .cv-crumbs__dir { min-height: 44px; }
 }
 @media (max-width: 760px) {
@@ -573,7 +612,8 @@
   .cv-filehead { padding: var(--s-2) var(--s-3); }
   .cv-filehead__acts { margin-left: 0; }
   .cv-ctx { padding: var(--s-2) var(--s-3); }
-  .cv-ctx__acts { margin-left: 0; }
+  .cv-ctx__item { grid-template-columns: 12px minmax(0, 1fr); }
+  .cv-ctx__acts { grid-column: 2; justify-self: start; }
   .cv-lines { font-size: 12px; }
   .cv-over { padding: var(--s-5) var(--s-4) var(--s-10); }
   .cv-alldiffs { padding: var(--s-3) var(--s-3) var(--s-10); }
