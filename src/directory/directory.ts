@@ -18,6 +18,7 @@ import { PROJECT_ID } from "../core/accounts";
 import type { ProjectSource } from "../core/types";
 import { rand } from "../harbor/ids";
 import { githubAppJwt, randomToken, seal, sha256B64url, unseal } from "./crypto";
+import { OAuthStore, type JsonObject, type PendingRequest, type TokenAnswer } from "./oauth";
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, avatar TEXT, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL)`,
@@ -122,6 +123,8 @@ export type GithubRepoAccess =
 
 export class Directory extends DurableObject<Env> {
   private readonly sql: SqlStorage;
+  /** OAuth 2.1 for MCP clients (src/directory/oauth.ts). */
+  private readonly oauth: OAuthStore;
   /** Installation tokens per repository (lowercase "owner/name"). */
   private readonly repoTokens = new Map<string, { token: string; expiresAt: number; permissions: Record<string, string> }>();
 
@@ -129,6 +132,58 @@ export class Directory extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     for (const s of SCHEMA) this.sql.exec(s);
+    this.oauth = new OAuthStore({ sql: this.sql as never });
+  }
+
+  /* ════════════════════ OAuth for MCP clients ════════════════════ */
+
+  async oauthRegister(body: unknown): Promise<{ status: number; body: JsonObject }> {
+    return this.oauth.register(body);
+  }
+
+  async oauthStart(query: Record<string, string | undefined>, origin: string) {
+    return this.oauth.startRequest(query, origin);
+  }
+
+  async oauthRequest(id: string): Promise<PendingRequest | null> {
+    return this.oauth.request(id);
+  }
+
+  async oauthHasGrant(userId: string, clientId: string): Promise<boolean> {
+    return this.oauth.hasGrant(userId, clientId);
+  }
+
+  async oauthApprove(requestId: string, userId: string, origin: string): Promise<string | null> {
+    if (!this.userInfo(userId)) return null;
+    return this.oauth.approve(requestId, userId, origin);
+  }
+
+  async oauthDeny(requestId: string, origin: string): Promise<string | null> {
+    return this.oauth.deny(requestId, origin);
+  }
+
+  async oauthToken(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string): Promise<TokenAnswer> {
+    return this.oauth.token(form, basic, origin);
+  }
+
+  async oauthRevoke(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null): Promise<{ status: number; body?: Record<string, string> }> {
+    return this.oauth.revoke(form, basic);
+  }
+
+  /** The person behind an OAuth access token (MCP), or null. */
+  async oauthUser(token: string, origin: string): Promise<{ user: A.UserInfo; clientId: string; expiresAt: number } | null> {
+    const hit = await this.oauth.accessUser(token, origin);
+    if (!hit) return null;
+    const user = this.userInfo(hit.userId);
+    return user ? { user, clientId: hit.clientId, expiresAt: hit.expiresAt } : null;
+  }
+
+  async oauthGrants(userId: string): Promise<A.OAuthGrantInfo[]> {
+    return this.oauth.grants(userId);
+  }
+
+  async oauthRevokeGrant(userId: string, grantId: string): Promise<boolean> {
+    return this.oauth.revokeUserGrant(userId, grantId);
   }
 
   /* ════════════════════ sealed config ════════════════════ */

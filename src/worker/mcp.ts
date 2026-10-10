@@ -284,5 +284,6 @@ export function createMcp(env: Env, who: Principal) {
   return createMcpHandler(() => createServer(env, who), {
     route: "/mcp",
     allowedOriginHostnames: "*",
+    corsOptions: { exposeHeaders: "mcp-session-id, WWW-Authenticate" },
   });
 }

@@ -15,7 +15,9 @@ const SESSION_MAX_AGE_S = 30 * 24 * 3600;
 
 export interface Principal {
   user: A.UserInfo | null;
-  via: "session" | "key" | "operator" | null;
+  via: "session" | "key" | "operator" | "oauth" | null;
+  /** OAuth only: the MCP client that acts for the person. */
+  clientId?: string;
   /** The session token (cookie), for logout. */
   session?: string;
   /** A Bearer token was sent but it is not valid. */
@@ -35,21 +37,77 @@ export function readCookie(req: Request, name: string): string | null {
   return null;
 }
 
-export async function resolvePrincipal(env: Env, req: Request): Promise<Principal> {
+/*
+ * A short cache of token lookups in this isolate. An agent sends many MCP calls with the same token and a
+ * page sends many API calls with the same cookie; without the cache, each call is one more round trip to
+ * the Directory. A removed key, session or app grant stops working everywhere within PRINCIPAL_TTL_MS
+ * (at once in this isolate: see forgetPrincipal).
+ */
+const PRINCIPAL_TTL_MS = 30_000;
+const PRINCIPAL_MAX = 5000;
+const principals = new Map<string, { until: number; p: Principal }>();
+
+function cached(key: string): Principal | null {
+  const hit = principals.get(key);
+  if (!hit) return null;
+  if (Date.now() >= hit.until) {
+    principals.delete(key);
+    return null;
+  }
+  return hit.p;
+}
+
+/** Cache a lookup for PRINCIPAL_TTL_MS, or until `expiresAt` (a token that expires sooner). */
+function remember(key: string, p: Principal, expiresAt = Infinity): Principal {
+  if (principals.size >= PRINCIPAL_MAX) {
+    // Drop the oldest tenth (Map keeps insertion order).
+    let n = Math.ceil(PRINCIPAL_MAX / 10);
+    for (const k of principals.keys()) {
+      principals.delete(k);
+      if (--n <= 0) break;
+    }
+  }
+  principals.set(key, { until: Math.min(Date.now() + PRINCIPAL_TTL_MS, expiresAt), p });
+  return p;
+}
+
+/** Forget cached lookups: a session at sign-out, or everything of a person (keys, grants) after a change. */
+export function forgetPrincipal(opts: { session?: string; userId?: string; all?: boolean }): void {
+  if (opts.all) return principals.clear();
+  if (opts.session) principals.delete(`s:${opts.session}`);
+  if (opts.userId) for (const [k, v] of principals) if (v.p.user?.id === opts.userId) principals.delete(k);
+}
+
+/**
+ * Who sends this request. `oauth: true` (the MCP endpoint only) also accepts OAuth access tokens: they
+ * are for the resource <origin>/mcp (RFC 8707), not for the rest of the API.
+ */
+export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: boolean } = {}): Promise<Principal> {
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "");
   if (m) {
     const token = m[1].trim();
     if (env.GITRING_KEY && sameString(token, env.GITRING_KEY)) return { user: null, via: "operator" };
     if (token.startsWith("gk_")) {
+      const hit = cached(`k:${token}`);
+      if (hit) return hit;
       const user = await directory(env).keyUser(token);
-      if (user) return { user, via: "key" };
+      if (user) return remember(`k:${token}`, { user, via: "key" });
+    }
+    if (opts.oauth && token.startsWith("goa_")) {
+      const origin = new URL(req.url).origin;
+      const hit = cached(`o:${origin}:${token}`);
+      if (hit) return hit;
+      const found = await directory(env).oauthUser(token, origin);
+      if (found) return remember(`o:${origin}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId }, found.expiresAt);
     }
     return { user: null, via: null, badKey: true };
   }
   const cookie = readCookie(req, SESSION_COOKIE);
   if (cookie) {
+    const hit = cached(`s:${cookie}`);
+    if (hit) return hit;
     const user = await directory(env).sessionUser(cookie);
-    if (user) return { user, via: "session", session: cookie };
+    if (user) return remember(`s:${cookie}`, { user, via: "session", session: cookie });
   }
   return { user: null, via: null };
 }
@@ -80,7 +138,7 @@ function setupAllowed(c: C, token?: string | null): boolean {
 
 /* ───────────── pages (setup and sign-in errors) ───────────── */
 
-function page(title: string, body: string, status = 200): Response {
+export function page(title: string, body: string, status = 200, extraHeaders: Record<string, string> = {}): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · gitring</title><meta name="robots" content="noindex">
 <style>
@@ -96,7 +154,17 @@ input{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1px soli
 code{font-family:ui-monospace,monospace;font-size:14px;background:color-mix(in srgb,var(--line) 40%,transparent);padding:1px 5px;border-radius:4px;word-break:break-all}
 ol{padding-left:20px}li{margin:4px 0}
 </style></head><body><main>${body}</main></body></html>`;
-  return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "same-origin" } });
+  return new Response(html, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-frame-options": "DENY",
+      "content-security-policy": "frame-ancestors 'none'",
+      "referrer-policy": "same-origin",
+      ...extraHeaders,
+    },
+  });
 }
 
 function appReadyPage(slug: string): Response {
@@ -140,7 +208,7 @@ function browserConversionPage(code: string, state: string): Response {
   );
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
 }
 
@@ -270,7 +338,10 @@ export function authRoutes(app: Hono<HonoEnv>): void {
 
   app.post("/auth/logout", async (c) => {
     const p = c.get("principal");
-    if (p.session) await directory(c.env).endSession(p.session);
+    if (p.session) {
+      forgetPrincipal({ session: p.session });
+      await directory(c.env).endSession(p.session);
+    }
     return new Response(null, { status: 204, headers: { "set-cookie": sessionCookie("", 0) } });
   });
 

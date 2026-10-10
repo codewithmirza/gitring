@@ -18,7 +18,8 @@ import { servePreview } from "../platform/checks/preview";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
-import { actorOf, authRoutes, directory, resolvePrincipal, type Principal } from "./auth";
+import { actorOf, authRoutes, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
+import { mcpChallenge, oauthRoutes } from "./oauth";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
@@ -122,6 +123,7 @@ app.get("/api/health", async (c) =>
 );
 
 authRoutes(app);
+oauthRoutes(app);
 
 /* ───────────── API keys ───────────── */
 
@@ -138,7 +140,9 @@ app.post("/api/keys", async (c) => {
 });
 
 app.delete("/api/keys/:id", async (c) => {
-  const ok = await directory(c.env).revokeKey(needUser(c).id, c.req.param("id"));
+  const user = needUser(c);
+  const ok = await directory(c.env).revokeKey(user.id, c.req.param("id"));
+  if (ok) forgetPrincipal({ userId: user.id });
   return ok ? c.body(null, 204) : c.json({ error: "Unknown key." }, 404);
 });
 
@@ -635,12 +639,26 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
       if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null })(request, env, ctx);
-      const p = await resolvePrincipal(env, request);
+      const p = await resolvePrincipal(env, request, { oauth: true });
       if (!p.user && p.via !== "operator") {
-        return new Response(JSON.stringify({ error: "Send a personal API key: Authorization: Bearer gk_… (create one in gitring → Connect)." }), {
-          status: 401,
-          headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="gitring"' },
-        });
+        // MCP authorization: the challenge points the client to the protected resource metadata, and the
+        // client signs the person in with OAuth. Scripts and hooks send a personal API key instead.
+        return new Response(
+          JSON.stringify({
+            error: p.badKey ? "invalid_token" : "unauthorized",
+            error_description: "Connect with OAuth (your MCP client does it when you add gitring), or send a personal API key: Authorization: Bearer gk_… (gitring → Connect).",
+          }),
+          {
+            status: 401,
+            headers: {
+              "content-type": "application/json",
+              "www-authenticate": mcpChallenge(url.origin, Boolean(p.badKey)),
+              "access-control-allow-origin": "*",
+              "access-control-expose-headers": "WWW-Authenticate, mcp-session-id",
+              "cache-control": "no-store",
+            },
+          },
+        );
       }
       return createMcp(env, p)(request, env, ctx);
     }
@@ -651,6 +669,8 @@ export default {
       path.startsWith("/preview/") ||
       path.startsWith("/hooks/") ||
       path.startsWith("/auth/") ||
+      path.startsWith("/oauth/") ||
+      path.startsWith("/.well-known/") ||
       path === "/setup" ||
       path.startsWith("/setup/") ||
       path === "/privacy" ||
