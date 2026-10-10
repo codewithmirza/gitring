@@ -46,6 +46,8 @@ export async function loadMe(): Promise<MeWithInstall> {
 
 export async function loadProjects(): Promise<ProjectInfo[]> {
   const list = await call<ProjectInfo[]>("GET", "/api/projects");
+  // A cut answer reads as {}: keep the list that the store has (every view reads it as an array).
+  if (!Array.isArray(list)) throw new AccountError(0, "gitring did not send the project list. Try again.");
   store.setProjects(list);
   return list;
 }

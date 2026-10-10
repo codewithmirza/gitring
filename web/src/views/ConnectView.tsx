@@ -1,11 +1,22 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Button, CodeBlock, Field, Input, Tabs, TabPanel, toast } from "../design/components";
-import type { ApiKeyInfo } from "../../../src/core/accounts";
-import { createKey, listKeys, revokeKey, useMe } from "../state/account";
-import { setUi } from "../app/ui";
+/**
+ * "/connect": add gitring to an agent as an MCP connector (OAuth: no key to copy), or use an API key,
+ * then git mode, the Claude Code hook, inputs from other apps and events out.
+ *
+ * Requests: the connect info once per project; the OAuth apps every 5 s only while this tab is visible
+ * and no app is connected yet (agents that work on the project arrive over the live socket).
+ */
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Button, CodeBlock, Field, Input, Tabs, TabPanel } from "../design/components";
+import type { AgentInfo } from "../../../src/core/types";
+import type { OAuthGrantInfo } from "../../../src/core/accounts";
+import { createKey, useMe } from "../state/account";
+import { isAbort, listGrants, RequestError } from "../state/github";
+import { openSignIn } from "../app/ui";
 import { Link } from "../app/router";
+import { useNow } from "../app/useNow";
 import { Icon, Mark, type IconName } from "../design/icons";
 import { harborOrNull, onHarbor, defaultConnectInfo, type ConnectInfo } from "../state/api";
+import { ago } from "../state/format";
 import { useStore } from "../state/store";
 import "./connect.css";
 import "./projects.css";
@@ -28,6 +39,7 @@ interface Stage {
 /** Only real parts: the inputs this deployment has, the outputs this project uses. */
 function flowParts(info: ConnectInfo, githubOn: boolean) {
   const inputs: FlowNode[] = [
+    { label: "Claude", via: "MCP connector", icon: "compass", group: "agent" },
     { label: "Claude Code", via: "MCP", icon: "compass", group: "agent" },
     { label: "Codex", via: "MCP", icon: "compass", group: "agent" },
     { label: "Cursor", via: "MCP", icon: "compass", group: "agent" },
@@ -139,10 +151,10 @@ function FlowDiagram({ vertical, info, githubOn }: { vertical: boolean; info: Co
       {/* change requests return to the agents: the only magenta in the diagram */}
       <path
         className="flow__return"
-        d={`M${bx + 2} ${corrY} C${bx - 70} ${corrY}, ${nodeW + 80} ${inY(2) + nodeH - 4}, ${nodeW + 4} ${inY(2) + nodeH - 8}`}
+        d={`M${bx + 2} ${corrY} C${bx - 70} ${corrY}, ${nodeW + 80} ${inY(3) + nodeH - 4}, ${nodeW + 4} ${inY(3) + nodeH - 8}`}
         markerEnd="url(#flow-arrow-magenta)"
       />
-      <text x={(nodeW + bx) / 2} y={inY(3) + 6} className="flow__returnlabel" textAnchor="middle">
+      <text x={(nodeW + bx) / 2} y={inY(4) + 6} className="flow__returnlabel" textAnchor="middle">
         <tspan x={(nodeW + bx) / 2}>change requests</tspan>
         <tspan x={(nodeW + bx) / 2} dy="14">
           back to agents
@@ -220,7 +232,7 @@ function flowText(info: ConnectInfo, githubOn: boolean): string {
     .filter(Boolean)
     .join("; ");
   return (
-    `In: Claude Code, Codex and Cursor connect through MCP; any git client pushes into a work copy; ${apps}. ` +
+    `In: Claude connects as a connector, and Claude Code, Codex and Cursor connect through MCP; any git client pushes into a work copy; ${apps}. ` +
     "gitring runs a conflict check on each plan and each change, sends change requests back to the agents, rebases active work onto each new main, " +
     "merges the work (fast-forward, 3-way merge or redo) and writes the history as a git note on each merge commit. " +
     `Out: main in Cloudflare Artifacts${githubOn ? ", GitHub (a pull request or main)" : ""}, webhooks (JSON or Slack messages) and live updates for the web pages.`
@@ -238,7 +250,28 @@ function useNarrow(q = "(max-width: 760px)") {
   return m;
 }
 
-/* ───────────── page ───────────── */
+/** A choice that this browser remembers (the agent client, the key tab). */
+function useRemembered<T extends string>(key: string, fallback: T, allowed: readonly T[]): [T, (v: T) => void] {
+  const [v, setV] = useState<T>(() => {
+    try {
+      const s = localStorage.getItem(key) as T | null;
+      return s && allowed.includes(s) ? s : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  const set = (n: T) => {
+    setV(n);
+    try {
+      localStorage.setItem(key, n);
+    } catch {
+      /* storage off: the choice holds for this visit */
+    }
+  };
+  return [v, set];
+}
+
+/* ───────────── page parts ───────────── */
 
 function Section({ id, title, children, aside }: { id: string; title: string; children: ReactNode; aside: ReactNode }) {
   return (
@@ -254,98 +287,385 @@ function Section({ id, title, children, aside }: { id: string; title: string; ch
   );
 }
 
-type Client = "claude" | "codex" | "cursor" | "other";
+/** One line to copy: a read-only field (focus selects it) and a button. */
+function CopyField({ value, label, button = "Copy URL" }: { value: string; label: string; button?: string }) {
+  const id = useId();
+  const [copied, setCopied] = useState<"idle" | "ok" | "fail">("idle");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied("ok");
+    } catch {
+      setCopied("fail");
+    }
+    setTimeout(() => setCopied("idle"), 1800);
+  };
+  return (
+    <div className="cx-url">
+      <label className="vh" htmlFor={id}>
+        {label}
+      </label>
+      <input id={id} className="cx-url__input voice-agent" readOnly value={value} onFocus={(e) => e.currentTarget.select()} spellCheck={false} />
+      <Button variant="primary" icon={copied === "ok" ? "check" : "copy"} onClick={() => void copy()}>
+        {copied === "ok" ? "Copied" : button}
+      </Button>
+      <span className="vh" aria-live="polite">
+        {copied === "ok" ? "Copied." : copied === "fail" ? "The browser did not copy. Select the text and copy it." : ""}
+      </span>
+    </div>
+  );
+}
 
-/** Personal API keys: MCP clients, hooks and scripts send one as `Authorization: Bearer gk_…`. */
-function KeysSection() {
+type Client = "claude" | "claude-code" | "cursor" | "codex" | "other";
+const CLIENTS: { id: Client; label: string }[] = [
+  { id: "claude", label: "Claude" },
+  { id: "claude-code", label: "Claude Code" },
+  { id: "cursor", label: "Cursor" },
+  { id: "codex", label: "Codex" },
+  { id: "other", label: "Other" },
+];
+const CLIENT_IDS = CLIENTS.map((c) => c.id);
+
+const CLIENT_NAMES: Record<string, string> = {
+  claude: "Claude",
+  "claude-ai": "Claude",
+  "claude.ai": "Claude",
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor",
+};
+
+function clientName(a: AgentInfo): string {
+  const c = (a.client ?? "").toLowerCase();
+  return CLIENT_NAMES[c] ?? a.client ?? a.callsign;
+}
+
+function cursorLink(url: string): string {
+  return `cursor://anysphere.cursor-deeplink/mcp/install?name=gitring&config=${encodeURIComponent(btoa(JSON.stringify({ url })))}`;
+}
+
+const NO_AGENTS: AgentInfo[] = [];
+
+/** "Waiting for an agent" until an app signs in through OAuth; then the apps and the agents that work here. */
+function LiveStatus({ client }: { client: Client }) {
   const me = useMe();
-  const [keys, setKeys] = useState<ApiKeyInfo[] | null>(null);
-  const [name, setName] = useState("my laptop");
-  const [fresh, setFresh] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const signedIn = Boolean(me?.user);
+  const agents = useStore((s) => s.state?.agents ?? NO_AGENTS);
+  const outside = useMemo(() => agents.filter((a) => a.kind === "mcp").sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 3), [agents]);
+  const [grants, setGrants] = useState<OAuthGrantInfo[] | null>(null);
+  const [missing, setMissing] = useState(false);
+  const now = useNow(15_000);
 
   useEffect(() => {
     if (!signedIn) return;
-    listKeys().then(setKeys, () => setKeys([]));
+    const ctl = new AbortController();
+    const started = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const tick = async () => {
+      clearTimeout(timer);
+      if (stopped || document.visibilityState !== "visible") return;
+      try {
+        const list = await listGrants(ctl.signal);
+        setGrants(list);
+        setMissing(false);
+        if (list.length) return; // connected: no more polling (a visit back to the tab looks once more)
+      } catch (e) {
+        if (isAbort(e)) return;
+        // No such endpoint, or no session: stop asking.
+        if (e instanceof RequestError && (e.status === 404 || e.status === 401 || e.status === 403)) {
+          setMissing(true);
+          return;
+        }
+      }
+      if (Date.now() - started < 10 * 60_000) timer = setTimeout(() => void tick(), 5000);
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    void tick();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      ctl.abort();
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [signedIn]);
+
+  const want = CLIENTS.find((c) => c.id === client)?.label ?? "your agent";
+  const connected = (grants ?? []).slice().sort((a, b) => (b.lastUsedAt ?? b.createdAt) - (a.lastUsedAt ?? a.createdAt));
 
   if (!signedIn) {
     return (
-      <Section id="cx-keys" title="API keys" aside={<p>Agents and scripts need a personal API key. Sign in to create one.</p>}>
-        <div>
-          <Button variant="primary" icon="human" onClick={() => setUi({ signIn: true })}>
-            Sign in
-          </Button>
-        </div>
-      </Section>
+      <div className="cx-live" role="status">
+        <Icon name="human" size={14} className="cx-live__icon" />
+        <span className="cx-live__text">Sign in first. Your agent then signs in as you.</span>
+        <Button size="sm" variant="primary" onClick={openSignIn}>
+          Sign in
+        </Button>
+      </div>
     );
   }
+  return (
+    <div className="cx-live" role="status" aria-live="polite">
+      {connected.length > 0 ? (
+        <>
+          <Icon name="check" size={14} className="cx-live__icon cx-live__icon--ok" />
+          <div className="cx-live__text">
+            <ul className="cx-live__list">
+              {connected.slice(0, 4).map((g) => (
+                <li key={g.id}>
+                  <strong>{g.clientName}</strong> is connected{g.lastUsedAt ? ` · used ${ago(g.lastUsedAt, now)}` : ` · allowed ${ago(g.createdAt, now)}`}
+                </li>
+              ))}
+              {outside.map((a) => (
+                <li key={a.id}>
+                  <strong>{clientName(a)}</strong> worked on this project {ago(a.lastSeen, now)}
+                </li>
+              ))}
+            </ul>
+            <Link to="/account" className="cx-live__more">
+              See or revoke connected apps
+            </Link>
+          </div>
+        </>
+      ) : outside.length > 0 ? (
+        <>
+          <Icon name="check" size={14} className="cx-live__icon cx-live__icon--ok" />
+          <ul className="cx-live__list cx-live__text">
+            {outside.map((a) => (
+              <li key={a.id}>
+                <strong>{clientName(a)}</strong> worked on this project {ago(a.lastSeen, now)}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <>
+          <span className="cx-live__wait" aria-hidden="true" />
+          <span className="cx-live__text">
+            {grants === null && !missing ? "gitring looks for connected agents…" : `Waiting for ${want}. This line changes when your agent signs in.`}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
-  const create = async () => {
+function Step({ children }: { children: ReactNode }) {
+  return <li>{children}</li>;
+}
+
+function ConnectorSection({ mcpUrl }: { mcpUrl: string }) {
+  const [client, setClient] = useRemembered<Client>("gitring.connect.client", "claude", CLIENT_IDS);
+  const cursorJson = JSON.stringify({ mcpServers: { gitring: { url: mcpUrl } } }, null, 2);
+  return (
+    <section className="cx-hero" aria-labelledby="cx-connector">
+      <div className="cx-hero__text">
+        <h2 className="page__h2" id="cx-connector">
+          Add gitring as a connector
+        </h2>
+        <p>One URL for every agent. Your agent signs in with your gitring account (OAuth), so you do not copy a key.</p>
+      </div>
+      <CopyField value={mcpUrl} label="MCP URL" />
+      <Tabs<Client> label="Your agent" idPrefix="cxc" value={client} onChange={setClient} tabs={CLIENTS} />
+      <TabPanel idPrefix="cxc" id="claude" active={client === "claude"} className="cx__panel">
+        <ol className="cx-steps">
+          <Step>Copy the URL.</Step>
+          <Step>
+            In Claude, open <strong>Settings → Connectors</strong>, then click <strong>Add custom connector</strong>.{" "}
+            <a href="https://claude.ai/settings/connectors" target="_blank" rel="noopener noreferrer">
+              Open Claude settings <Icon name="external" size={12} className="cx-ext" />
+            </a>
+          </Step>
+          <Step>
+            Name it <span className="code-inline">gitring</span>, paste the URL and click <strong>Add</strong>. Then click <strong>Connect</strong>.
+          </Step>
+          <Step>
+            gitring asks you to allow Claude. Click <strong>Allow</strong>. Claude can now read your projects, send plans and push work in any chat.
+          </Step>
+        </ol>
+        <p className="cx__note">
+          <Icon name="info" size={12} />
+          <span>On Team and Enterprise plans, an owner adds the connector in Organization settings → Connectors.</span>
+        </p>
+      </TabPanel>
+      <TabPanel idPrefix="cxc" id="claude-code" active={client === "claude-code"} className="cx__panel">
+        <CodeBlock shell label="Terminal" code={`claude mcp add --transport http --scope user gitring ${mcpUrl}`} />
+        <ol className="cx-steps" start={2}>
+          <Step>
+            In Claude Code, type <span className="code-inline">/mcp</span>, choose <strong>gitring</strong>, then <strong>Authenticate</strong>.
+          </Step>
+          <Step>
+            Your browser opens gitring. Click <strong>Allow</strong>.
+          </Step>
+        </ol>
+        <p className="cx__note">
+          <Icon name="info" size={12} />
+          <span>Optional: add the Claude Code hook (below). Then change requests also arrive in the middle of a task.</span>
+        </p>
+      </TabPanel>
+      <TabPanel idPrefix="cxc" id="cursor" active={client === "cursor"} className="cx__panel">
+        <div className="cx-row">
+          <a className="b-btn b-btn--primary cx-cursor" href={cursorLink(mcpUrl)}>
+            <Icon name="plus" />
+            Add to Cursor
+          </a>
+          <span className="cx__step">Cursor opens and asks to install gitring.</span>
+        </div>
+        <ol className="cx-steps" start={2}>
+          <Step>
+            In Cursor, open <strong>Settings → MCP</strong> and click <strong>Login</strong> next to gitring.
+          </Step>
+          <Step>
+            Your browser opens gitring. Click <strong>Allow</strong>.
+          </Step>
+        </ol>
+        <details className="cx-more">
+          <summary>Add it by hand</summary>
+          <CodeBlock label="~/.cursor/mcp.json" code={cursorJson} copyLabel="Copy config" />
+        </details>
+      </TabPanel>
+      <TabPanel idPrefix="cxc" id="codex" active={client === "codex"} className="cx__panel">
+        <CodeBlock shell label="Terminal" code={`codex mcp add gitring --url ${mcpUrl}\ncodex mcp login gitring`} />
+        <ol className="cx-steps" start={2}>
+          <Step>
+            The second command opens your browser. Click <strong>Allow</strong>.
+          </Step>
+        </ol>
+        <p className="cx__note">
+          <Icon name="info" size={12} />
+          <span>In the Codex app: Settings → MCP servers → Add server, then paste the URL.</span>
+        </p>
+      </TabPanel>
+      <TabPanel idPrefix="cxc" id="other" active={client === "other"} className="cx__panel">
+        <p className="cx__step">
+          Any MCP client with OAuth 2.1 can connect: streamable HTTP at the URL above, with dynamic client registration and PKCE. The client finds the gitring sign-in by
+          itself in the metadata at <span className="code-inline">/.well-known/oauth-protected-resource</span>.
+        </p>
+        <p className="cx__step">
+          A client without OAuth sends a personal API key in the header <span className="code-inline">Authorization: Bearer gk_…</span>. See{" "}
+          <a
+            href="#cx-keys"
+            onClick={(e) => {
+              e.preventDefault();
+              const el = document.getElementById("cx-keys");
+              el?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+              el?.setAttribute("tabindex", "-1");
+              el?.focus({ preventScroll: true });
+            }}
+          >
+            Use an API key instead
+          </a>
+          .
+        </p>
+        <ul className="tools" aria-label="The gitring tools">
+          {TOOLS.map(([t, d]) => (
+            <li key={t}>
+              <span className="voice-agent">{t}</span>
+              <span>{d}</span>
+            </li>
+          ))}
+        </ul>
+      </TabPanel>
+      <LiveStatus client={client} />
+    </section>
+  );
+}
+
+type KeyClient = "claude-code" | "codex" | "cursor" | "other";
+const KEY_TABS: { id: KeyClient; label: string }[] = [
+  { id: "claude-code", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "cursor", label: "Cursor" },
+  { id: "other", label: "Other" },
+];
+
+/** A personal API key: for scripts, hooks and clients without OAuth. The key shows one time only. */
+function KeySection({ info }: { info: ConnectInfo }) {
+  const me = useMe();
+  const signedIn = Boolean(me?.user);
+  const [tab, setTab] = useRemembered<KeyClient>("gitring.connect.keytab", "claude-code", KEY_TABS.map((t) => t.id));
+  const [name, setName] = useState("my laptop");
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
     setBusy(true);
+    setError(null);
     try {
       const res = await createKey(name.trim() || "key");
       setFresh(res.key);
-      setKeys(await listKeys());
-    } catch (e) {
-      toast({ tone: "danger", title: "The key was not created", text: (e as Error).message });
+    } catch (err) {
+      setError(`The key was not created. ${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
   };
-  const revoke = async (k: ApiKeyInfo) => {
-    try {
-      await revokeKey(k.id);
-      setKeys(await listKeys());
-      toast({ tone: "info", title: "Key revoked", text: `${k.name} (${k.prefix}…) stops working now.` });
-    } catch (e) {
-      toast({ tone: "danger", title: "The key was not revoked", text: (e as Error).message });
-    }
-  };
 
+  const cursor = JSON.stringify({ mcpServers: { gitring: { url: info.mcpUrl, headers: { Authorization: "Bearer ${env:GITRING_KEY}" } } } }, null, 2);
   return (
     <Section
       id="cx-keys"
-      title="API keys"
+      title="Use an API key instead"
       aside={
         <>
-          <p>A key acts as you: it can do what your roles allow on each project. gitring shows a new key one time only. Keep it in an environment variable.</p>
+          <p>For scripts, hooks and MCP clients without OAuth. A key acts as you: it can do what your roles allow on each project. Keep it in an environment variable.</p>
           <p className="cx__note">
-            <Icon name="info" size={12} /> If a key leaks, revoke it at once.
+            <Icon name="info" size={12} />
+            <span>
+              See and revoke your keys on your <Link to="/account">account page</Link>. If a key leaks, revoke it at once.
+            </span>
           </p>
         </>
       }
     >
-      <div className="keys">
-        <div className="keys__new">
-          <Field label="Key name" help="Where the key is used, for example “my laptop” or “CI”.">
+      {signedIn ? (
+        <form className="keys__new" onSubmit={create}>
+          <Field label="Key name" help="Where you use the key, for example “my laptop” or “CI”.">
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
           </Field>
-          <Button variant="primary" icon="plus" busy={busy} onClick={() => void create()}>
+          <Button type="submit" icon="plus" busy={busy}>
             Create key
           </Button>
+        </form>
+      ) : (
+        <div className="cx-row">
+          <span className="cx__step">Sign in to create a key.</span>
+          <Button size="sm" variant="primary" onClick={openSignIn}>
+            Sign in
+          </Button>
         </div>
-        {fresh && (
-          <div className="keys__fresh" role="status">
-            <p>Copy the key now. gitring does not show it again.</p>
-            <CodeBlock shell label="Terminal" code={`export GITRING_KEY=${fresh}`} copyLabel="Copy key" />
-          </div>
-        )}
-        <ul className="keys__list" aria-label="Your API keys">
-          {(keys ?? []).map((k) => (
-            <li key={k.id}>
-              <span className="keys__name">{k.name}</span>
-              <span className="voice-agent keys__prefix">{k.prefix}…</span>
-              <span className="keys__meta">{k.lastUsed ? `used ${new Date(k.lastUsed).toLocaleDateString()}` : "not used yet"}</span>
-              <Button size="sm" variant="ghost" icon="close" onClick={() => void revoke(k)}>
-                Revoke
-              </Button>
-            </li>
-          ))}
-          {keys && !keys.length && <li className="keys__empty">No keys yet.</li>}
-        </ul>
-      </div>
+      )}
+      {error && (
+        <p className="st-error" role="alert">
+          <Icon name="cross" size={12} /> {error}
+        </p>
+      )}
+      {fresh && (
+        <div className="keys__fresh" role="status">
+          <p>Copy the key now. gitring shows it only once.</p>
+          <CodeBlock shell label="Terminal" code={`export GITRING_KEY=${fresh}`} copyLabel="Copy key" />
+        </div>
+      )}
+      <Tabs<KeyClient> label="Agent client with an API key" idPrefix="cxk" value={tab} onChange={setTab} tabs={KEY_TABS} />
+      <TabPanel idPrefix="cxk" id="claude-code" active={tab === "claude-code"} className="cx__panel">
+        <CodeBlock shell label="Terminal" code={`claude mcp add --transport http gitring ${info.mcpUrl} --header "Authorization: Bearer $GITRING_KEY"`} />
+      </TabPanel>
+      <TabPanel idPrefix="cxk" id="codex" active={tab === "codex"} className="cx__panel">
+        <CodeBlock label="~/.codex/config.toml" code={`[mcp_servers.gitring]\nurl = "${info.mcpUrl}"\nbearer_token_env_var = "GITRING_KEY"`} copyLabel="Copy config" />
+      </TabPanel>
+      <TabPanel idPrefix="cxk" id="cursor" active={tab === "cursor"} className="cx__panel">
+        <CodeBlock label=".cursor/mcp.json" code={cursor} copyLabel="Copy config" />
+        <p className="cx__step">Restart Cursor. The gitring tools show in the MCP list.</p>
+      </TabPanel>
+      <TabPanel idPrefix="cxk" id="other" active={tab === "other"} className="cx__panel">
+        <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
+      </TabPanel>
     </Section>
   );
 }
@@ -368,7 +688,6 @@ export function ConnectView() {
   const branch = useStore((s) => s.state?.project.repo.defaultBranch ?? "main");
   const githubOn = useStore((s) => (s.state?.project.settings.github?.mode ?? "off") !== "off");
   const [info, setInfo] = useState<ConnectInfo>(() => defaultConnectInfo(projectId));
-  const [client, setClient] = useState<Client>("claude");
   const narrow = useNarrow();
 
   useEffect(() => {
@@ -403,7 +722,6 @@ export function ConnectView() {
     null,
     2,
   );
-  const cursor = JSON.stringify({ mcpServers: { gitring: { url: info.mcpUrl, headers: { Authorization: "Bearer ${env:GITRING_KEY}" } } } }, null, 2);
   const project = info.projectId || projectId;
   const payload = JSON.stringify(
     {
@@ -426,73 +744,33 @@ export function ConnectView() {
         <Icon name="plug" size={14} /> Connect
       </p>
       <h1 className="page__title" tabIndex={-1}>
-        Connect agents and apps
+        Connect your agents
       </h1>
       <p className="page__lede">
-        Agents and apps send work to gitring through MCP, git and HTTP. gitring checks each plan, sends change requests back to the agents, merges the work into
-        main and sends the results out.
+        Agents work on this project through MCP or git. gitring checks each plan, sends change requests back to the agents, and merges the work into main when the
+        tests pass.
       </p>
 
-      <figure className="flowfig">
-        <span className="vh" id="flow-title">
-          How agents and apps connect to gitring
-        </span>
-        <span className="vh" id="flow-desc">
-          {flowText(info, githubOn)}
-        </span>
-        <FlowDiagram vertical={narrow} info={info} githubOn={githubOn} />
-      </figure>
+      <ConnectorSection mcpUrl={info.mcpUrl} />
 
-      <KeysSection />
+      <KeySection info={info} />
 
-      <Section
-        id="cx-agents"
-        title="Connect a coding agent"
-        aside={
-          <>
-            <p>Add the gitring MCP server to your agent. The agent then sends its plan before it writes code, and it gets change requests in the answers of the gitring tools.</p>
-            <p className="cx__note">
-              <Icon name="info" size={12} /> Set GITRING_KEY to a personal API key (see API keys).
-            </p>
-          </>
-        }
-      >
-        <Tabs<Client>
-          label="Agent client"
-          idPrefix="cx"
-          value={client}
-          onChange={setClient}
-          tabs={[
-            { id: "claude", label: "Claude Code" },
-            { id: "codex", label: "Codex" },
-            { id: "cursor", label: "Cursor" },
-            { id: "other", label: "Other MCP clients" },
-          ]}
-        />
-        <TabPanel idPrefix="cx" id="claude" active={client === "claude"} className="cx__panel">
-          <CodeBlock shell label="Terminal" code={`claude mcp add --transport http gitring ${info.mcpUrl} --header "Authorization: Bearer $GITRING_KEY"`} />
-          <p className="cx__step">Optional: add the Claude Code hook (below). Then change requests also arrive in the middle of a task.</p>
-        </TabPanel>
-        <TabPanel idPrefix="cx" id="codex" active={client === "codex"} className="cx__panel">
-          <CodeBlock label="~/.codex/config.toml" code={`[mcp_servers.gitring]\nurl = "${info.mcpUrl}"\nbearer_token_env_var = "GITRING_KEY"`} copyLabel="Copy config" />
-          <p className="cx__step">Codex reads the change requests in each tool answer and continues its work.</p>
-        </TabPanel>
-        <TabPanel idPrefix="cx" id="cursor" active={client === "cursor"} className="cx__panel">
-          <CodeBlock label=".cursor/mcp.json" code={cursor} copyLabel="Copy config" />
-          <p className="cx__step">Restart Cursor. The gitring tools show in the MCP list.</p>
-        </TabPanel>
-        <TabPanel idPrefix="cx" id="other" active={client === "other"} className="cx__panel">
-          <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
-          <ul className="tools">
-            {TOOLS.map(([t, d]) => (
-              <li key={t}>
-                <span className="voice-agent">{t}</span>
-                <span>{d}</span>
-              </li>
-            ))}
-          </ul>
-        </TabPanel>
-      </Section>
+      <section className="cx cx--wide" aria-labelledby="cx-flow">
+        <div className="cx__text">
+          <h2 className="page__h2" id="cx-flow">
+            How work flows through gitring
+          </h2>
+        </div>
+        <figure className="flowfig">
+          <span className="vh" id="flow-title">
+            How agents and apps connect to gitring
+          </span>
+          <span className="vh" id="flow-desc">
+            {flowText(info, githubOn)}
+          </span>
+          <FlowDiagram vertical={narrow} info={info} githubOn={githubOn} />
+        </figure>
+      </section>
 
       <Section
         id="cx-modes"
@@ -544,7 +822,7 @@ git push gitring HEAD:${branch}
         title="Claude Code hook (optional)"
         aside={
           <>
-            <p>Claude Code sends each edit to gitring. gitring answers with the change requests that wait for this agent.</p>
+            <p>Claude Code sends each edit to gitring. gitring answers with the change requests that wait for this agent. The hook uses an API key (GITRING_KEY).</p>
             <p>
               Give your repository folder as <span className="code-inline">workdir</span> when you call <span className="code-inline">gitring_declare</span>. The
               hook finds your work copy by that folder and adds waiting change requests to the agent's context.
@@ -592,7 +870,7 @@ git push gitring HEAD:${branch}
         aside={
           <>
             <p>
-              Add a webhook in <Link to="/settings">Settings → Webhooks</Link>. gitring sends these events as JSON, or as Slack messages:
+              Add a webhook in <Link to="/settings?section=webhooks">Settings → Webhooks</Link>. gitring sends these events as JSON, or as Slack messages:
             </p>
             <ul className="cx__events">
               <li>
@@ -619,12 +897,13 @@ git push gitring HEAD:${branch}
         title="Send merged code to GitHub"
         aside={
           <p>
-            Turn it on in <Link to="/settings">Settings → GitHub</Link>. gitring sends each merge to a pull request, or straight to main.
+            Turn it on in <Link to="/settings?section=github">Settings → GitHub</Link>. gitring sends each merge to a pull request, or straight to main, and brings
+            changes from GitHub in.
           </p>
         }
       >
         <div className="cx__links">
-          <Link to="/settings" className="b-btn b-btn--secondary">
+          <Link to="/settings?section=github" className="b-btn b-btn--secondary">
             <Icon name="fork" />
             Open the GitHub settings
           </Link>

@@ -1,7 +1,77 @@
-/* Connect: flow diagram + copyable commands. Type sizes here: 11, 13, 15, 28. */
+/* Connect: the connector card, API keys, the flow diagram and copyable commands. Type sizes here: 11, 13, 15, 28. */
 
 .connect { max-width: 1200px; }
-.flowfig { margin: var(--s-8) 0 0; padding: var(--s-6); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); }
+
+/* ───────────── the connector card ───────────── */
+.cx-hero {
+  display: grid;
+  gap: var(--s-4);
+  margin-top: var(--s-8);
+  padding: var(--s-6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-4);
+  background: var(--surface-1);
+  min-width: 0;
+}
+.cx-hero__text { display: grid; gap: var(--s-2); }
+.cx-hero__text p { margin: 0; max-width: 66ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.cx-hero .b-tabs { margin-top: var(--s-2); }
+.cx-url { display: flex; gap: var(--s-2); min-width: 0; max-width: 760px; }
+.cx-url__input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-2);
+  background: var(--bg);
+  color: var(--ink-1);
+  font-size: var(--t-sm);
+}
+.cx-url .b-btn { height: 40px; }
+.cx-steps { display: grid; gap: var(--s-2); margin: 0; padding-left: 22px; max-width: 70ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
+.cx-steps li::marker { color: var(--ink-3); font-family: var(--font-agent); }
+.cx-steps strong { font-weight: 600; }
+.cx-ext { display: inline-block; vertical-align: -1px; }
+.cx-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+.cx-cursor { text-decoration: none; }
+.cx-more { font-size: var(--t-sm); }
+.cx-more > summary { cursor: pointer; color: var(--ink-2); padding: var(--s-1) 0; min-height: 24px; }
+.cx-more > summary:hover { color: var(--ink-1); }
+.cx-more[open] > summary { margin-bottom: var(--s-2); }
+
+/* Live line: waiting for an agent, then the connected apps. */
+.cx-live {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--ink-2);
+}
+.cx-live__icon { flex: none; margin-top: 3px; color: var(--ink-3); }
+.cx-live__icon--ok { color: var(--clear); }
+.cx-live__text { flex: 1 1 260px; min-width: 0; }
+.cx-live__text strong { font-weight: 600; color: var(--ink-1); }
+.cx-live__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.cx-live__more { display: inline-block; margin-top: var(--s-1); font-size: var(--t-xs); }
+.cx-live__wait {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 6px 3px 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+  animation: cx-breathe 1.8s ease-in-out infinite;
+}
+@keyframes cx-breathe { 50% { opacity: .35; } }
+
+/* ───────────── sections ───────────── */
+.flowfig { margin: 0; padding: var(--s-6); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); min-width: 0; }
 .flow { display: block; width: 100%; height: auto; overflow: visible; }
 .flow * { vector-effect: non-scaling-stroke; }
 .flow__col { font-family: var(--font-system); font-size: 13px; font-weight: 500; fill: var(--ink-3); }
@@ -31,13 +101,16 @@
   padding: var(--s-8) 0;
   border-top: 1px solid var(--line);
 }
-.cx:first-of-type { margin-top: var(--s-9); }
+.cx-hero + .cx { margin-top: var(--s-9); }
+.cx--wide { grid-template-columns: minmax(0, 1fr); gap: var(--s-4); }
 .cx__text { display: grid; gap: var(--s-3); align-content: start; }
 .cx__text p { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); max-width: 52ch; }
-.cx__note { display: flex; align-items: baseline; gap: var(--s-2); color: var(--ink-3) !important; font-size: var(--t-xs) !important; }
+.cx__note { display: flex; align-items: baseline; gap: var(--s-2); margin: 0; color: var(--ink-3) !important; font-size: var(--t-xs) !important; line-height: var(--lh-xs); }
+.cx__note .b-icon { flex: none; transform: translateY(2px); }
 .cx__code { display: grid; gap: var(--s-3); min-width: 0; align-content: start; }
-.cx__panel { display: grid; gap: var(--s-3); padding-top: var(--s-3); }
-.cx__step { font-size: var(--t-sm); color: var(--ink-2); }
+.cx__panel { display: grid; gap: var(--s-3); padding-top: var(--s-3); min-width: 0; }
+.cx__panel[hidden] { display: none; }
+.cx__step { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); max-width: 70ch; }
 .cx__steps { display: grid; gap: var(--s-2); margin: 0; padding-left: 20px; max-width: 52ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
 .cx__events { display: grid; gap: var(--s-1); margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
 .cx__events .code-inline { margin-right: var(--s-1); }
@@ -46,7 +119,7 @@
 .tools { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-3); }
 .tools li { display: grid; grid-template-columns: 200px 1fr; gap: var(--s-4); padding: var(--s-2) var(--s-4); font-size: var(--t-xs); border-top: 1px solid var(--line); }
 .tools li:first-child { border-top: 0; }
-.tools li .voice-agent { color: var(--ink-1); }
+.tools li .voice-agent { color: var(--ink-1); overflow-wrap: anywhere; }
 .tools li span:last-child { color: var(--ink-2); }
 
 @media (max-width: 960px) {
@@ -55,4 +128,15 @@
 @media (max-width: 760px) {
   .flowfig { padding: var(--s-4); }
   .tools li { grid-template-columns: 1fr; gap: 2px; }
+}
+@media (max-width: 600px) {
+  .cx-hero { padding: var(--s-4); margin-left: calc(-1 * var(--s-1)); margin-right: calc(-1 * var(--s-1)); }
+  .cx-url { flex-direction: column; }
+  .cx-url__input, .cx-url .b-btn { height: 44px; }
+  .cx-url__input { font-size: 16px; }
+  .connect .b-btn { min-height: 44px; }
+  .connect .b-tab { height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cx-live__wait { animation: none; }
 }
