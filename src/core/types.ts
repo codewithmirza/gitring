@@ -118,6 +118,15 @@ export interface GithubSyncStatus {
   at?: Millis;
 }
 
+/** Files of a ref (GET /api/projects/:p/tree?ref=main | <work copy id> | <commit sha>). */
+export interface TreeResponse {
+  /** The ref as asked. */
+  ref: string;
+  /** The commit (main or a commit sha) or "<work copy id>@<version>" for a work copy with unsaved edits. */
+  sha: string;
+  files: FileNode[];
+}
+
 /** What the Connect page needs: endpoints of this deployment and which inputs it has. */
 export interface ConnectInfo {
   projectId: string;
@@ -181,8 +190,11 @@ export interface WebhookTarget {
 
 /** Where the code of a project came from. Artifacts holds the canonical repo for every kind. */
 export type ProjectSource =
+  /** Old projects only: the sample left the product (2026-10-10). */
   | { kind: "sample" }
   | { kind: "empty" }
+  /** A GitHub repository (public or private) through the GitHub App: a snapshot of `branch` at `sha`. */
+  | { kind: "github"; repo: string; branch?: string; sha?: string; private?: boolean }
   | { kind: "git"; url: string; branch?: string; host?: "github" | "gitlab" | "bitbucket" | "other"; private?: boolean }
   | { kind: "upload"; files: number }
   | { kind: "push" };

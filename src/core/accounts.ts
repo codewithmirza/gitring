@@ -48,6 +48,71 @@ export interface MeInfo {
   providers: { github: boolean; google: boolean };
   /** No sign-in provider is set up yet: an owner must open /setup. */
   setupNeeded: boolean;
+  /** The GitHub connection of the signed-in person (repository list, imports, sync). */
+  github?: GithubConnection;
+  /** Install the gitring GitHub App on more repositories. */
+  githubInstallUrl?: string | null;
+}
+
+/** The GitHub connection of a person: gitring holds their GitHub token, sealed, to list and import repositories. */
+export interface GithubConnection {
+  connected: boolean;
+  login?: string;
+  /** Why the connection does not work now (one plain sentence). */
+  reason?: string;
+}
+
+/** A GitHub repository that the person can import (the gitring GitHub App is installed on it). */
+export interface GithubRepo {
+  /** "owner/name". */
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+  description?: string;
+  language?: string;
+  /** ISO time of the last push. */
+  pushedAt?: string;
+  htmlUrl: string;
+  /** The person can push: gitring can send merged code back. */
+  canPush: boolean;
+  /** Size that GitHub reports, in KB. */
+  sizeKb?: number;
+}
+
+export interface GithubRepoList {
+  connected: boolean;
+  repos: GithubRepo[];
+  /** Install the GitHub App on more repositories (or on the first one). */
+  installUrl?: string;
+  /** Why the list is empty or short (one plain sentence). */
+  reason?: string;
+}
+
+/** What gitring guesses for a new project from a GitHub repository: name, branch and test commands. */
+export interface ProjectGuess {
+  repo: string;
+  name: string;
+  /** A free project id. */
+  id: string;
+  branch: string;
+  private: boolean;
+  language?: string;
+  checks: { runner: "container" | "worker"; install?: string; test?: string };
+  /** One plain sentence for each guess. */
+  reasons: string[];
+  /** pull-request when the person can push, else off. */
+  sync: "off" | "pull-request" | "main";
+}
+
+/** An app that a person allowed to use gitring as them (OAuth, for MCP clients such as Claude). */
+export interface OAuthGrantInfo {
+  id: string;
+  clientId: string;
+  clientName: string;
+  clientUri?: string;
+  scope: string;
+  createdAt: number;
+  lastUsedAt?: number;
 }
 
 export interface ApiKeyInfo {
