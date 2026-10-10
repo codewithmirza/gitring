@@ -27,14 +27,7 @@ export interface RepoJson {
   permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; pull?: boolean };
 }
 
-export interface InstallationInfo {
-  id: number;
-  account: string;
-  type: "User" | "Organization";
-  avatar?: string;
-  selection: "all" | "selected";
-  repos: number;
-}
+export type InstallationInfo = A.GithubInstallationInfo;
 
 const MAX_INSTALLATIONS = 30;
 const MAX_REPO_PAGES = 5;

@@ -658,9 +658,12 @@ export class HarborMaster extends DurableObject<Env> {
     const batch = this.outbox;
     this.outbox = [];
     const data = JSON.stringify(batch.length === 1 ? batch[0] : batch);
+    // Viewers (people who only watch a public project) do not get member-only settings.
+    const viewerBatch = batch.some((e) => e.type === "snapshot") ? batch.map(forViewer) : batch;
+    const viewerData = viewerBatch === batch ? data : JSON.stringify(viewerBatch.length === 1 ? viewerBatch[0] : viewerBatch);
     for (const ws of this.ctx.getWebSockets()) {
       try {
-        ws.send(data);
+        ws.send(this.ctx.getTags(ws).includes("viewer") ? viewerData : data);
       } catch {
         /* closed socket */
       }
@@ -745,10 +748,13 @@ export class HarborMaster extends DurableObject<Env> {
     if (request.headers.get("Upgrade") === "websocket") {
       const projectId = url.searchParams.get("project") ?? "";
       await this.ensure(projectId);
+      // The Worker checked the role and says it here (only the Worker can reach this object).
+      const viewer = url.searchParams.get("role") === "viewer";
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
-      this.ctx.acceptWebSocket(server);
-      server.send(JSON.stringify({ type: "snapshot", state: await this.state() } satisfies T.GitringEvent));
+      this.ctx.acceptWebSocket(server, [viewer ? "viewer" : "member"]);
+      const snapshot: T.GitringEvent = { type: "snapshot", state: await this.state() };
+      server.send(JSON.stringify(viewer ? forViewer(snapshot) : snapshot));
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response("Not found", { status: 404 });
@@ -3152,6 +3158,15 @@ export class HarborMaster extends DurableObject<Env> {
 }
 
 /* ════════════════════════════ module helpers ════════════════════════════ */
+
+/** The project state for a viewer: outbound webhook addresses (they can hold secrets) stay with members. */
+export function viewerState(state: T.ProjectState): T.ProjectState {
+  return { ...state, project: { ...state.project, settings: { ...state.project.settings, webhooks: [] } } };
+}
+
+function forViewer(ev: T.GitringEvent): T.GitringEvent {
+  return ev.type === "snapshot" ? { ...ev, state: viewerState(ev.state) } : ev;
+}
 
 /** GitHub state of one linked repository (meta "gh:<owner/name>"). */
 interface GithubRepoState {

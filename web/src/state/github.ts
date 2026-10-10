@@ -244,9 +244,12 @@ function saneGuess(g: ProjectGuess): ProjectGuess {
   };
 }
 
-/** The address that signs in with GitHub (or connects GitHub to the account), then comes back to `returnTo`. */
+/**
+ * The address that signs in with GitHub, or connects GitHub to the signed-in account (link=1: the
+ * Worker ignores it for a visitor), then comes back to `returnTo`.
+ */
 export function githubConnectUrl(returnTo: string): string {
-  return `/auth/github/start?return=${encodeURIComponent(returnTo)}`;
+  return `/auth/github/start?link=1&return=${encodeURIComponent(returnTo)}`;
 }
 
 export function googleSignInUrl(returnTo: string): string {

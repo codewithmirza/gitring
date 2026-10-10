@@ -63,6 +63,12 @@ export async function signOut() {
   location.href = "/";
 }
 
+/** End every browser session of the person (API keys and connected apps keep working). */
+export async function signOutEverywhere() {
+  await call("POST", "/auth/logout-all").catch(() => undefined);
+  location.href = "/";
+}
+
 /** Open another project (a full load: the live socket and the store start clean). */
 export function openProject(id: string, path = "/overview") {
   try {

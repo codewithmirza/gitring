@@ -86,6 +86,19 @@ export interface GithubRepoList {
   installUrl?: string;
   /** Why the list is empty or short (one plain sentence). */
   reason?: string;
+  /** The accounts (people and organizations) where the app is installed, with their repository counts. */
+  installations?: GithubInstallationInfo[];
+  /** False when gitring read only part of a very long list (500 repositories per account). */
+  complete?: boolean;
+}
+
+export interface GithubInstallationInfo {
+  id: number;
+  account: string;
+  type: "User" | "Organization";
+  avatar?: string;
+  selection: "all" | "selected";
+  repos: number;
 }
 
 /** What gitring guesses for a new project from a GitHub repository: name, branch and test commands. */

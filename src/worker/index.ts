@@ -30,6 +30,7 @@ import { clientAddress, limitFor, overLimit, tooMany } from "./limits";
 import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
+import { viewerState } from "../harbor/harbor";
 import { BUILD_ID } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
 export { Directory } from "../directory/directory";
@@ -381,7 +382,8 @@ app.get("/api/projects/:p/state", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "viewer");
     const st = (await h.state()) as unknown as T.ProjectState;
-    return c.json({ ...st, access: h.role });
+    // Viewers of a public project do not get member-only settings (webhook addresses).
+    return c.json({ ...(h.role === "viewer" ? viewerState(st) : st), access: h.role });
   } catch (e) {
     return err(c, e, 500);
   }
@@ -657,9 +659,10 @@ app.get("/api/ops/drydock", async (c) => {
 
 app.get("/ws/:p", async (c) => {
   if (c.req.header("upgrade") !== "websocket") return c.text("Expected a WebSocket upgrade.", 426);
-  const { id } = await access(c, c.req.param("p"), "viewer");
+  const { id, role } = await access(c, c.req.param("p"), "viewer");
   const url = new URL(c.req.url);
   url.searchParams.set("project", id);
+  url.searchParams.set("role", role);
   return harbor(c.env, id).fetch(new Request(url.toString(), c.req.raw));
 });
 

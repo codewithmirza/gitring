@@ -127,9 +127,12 @@ export function patchCache<T>(path: string, fn: (v: T) => T) {
 
 /* ───────────── GitHub ───────────── */
 
-/** Sign in with GitHub again: gitring gets a new GitHub token and lists the repositories again. */
+/**
+ * Connect GitHub to the signed-in account (link=1): gitring gets a GitHub token and lists the
+ * repositories. A GitHub account of another gitring account is refused, never merged.
+ */
 export function connectGithub(returnTo = location.pathname + location.search) {
-  location.href = `/auth/github/start?return=${encodeURIComponent(returnTo)}`;
+  location.href = `/auth/github/start?link=1&return=${encodeURIComponent(returnTo)}`;
 }
 
 /** gitring forgets the GitHub token of the person. Sign-in with GitHub still works. */

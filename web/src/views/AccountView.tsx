@@ -8,7 +8,7 @@ import type { ApiKeyInfo, OAuthGrantInfo } from "../../../src/core/accounts";
 import { Button, CodeBlock, InlineConfirm, Input, SkeletonRows } from "../design/components";
 import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
-import { useMe, signOut } from "../state/account";
+import { useMe, signOut, signOutEverywhere } from "../state/account";
 import { connectGithub, createKey, disconnectGithub, listGrants, listKeys, revokeGrant, revokeKey, useResource } from "../state/connections";
 import { ago } from "../state/format";
 import { useNow } from "../app/useNow";
@@ -99,12 +99,12 @@ function SignInMethods() {
           <div className="acct-row__text">
             <span className="acct-row__name">Google</span>
             <span className="acct-row__meta">
-              {gg ? `Signed in as ${gg.email}.` : me.providers.google ? `gitring links a Google sign-in with the same email address${u.email ? ` (${u.email})` : ""}.` : "Not set up on this server."}
+              {gg ? `Signed in as ${gg.email}.` : me.providers.google ? "Add a Google sign-in to this account." : "Not set up on this server."}
             </span>
           </div>
           <div className="acct-row__acts">
             {!gg && me.providers.google && (
-              <Button size="sm" onClick={() => (location.href = `/auth/google/start?return=${encodeURIComponent(here)}`)}>
+              <Button size="sm" onClick={() => (location.href = `/auth/google/start?link=1&return=${encodeURIComponent(here)}`)}>
                 Add Google
               </Button>
             )}
@@ -383,9 +383,18 @@ export function AccountView() {
             {[u.email, u.admin ? "administrator of this gitring" : null].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <Button icon="sign-out" onClick={() => void signOut()}>
-          Sign out
-        </Button>
+        <div className="acct-profile__acts">
+          <Button icon="sign-out" onClick={() => void signOut()}>
+            Sign out
+          </Button>
+          <InlineConfirm
+            label="Sign out everywhere"
+            ariaLabel="Sign out on every device"
+            consequence="Every browser signs out. API keys and connected apps keep working."
+            confirmLabel="Sign out everywhere"
+            onConfirm={() => signOutEverywhere()}
+          />
+        </div>
       </div>
       <SignInMethods />
       <ConnectedApps now={now} />

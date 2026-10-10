@@ -78,7 +78,7 @@ for (const [w, h] of [
   await page.keyboard.press("Escape");
 
   // A failed sign-in comes back with the reason in the panel.
-  await page.goto(`${BASE}/?signin_error=access_denied&signin_provider=github`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/?signin_error=stopped&provider=github`, { waitUntil: "networkidle" });
   await page.getByText("You stopped the sign-in. Nothing changed.").waitFor({ timeout: 3000 }).catch(() => {});
   ok(await page.getByText("You stopped the sign-in. Nothing changed.").isVisible(), `${tag}: a stopped sign-in shows the reason`);
   ok(!page.url().includes("signin_error"), `${tag}: the error leaves the address`);

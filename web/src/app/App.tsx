@@ -150,16 +150,19 @@ function useSignInReturn() {
     const p = new URLSearchParams(location.search);
     const code = p.get("signin_error");
     if (code) {
-      const who = p.get("signin_provider") === "google" ? "Google" : p.get("signin_provider") === "github" ? "GitHub" : "The provider";
-      const detail = p.get("signin_message");
+      // The Worker sends a fixed code, never free text: a link cannot put its own words on this page.
+      const who = p.get("provider") === "google" ? "Google" : p.get("provider") === "github" ? "GitHub" : "The provider";
       const text =
-        code === "access_denied"
+        code === "stopped"
           ? "You stopped the sign-in. Nothing changed."
           : code === "expired"
             ? "The sign-in took too long. Try again."
-            : `${who} did not sign you in${detail ? `: ${detail.replace(/\.$/, "")}` : ""}. Try again.`;
-      for (const k of ["signin_error", "signin_provider", "signin_message"]) setSearchParam(k, null);
+            : code === "taken"
+              ? `This ${who} account belongs to another gitring account. Sign in with it, or remove it there first.`
+              : `${who} did not sign you in. Try again.`;
+      for (const k of ["signin_error", "provider"]) setSearchParam(k, null);
       if (!signedIn) requestAnimationFrame(() => openSignIn({ error: text }));
+      else toast({ tone: "danger", title: code === "taken" ? `${who} was not added` : "Sign-in stopped", text });
       return;
     }
     if (!signedIn) return;
