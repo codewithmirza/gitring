@@ -241,7 +241,8 @@ app.post("/api/projects", async (c) => {
     canPush = access.ok && Boolean(meta.permissions?.push || meta.permissions?.admin || meta.permissions?.maintain);
     const branch = source.branch || meta.default_branch;
     source = { kind: "github", repo: meta.full_name, ...(branch ? { branch } : {}), private: meta.private };
-    visibility = visibility ?? (meta.private ? "private" : "public");
+    // Code of a private repository only goes into a private project.
+    visibility = meta.private ? "private" : (visibility ?? "public");
   }
   const dir = directory(c.env);
   let info: A.ProjectInfo;
@@ -263,10 +264,12 @@ app.post("/api/projects", async (c) => {
     if (body.settings?.redo) wanted.redo = body.settings.redo;
     if (source.kind === "github") {
       const mode = body.settings?.github?.mode ?? (canPush ? "pull-request" : "off");
-      wanted.github = { repo: source.repo, mode: canPush ? mode : "off", branch: body.settings?.github?.branch ?? "gitring" };
+      wanted.github = { repo: source.repo, mode: canPush ? mode : "off", branch: body.settings?.github?.branch ?? "gitring", ...(source.branch ? { base: source.branch } : {}) };
     }
     if (Object.keys(wanted).length) {
       await h.updateSettings(wanted);
+      // The importer is the person whose GitHub rights gitring re-checks for sync and pulls.
+      if (source.kind === "github" && user) await h.setGithubActor(user.id, { read: true, push: canPush, private: Boolean(source.private) });
       st = (await h.state()) as unknown as typeof st;
     }
     return c.json({ project: info, state: st }, 201);
@@ -312,8 +315,18 @@ app.get("/api/projects/:p", async (c) => {
 
 app.patch("/api/projects/:p", async (c) => {
   const { id } = await access(c, c.req.param("p"), "owner");
-  const body = await c.req.json<{ name?: string; visibility?: A.Visibility }>().catch(() => ({}));
+  const body = await c.req.json<{ name?: string; visibility?: A.Visibility }>().catch(() => ({}) as { name?: string; visibility?: A.Visibility });
   try {
+    // Code of a private GitHub repository never goes into a public project.
+    if (body.visibility === "public") {
+      const info = await directory(c.env).project(id, c.get("principal").user?.id ?? null);
+      const facts = await harbor(c.env, id)
+        .githubFacts()
+        .catch(() => ({}) as { private?: boolean });
+      if ((info?.source.kind === "github" && info.source.private) || facts.private) {
+        return c.json({ error: "This project holds code of a private GitHub repository. It stays private." }, 400);
+      }
+    }
     const out = await directory(c.env).updateProject(id, body);
     forgetRoles(id);
     return c.json(out);
@@ -595,18 +608,37 @@ app.put("/api/projects/:p/settings", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "owner");
     const body = await c.req.json<Partial<T.ProjectSettings>>().catch(() => ({}) as Partial<T.ProjectSettings>);
-    // Linking a GitHub repository needs a person who can push to it: no project may push to the repositories of other people.
-    const wanted = body?.github && typeof body.github === "object" && typeof body.github.repo === "string" ? body.github.repo.trim() : "";
-    if (wanted) {
-      const repo = githubRepoName(wanted);
-      if (!repo) return c.json({ error: "Give the GitHub repository as owner/name, or as its https://github.com URL." }, 400);
-      const current = (await h.settings()).github?.repo;
-      const principal = c.get("principal");
-      if (repo.toLowerCase() !== current?.toLowerCase() && principal.via !== "operator") {
-        const check = await directory(c.env).githubCanPush(needUser(c).id, repo);
-        if (!check.ok) return c.json({ error: check.message, ...(check.installUrl ? { installUrl: check.installUrl } : {}) }, 403);
+    const raw = body?.github && typeof body.github === "object" ? (body.github as unknown as Record<string, unknown>) : undefined;
+    if (raw) {
+      // The GitHub settings after this change (a field that the patch leaves out keeps its value).
+      const current = (await h.settings()).github;
+      let repo = current.repo;
+      if ("repo" in raw) {
+        const text = typeof raw.repo === "string" ? raw.repo.trim() : "";
+        repo = text ? (githubRepoName(text) ?? undefined) : undefined;
+        if (text && !repo) return c.json({ error: "Give the GitHub repository as owner/name, or as its https://github.com URL." }, 400);
+        body.github = { ...(body.github as T.GithubSettings), repo: repo ?? "" };
       }
-      body.github = { ...(body.github as T.GithubSettings), repo };
+      const mode = typeof raw.mode === "string" ? raw.mode : current.mode;
+      const branch = typeof raw.branch === "string" ? raw.branch.trim() : current.branch;
+      const base = "base" in raw ? (typeof raw.base === "string" ? raw.base.trim() : "") : (current.base ?? "");
+      const relinked = Boolean(repo) && repo!.toLowerCase() !== current.repo?.toLowerCase();
+      // Pushing needs a person who can push on GitHub now: turning sync on, or changing where it goes.
+      const pushes = Boolean(repo) && mode !== "off" && (relinked || current.mode === "off" || branch !== current.branch || base !== (current.base ?? ""));
+      const principal = c.get("principal");
+      if (repo && (relinked || pushes) && principal.via !== "operator") {
+        const user = needUser(c);
+        const perm = await directory(c.env).githubPermission(user.id, repo);
+        if (pushes && !perm.installed) return c.json({ error: `Install the gitring GitHub App on ${repo} first.`, ...(perm.installUrl ? { installUrl: perm.installUrl } : {}) }, 403);
+        if (pushes && !perm.push) return c.json({ error: perm.message }, 403);
+        if (!perm.read) return c.json({ error: perm.message, ...(perm.installUrl ? { installUrl: perm.installUrl } : {}) }, 403);
+        if (perm.private && (await directory(c.env).visibilityOf(projectId(c.req.param("p")))) === "public") {
+          return c.json({ error: `${repo} is private on GitHub, and this project is public. Make the project private first.` }, 400);
+        }
+        const out = await h.updateSettings(body);
+        await h.setGithubActor(user.id, { read: perm.read, push: perm.push, ...(perm.private !== undefined ? { private: perm.private } : {}) });
+        return c.json(out);
+      }
     }
     return c.json(await h.updateSettings(body));
   } catch (e) {
@@ -682,7 +714,7 @@ interface GithubIssueEvent {
   action?: string;
   issue?: { title: string; body?: string; html_url?: string; number?: number; labels?: { name: string }[] };
   repository?: { full_name?: string };
-  sender?: { login?: string };
+  sender?: { login?: string; id?: number };
 }
 
 function gitringIssue(event: string | undefined, body: GithubIssueEvent | null): string | null {
@@ -706,6 +738,8 @@ app.post("/hooks/github-app", async (c) => {
   if (!sameString(sig, await hmacSha256Hex(gh.webhookSecret, raw))) return c.json({ error: "Bad signature." }, 401);
   const event = c.req.header("x-github-event");
   if (event === "ping") return c.json({ ok: true });
+  // GitHub may deliver one event twice (retries, manual redelivery): handle each delivery once.
+  if (!(await directory(c.env).firstDelivery(c.req.header("x-github-delivery") ?? ""))) return c.json({ ignored: true, reason: "Delivery handled already." });
   if (event === "push") {
     // A push to the default branch: projects that link the repository bring the changes into main.
     let push: { ref?: string; repository?: { full_name?: string; default_branch?: string } } = {};
@@ -715,12 +749,13 @@ app.post("/hooks/github-app", async (c) => {
       return c.json({ error: "Bad JSON." }, 400);
     }
     const repo = push.repository?.full_name ?? "";
-    if (!repo || !push.repository?.default_branch || push.ref !== `refs/heads/${push.repository.default_branch}`) return c.json({ ignored: true, reason: "Not the default branch." });
+    if (!repo || !push.ref?.startsWith("refs/heads/")) return c.json({ ignored: true, reason: "Not a branch." });
     const ids = await directory(c.env).githubLinkedProjects(repo);
+    // Each project follows one branch (default: the repository's default branch); it ignores the others.
     for (const id of ids) {
       c.executionCtx.waitUntil(
         harbor(c.env, id)
-          .githubPull({ reason: "webhook" })
+          .githubPull({ reason: "webhook", ref: push.ref, defaultBranch: push.repository?.default_branch })
           .catch((e) => console.warn("github pull failed", id, String(e))),
       );
     }
@@ -736,7 +771,7 @@ app.post("/hooks/github-app", async (c) => {
   if (why === null) return c.json({ ignored: true });
   if (why) return c.json({ ignored: true, reason: why });
   const repo = body!.repository?.full_name ?? "";
-  const ids = await directory(c.env).projectsForGithubLogin(`https://github.com/${repo}`, body!.sender?.login ?? "");
+  const ids = await directory(c.env).projectsForGithubLogin(`https://github.com/${repo}`, body!.sender?.login ?? "", body!.sender?.id);
   const opened: string[] = [];
   for (const id of ids) {
     const h = harbor(c.env, id);

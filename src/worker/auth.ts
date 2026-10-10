@@ -377,7 +377,10 @@ export function authRoutes(app: Hono<HonoEnv>): void {
   // The GitHub App's setup URL: GitHub sends people here after they install the app or change its
   // repositories. The installation_id in the URL is not trusted; the app reloads the list with the
   // person's own token.
-  app.get("/setup/github/installed", (c) => c.redirect("/projects?github=installed", 302));
+  app.get("/setup/github/installed", async (c) => {
+    await directory(c.env).forgetGithubMisses().catch(() => undefined);
+    return c.redirect("/projects?github=installed", 302);
+  });
 
   app.get("/auth/:provider/start", async (c) => {
     const provider = c.req.param("provider");

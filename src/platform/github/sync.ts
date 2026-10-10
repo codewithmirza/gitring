@@ -35,24 +35,35 @@ export interface SyncInput {
   /** Pairs from earlier runs: gitring commit → GitHub commit. */
   known: Record<string, string>;
   /**
-   * gitring commits that brought GitHub changes into main → the GitHub commit they brought in. On GitHub
-   * such a commit becomes a merge commit with that second parent, so GitHub's history stays whole and
-   * the default branch can fast-forward.
+   * gitring commits that brought GitHub changes into main → the GitHub commit they brought in (and the
+   * submodule pointers of it, which gitring itself does not store). On GitHub such a commit becomes a
+   * merge commit with that second parent, so GitHub's history stays whole and the branch can fast-forward.
    */
-  upstreamOf?: Record<string, string>;
+  upstreamOf?: Record<string, UpstreamMark>;
+  /** The GitHub branch that main follows (default: the repository's default branch). */
+  base?: string;
   pr: { title: string; body: string };
-  /** At most this many commits in one run. */
+  /** At most this many commits in one run; the rest go in the next run. */
   maxCommits?: number;
 }
+
+export type UpstreamMark = string | { head: string; gitlinks?: Record<string, string | null> };
 
 export interface SyncOutput {
   status: T.GithubSyncStatus;
   /** Pairs to remember (the input pairs plus the new ones). */
   known: Record<string, string>;
+  /** More commits wait: run the sync again. */
+  more?: boolean;
+  /** GitHub refused the token (401): ask for a new one and run again. */
+  unauthorized?: boolean;
 }
 
+/** The newest main commits that one run walks back through to find a commit that GitHub has. */
+const MAX_WALK = 5000;
+
 /** Blobs larger than this do not go through the REST API. */
-export const MAX_BLOB_BYTES = 40_000_000;
+export const MAX_BLOB_BYTES = 15_000_000;
 
 interface Reply<J> {
   status: number;
@@ -156,22 +167,32 @@ export async function treeChanges(backend: RepoBackend, repo: string, from: stri
 /** Send main to GitHub. Never throws: problems come back as a status for people. */
 export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<SyncOutput> {
   const known = { ...input.known };
-  const api = client(gh);
+  let unauthorized = false;
+  const raw = client(gh);
+  const api = async <J = Record<string, unknown>>(method: string, path: string, body?: unknown): Promise<Reply<J>> => {
+    const r = await raw<J>(method, path, body);
+    if (r.status === 401) unauthorized = true;
+    return r;
+  };
   const [owner] = gh.repo.split("/");
   const base: Pick<T.GithubSyncStatus, "repo" | "mode" | "branch"> = { repo: gh.repo, mode: input.mode, ...(input.mode === "pull-request" ? { branch: input.branch } : {}) };
   const fail = (state: T.GithubSyncState, message: string, extra: Partial<T.GithubSyncStatus> = {}): SyncOutput => ({
-    status: { state, message, ...base, ...extra, at: Date.now() },
+    status: { state, message: unauthorized ? "GitHub refused the app's token. gitring asks for a new one and tries again." : message, ...base, ...extra, at: Date.now() },
     known,
+    ...(unauthorized ? { unauthorized } : {}),
   });
   try {
     const info = await api<{ default_branch?: string; html_url?: string }>("GET", `/repos/${gh.repo}`);
     if (info.status === 404) return fail("error", `GitHub does not show ${gh.repo} to the gitring app. Check the name, and install the app on the repository.`);
     if (info.status >= 400) return fail("error", `GitHub answered ${info.status} for ${gh.repo}.`);
-    const defaultBranch = info.json.default_branch || "main";
+    const defaultBranch = input.base || info.json.default_branch || "main";
+    if (input.mode === "pull-request" && input.branch === defaultBranch) {
+      return fail("error", `The pull request branch must not be ${defaultBranch}, the branch that it merges into. Choose another branch in Settings → GitHub.`);
+    }
     const html = info.json.html_url || `https://github.com/${gh.repo}`;
 
     // 1. Walk main back to the first commit that GitHub has.
-    const chain: CommitMeta[] = [];
+    let chain: CommitMeta[] = [];
     const max = input.maxCommits ?? 200;
     let cur = input.mainSha;
     let anchor: { gitring: string; github: string } | null = null;
@@ -186,8 +207,8 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
         known[cur] = cur;
         break;
       }
-      if (chain.length >= max) {
-        return fail("error", `Main has more than ${max} commits that GitHub does not have. gitring sends at most ${max} in one run.`);
+      if (chain.length >= MAX_WALK) {
+        return fail("error", `Main has more than ${MAX_WALK} commits that GitHub does not have. Push main to GitHub with git once; then gitring continues.`);
       }
       const meta = await input.backend.readCommit(input.source, cur);
       if (!meta) return fail("error", `gitring cannot read commit ${cur.slice(0, 7)} of main.`);
@@ -202,7 +223,10 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       );
     }
 
-    // 2. Make the missing commits on GitHub, oldest first.
+    // 2. Make the missing commits on GitHub, oldest first; at most `max` in one run.
+    chain = chain.reverse();
+    const more = chain.length > max;
+    if (more) chain = chain.slice(0, max);
     let parentGh = anchor.github;
     let parentTreeGitring: string | null = null;
     let parentTreeGh = "";
@@ -212,8 +236,14 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       parentTreeGh = parentCommit.json?.tree?.sha ?? "";
       if (!parentTreeGh || !parentTreeGitring) return fail("error", `gitring cannot read the tree of ${parentGh.slice(0, 7)}.`);
     }
-    for (const meta of chain.reverse()) {
+    for (const meta of chain) {
       const changes = await treeChanges(input.backend, input.source, parentTreeGitring, meta.treeHash);
+      const mark = input.upstreamOf?.[meta.hash];
+      const upstreamHead = typeof mark === "string" ? mark : mark?.head;
+      // Submodule pointers that came from GitHub in this merge: gitring does not keep them, so they go
+      // into the merge commit here (otherwise the merge would set them back).
+      const gitlinks = typeof mark === "object" && mark.gitlinks ? Object.entries(mark.gitlinks) : [];
+      for (const [path, sha] of gitlinks) changes.push({ path, mode: "160000", type: "commit", sha });
       for (const ch of changes) {
         if (ch.type !== "blob" || !ch.sha) continue;
         const bytes = await input.backend.readBlob(input.source, ch.sha);
@@ -234,7 +264,7 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       const commit = await api<{ sha?: string; message?: string }>("POST", `/repos/${gh.repo}/git/commits`, {
         message: meta.message,
         tree: treeSha,
-        parents: input.upstreamOf?.[meta.hash] && input.upstreamOf[meta.hash] !== parentGh ? [parentGh, input.upstreamOf[meta.hash]] : [parentGh],
+        parents: upstreamHead && upstreamHead !== parentGh ? [parentGh, upstreamHead] : [parentGh],
         author: { name: meta.author.name, email: meta.author.email, date: iso(meta.authoredAt) },
         committer: { name: meta.committer.name, email: meta.committer.email, date: iso(meta.committedAt) },
       });
@@ -245,14 +275,22 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       parentTreeGitring = meta.treeHash;
     }
     const tip = parentGh;
-    const done = { syncedSha: input.mainSha, githubSha: tip };
+    const synced = chain.length ? chain[chain.length - 1].hash : input.mainSha;
+    const done = { syncedSha: synced, githubSha: tip };
+    const partial = (st: SyncOutput): SyncOutput =>
+      more && st.status.state === "ok"
+        ? { ...st, more: true, status: { ...st.status, state: "pending", message: `gitring sent ${chain.length} commits to GitHub; it sends the rest now.` } }
+        : st;
 
     // 3a. Straight to main: fast-forward only.
     if (input.mode === "main") {
-      const ref = await api<{ message?: string }>("PATCH", `/repos/${gh.repo}/git/refs/heads/${encodeURIComponent(defaultBranch)}`, { sha: tip, force: false });
-      if (ref.status === 200) return { status: { state: "ok", message: `GitHub ${defaultBranch} has main at ${tip.slice(0, 7)}.`, ...base, branch: defaultBranch, ...done, at: Date.now() }, known };
+      const ref = await api<{ message?: string }>("PATCH", `/repos/${gh.repo}/git/refs/heads/${defaultBranch.split("/").map(encodeURIComponent).join("/")}`, { sha: tip, force: false });
+      if (ref.status === 200) return partial({ status: { state: "ok", message: `GitHub ${defaultBranch} has main at ${tip.slice(0, 7)}.`, ...base, branch: defaultBranch, ...done, at: Date.now() }, known });
+      if (/protected/i.test(ref.json?.message ?? "")) {
+        return fail("blocked", `GitHub protects ${defaultBranch}: the gitring app may not push to it. Use pull request mode, or allow the app in the branch rules.`, { branch: defaultBranch });
+      }
       if (ref.status === 422 || ref.status === 409) {
-        return fail("blocked", `GitHub ${defaultBranch} has commits that gitring does not have, so gitring cannot fast-forward it. Use pull request mode, or bring those commits into gitring.`, { branch: defaultBranch, ...done, syncedSha: undefined });
+        return fail("blocked", `GitHub ${defaultBranch} has commits that gitring does not have, so gitring cannot fast-forward it. gitring brings them in first.`, { branch: defaultBranch, ...done, syncedSha: undefined });
       }
       return fail("error", `GitHub did not move ${defaultBranch} (${ref.status}${ref.json?.message ? `: ${ref.json.message}` : ""}).`, { branch: defaultBranch });
     }
@@ -260,7 +298,17 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
     // 3b. Pull request: move the branch, then keep one pull request open.
     const branch = input.branch;
     const refPath = `/repos/${gh.repo}/git/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}`;
-    const moved = await api<{ message?: string }>("PATCH", refPath, { sha: tip, force: true });
+    // Force-move the branch only when gitring made its tip: commits that people pushed there stay.
+    const current = await api<{ object?: { sha?: string } }>("GET", refPath);
+    const currentTip = current.status === 200 ? current.json?.object?.sha : undefined;
+    const ours = new Set(Object.values(known));
+    const moved =
+      currentTip === tip
+        ? { status: 200, json: {} as { message?: string } }
+        : await api<{ message?: string }>("PATCH", refPath, { sha: tip, force: Boolean(currentTip && ours.has(currentTip)) });
+    if (moved.status === 422 && currentTip && !ours.has(currentTip) && !/reference does not exist|not found/i.test(moved.json?.message ?? "")) {
+      return fail("blocked", `Someone pushed commits to ${branch} on GitHub. gitring does not overwrite them: merge or delete the branch, or choose another branch in Settings → GitHub.`, { branch });
+    }
     const missing = moved.status === 404 || (moved.status === 422 && /reference does not exist|not found/i.test(moved.json?.message ?? ""));
     if (missing) {
       const made = await api<{ message?: string }>("POST", `/repos/${gh.repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: tip });
@@ -277,7 +325,7 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
     );
     if (open.status === 200 && Array.isArray(open.json) && open.json[0]?.html_url) {
       const pr = open.json[0];
-      return { status: { state: "ok", message: `Pull request #${pr.number} has main at ${tip.slice(0, 7)}.`, ...base, ...done, prUrl: pr.html_url, prNumber: pr.number, at: Date.now() }, known };
+      return partial({ status: { state: "ok", message: `Pull request #${pr.number} has main at ${tip.slice(0, 7)}.`, ...base, ...done, prUrl: pr.html_url, prNumber: pr.number, at: Date.now() }, known });
     }
     const pr = await api<{ html_url?: string; number?: number; message?: string; errors?: { message?: string }[] }>("POST", `/repos/${gh.repo}/pulls`, {
       title: input.pr.title,
@@ -286,14 +334,14 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
       body: input.pr.body,
     });
     if (pr.status === 201 && pr.json?.html_url) {
-      return { status: { state: "ok", message: `gitring opened pull request #${pr.json.number}.`, ...base, ...done, prUrl: pr.json.html_url, prNumber: pr.json.number, at: Date.now() }, known };
+      return partial({ status: { state: "ok", message: `gitring opened pull request #${pr.json.number}.`, ...base, ...done, prUrl: pr.json.html_url, prNumber: pr.json.number, at: Date.now() }, known });
     }
     const why = [pr.json?.message, ...(pr.json?.errors ?? []).map((e) => e.message)].filter(Boolean).join(" ");
     if (pr.status === 422 && /no commits between/i.test(why)) {
-      return { status: { state: "ok", message: `GitHub ${defaultBranch} has all merged work. No pull request is necessary.`, ...base, ...done, at: Date.now() }, known };
+      return partial({ status: { state: "ok", message: `GitHub ${defaultBranch} has all merged work. No pull request is necessary.`, ...base, ...done, at: Date.now() }, known });
     }
     if (pr.status === 403 || pr.status === 404) {
-      return {
+      return partial({
         status: {
           state: "ok",
           message: `Branch ${branch} has main at ${tip.slice(0, 7)}. The gitring app cannot open pull requests: open it on GitHub, or give the app the pull request permission.`,
@@ -303,7 +351,7 @@ export async function syncToGithub(gh: GithubApi, input: SyncInput): Promise<Syn
           at: Date.now(),
         },
         known,
-      };
+      });
     }
     return fail("error", `GitHub did not open the pull request (${pr.status}${why ? `: ${why}` : ""}).`, { ...done, compareUrl });
   } catch (e) {

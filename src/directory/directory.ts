@@ -35,6 +35,8 @@ const SCHEMA = [
   // Projects linked to a GitHub repository (lowercase "owner/name"): a push webhook reaches them.
   `CREATE TABLE IF NOT EXISTS github_links (repo TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY (repo, project_id))`,
   `CREATE INDEX IF NOT EXISTS github_links_project ON github_links (project_id)`,
+  // Webhook deliveries already handled (GitHub can send one twice; a replay must not open a task twice).
+  `CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
   // The public sample left the product (2026-10-10): archive its project.
   `UPDATE projects SET archived = 1 WHERE id = 'demo' AND source LIKE '%"sample"%'`,
 ];
@@ -152,6 +154,8 @@ export class Directory extends DurableObject<Env> {
   private readonly oauth: OAuthStore;
   /** Installation tokens per repository (lowercase "owner/name"). */
   private readonly repoTokens = new Map<string, { token: string; expiresAt: number; permissions: Record<string, string> }>();
+  /** Repositories without the app, for a few minutes (lowercase "owner/name"). */
+  private readonly repoMisses = new Map<string, { until: number; answer: GithubRepoAccess }>();
   /** GitHub token calls per GitHub account run one at a time: refresh tokens are single-use. */
   private readonly githubRefreshes = new Map<string, Promise<GithubUserTokenResult>>();
 
@@ -248,18 +252,28 @@ export class Directory extends DurableObject<Env> {
    * A short-lived token of the GitHub App for one repository ("owner/name"), scoped to that repository.
    * Worker-only (RPC from a project coordinator). Tokens are cached until 5 minutes before they expire.
    */
-  async githubRepoAccess(repo: string): Promise<GithubRepoAccess> {
+  async githubRepoAccess(repo: string, fresh = false): Promise<GithubRepoAccess> {
     const name = String(repo ?? "").trim();
     if (!/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(name)) return { ok: false, state: "error", message: "Give the GitHub repository as owner/name." };
-    const hit = this.repoTokens.get(name.toLowerCase());
-    if (hit && hit.expiresAt - Date.now() > 5 * 60_000) return { ok: true, token: hit.token, expiresAt: hit.expiresAt, permissions: hit.permissions };
+    const key = name.toLowerCase();
+    const hit = this.repoTokens.get(key);
+    if (!fresh && hit && hit.expiresAt - Date.now() > 5 * 60_000) return { ok: true, token: hit.token, expiresAt: hit.expiresAt, permissions: hit.permissions };
+    // "Not installed" is kept for five minutes: guesses and imports ask often for the same names.
+    const miss = this.repoMisses.get(key);
+    if (!fresh && miss && miss.until > Date.now()) return miss.answer;
     const app = await this.githubApp().catch(() => null);
     if (!app) return { ok: false, state: "no-app", message: "This gitring has no GitHub App. An owner of the deployment sets it up on /setup." };
     const installUrl = `https://github.com/apps/${app.slug}/installations/new`;
     const jwt = await githubAppJwt(app.id, app.pem);
     const auth = { ...GITHUB_HEADERS, Authorization: `Bearer ${jwt}` };
     const inst = await fetch(`https://api.github.com/repos/${name}/installation`, { headers: auth });
-    if (inst.status === 404) return { ok: false, state: "not-installed", message: `The gitring GitHub App is not installed on ${name}.`, installUrl };
+    if (inst.status === 404) {
+      const answer: GithubRepoAccess = { ok: false, state: "not-installed", message: `The gitring GitHub App is not installed on ${name}.`, installUrl };
+      if (this.repoMisses.size > 2000) this.repoMisses.clear();
+      this.repoMisses.set(key, { until: Date.now() + 5 * 60_000, answer });
+      return answer;
+    }
+    this.repoMisses.delete(key);
     if (!inst.ok) return { ok: false, state: "error", message: `GitHub answered ${inst.status} for the installation on ${name}.` };
     const { id } = await inst.json<{ id: number }>();
     const tok = await fetch(`https://api.github.com/app/installations/${id}/access_tokens`, {
@@ -275,30 +289,72 @@ export class Directory extends DurableObject<Env> {
   }
 
   /**
-   * Can this person push to the GitHub repository? Asks GitHub with the app token, for each GitHub
-   * login of the person. Linking a repository to a project needs this, so that no project can push to a
-   * repository of other people.
+   * What this person may do in a GitHub repository, as GitHub says now: read, push, and whether the
+   * repository is private. gitring asks with the person's own GitHub token (exact, and it sees renames);
+   * without a token, it asks with the app token for the person's GitHub account id (not the login,
+   * which can change hands). Also says whether the gitring app is installed there.
    */
-  async githubCanPush(userId: string, repo: string): Promise<{ ok: boolean; message: string; installUrl?: string }> {
-    const logins = this.sql
-      .exec<{ login: string | null }>("SELECT login FROM identities WHERE user_id = ? AND provider = 'github'", userId)
-      .toArray()
-      .map((r) => r.login)
-      .filter((l): l is string => Boolean(l));
-    if (!logins.length) return { ok: false, message: "Sign in with GitHub once, so that gitring can check that you can push to the repository." };
+  async githubPermission(userId: string, repo: string): Promise<{ installed: boolean; read: boolean; push: boolean; private?: boolean; message: string; installUrl?: string }> {
     const access = await this.githubRepoAccess(repo);
-    if (!access.ok) return { ok: false, message: access.message, installUrl: access.installUrl };
-    for (const login of logins) {
-      const res = await fetch(`https://api.github.com/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`, {
-        headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${access.token}` },
-      });
-      if (!res.ok) continue;
-      const p = await res.json<{ permission?: string; role_name?: string }>();
-      if (["admin", "maintain", "write"].includes(p.role_name ?? "") || ["admin", "write"].includes(p.permission ?? "")) {
-        return { ok: true, message: `${login} can push to ${repo}.` };
+    const installed = access.ok;
+    const installUrl = access.ok ? undefined : access.installUrl;
+    const base = { installed, ...(installUrl ? { installUrl } : {}) };
+    const tok = await this.githubUserToken(userId).catch(() => null);
+    if (tok?.ok) {
+      const res = await fetch(`https://api.github.com/repos/${repo}`, { headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${tok.token}` } }).catch(() => null);
+      if (res?.status === 200) {
+        const r = await res.json<{ private?: boolean; permissions?: { pull?: boolean; push?: boolean; maintain?: boolean; admin?: boolean } }>();
+        const push = Boolean(r.permissions?.push || r.permissions?.maintain || r.permissions?.admin);
+        return { ...base, read: true, push, private: Boolean(r.private), message: push ? `${tok.login} can push to ${repo}.` : `Your GitHub account (${tok.login}) cannot push to ${repo}.` };
       }
+      if (res && (res.status === 404 || res.status === 403)) return { ...base, read: false, push: false, message: `Your GitHub account (${tok.login}) cannot see ${repo}.` };
     }
-    return { ok: false, message: `Your GitHub account (${logins.join(", ")}) cannot push to ${repo}.` };
+    const ids = this.sql
+      .exec<{ subject: string; login: string | null }>("SELECT subject, login FROM identities WHERE user_id = ? AND provider = 'github'", userId)
+      .toArray()
+      .filter((r): r is { subject: string; login: string } => Boolean(r.login));
+    if (!ids.length) return { ...base, read: false, push: false, message: "Sign in with GitHub, so that gitring can check what you may do in the repository." };
+    if (!access.ok) return { ...base, read: false, push: false, message: access.message };
+    for (const id of ids) {
+      const res = await fetch(`https://api.github.com/repos/${repo}/collaborators/${encodeURIComponent(id.login)}/permission`, {
+        headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${access.token}` },
+      }).catch(() => null);
+      if (!res?.ok) continue;
+      const p = await res.json<{ permission?: string; role_name?: string; user?: { id?: number } }>();
+      // The login must still belong to this person's GitHub account.
+      if (String(p.user?.id ?? "") !== id.subject) continue;
+      const push = ["admin", "maintain", "write"].includes(p.role_name ?? "") || ["admin", "write"].includes(p.permission ?? "");
+      const read = push || ["read", "triage"].includes(p.role_name ?? "") || p.permission === "read";
+      return { ...base, read, push, message: push ? `${id.login} can push to ${repo}.` : `Your GitHub account (${id.login}) cannot push to ${repo}.` };
+    }
+    return { ...base, read: false, push: false, message: `Your GitHub account cannot push to ${repo}.` };
+  }
+
+  /** Can this person push to the GitHub repository (and is the app installed there)? */
+  async githubCanPush(userId: string, repo: string): Promise<{ ok: boolean; message: string; installUrl?: string }> {
+    const p = await this.githubPermission(userId, repo);
+    if (!p.installed) return { ok: false, message: p.message.includes("not installed") ? p.message : `The gitring GitHub App is not installed on ${repo}.`, ...(p.installUrl ? { installUrl: p.installUrl } : {}) };
+    return { ok: p.push, message: p.message };
+  }
+
+  /** True the first time a webhook delivery id arrives (kept for a day). */
+  async firstDelivery(id: string): Promise<boolean> {
+    if (!id) return true;
+    const now = Date.now();
+    this.sql.exec("DELETE FROM deliveries WHERE at < ?", now - 24 * 3600_000);
+    if (this.sql.exec("SELECT id FROM deliveries WHERE id = ?", id).toArray()[0]) return false;
+    this.sql.exec("INSERT INTO deliveries (id, at) VALUES (?, ?)", id.slice(0, 100), now);
+    return true;
+  }
+
+  /** "public" or "private" (null: unknown or archived project). */
+  async visibilityOf(projectId: string): Promise<A.Visibility | null> {
+    return this.projectRow(projectId)?.visibility ?? null;
+  }
+
+  /** Forget "not installed" answers (after someone installed the app or changed its repositories). */
+  async forgetGithubMisses(): Promise<void> {
+    this.repoMisses.clear();
   }
 
   /** A project links a GitHub repository (or none). Worker-only, RPC from the project coordinator. */
@@ -848,11 +904,15 @@ export class Directory extends DurableObject<Env> {
    * Projects imported from a GitHub repository in which a GitHub login may open intents (member or
    * owner, also as a pending invite). An issue event from an installed repository only reaches these.
    */
-  async projectsForGithubLogin(url: string, login: string): Promise<string[]> {
+  async projectsForGithubLogin(url: string, login: string, senderId?: number): Promise<string[]> {
     const want = normalizeRemote(url);
     const l = String(login ?? "").toLowerCase();
     if (!l) return [];
-    const userId = this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND lower(login) = ?", l).toArray()[0]?.user_id ?? null;
+    // The GitHub account id identifies the person (a login can be renamed and taken by someone else).
+    const userId =
+      (senderId !== undefined
+        ? this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND subject = ?", String(senderId)).toArray()[0]?.user_id
+        : this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND lower(login) = ?", l).toArray()[0]?.user_id) ?? null;
     const out: string[] = [];
     const repo = /github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i.exec(url)?.[1]?.toLowerCase() ?? "";
     const linked = new Set(repo ? this.sql.exec<{ project_id: string }>("SELECT project_id FROM github_links WHERE repo = ?", repo).toArray().map((r) => r.project_id) : []);

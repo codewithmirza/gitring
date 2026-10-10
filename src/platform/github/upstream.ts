@@ -35,6 +35,8 @@ export interface UpstreamInput {
   resolved?: Record<string, string | null>;
   /** At most this many changed paths (default 3000). */
   maxPaths?: number;
+  /** The GitHub branch that main follows (default: the repository's default branch). */
+  branch?: string;
 }
 
 export interface UpstreamConflict {
@@ -46,10 +48,23 @@ export interface UpstreamConflict {
 }
 
 export type UpstreamResult =
-  | { state: "up-to-date"; head: string; branch: string; message: string }
-  | { state: "changes"; head: string; base: string; branch: string; commits: number; authors: string[]; changes: FileChange[]; skipped: string[]; compareUrl: string; message: string }
-  | { state: "conflict"; head: string; base: string; branch: string; commits: number; conflicts: UpstreamConflict[]; compareUrl: string; message: string }
-  | { state: "error"; message: string };
+  | { state: "up-to-date"; head: string; branch: string; private: boolean; message: string }
+  | {
+      state: "changes";
+      head: string;
+      base: string;
+      branch: string;
+      private: boolean;
+      commits: number;
+      authors: string[];
+      changes: FileChange[];
+      /** Submodule pointers that GitHub changed (path → commit, null: removed). gitring does not keep them. */
+      gitlinks: Record<string, string | null>;
+      compareUrl: string;
+      message: string;
+    }
+  | { state: "conflict"; head: string; base: string; branch: string; private: boolean; commits: number; conflicts: UpstreamConflict[]; compareUrl: string; message: string }
+  | { state: "error"; message: string; private?: boolean };
 
 interface TreeItem {
   path: string;
@@ -60,6 +75,8 @@ interface TreeItem {
 }
 
 const MAX_TEXT = 1_000_000;
+/** Larger files do not come in through the API (memory of the project's object): push them with git. */
+export const MAX_PULL_BLOB = 10_000_000;
 
 export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamResult> {
   const f = input.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
@@ -84,21 +101,22 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
   const fail = (message: string): UpstreamResult => ({ state: "error", message });
 
   try {
-    const info = await get<{ default_branch?: string; html_url?: string }>(`/repos/${input.repo}`);
+    const info = await get<{ default_branch?: string; html_url?: string; private?: boolean }>(`/repos/${input.repo}`);
     if (info.status !== 200 || !info.json) return fail(`gitring cannot read ${input.repo}: ${githubMessage(info.status, info.text)}`);
-    const branch = info.json.default_branch || "main";
+    const isPrivate = Boolean(info.json.private);
+    const branch = input.branch || info.json.default_branch || "main";
     const html = info.json.html_url || `https://github.com/${input.repo}`;
     const headRes = await f(`${api}/repos/${input.repo}/commits/${encodeURIComponent(branch)}`, { headers: headers("application/vnd.github.sha") });
     const head = (await headRes.text()).trim();
     if (headRes.status !== 200 || !/^[0-9a-f]{40}$/.test(head)) return fail(`gitring cannot read ${branch} of ${input.repo}: ${githubMessage(headRes.status, head)}`);
-    if (head === input.since) return { state: "up-to-date", head, branch, message: `main has everything on GitHub ${branch}.` };
+    if (head === input.since) return { state: "up-to-date", head, branch, private: isPrivate, message: `main has everything on GitHub ${branch}.` };
 
     const cmp = await get<{ status?: string; total_commits?: number; merge_base_commit?: { sha?: string; commit?: { tree?: { sha?: string } } }; commits?: { commit?: { author?: { name?: string } } }[] }>(
       `/repos/${input.repo}/compare/${input.since}...${head}?per_page=100`,
     );
     if (cmp.status === 404) return fail(`GitHub no longer has commit ${input.since.slice(0, 7)} (a force push?). Link the repository again in Settings → GitHub.`);
     if (cmp.status !== 200 || !cmp.json) return fail(`GitHub did not compare the commits: ${githubMessage(cmp.status, cmp.text)}`);
-    if (cmp.json.status === "identical" || cmp.json.status === "behind") return { state: "up-to-date", head, branch, message: `main has everything on GitHub ${branch}.` };
+    if (cmp.json.status === "identical" || cmp.json.status === "behind") return { state: "up-to-date", head, branch, private: isPrivate, message: `main has everything on GitHub ${branch}.` };
     const base = cmp.json.merge_base_commit?.sha ?? "";
     const baseTree = cmp.json.merge_base_commit?.commit?.tree?.sha ?? "";
     if (!base || !baseTree) return fail("GitHub did not give the common commit of gitring and GitHub.");
@@ -122,44 +140,65 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
     if (changed.size > (input.maxPaths ?? 3000)) return fail(`GitHub changed ${changed.size} files. That is too many to merge through the API; push the changes to gitring with git.`);
 
     const blobCache = new Map<string, Uint8Array>();
+    // Raw bytes (no base64 copy in memory).
     const githubBlob = async (sha: string): Promise<Uint8Array> => {
       const hit = blobCache.get(sha);
       if (hit) return hit;
-      const r = await get<{ content?: string; encoding?: string }>(`/repos/${input.repo}/git/blobs/${sha}`);
-      if (r.status !== 200 || typeof r.json?.content !== "string") throw new Error(`gitring cannot read blob ${sha.slice(0, 7)} on GitHub (${r.status}).`);
-      const bytes = r.json.encoding === "base64" ? Uint8Array.from(atob(r.json.content.replace(/\n/g, "")), (c) => c.charCodeAt(0)) : new TextEncoder().encode(r.json.content);
+      const res = await f(`${api}/repos/${input.repo}/git/blobs/${sha}`, { headers: headers("application/vnd.github.raw") });
+      if (res.status !== 200) throw new Error(`gitring cannot read blob ${sha.slice(0, 7)} on GitHub (${res.status}).`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
       blobCache.set(sha, bytes);
       return bytes;
     };
+    const tooLarge = (e: TreeItem | undefined) => (e?.size ?? 0) > MAX_PULL_BLOB;
     const asText = (b: Uint8Array | null): string | null => (b && b.length <= MAX_TEXT && isProbablyText(b) ? new TextDecoder().decode(b) : null);
 
     const changes: FileChange[] = [];
     const conflicts: UpstreamConflict[] = [];
-    const skipped: string[] = [];
+    const gitlinks: Record<string, string | null> = {};
     const key = (e: { sha: string; mode: string } | undefined) => (e ? `${e.sha} ${normMode(e.mode)}` : "-");
     for (const path of [...changed].sort()) {
       const b = baseMap.get(path);
       const t = headMap.get(path);
       const o = input.main.get(path);
       if (b?.type === "commit" || t?.type === "commit") {
-        skipped.push(path); // submodules stay as they are on both sides
+        // Submodules: gitring keeps no pointers, but the merge commit on GitHub must carry GitHub's.
+        if (t?.type === "commit") gitlinks[path] = t.sha;
+        else if (!t) gitlinks[path] = null;
+        else {
+          gitlinks[path] = null; // a submodule became a file: the file comes in below
+          if (key(o) !== key(t)) changes.push({ path, content: await githubBlob(t.sha), mode: normMode(t.mode) });
+        }
         continue;
       }
       if (key(o) === key(t)) continue;
       if (key(o) === key(b)) {
+        if (t && tooLarge(t)) {
+          conflicts.push({ path, theirs: t.sha, diff: `${path}: GitHub's version is larger than ${MAX_PULL_BLOB / 1e6} MB. Push it to gitring with git.` });
+          continue;
+        }
         changes.push(t ? { path, content: await githubBlob(t.sha), mode: normMode(t.mode) } : { path, content: null });
         continue;
       }
       if (key(t) === key(b)) continue;
       if (input.resolved && path in input.resolved && input.resolved[path] === (t?.sha ?? null)) continue;
       // Both sides changed the path.
+      if (tooLarge(t) || tooLarge(b)) {
+        conflicts.push({ path, theirs: t?.sha ?? null, diff: `${path}: too large to merge through the API.` });
+        continue;
+      }
       const baseText = b ? asText(await githubBlob(b.sha)) : "";
       const theirsText = t ? asText(await githubBlob(t.sha)) : null;
       const oursText = o ? asText(await input.backend.readBlob(input.source, o.sha)) : null;
       if (o && t && baseText !== null && theirsText !== null && oursText !== null) {
         const m = merge3(baseText, oursText, theirsText);
-        if (m.clean) {
-          changes.push({ path, content: m.content, mode: normMode(o.mode) });
+        // Modes: GitHub's change wins when main kept the old mode; two different changes conflict.
+        const om = normMode(o.mode);
+        const tm = normMode(t.mode);
+        const bm = b ? normMode(b.mode) : om;
+        const mode = om === bm ? tm : tm === bm || tm === om ? om : null;
+        if (m.clean && mode) {
+          changes.push({ path, content: m.content, mode });
           continue;
         }
       }
@@ -172,6 +211,7 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
         head,
         base,
         branch,
+        private: isPrivate,
         commits,
         conflicts,
         compareUrl,
@@ -183,10 +223,11 @@ export async function upstreamChanges(input: UpstreamInput): Promise<UpstreamRes
       head,
       base,
       branch,
+      private: isPrivate,
       commits,
       authors,
       changes,
-      skipped,
+      gitlinks,
       compareUrl,
       message: changes.length ? `GitHub ${branch} has ${n} with changes to ${changes.length} file${changes.length === 1 ? "" : "s"}.` : `main already has the changes of ${n} on GitHub ${branch}.`,
     };
