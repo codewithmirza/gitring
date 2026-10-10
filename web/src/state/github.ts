@@ -128,11 +128,13 @@ function join<T>(key: string, f: Flight, signal?: AbortSignal): Promise<T> {
 
 /**
  * GET a JSON answer. `ttl` (ms) keeps the answer for later calls; `fresh` skips the cache.
- * Calls for the same URL while a fetch runs share that fetch.
+ * Calls for the same URL while a fetch runs share that fetch. `key` stores the answer under another
+ * name (a refresh URL fills the cache entry of the plain URL).
  */
-export function getJson<T>(url: string, opts: { ttl?: number; signal?: AbortSignal; fresh?: boolean } = {}): Promise<T> {
+export function getJson<T>(url: string, opts: { ttl?: number; signal?: AbortSignal; fresh?: boolean; key?: string } = {}): Promise<T> {
   const ttl = opts.ttl ?? 0;
-  const hit = cache.get(url);
+  const key = opts.key ?? url;
+  const hit = cache.get(key);
   if (!opts.fresh && hit && Date.now() - hit.at < ttl) return Promise.resolve(hit.value as T);
   let f = flights.get(url);
   if (!f) {
@@ -140,7 +142,7 @@ export function getJson<T>(url: string, opts: { ttl?: number; signal?: AbortSign
     const flight: Flight = { promise: Promise.resolve(), ctl, waiters: 0 };
     flight.promise = send<T>("GET", url, undefined, ctl.signal)
       .then((v) => {
-        if (ttl > 0) cache.set(url, { at: Date.now(), value: v });
+        if (ttl > 0) cache.set(key, { at: Date.now(), value: v });
         return v;
       })
       .finally(() => {
@@ -181,13 +183,37 @@ export function reposUrl(q = ""): string {
   return t ? `/api/github/repos?q=${encodeURIComponent(t)}` : "/api/github/repos";
 }
 
-/** The person's GitHub repositories (from the gitring GitHub App installations). 401 when signed out. */
-export function listRepos(q = "", signal?: AbortSignal, fresh = false): Promise<GithubRepoList> {
-  return getJson<GithubRepoList>(reposUrl(q), { ttl: REPOS_TTL, signal, fresh });
+/** An installation of the gitring GitHub App that the person can see (the server sends it with the list). */
+export interface RepoAccount {
+  id: number;
+  account: string;
+  type: "User" | "Organization";
+  avatar?: string;
+  selection: "all" | "selected";
+  repos: number;
 }
 
-export function cachedRepos(q = ""): GithubRepoList | null {
-  return peekJson<GithubRepoList>(reposUrl(q), REPOS_TTL);
+/** The list as the server sends it: `complete` is false when GitHub had more repositories than gitring read. */
+export type RepoListFull = GithubRepoList & { installations?: RepoAccount[]; complete?: boolean };
+
+/**
+ * The person's GitHub repositories (from the gitring GitHub App installations). 401 when signed out.
+ * `fresh` asks the server to read GitHub again (`refresh=1`), for example after an install.
+ */
+export function listRepos(q = "", signal?: AbortSignal, fresh = false): Promise<RepoListFull> {
+  const url = reposUrl(q);
+  return getJson<RepoListFull>(fresh ? `${url}${url.includes("?") ? "&" : "?"}refresh=1` : url, { ttl: REPOS_TTL, signal, fresh, key: url }).then(saneList);
+}
+
+/** A list that the screens can read without checks, also when an answer lacks a field. */
+function saneList(l: RepoListFull): RepoListFull {
+  if (l && Array.isArray(l.repos)) return l;
+  return { ...(l ?? {}), connected: Boolean(l?.connected), repos: [] };
+}
+
+export function cachedRepos(q = ""): RepoListFull | null {
+  const hit = peekJson<RepoListFull>(reposUrl(q), REPOS_TTL);
+  return hit ? saneList(hit) : null;
 }
 
 /** Load the repository list again (after the person installs the GitHub App on more repositories). */
@@ -201,11 +227,20 @@ export function guessUrl(repo: string, branch?: string): string {
 
 /** What gitring guesses for a new project from a GitHub repository: name, branch, test commands, sync mode. */
 export function guessProject(repo: string, branch?: string, signal?: AbortSignal): Promise<ProjectGuess> {
-  return getJson<ProjectGuess>(guessUrl(repo, branch), { ttl: GUESS_TTL, signal });
+  return getJson<ProjectGuess>(guessUrl(repo, branch), { ttl: GUESS_TTL, signal }).then(saneGuess);
 }
 
 export function cachedGuess(repo: string, branch?: string): ProjectGuess | null {
-  return peekJson<ProjectGuess>(guessUrl(repo, branch), GUESS_TTL);
+  const hit = peekJson<ProjectGuess>(guessUrl(repo, branch), GUESS_TTL);
+  return hit ? saneGuess(hit) : null;
+}
+
+function saneGuess(g: ProjectGuess): ProjectGuess {
+  return {
+    ...g,
+    checks: g?.checks && typeof g.checks === "object" ? g.checks : { runner: "container" },
+    reasons: Array.isArray(g?.reasons) ? g.reasons.filter((r) => typeof r === "string") : [],
+  };
 }
 
 /** The address that signs in with GitHub (or connects GitHub to the account), then comes back to `returnTo`. */
@@ -255,7 +290,7 @@ export function pullFromGithub(project: string): Promise<GithubSyncStatus> {
 
 /** Apps that the person allowed to use gitring as them. 401 when signed out. */
 export function listGrants(signal?: AbortSignal): Promise<OAuthGrantInfo[]> {
-  return getJson<OAuthGrantInfo[]>("/api/oauth/grants", { signal });
+  return getJson<OAuthGrantInfo[]>("/api/oauth/grants", { signal }).then((l) => (Array.isArray(l) ? l : []));
 }
 
 /* ───────────── hooks ───────────── */
@@ -286,25 +321,26 @@ export function useDelayedFlag(loading: boolean, delay = 150, min = 400): boolea
 
 export interface RepoSearch {
   /** The full list (no query), or null until it loads. */
-  base: GithubRepoList | null;
-  /** Server results for the query (null until they load, or without a query). */
-  found: GithubRepoList | null;
+  base: RepoListFull | null;
+  /** Server results for the query (only when the full list is not complete). */
+  found: RepoListFull | null;
   loading: boolean;
   /** A server search for the query runs now. */
   searching: boolean;
   error: RequestError | null;
-  /** Load the list again (skips the cache). */
+  /** Read GitHub again (skips the caches of the browser and of the server). */
   reload: () => void;
 }
 
 /**
- * The person's repositories for a combobox. The full list loads once (cached 60 s); a query filters it at
- * once in memory, and after 250 ms a server search adds repositories that the full list does not have.
+ * The person's repositories for a combobox. The full list loads once (cached 60 s) and a query filters it
+ * at once in memory: no request per keystroke. Only when the server says that the list is not complete
+ * does a query also go to the server, 250 ms after the last keystroke (each query cached 60 s).
  * Requests of a closed combobox stop.
  */
 export function useRepoSearch(query: string, enabled: boolean): RepoSearch {
-  const [base, setBase] = useState<GithubRepoList | null>(() => (enabled ? cachedRepos() : null));
-  const [found, setFound] = useState<GithubRepoList | null>(null);
+  const [base, setBase] = useState<RepoListFull | null>(() => (enabled ? cachedRepos() : null));
+  const [found, setFound] = useState<RepoListFull | null>(null);
   const [error, setError] = useState<RequestError | null>(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -339,7 +375,7 @@ export function useRepoSearch(query: string, enabled: boolean): RepoSearch {
     };
   }, [enabled, nonce]);
 
-  // The person may install the GitHub App in another tab: look again when this tab comes back.
+  // The person may install the GitHub App in another tab: read GitHub again when this tab comes back.
   useEffect(() => {
     if (!enabled) return;
     let hiddenAt = 0;
@@ -354,9 +390,10 @@ export function useRepoSearch(query: string, enabled: boolean): RepoSearch {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [enabled]);
 
+  const partial = base?.connected !== false && base?.complete === false;
   useEffect(() => {
     setFound(null);
-    if (!enabled || !q || base?.connected === false) {
+    if (!enabled || !q || !partial) {
       setSearching(false);
       return;
     }
@@ -379,7 +416,7 @@ export function useRepoSearch(query: string, enabled: boolean): RepoSearch {
       clearTimeout(t);
       ctl.abort();
     };
-  }, [q, enabled, base?.connected, nonce]);
+  }, [q, enabled, partial, nonce]);
 
   return {
     base,

@@ -90,6 +90,24 @@
 @keyframes np-spin { to { transform: rotate(360deg); } }
 
 .np-hint { display: flex; align-items: baseline; gap: var(--s-1); margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--caution); }
+
+.np-chips { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2); }
+.np-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 26px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+.np-chip:hover { border-color: var(--line-strong); color: var(--ink-1); }
+.np-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-tint); color: var(--ink-1); }
+.np-chip__n { font-family: var(--font-agent); font-weight: 400; color: var(--ink-3); }
 .np-hint .b-icon { flex: none; transform: translateY(2px); }
 
 .np-list {
@@ -101,7 +119,8 @@
   overflow: auto;
   overscroll-behavior: contain;
   margin: 0 calc(-1 * var(--s-2));
-  padding: 0 var(--s-2) 2px;
+  /* No bottom padding: the docked group must close the list, or rows peek out under it. */
+  padding: 0 var(--s-2);
 }
 .np-group { display: grid; gap: 1px; }
 .np-group__head {
@@ -183,7 +202,7 @@
   bottom: 0;
   z-index: 1;
   margin: 0 calc(-1 * var(--s-2));
-  padding: 0 var(--s-2) var(--s-1);
+  padding: 0 var(--s-2) var(--s-2);
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
@@ -217,6 +236,7 @@
   color: var(--ink-2);
   white-space: nowrap;
 }
+.np-tag--guess { margin-left: var(--s-2); border-color: color-mix(in oklch, var(--caution) 60%, transparent); color: var(--caution); vertical-align: 1px; }
 .np-note { padding: var(--s-2) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .np-linkbtn {
   display: inline;
@@ -352,6 +372,8 @@
   text-decoration: none;
 }
 .np-provider:hover { background: var(--surface-2); }
+.np-provider { position: relative; }
+.np-provider__last { position: absolute; right: var(--s-3); }
 
 /* ───────────── inline confirm ───────────── */
 .np-confirm {
@@ -411,6 +433,7 @@
   .np-opt { min-height: 52px; }
   .np-back { min-height: 44px; }
   .np-group__act { width: 44px; height: 44px; }
+  .np-chip { height: 44px; border-radius: 22px; padding: 0 var(--s-4); }
   .np-provider { height: 48px; }
   .np-select__toggle { width: 40px; height: 40px; right: 2px; }
   /* 16 px text keeps iOS from zooming into a focused field. */

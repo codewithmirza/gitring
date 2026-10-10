@@ -109,6 +109,8 @@ export function AnchoredPanel({ id, open, anchor, onClose, labelledBy, label, wi
     if (el?.contains(document.activeElement)) return;
     const target = el?.querySelector<HTMLElement>("[data-autofocus]") ?? el?.querySelector<HTMLElement>(FOCUSABLE);
     target?.focus({ preventScroll: true });
+    // A field with a guess: select its text, so typing replaces it and Enter accepts it.
+    if (target instanceof HTMLInputElement && target.dataset.autofocus === "select") target.select();
   }, [open, placed]);
 
   // A press outside closes the panel (the trigger toggles it itself).

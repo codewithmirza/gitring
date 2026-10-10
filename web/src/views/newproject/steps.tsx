@@ -54,11 +54,12 @@ function StepHead({ title, onBack, children }: { title: ReactNode; onBack: () =>
   );
 }
 
-function Row({ id, label, hint, children }: { id: string; label: string; hint?: ReactNode; children: ReactNode }) {
+function Row({ id, label, hint, tag, children }: { id: string; label: string; hint?: ReactNode; tag?: string; children: ReactNode }) {
   return (
     <div className="np-row">
       <label className="np-row__label" htmlFor={id}>
         {label}
+        {tag && <span className="np-tag np-tag--guess">{tag}</span>}
       </label>
       <div className="np-row__value">
         {children}
@@ -81,6 +82,7 @@ function Quiet({ id, value, onChange, placeholder, mono, hint, invalid, inputRef
   mono?: boolean;
   hint?: boolean;
   invalid?: boolean;
+  /** The first field of a step: it takes the focus (also when the panel opens at this step). */
   inputRef?: (el: HTMLInputElement | null) => void;
   maxLength?: number;
   inputMode?: "url" | "text";
@@ -89,6 +91,7 @@ function Quiet({ id, value, onChange, placeholder, mono, hint, invalid, inputRef
     <input
       {...rest}
       ref={inputRef}
+      data-autofocus={inputRef ? "select" : undefined}
       id={id}
       className={["np-in", mono && "voice-agent"].filter(Boolean).join(" ")}
       value={value}
@@ -225,22 +228,26 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
   const loading = !guess && !guessError;
   const skeleton = useDelayedFlag(loading);
   const runner = guess?.checks.runner ?? "container";
-  const canPush = known ? known.canPush : guess ? guess.sync !== "off" : true;
+  // The guess knows best: GitHub sync needs the app on the repository and a person who can push.
+  const canSync = guess ? guess.sync !== "off" : (known?.canPush ?? false);
   const isPrivate = guess?.private ?? known?.private ?? false;
   const v = {
     name: form.name ?? guess?.name ?? nameOfRepo(repo),
     branch: form.branch ?? guess?.branch ?? known?.defaultBranch ?? "",
     install: form.install ?? guess?.checks.install ?? "",
     test: form.test ?? guess?.checks.test ?? "",
-    sync: form.sync ?? (canPush ? (guess?.sync ?? "pull-request") : "off"),
+    sync: form.sync ?? (canSync ? (guess?.sync ?? "pull-request") : "off"),
     visibility: form.visibility ?? (isPrivate ? "private" : "public"),
   };
   const reasons = guess?.reasons ?? [];
+  // A model answer (rules found zero or several commands) starts with "Guess:" and gets the tag "guess".
+  const modelGuess = reasons.find((r) => /^guess\b/i.test(r));
+  const plain = reasons.filter((r) => r !== modelGuess);
   const hints = {
-    branch: reasonFor(reasons, "branch"),
-    install: reasonFor(reasons, "install"),
-    test: reasonFor(reasons, "test"),
-    sync: reasonFor(reasons, "sync"),
+    branch: reasonFor(plain, "branch"),
+    install: reasonFor(plain, "install"),
+    test: modelGuess ?? reasonFor(plain, "test"),
+    sync: reasonFor(plain, "sync"),
   };
   const used = new Set(Object.values(hints).filter(Boolean));
   const rest = reasons.filter((r) => !used.has(r));
@@ -288,12 +295,16 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
   if (guessError) {
     const s = guessError.status;
     const install = typeof guessError.data.installUrl === "string" ? guessError.data.installUrl : null;
+    // The server writes its own plain sentence; a bare status gets ours.
+    const own = guessError.message && !/^(gitring did not find it|Sign in first|The request failed)/.test(guessError.message);
     const text =
-      s === 404
-        ? "gitring cannot read this repository. It is private, or the name is wrong."
-        : s === 401
-          ? "Your sign-in ended. Sign in again. gitring keeps your choice."
-          : `gitring could not read the repository. ${guessError.message}`;
+      s === 401
+        ? "Your sign-in ended. Sign in again. gitring keeps your choice."
+        : own
+          ? guessError.message
+          : s === 404
+            ? "gitring cannot read this repository. It is private, or the name is wrong."
+            : `gitring could not read the repository. ${guessError.message}`;
     return (
       <div className="np-step">
         <StepHead title={title} onBack={onBack} />
@@ -361,10 +372,15 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
             </Row>
             {runner === "container" ? (
               <>
-                <Row id={`${uid}-install`} label="Install" hint={hints.install ?? (v.install ? undefined : "Empty: npm ci with a package-lock.json, else npm install.")}>
+                <Row
+                  id={`${uid}-install`}
+                  label="Install"
+                  tag={modelGuess && form.install === undefined ? "guess" : undefined}
+                  hint={hints.install ?? (v.install ? undefined : "Empty: npm ci with a package-lock.json, else npm install.")}
+                >
                   <Quiet id={`${uid}-install`} value={v.install} onChange={(install) => setForm({ install })} mono hint placeholder="npm ci" />
                 </Row>
-                <Row id={`${uid}-test`} label="Test" hint={hints.test ?? (v.test ? undefined : "Empty: npm test.")}>
+                <Row id={`${uid}-test`} label="Test" tag={modelGuess && form.test === undefined ? "guess" : undefined} hint={hints.test ?? (v.test ? undefined : "Empty: npm test.")}>
                   <Quiet id={`${uid}-test`} value={v.test} onChange={(test) => setForm({ test })} mono hint placeholder="npm test" />
                 </Row>
               </>
@@ -380,7 +396,7 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
             <div className="np-row">
               <span className="np-row__label">Merged code</span>
               <div className="np-row__value">
-                {canPush ? (
+                {canSync ? (
                   <Segmented<GithubSyncMode>
                     label="Where merged code goes"
                     value={v.sync}
@@ -394,7 +410,7 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
                 ) : (
                   <span className="np-row__text">Stays in gitring.</span>
                 )}
-                <span className="np-row__hint">{canPush ? (hints.sync ?? SYNC_TEXT[v.sync]) : "You cannot push to this repository, so gitring does not send code to GitHub."}</span>
+                <span className="np-row__hint">{hints.sync ?? (canSync ? SYNC_TEXT[v.sync] : "You cannot push to this repository, so gitring does not send code to GitHub.")}</span>
               </div>
             </div>
             <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} hint={form.visibility === undefined ? "Same as the repository." : undefined} />
@@ -530,7 +546,7 @@ export function UploadStep({ upload, form, setForm, onBack, onStep, onChooseFold
       ) : (
         <div className="np-step__pick">
           <p className="np-step__note">gitring reads the files in your browser and sends them in one commit. It leaves out .git, node_modules and build output.</p>
-          <Button ref={choose} icon="launch" onClick={onChooseFolder}>
+          <Button ref={choose} icon="launch" onClick={onChooseFolder} data-autofocus>
             Choose a folder
           </Button>
         </div>

@@ -50,11 +50,12 @@ export function RepoSelect({ id, value, onChange, me, returnTo, disabled, descri
   const installUrl = search.base?.installUrl ?? me?.githubInstallUrl ?? undefined;
 
   const typed = githubRepoName(text);
+  // Opened without typing: every repository (to browse). Typing: the matches.
   const repos = useMemo(() => {
     if (!search.base) return [];
-    const q = typed ?? query;
-    return mergeRepos(rankRepos(search.base.repos, q), q.trim() ? search.found?.repos : undefined).slice(0, 30);
-  }, [search.base, search.found, typed, query]);
+    const q = typing ? (typed ?? query) : "";
+    return mergeRepos(rankRepos(search.base.repos, q), q.trim() ? search.found?.repos : undefined).slice(0, 40);
+  }, [search.base, search.found, typed, query, typing]);
 
   // Tell the page about the chosen repository (push rights, privacy) when the list knows it.
   const current = search.base?.repos.find((r) => r.fullName.toLowerCase() === value.toLowerCase()) ?? null;
@@ -66,13 +67,18 @@ export function RepoSelect({ id, value, onChange, me, returnTo, disabled, descri
   const options = useMemo(() => {
     const out: Opt[] = [];
     if (me?.user && connected === false) out.push({ key: "connect", kind: "connect" });
-    if (typed && !repos.some((r) => r.fullName.toLowerCase() === typed.toLowerCase())) out.push({ key: `typed:${typed}`, kind: "typed", repo: typed });
+    if (typing && typed && !repos.some((r) => r.fullName.toLowerCase() === typed.toLowerCase())) out.push({ key: `typed:${typed}`, kind: "typed", repo: typed });
     for (const r of repos) out.push({ key: `repo:${r.fullName}`, kind: "repo", repo: r });
     if (connected && installUrl) out.push({ key: "install", kind: "install", url: installUrl });
     return out;
-  }, [me?.user, connected, typed, repos, installUrl]);
+  }, [me?.user, connected, typed, repos, installUrl, typing]);
 
-  useEffect(() => setActive(0), [text, open]);
+  // Typing starts at the first match; opening starts at the linked repository.
+  useEffect(() => {
+    const at = typing ? 0 : options.findIndex((o) => o.kind === "repo" && o.repo.fullName.toLowerCase() === value.toLowerCase());
+    setActive(Math.max(0, at));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, open]);
   const idx = Math.max(0, Math.min(active, options.length - 1));
   const optId = (key: string) => `${uid}-o-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   const activeKey = open ? options[idx]?.key : undefined;

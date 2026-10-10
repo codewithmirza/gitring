@@ -47,7 +47,7 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
   const listId = `${base}-list`;
   const statusId = `${base}-status`;
   const input = useRef<HTMLInputElement | null>(null);
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState<number | null>(null);
 
   const signedIn = Boolean(me?.user);
   const known = me?.github;
@@ -61,12 +61,25 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
 
   const pasted = readPasted(query);
   const filter = pasted?.kind === "github" ? pasted.repo : pasted ? "" : query;
+  // Accounts (the GitHub App installations): chips filter the list when there is more than one.
+  const [owner, setOwner] = useState<string | null>(null);
+  const accounts = useMemo(() => {
+    const fromServer = (search.base?.installations ?? []).map((i) => ({ name: i.account, count: i.repos }));
+    if (fromServer.length) return fromServer;
+    const counts = new Map<string, number>();
+    for (const r of search.base?.repos ?? []) {
+      const o = r.fullName.split("/")[0];
+      counts.set(o, (counts.get(o) ?? 0) + 1);
+    }
+    return [...counts].map(([name, count]) => ({ name, count }));
+  }, [search.base]);
 
   const repos = useMemo(() => {
     if (!search.base || pasted?.kind === "git" || pasted?.kind === "bad") return [];
-    const local = rankRepos(search.base.repos, filter);
-    return mergeRepos(local, filter.trim() ? search.found?.repos : undefined);
-  }, [search.base, search.found, filter, pasted?.kind]);
+    const own = owner && !pasted ? (r: GithubRepo) => r.fullName.toLowerCase().startsWith(`${owner.toLowerCase()}/`) : () => true;
+    const local = rankRepos(search.base.repos.filter(own), filter);
+    return mergeRepos(local, filter.trim() ? search.found?.repos.filter(own) : undefined);
+  }, [search.base, search.found, filter, pasted?.kind, owner]);
 
   const exact = pasted?.kind === "github" ? repos.find((r) => r.fullName.toLowerCase() === pasted.repo.toLowerCase()) : undefined;
   const shown = repos.slice(0, SHOW);
@@ -78,20 +91,29 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
     if (pasted?.kind === "git") out.push({ key: `git:${pasted.url}`, kind: "import-git", url: pasted.url });
     if (signedIn && connected === false) out.push({ key: "connect", kind: "connect" });
     for (const r of shown) out.push({ key: `repo:${r.fullName}`, kind: "repo", repo: r });
-    if (connected && installUrl && pasted?.kind !== "git" && pasted?.kind !== "bad") out.push({ key: "install", kind: "install", url: installUrl });
+    // "Add repositories on GitHub" ends the list once it has loaded.
+    if (search.base?.connected && installUrl && pasted?.kind !== "git" && pasted?.kind !== "bad") out.push({ key: "install", kind: "install", url: installUrl });
     for (const o of OTHER) out.push({ key: o.kind, kind: o.kind });
     return out;
     // `pasted` is rebuilt on each render; its JSON stands for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pastedKey, exact, signedIn, connected, shown, installUrl]);
+  }, [pastedKey, exact, signedIn, connected, shown, installUrl, search.base?.connected]);
 
-  // A new query starts at the first row.
-  useEffect(() => setActive(0), [query]);
-  const idx = Math.max(0, Math.min(active, options.length - 1));
-  const activeKey = options[idx]?.key;
+  const loadingRepos = signedIn && connected !== false && !search.base && !search.error;
+  // The active row: null follows the list (the first repository or import row); keys and the mouse pick one.
+  // While the repositories load, no row is active, so an early Enter waits for them instead of picking
+  // "Upload a folder".
+  const lead = options.findIndex((o) => o.kind === "repo" || o.kind === "import-github" || o.kind === "import-git" || o.kind === "connect");
+  const auto = lead >= 0 ? lead : loadingRepos ? -1 : 0;
+  const idx = active === null ? auto : Math.max(0, Math.min(active, options.length - 1));
+  const activeKey = idx >= 0 ? options[idx]?.key : undefined;
   const optId = (key: string) => `${base}-o-${key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   // Only keys scroll the list (a mouse already points at the row; the first render must not move the page).
   const byKey = useRef(false);
+  const [queued, setQueued] = useState(false);
+
+  // A new query or account starts at the first row again.
+  useEffect(() => setActive(null), [query, owner]);
 
   useEffect(() => {
     if (!activeKey || !byKey.current) return;
@@ -114,22 +136,31 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
     if (!n) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      move((idx + 1) % n);
+      move(idx < 0 ? 0 : (idx + 1) % n);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      move((idx - 1 + n) % n);
+      move(idx < 0 ? n - 1 : (idx - 1 + n) % n);
     } else if (e.key === "PageDown") {
       e.preventDefault();
-      move(Math.min(n - 1, idx + 6));
+      move(Math.min(n - 1, Math.max(0, idx) + 6));
     } else if (e.key === "PageUp") {
       e.preventDefault();
       move(Math.max(0, idx - 6));
     } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      const o = options[idx];
+      const o = idx >= 0 ? options[idx] : undefined;
       if (o) pick(o);
+      else if (loadingRepos) setQueued(true);
     }
   };
+
+  // Enter while the repositories loaded: pick the first match when they arrive.
+  useEffect(() => {
+    if (!queued || loadingRepos) return;
+    setQueued(false);
+    if (lead >= 0) pick(options[lead]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued, loadingRepos]);
 
   const pick = (o: SourceOption) => {
     if (o.kind === "connect") {
@@ -149,7 +180,6 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
     onPick(exact && o.kind === "import-github" ? { key: o.key, kind: "repo", repo: exact } : o);
   };
 
-  const loadingRepos = signedIn && connected !== false && !search.base && !search.error;
   const skeleton = useDelayedFlag(loadingRepos);
   const q = query.trim();
 
@@ -173,8 +203,18 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
     );
   }
 
-  const count = connected ? `${repos.length} ${repos.length === 1 ? "repository" : "repositories"}${repos.length > SHOW ? `, ${SHOW} shown` : ""}. ` : "";
-  const statusText = loadingRepos ? "gitring loads your repositories." : `${count}${pasted?.kind === "bad" ? pasted.reason : ""}`;
+  // The live region says what changed for the person: the import row, a reason, or the number of repositories.
+  const statusText = loadingRepos
+    ? "gitring loads your repositories."
+    : pasted?.kind === "bad"
+      ? pasted.reason
+      : pasted?.kind === "git"
+        ? `Import ${pasted.url.replace(/^https:\/\//, "")}. Press Enter.`
+        : pasted?.kind === "github" && !exact
+          ? `Import github.com/${pasted.repo}. Press Enter.`
+          : connected
+            ? `${repos.length} ${repos.length === 1 ? "repository" : "repositories"}${repos.length > SHOW ? `, ${SHOW} shown` : ""}.`
+            : "";
 
   const row = (o: SourceOption, body: ReactNode, extra?: string, hint = true) => {
     const i = options.indexOf(o);
@@ -242,6 +282,25 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
         <p className="np-hint" role="note">
           <Icon name="info" size={12} /> {pasted.reason}
         </p>
+      )}
+      {connected && !pasted && accounts.length > 1 && (
+        <div className="np-chips" role="group" aria-label="Show the repositories of one account">
+          <button type="button" className="np-chip" aria-pressed={owner === null} onMouseDown={(e) => e.preventDefault()} onClick={() => setOwner(null)}>
+            All accounts
+          </button>
+          {accounts.map((a) => (
+            <button
+              key={a.name}
+              type="button"
+              className="np-chip"
+              aria-pressed={owner === a.name}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setOwner(owner === a.name ? null : a.name)}
+            >
+              {a.name} <span className="np-chip__n">{a.count}</span>
+            </button>
+          ))}
+        </div>
       )}
       <div id={listId} role="listbox" aria-label="Sources" className="np-list">
         {importRows.length > 0 && (

@@ -105,7 +105,7 @@ describe("getJson", () => {
 
   it("turns error answers into RequestError with the status, the message and the data", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => answer({ error: "An owner of acme must approve the GitHub app.", installUrl: "https://github.com/apps/x" }, 403)));
-    const e = await getJson("/api/d").catch((x) => x);
+    const e = (await getJson("/api/d").catch((x) => x)) as RequestError;
     expect(e).toBeInstanceOf(RequestError);
     expect(e.status).toBe(403);
     expect(e.message).toBe("An owner of acme must approve the GitHub app.");
@@ -119,11 +119,11 @@ describe("getJson", () => {
         throw new TypeError("network");
       }),
     );
-    const e1 = await getJson("/api/e").catch((x) => x);
+    const e1 = (await getJson("/api/e").catch((x) => x)) as RequestError;
     expect(e1.status).toBe(0);
     expect(e1.message).toMatch(/did not answer/);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 502 })));
-    const e2 = await getJson("/api/f").catch((x) => x);
+    const e2 = (await getJson("/api/f").catch((x) => x)) as RequestError;
     expect(e2.status).toBe(502);
     expect(e2.message).toMatch(/gitring had a problem/);
   });
