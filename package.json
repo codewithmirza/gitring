@@ -2,9 +2,37 @@
   "name": "gitring",
   "version": "0.7.0",
   "private": true,
-  "description": "gitring: many coding agents change one codebase at the same time. Agents send a plan, gitring checks it against all active work, sends change requests instead of rejections, and merges work when the tests pass. Built on Cloudflare Workers and Artifacts.",
+  "description": "gitring lets many coding agents change one repository at the same time. Agents send a plan. gitring compares it with the 20 nearest plans, sends change requests instead of rejections, and merges work only when the tests pass. It runs on Cloudflare Workers and Artifacts.",
   "license": "MIT",
   "type": "module",
+  "cloudflare": {
+    "bindings": {
+      "GITRING_SECRET": {
+        "description": "Seals the sign-in credentials. Make a value with `openssl rand -base64 32`."
+      },
+      "GITRING_SETUP_TOKEN": {
+        "description": "Opens the `/setup` page before an owner signs in. Make a value with `openssl rand -hex 16`."
+      },
+      "GITRING_OWNERS": {
+        "description": "The owners of this deployment, separated by commas. Use `github:your-login` or `google:you@example.com`."
+      },
+      "GITRING_KEY": {
+        "description": "Optional key for scripts. It acts as an owner on every project. Make a value with `openssl rand -hex 24`."
+      },
+      "AI": {
+        "description": "Workers AI. It runs the conflict-check model, the built-in agents and the guess of the test command."
+      },
+      "ARTIFACTS": {
+        "description": "Cloudflare Artifacts. It stores the git repositories of all projects. It needs the Workers Paid plan."
+      },
+      "LOADER": {
+        "description": "Worker Loader (Dynamic Workers). It runs the tests of the worker runner and the live previews."
+      },
+      "DRYDOCK": {
+        "description": "A Durable Object that starts one Cloudflare container for each work copy. The container runs the tests."
+      }
+    }
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
