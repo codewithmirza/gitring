@@ -177,7 +177,8 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
   app.get("/oauth/authorize", async (c) => {
     const dir = directory(c.env);
     const o = originOf(c);
-    const q = c.req.query();
+    // A plain object: Hono's query object has no prototype, and RPC cannot send that.
+    const q: Record<string, string> = { ...Object.fromEntries(Object.entries(c.req.query())) };
     let request: { id: string; clientId: string; clientName: string; clientUri?: string; redirectUri: string; forceConsent: boolean } | null;
     if (q.req) {
       request = await dir.oauthRequest(q.req);

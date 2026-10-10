@@ -69,7 +69,7 @@ import {
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
-export const BUILD_ID = "0.6.0+20261010a";
+export const BUILD_ID = "0.7.0+20261010b";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
