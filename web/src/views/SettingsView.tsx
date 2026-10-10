@@ -1,25 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+/**
+ * "/settings": the settings of the open project. The page shows the settings of the live project state at
+ * once, then the full settings from the server (members only). Each section saves on its own.
+ * Destructive actions confirm in place (no modal dialogs).
+ */
+import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
-import type { MemberInfo, Role, Visibility } from "../../../src/core/accounts";
+import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
 import type { CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, GitringEventType, ProjectSettings, RedoPolicy, WebhookTarget } from "../../../src/core/types";
 import { githubRepoName } from "../../../src/core/repo-rules";
-import {
-  addMember,
-  archiveProject,
-  getGithubStatus,
-  getSettings,
-  listMembers,
-  loadProjects,
-  putSettings,
-  removeMember,
-  syncGithub,
-  updateProject,
-  useAccess,
-} from "../state/account";
+import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess, useMe, type MeWithInstall } from "../state/account";
+import { isAbort, pullFromGithub, sendToGithub, syncStatus } from "../state/github";
 import { useStore } from "../state/store";
-import { harborOrNull } from "../state/api";
 import { ago, shortSha } from "../state/format";
+import { Link } from "../app/router";
+import { InlineConfirm } from "./newproject/InlineConfirm";
+import { RepoSelect } from "./newproject/RepoSelect";
 import "./projects.css";
 
 /** Save a part of the settings. The server merges it and answers the full settings (or an error to show inline). */
@@ -52,29 +48,76 @@ function SaveError({ error }: { error: string | null }) {
   );
 }
 
+const SECTIONS: { id: string; label: string; owner?: boolean }[] = [
+  { id: "st-general", label: "General" },
+  { id: "st-members", label: "Members" },
+  { id: "st-merging", label: "Merging" },
+  { id: "st-checks", label: "Tests" },
+  { id: "st-github", label: "GitHub" },
+  { id: "st-webhooks", label: "Webhooks" },
+  { id: "st-danger", label: "Archive", owner: true },
+];
+
+function jumpTo(id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+  el.setAttribute("tabindex", "-1");
+  el.focus({ preventScroll: true });
+}
+
 export function SettingsView() {
   const access = useAccess();
+  const me = useMe();
   const projectId = useStore((s) => s.projectId);
   const project = useStore((s) => s.state?.project);
   const info = useStore((s) => s.projects.find((p) => p.id === s.projectId));
   const owner = access === "owner";
+  const member = access === "owner" || access === "member";
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [who, setWho] = useState("");
   const [role, setRole] = useState<Role>("member");
   const [name, setName] = useState(info?.name ?? project?.name ?? "");
   const [busy, setBusy] = useState<string | null>(null);
-  const [settings, setSettings] = useState<ProjectSettings | null>(null);
+  // The live state carries the settings: the page shows them at once. The server's answer replaces them.
+  const [settings, setSettings] = useState<ProjectSettings | null>(() => project?.settings ?? null);
+  const [full, setFull] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const membersHead = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
-    if (access === "owner" || access === "member") listMembers(projectId).then(setMembers, () => setMembers([]));
-  }, [projectId, access]);
+    if (!member) return;
+    const ctl = new AbortController();
+    listMembers(projectId).then(
+      (m) => !ctl.signal.aborted && setMembers(m),
+      () => !ctl.signal.aborted && setMembers([]),
+    );
+    return () => ctl.abort();
+  }, [projectId, member]);
   useEffect(() => {
-    if (access !== "owner" && access !== "member") return;
+    if (!member) return;
+    let live = true;
     setLoadError(null);
-    getSettings(projectId).then(setSettings, (e: Error) => setLoadError(e.message));
-  }, [projectId, access]);
+    getSettings(projectId).then(
+      (s) => {
+        if (!live) return;
+        setSettings(s);
+        setFull(true);
+      },
+      (e: Error) => live && setLoadError(e.message),
+    );
+    return () => {
+      live = false;
+    };
+  }, [projectId, member]);
   useEffect(() => setName(info?.name ?? project?.name ?? ""), [info?.name, project?.name]);
+  // ?section=github (for example after "Connect GitHub") opens the page at that section.
+  useEffect(() => {
+    const section = new URLSearchParams(location.search).get("section");
+    if (section && settings) requestAnimationFrame(() => jumpTo(`st-${section}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(settings)]);
 
   if (!access || access === "viewer") {
     return (
@@ -99,10 +142,10 @@ export function SettingsView() {
     }
   };
 
+  const title = info?.name ?? project?.name ?? projectId;
   const visibility: Visibility = info?.visibility ?? "private";
-  const isSample = projectId === "demo";
   const source = project?.source ?? info?.source;
-  const imported = source?.kind === "git" ? githubRepoName(source.url) : null;
+  const imported = source?.kind === "github" ? source.repo : source?.kind === "git" ? githubRepoName(source.url) : null;
 
   return (
     <div className="page settings">
@@ -110,7 +153,7 @@ export function SettingsView() {
         <Icon name="info" size={14} /> Settings
       </p>
       <h1 className="page__title" tabIndex={-1}>
-        {info?.name ?? project?.name ?? projectId}
+        {title}
       </h1>
       <p className="page__lede">
         Project id <span className="voice-agent">{projectId}</span>
@@ -122,6 +165,23 @@ export function SettingsView() {
         ) : null}
       </p>
       {!owner && <p className="st-note">Owners change these settings. You see the values.</p>}
+      <nav aria-label="Sections">
+        <ul className="st-toc">
+          {SECTIONS.filter((s) => !s.owner || owner).map((s) => (
+            <li key={s.id}>
+              <a
+                href={`#${s.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  jumpTo(s.id);
+                }}
+              >
+                {s.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
       <section className="st-sec" aria-labelledby="st-general">
         <h2 className="page__h2" id="st-general">
@@ -132,7 +192,11 @@ export function SettingsView() {
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!owner} maxLength={80} />
           </Field>
           {owner && (
-            <Button busy={busy === "name"} onClick={() => void run("name", () => updateProject(projectId, { name }).then(() => loadProjects()), "Name saved")}>
+            <Button
+              busy={busy === "name"}
+              disabled={!name.trim() || name.trim() === title}
+              onClick={() => void run("name", () => updateProject(projectId, { name: name.trim() }).then(() => loadProjects()), "Name saved")}
+            >
               Save name
             </Button>
           )}
@@ -141,36 +205,72 @@ export function SettingsView() {
           label="Who can see it"
           value={visibility}
           disabled={!owner}
-          onChange={(v) => owner && void run("vis", () => updateProject(projectId, { visibility: v }).then(() => loadProjects()), v === "public" ? "The project is public" : "The project is private")}
+          onChange={(v) => owner && v !== visibility && void run("vis", () => updateProject(projectId, { visibility: v }).then(() => loadProjects()), v === "public" ? "The project is public" : "The project is private")}
           options={[
-            { value: "private", label: "Private", icon: "eye" },
-            { value: "public", label: "Public", icon: "waves" },
+            { value: "private", label: "Private" },
+            { value: "public", label: "Public" },
           ]}
         />
         <p className="np__help">{visibility === "private" ? "Only members see this project." : "Anyone with the link can view it. Only members can change it."}</p>
       </section>
 
       <section className="st-sec" aria-labelledby="st-members">
-        <h2 className="page__h2" id="st-members">
+        <h2 className="page__h2" id="st-members" ref={membersHead}>
           Members
         </h2>
         <p className="np__help">Owners change settings and members. Members open tasks, start agents and choose work copies. Viewers can only look.</p>
-        <ul className="st-members">
+        <ul className="st-members" aria-busy={members === null || undefined}>
           {(members ?? []).map((m) => (
             <li key={m.handle}>
               <span className="st-members__name">{m.name}</span>
               <span className="st-members__handle voice-agent">{m.handle}</span>
-              <span className="st-members__role">{m.pending ? `${m.role} · invited` : m.role}</span>
-              {owner && (
-                <Button size="sm" variant="ghost" icon="close" onClick={() => void run(`rm:${m.handle}`, () => removeMember(projectId, m.userId ?? m.handle).then(setMembers), "Member removed")}>
-                  Remove
-                </Button>
+              <span className="st-members__role">
+                {m.pending ? `${m.role} · invited` : m.role}
+                {m.userId && m.userId === me?.user?.id ? " · you" : ""}
+              </span>
+              {owner && m.userId !== me?.user?.id && (
+                <span className="st-members__act">
+                  <InlineConfirm
+                    label="Remove"
+                    ariaLabel={`Remove ${m.name}`}
+                    size="sm"
+                    variant="ghost"
+                    icon="close"
+                    question={`Remove ${m.name}? ${m.pending ? "The invitation ends." : "They lose access at once."}`}
+                    confirmLabel="Remove"
+                    onConfirm={async () => {
+                      try {
+                        setMembers(await removeMember(projectId, m.userId ?? m.handle));
+                        toast({ tone: "info", title: "Member removed", text: `${m.name} has no access now.` });
+                        membersHead.current?.setAttribute("tabindex", "-1");
+                        membersHead.current?.focus();
+                      } catch (e) {
+                        toast({ tone: "danger", title: "The member was not removed", text: (e as Error).message });
+                      }
+                    }}
+                  />
+                </span>
               )}
             </li>
           ))}
         </ul>
         {owner && (
-          <div className="st-row">
+          <form
+            className="st-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!who.trim()) return;
+              void run(
+                "add",
+                () =>
+                  addMember(projectId, who.trim(), role).then((list) => {
+                    setMembers(list);
+                    setWho("");
+                  }),
+                "Person added",
+              );
+            }}
+          >
             <Field label="Add a person" help="A GitHub login or an email. They get the role when they sign in.">
               <Input value={who} onChange={(e) => setWho(e.target.value)} placeholder="octocat or ada@example.com" autoComplete="off" spellCheck={false} />
             </Field>
@@ -184,30 +284,14 @@ export function SettingsView() {
                 { value: "owner", label: "Owner" },
               ]}
             />
-            <Button
-              variant="primary"
-              icon="plus"
-              busy={busy === "add"}
-              disabled={!who.trim()}
-              onClick={() =>
-                void run(
-                  "add",
-                  () =>
-                    addMember(projectId, who.trim(), role).then((list) => {
-                      setMembers(list);
-                      setWho("");
-                    }),
-                  "Person added",
-                )
-              }
-            >
+            <Button type="submit" variant="primary" icon="plus" busy={busy === "add"} disabled={!who.trim()}>
               Add
             </Button>
-          </div>
+          </form>
         )}
       </section>
 
-      {loadError && (
+      {loadError && !settings && (
         <section className="st-sec">
           <SaveError error={`The settings did not load. ${loadError}`} />
         </section>
@@ -216,8 +300,17 @@ export function SettingsView() {
         <>
           <MergingSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} />
           <ChecksSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} />
-          <GithubSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} imported={imported} />
-          <WebhooksSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} />
+          <GithubSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} imported={imported} me={me} />
+          {full ? (
+            <WebhooksSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} />
+          ) : (
+            <section className="st-sec" aria-labelledby="st-webhooks" aria-busy="true">
+              <h2 className="page__h2" id="st-webhooks">
+                Webhooks
+              </h2>
+              {loadError ? <SaveError error={`The webhooks did not load. ${loadError}`} /> : <span className="np-skel" style={{ width: "40%", height: 12 }} aria-hidden="true" />}
+            </section>
+          )}
         </>
       )}
 
@@ -231,31 +324,27 @@ export function SettingsView() {
         </section>
       )}
 
-      {owner && !isSample && (
+      {owner && (
         <section className="st-sec st-danger" aria-labelledby="st-danger">
           <h2 className="page__h2" id="st-danger">
             Archive
           </h2>
-          <p className="np__help">The project leaves every list. Its repository stays in Artifacts.</p>
+          <p className="np__help">The project leaves every list, and agents stop. Its repository stays in Cloudflare Artifacts.</p>
           <div>
-            <Button
-              variant="danger"
-              busy={busy === "archive"}
-              onClick={() => {
-                if (!confirm(`Archive ${info?.name ?? projectId}?`)) return;
-                void run(
-                  "archive",
-                  () =>
-                    archiveProject(projectId).then(() => {
-                      // A full load: the archived project's socket and state go away.
-                      location.href = "/projects";
-                    }),
-                  "Project archived",
-                );
+            <InlineConfirm
+              label="Archive project"
+              question={`Archive ${title}? It leaves every list at once.`}
+              confirmLabel="Archive"
+              onConfirm={async () => {
+                try {
+                  await archiveProject(projectId);
+                  // A full load: the archived project's socket and state go away.
+                  location.href = "/projects";
+                } catch (e) {
+                  toast({ tone: "danger", title: "The project was not archived", text: (e as Error).message });
+                }
               }}
-            >
-              Archive project
-            </Button>
+            />
           </div>
         </section>
       )}
@@ -299,6 +388,7 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
     setWait(String(settings.redoWaitMinutes ?? 15));
   }, [settings.autoLand, settings.intentsInRepo, settings.redo, settings.redoWaitMinutes]);
 
+  const dirty = autoLand !== settings.autoLand || intentsInRepo !== settings.intentsInRepo || redo !== (settings.redo ?? "agent-first") || (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15));
   const submit = () => {
     const minutes = Number(wait);
     if (redo === "agent-first" && (!Number.isInteger(minutes) || minutes < 5 || minutes > 120)) {
@@ -345,7 +435,7 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
       </div>
       {owner && (
         <div>
-          <Button busy={busy} onClick={submit}>
+          <Button busy={busy} disabled={!dirty} onClick={submit}>
             Save merge settings
           </Button>
         </div>
@@ -374,6 +464,7 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
   }, [saved]);
 
   const container = cs.runner === "container";
+  const dirty = install !== (cs.install ?? "") || test !== (cs.test ?? "") || timeout !== String(cs.timeoutSec ?? 600);
   return (
     <section className="st-sec" aria-labelledby="st-checks">
       <h2 className="page__h2" id="st-checks">
@@ -393,7 +484,7 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
       <p className="np__help">
         {container
           ? "A Linux container with Node.js 24 runs the install command, then the test command. The container can reach package registries only."
-          : "A Dynamic Worker runs tests/*.test.js with the gitring test runner. No dependencies and no network. The sample uses it."}
+          : "A Dynamic Worker runs tests/*.test.js with the gitring test runner. No dependencies and no network."}
       </p>
       {container && (
         <>
@@ -412,6 +503,7 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
             <div>
               <Button
                 busy={busy}
+                disabled={!dirty}
                 onClick={() =>
                   void save({ checks: { runner: "container", install: install.trim() || undefined, test: test.trim() || undefined, timeoutSec: Number(timeout) || 600 } }, "Test settings saved")
                 }
@@ -434,7 +526,7 @@ const SYNC_STATE: Record<GithubSyncState, { tone: BadgeTone; icon: IconName; tex
   "not-linked": { tone: "neutral", icon: "ring", text: "No repository" },
   "no-app": { tone: "caution", icon: "info", text: "No GitHub App" },
   "not-installed": { tone: "caution", icon: "info", text: "App not installed" },
-  pending: { tone: "accent", icon: "clock", text: "Waiting" },
+  pending: { tone: "accent", icon: "clock", text: "Sending" },
   ok: { tone: "clear", icon: "check", text: "In sync" },
   blocked: { tone: "danger", icon: "cross", text: "Stopped" },
   error: { tone: "danger", icon: "cross", text: "Error" },
@@ -446,16 +538,57 @@ const MODE_HELP: Record<GithubSyncMode, string> = {
   main: "gitring pushes each merge to your main branch. A person's push to main stops the sync.",
 };
 
+/** Bringing GitHub changes into main (newer servers send it with the sync status). */
+interface PullStatus {
+  state: "up-to-date" | "merged" | "conflict" | "error" | "pending";
+  message: string;
+  files?: string[];
+  intentId?: string;
+  compareUrl?: string;
+  at?: number;
+}
+
+const PULL_STATE: Record<PullStatus["state"], { tone: BadgeTone; icon: IconName; text: string }> = {
+  "up-to-date": { tone: "clear", icon: "check", text: "Up to date" },
+  merged: { tone: "clear", icon: "merge", text: "Brought in" },
+  conflict: { tone: "caution", icon: "info", text: "Needs a task" },
+  error: { tone: "danger", icon: "cross", text: "Error" },
+  pending: { tone: "accent", icon: "clock", text: "Reading" },
+};
+
+function pullOf(status: GithubSyncStatus | null): PullStatus | undefined {
+  return (status as (GithubSyncStatus & { pull?: PullStatus }) | null)?.pull;
+}
+
 function SyncStatus({ status }: { status: GithubSyncStatus }) {
   const st = SYNC_STATE[status.state] ?? SYNC_STATE.error;
+  const pull = pullOf(status);
+  const ps = pull ? (PULL_STATE[pull.state] ?? PULL_STATE.error) : null;
   return (
-    <div className="st-sync" role="status">
+    <>
       <div className="st-sync__head">
         <Badge tone={st.tone} icon={st.icon}>
           {st.text}
         </Badge>
         <span className="st-sync__msg">{status.message}</span>
       </div>
+      {pull && ps && (
+        <div className="st-sync__head">
+          <Badge tone={ps.tone} icon={ps.icon}>
+            {ps.text}
+          </Badge>
+          <span className="st-sync__msg">
+            {pull.message}
+            {pull.at ? <span className="ink-3"> · {ago(pull.at)}</span> : null}
+          </span>
+          {pull.intentId && <Link to={`/tasks/${encodeURIComponent(pull.intentId)}`}>Open the task</Link>}
+          {pull.compareUrl && (
+            <a href={pull.compareUrl} target="_blank" rel="noopener noreferrer">
+              See the changes on GitHub
+            </a>
+          )}
+        </div>
+      )}
       {(status.syncedSha || status.at) && (
         <p className="np__help">
           {status.syncedSha ? (
@@ -492,29 +625,26 @@ function SyncStatus({ status }: { status: GithubSyncStatus }) {
           )}
         </p>
       )}
-    </div>
+    </>
   );
 }
 
-function GithubSection({ projectId, owner, settings, onSaved, imported }: SectionProps & { imported: string | null }) {
+function GithubSection({ projectId, owner, settings, onSaved, imported, me }: SectionProps & { imported: string | null; me: MeWithInstall | null }) {
+  const uid = useId().replace(/:/g, "");
   const g = settings.github ?? { mode: "off", branch: "gitring" };
   const [repo, setRepo] = useState(g.repo ?? imported ?? "");
   const [mode, setMode] = useState<GithubSyncMode>(g.mode);
   const [branch, setBranch] = useState(g.branch || "gitring");
-  const [status, setStatus] = useState<GithubSyncStatus | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const { busy, error, setError, save } = useSave(projectId, onSaved);
+  const [info, setInfo] = useState<GithubRepo | null>(null);
   const live = useStore((s) => s.state?.project.github);
-  const firstLive = useRef(live);
+  const [status, setStatus] = useState<GithubSyncStatus | null>(live ?? null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  // The project state carries the sync status and the socket keeps it fresh. Ask the server only when the
+  // state has none, and after a save (the repository or the mode changed).
+  const [ask, setAsk] = useState(() => !live);
+  const [act, setAct] = useState<"send" | "pull" | null>(null);
+  const { busy, error, setError, save } = useSave(projectId, onSaved);
   const saved = JSON.stringify(g);
-  const [app, setApp] = useState<{ installUrl: string } | null>(null);
-  useEffect(() => {
-    harborOrNull()
-      ?.connect()
-      .then((i) => setApp(i.githubApp))
-      .catch(() => setApp(null));
-  }, [projectId]);
 
   useEffect(() => {
     setRepo(g.repo ?? imported ?? "");
@@ -523,72 +653,103 @@ function GithubSection({ projectId, owner, settings, onSaved, imported }: Sectio
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
 
-  const loadStatus = () => {
-    getGithubStatus(projectId).then(
-      (s) => {
-        setStatus(s);
-        setStatusError(null);
-      },
-      (e: Error) => setStatusError(e.message),
-    );
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(loadStatus, [projectId, saved]);
-  // A sync that runs now reports over the live connection (event "github").
   useEffect(() => {
-    if (!live || live === firstLive.current) return;
-    if (g.mode !== "off" && (!live.repo || live.repo === g.repo)) setStatus(live);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (live) setStatus(live);
   }, [live]);
 
-  const submit = () => {
-    const name = repo.trim();
+  useEffect(() => {
+    if (!ask) return;
+    const ctl = new AbortController();
+    syncStatus(projectId, ctl.signal)
+      .then((s) => {
+        setStatus(s);
+        setStatusError(null);
+      })
+      .catch((e) => {
+        if (!isAbort(e)) setStatusError((e as Error).message);
+      })
+      .finally(() => {
+        if (!ctl.signal.aborted) setAsk(false);
+      });
+    return () => ctl.abort();
+  }, [ask, projectId]);
+
+  const name = repo.trim();
+  const dirty = name !== (g.repo ?? "") || mode !== g.mode || (mode === "pull-request" && (branch.trim() || "gitring") !== (g.branch || "gitring"));
+  const submit = async () => {
     if (mode !== "off" && !name) {
-      setError("Give the GitHub repository as owner/name, or as its https://github.com URL.");
+      setError("Choose a GitHub repository first, or turn the sync off.");
       return;
     }
     if (name && !githubRepoName(name)) {
       setError("Give the GitHub repository as owner/name, or as its https://github.com URL.");
       return;
     }
-    void save({ github: { repo: name || undefined, mode, branch: branch.trim() || "gitring" } }, "GitHub settings saved");
+    if (await save({ github: { repo: name || undefined, mode, branch: branch.trim() || "gitring" } }, "GitHub settings saved")) setAsk(true);
   };
-  const syncNow = async () => {
-    setSyncing(true);
+  const go = async (kind: "send" | "pull") => {
+    setAct(kind);
     try {
-      setStatus(await syncGithub(projectId));
+      const s = kind === "send" ? await sendToGithub(projectId) : await pullFromGithub(projectId);
+      setStatus(s);
       setStatusError(null);
+      const pull = pullOf(s);
+      const bad = kind === "send" ? s.state === "error" || s.state === "blocked" : pull?.state === "error";
+      toast({ tone: bad ? "danger" : "info", title: kind === "send" ? "Send to GitHub" : "Bring GitHub changes in", text: kind === "pull" && pull ? pull.message : s.message });
     } catch (e) {
       setStatusError((e as Error).message);
     } finally {
-      setSyncing(false);
+      setAct(null);
     }
   };
 
+  const linked = Boolean(g.repo);
+  const sendWhy = !linked ? "Link a repository and save first." : g.mode === "off" ? "Turn the sync on and save first." : undefined;
+  const pullWhy = !linked ? "Link a repository and save first." : undefined;
   const suggested = Boolean(imported && !g.repo && repo === imported);
+  const pushWarn = info && !info.canPush && mode !== "off";
+  const installUrl = me?.githubInstallUrl ?? undefined;
+  const back = `/settings?project=${encodeURIComponent(projectId)}&section=github`;
+
   return (
     <section className="st-sec" aria-labelledby="st-github">
       <h2 className="page__h2" id="st-github">
         GitHub
       </h2>
-      <p className="np__help">Send the merged code of this project to a GitHub repository.</p>
-      {status ? <SyncStatus status={status} /> : !statusError && <p className="np__help">gitring loads the sync status…</p>}
-      <SaveError error={statusError} />
-      <div className="st-row">
-        <Field
-          label="Repository"
-          help={suggested ? "gitring suggests the repository of your import. Save to link it." : "owner/name, or a github.com URL."}
-        >
-          <Input
-            className="voice-agent"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            placeholder="owner/name"
-            disabled={!owner}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </Field>
+      <p className="np__help">Send the merged code of this project to a GitHub repository, and bring changes from GitHub into gitring.</p>
+      <div className="st-sync" role="status" aria-live="polite">
+        {status ? <SyncStatus status={status} /> : !statusError && <span className="np-skel" style={{ width: "50%", height: 12 }} aria-hidden="true" />}
+        <SaveError error={statusError} />
+        <div className="st-sync__acts">
+          {owner && (
+            <Button size="sm" icon="send" busy={act === "send"} disabled={Boolean(sendWhy)} title={sendWhy} onClick={() => void go("send")}>
+              Send to GitHub now
+            </Button>
+          )}
+          <Button size="sm" icon="arrow-left" busy={act === "pull"} disabled={Boolean(pullWhy)} title={pullWhy} onClick={() => void go("pull")}>
+            Bring GitHub changes in now
+          </Button>
+          {(sendWhy || pullWhy) && <span className="st-sync__result">{owner ? sendWhy : pullWhy}</span>}
+        </div>
+      </div>
+      <div className="st-repo">
+        <label className="b-field__label" htmlFor={`${uid}-repo`}>
+          Repository
+        </label>
+        <RepoSelect id={`${uid}-repo`} value={repo} onChange={setRepo} me={me} returnTo={back} disabled={!owner} describedBy={`${uid}-repo-help`} onRepoInfo={setInfo} />
+        <div className="st-repo__info" id={`${uid}-repo-help`}>
+          {info ? (
+            <>
+              <span>{info.private ? "Private" : "Public"}</span>
+              <span>default branch {info.defaultBranch}</span>
+              <span className={info.canPush ? undefined : "st-repo__warn"}>{info.canPush ? "you can push" : "you cannot push"}</span>
+            </>
+          ) : suggested ? (
+            <span>gitring suggests the repository of your import. Save to link it.</span>
+          ) : (
+            <span>Search your repositories, or type owner/name.</span>
+          )}
+        </div>
       </div>
       <Segmented<GithubSyncMode>
         label="Where merged code goes"
@@ -602,6 +763,11 @@ function GithubSection({ projectId, owner, settings, onSaved, imported }: Sectio
         ]}
       />
       <p className="np__help">{MODE_HELP[mode]}</p>
+      {pushWarn && (
+        <p className="st-error st-warn" role="note">
+          <Icon name="info" size={12} /> You cannot push to {info?.fullName}. A person who can push links it, or ask its owner for write access.
+        </p>
+      )}
       {mode === "pull-request" && (
         <div className="st-row">
           <Field label="Branch name" help="gitring pushes each merge to this branch.">
@@ -611,28 +777,25 @@ function GithubSection({ projectId, owner, settings, onSaved, imported }: Sectio
       )}
       {owner && (
         <div className="st-actions">
-          <Button busy={busy} onClick={submit}>
-            Save
-          </Button>
-          <Button icon="reload" busy={syncing} disabled={g.mode === "off"} onClick={() => void syncNow()} title={g.mode === "off" ? "Turn the sync on first." : undefined}>
-            Sync now
+          <Button variant="primary" busy={busy} disabled={!dirty} onClick={() => void submit()}>
+            Save GitHub settings
           </Button>
         </div>
       )}
       <SaveError error={error} />
       <p className="np__help">
-        The gitring GitHub App must be installed on the repository
-        {app ? (
+        The gitring GitHub App must be on the repository
+        {installUrl ? (
           <>
             {" "}
             (
-            <a href={app.installUrl} target="_blank" rel="noopener noreferrer">
-              install the app
+            <a href={installUrl} target="_blank" rel="noopener noreferrer">
+              add it on GitHub
             </a>
             )
           </>
         ) : null}
-        . To link a repository, sign in with GitHub as a person who can push to it.
+        . Only a person who can push to the repository can link it.
       </p>
     </section>
   );
@@ -670,6 +833,7 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
 
   const change = (id: string, patch: Partial<WebhookTarget>) => setList((l) => l.map((w) => (w.id === id ? { ...w, ...patch } : w)));
   const bad = (w: WebhookTarget) => !URL_OK.test(w.url.trim());
+  const dirty = JSON.stringify(list) !== saved;
 
   const submit = () => {
     setTried(true);
@@ -737,11 +901,12 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
           <Button icon="plus" disabled={list.length >= MAX_WEBHOOKS} onClick={() => setList((l) => [...l, newWebhook()])} title={list.length >= MAX_WEBHOOKS ? `At most ${MAX_WEBHOOKS} webhooks.` : undefined}>
             Add a webhook
           </Button>
-          <Button variant="primary" busy={busy} onClick={submit}>
+          <Button variant="primary" busy={busy} disabled={!dirty} onClick={submit}>
             Save webhooks
           </Button>
         </div>
       )}
+      {owner && dirty && <p className="np__help">The changes save when you click Save webhooks. A removed webhook stops after the save.</p>}
       <SaveError error={error} />
     </section>
   );

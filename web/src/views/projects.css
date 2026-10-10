@@ -60,7 +60,9 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 .st-row .b-field { flex: 1 1 260px; min-width: 0; }
 .st-members { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
 .st-members li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); min-height: 44px; }
-.st-members li.is-asking { grid-template-columns: minmax(0, 1fr); }
+/* The inline confirm takes its own line under the member. */
+.st-members li:has(.np-confirm) .st-members__act { grid-column: 1 / -1; justify-self: stretch; }
+.st-members li:has(.np-confirm) .np-confirm { display: flex; width: 100%; }
 .st-members__name { font-weight: 500; overflow-wrap: anywhere; }
 .st-members__handle, .st-members__role { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
 .st-members__act { justify-self: end; }
@@ -68,6 +70,7 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 .st-note { margin-top: var(--s-3); font-size: var(--t-sm); color: var(--ink-3); }
 .st-error { display: flex; align-items: baseline; gap: var(--s-2); margin: 0; color: var(--danger); font-size: var(--t-sm); line-height: var(--lh-sm); }
 .st-error .b-icon { flex: none; transform: translateY(1px); }
+.st-warn { color: var(--caution); }
 .st-checks { display: grid; gap: var(--s-2); justify-items: start; }
 .st-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
 .st-sync { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); }
