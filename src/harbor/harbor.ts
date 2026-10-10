@@ -2123,7 +2123,8 @@ export class HarborMaster extends DurableObject<Env> {
       intentId: a.intentId,
       message: `${name} cannot merge "${intent.title}": ${reason} gitring gives the work back to ${name} (try ${a.returns} of 3).`,
     });
-    await this.scheduleBudgetRetry(a.returned.until);
+    // Not a.returned.until: a call of the agent can clear a.returned (heard) while this method waits.
+    await this.scheduleBudgetRetry(now + minutes * 60_000);
   }
 
   /** The outside agent did not answer in time: a built-in agent (agent-first) or a person (agent-only) takes over. */
