@@ -21,7 +21,8 @@ import { useNow } from "../app/useNow";
 import { useStore } from "../state/store";
 import { useCanAct } from "../state/account";
 import { isCommitId } from "../state/api";
-import { ago, ATTEMPT_STATUS_TEXT, kb, langLabel, lineRangeText, plural, shortSha } from "../state/format";
+import { ago, ATTEMPT_STATUS_TEXT, kb, plural, shortSha } from "../state/format";
+import { langLabel, lineRangeText } from "./labels";
 import {
   annoList,
   folderMarks as foldersOf,

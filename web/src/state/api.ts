@@ -96,11 +96,6 @@ export interface HarborClient {
   file(ref: string, path: string, opts?: VersionedRead): Promise<string>;
   /** The text of a file when it is in memory now (no request). */
   cachedFile(ref: string, path: string, version?: string | number): string | undefined;
-  /**
-   * @deprecated The sample left gitring (2026-10-10) and the server has no reset any more. The last caller
-   * (the connection popover of the old top bar) goes away with the new shell; then delete this member.
-   */
-  resetSample(): Promise<void>;
   /** Start built-in AI agents on every open task (Workers AI models). */
   launchAll(): Promise<{ launched: number; queued: number }>;
   /** Endpoints of this deployment for the Connect page (kept for 5 minutes). */
@@ -213,10 +208,6 @@ class LiveHarbor implements HarborClient {
     });
     if (key) this.files.set(key, text, text.length + 64);
     return text;
-  }
-
-  async resetSample() {
-    throw new HttpError(410, "The sample is not part of gitring any more.");
   }
 
   launchAll() {
