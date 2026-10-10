@@ -6,6 +6,7 @@ import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } fr
 import { atLeast } from "../../../src/core/accounts";
 import type { GithubSyncStatus, ProjectSettings, ProjectSource } from "../../../src/core/types";
 import { store, useStore } from "./store";
+import { getJson, HttpError, invalidate, send } from "./http";
 
 export class AccountError extends Error {
   constructor(
@@ -16,38 +17,42 @@ export class AccountError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  let res: Response;
+/**
+ * Requests go through ./http: identical GETs in flight share one fetch, and a write drops the cached
+ * answers it changes (a project write drops the project list; a sign-in change drops /api/me).
+ */
+async function call<T>(method: string, path: string, body?: unknown, maxAge = 0): Promise<T> {
   try {
-    res = await fetch(path, {
-      method,
-      headers: body === undefined ? { accept: "application/json" } : { accept: "application/json", "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      credentials: "same-origin",
-    });
-  } catch {
-    throw new AccountError(0, "gitring did not answer. Check the connection and try again.");
+    return method === "GET" ? await getJson<T>(path, { maxAge }) : await send<T>(method, path, body);
+  } catch (e) {
+    if (e instanceof HttpError) throw new AccountError(e.status, e.message);
+    throw e;
   }
-  if (res.status === 204) return undefined as T;
-  const json = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new AccountError(res.status, json.error ?? `The request failed with status ${res.status}.`);
-  return json as T;
 }
 
 export interface MeWithInstall extends MeInfo {
   githubInstallUrl?: string | null;
 }
 
-export async function loadMe(): Promise<MeWithInstall> {
-  const me = await call<MeWithInstall>("GET", "/api/me");
+/** Who is signed in. Asks the server unless `maxAge` allows an answer of that age (ms) from memory. */
+export async function loadMe(opts: { maxAge?: number } = {}): Promise<MeWithInstall> {
+  const me = await call<MeWithInstall>("GET", "/api/me", undefined, opts.maxAge);
   store.setMe(me);
   return me;
 }
 
-export async function loadProjects(): Promise<ProjectInfo[]> {
-  const list = await call<ProjectInfo[]>("GET", "/api/projects");
-  // A cut answer reads as {}: keep the list that the store has (every view reads it as an array).
-  if (!Array.isArray(list)) throw new AccountError(0, "gitring did not send the project list. Try again.");
+/**
+ * The projects the person can see. An answer up to 30 s old comes from memory; every project write
+ * through this module (create, rename, archive, members) drops it first, so the next call asks again.
+ */
+export async function loadProjects(opts: { maxAge?: number } = {}): Promise<ProjectInfo[]> {
+  const list = await call<ProjectInfo[]>("GET", "/api/projects", undefined, opts.maxAge ?? 30_000);
+  // A cut answer is not a list: keep the list that the store has (every view reads it as an array),
+  // and do not keep the bad answer for the next caller.
+  if (!Array.isArray(list)) {
+    invalidate("/api/projects");
+    throw new AccountError(0, "gitring did not send the project list. Try again.");
+  }
   store.setProjects(list);
   return list;
 }

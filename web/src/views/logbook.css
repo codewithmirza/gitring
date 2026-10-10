@@ -1,4 +1,4 @@
-/* Logbook: history list and the why trail. Type sizes here: 11, 13, 15, 28. */
+/* History: the list of merges and the merge record. Type sizes here: 11, 13, 15, 28. */
 
 .logbook { min-height: 100%; }
 .logbook.no-detail .logbook__list { max-width: 1240px; margin: 0 auto; padding: var(--s-8) var(--s-8) var(--s-10); }
@@ -16,21 +16,51 @@
 }
 .logbook__detail { min-width: 0; min-height: 0; overflow: auto; }
 .logbook__head { display: grid; gap: var(--s-2); }
-.logbook.no-detail .logbook__head { margin-bottom: var(--s-7); }
+.logbook.no-detail .logbook__head { margin-bottom: var(--s-5); }
 .logbook.has-detail .logbook__head { padding: var(--s-4) var(--s-5) var(--s-3); border-bottom: 1px solid var(--line); }
 .logbook__title { display: flex; align-items: baseline; gap: var(--s-2); font-size: var(--t-sm); font-weight: 500; }
-.lrows { margin: 0; padding: 0; list-style: none; }
-.lrows > li + li .lrow { border-top: 1px solid var(--line); }
+.logbook__tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); margin-top: var(--s-3); }
+.logbook.has-detail .logbook__tools { margin-top: var(--s-1); }
+.logbook__filter { flex: 0 1 340px; min-width: 0; height: 32px; }
+.logbook.has-detail .logbook__filter { flex: 1 1 auto; }
+.logbook__keys,
+.logbook__count { font-size: var(--t-xs); }
+.logbook__keys .b-kbd + .b-kbd { margin-left: 2px; }
+.logbook__none { padding: var(--s-5) var(--s-4); font-size: var(--t-sm); color: var(--ink-2); }
+.logbook__clear { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; min-height: 24px; }
+
+.lrows,
+.lday__rows { margin: 0; padding: 0; list-style: none; }
+.lday + .lday { margin-top: var(--s-2); }
+.lday__label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--s-2) var(--s-4) var(--s-1);
+  background: var(--bg);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.logbook.has-detail .lday__label { background: var(--surface-1); padding-left: var(--s-5); }
+.lday__rows > li + li .lrow { border-top: 1px solid var(--line); }
+.lrow-item { content-visibility: auto; contain-intrinsic-size: auto 64px; }
 
 .lrow {
+  position: relative;
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr) 128px 150px 140px 70px 84px;
   align-items: center;
-  gap: var(--s-4);
+  gap: 4px var(--s-4);
   min-height: 52px;
   padding: var(--s-3) var(--s-4);
   font-size: var(--t-xs);
+  transition: background-color var(--dur-1) var(--ease-out);
 }
+.lrow:not(.lrow--header):hover { background: var(--surface-2); }
+.lrow.is-selected { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+.lrow:has(.lrow__link:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
 .lrow--header {
   min-height: 32px;
   padding-top: 0;
@@ -42,8 +72,38 @@
 .lrow__sha { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-1); font-size: var(--t-sm); }
 .lrow__sha .b-icon { color: var(--clear); }
 .lrow__title { font-size: var(--t-md); line-height: 1.3; color: var(--ink-1); min-width: 0; }
-.lrow__checks { display: inline-flex; align-items: center; gap: 4px; color: var(--clear); font-size: var(--t-sm); }
+/* The task title is the link of the row; it covers the whole row (the file links sit above it). */
+.lrow__link { color: inherit; text-decoration: none; }
+.lrow__link:focus-visible { outline: none; }
+.lrow__link::after { content: ""; position: absolute; inset: 0; }
+.lrow__checks { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-sm); }
+.lrow__checks.is-ok { color: var(--clear); }
+.lrow__checks.is-fail { color: var(--danger); }
 .lrow__time { text-align: right; white-space: nowrap; }
+.lrow__files {
+  position: relative;
+  z-index: 1;
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--s-3);
+  min-width: 0;
+}
+.lrow__file {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  text-decoration-color: color-mix(in oklch, currentColor 30%, transparent);
+}
+.lrow__file:hover { color: var(--accent); }
+.lrow__more { font-size: var(--t-xs); color: var(--ink-3); }
 
 .lrow--compact {
   grid-template-columns: auto 1fr;
@@ -72,7 +132,7 @@
 }
 .logbook.has-detail .logbook__origin { padding: var(--s-4) var(--s-5); }
 
-/* why trail */
+/* merge record */
 .why { max-width: 980px; padding: var(--s-7) var(--s-8) var(--s-11); }
 .why__head { display: grid; gap: var(--s-3); margin-bottom: var(--s-8); }
 .why__crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); font-size: var(--t-xs); }
@@ -118,7 +178,8 @@
 .why__constraints { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--t-xs); color: var(--ink-2); font-family: var(--font-agent); }
 .why__meta { font-size: var(--t-xs); color: var(--ink-3); }
 .why__approach { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-1); }
-.why__plan { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.why__plandetails summary { display: inline-flex; align-items: center; min-height: 24px; color: var(--accent); font-size: var(--t-xs); font-weight: 500; cursor: pointer; }
+.why__plan { margin: var(--s-1) 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .why__lineage { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-2); }
 .why__corrs { display: grid; gap: var(--s-3); }
 .why__evidence { display: grid; gap: var(--s-4); max-width: 640px; }
@@ -136,6 +197,17 @@
   font-weight: 500;
   cursor: pointer;
 }
+.why__err { display: grid; justify-items: start; gap: var(--s-2); font-size: var(--t-sm); color: var(--danger); }
+.why__files { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-3); }
+.why__files > li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s-3); min-height: 32px; padding: 2px var(--s-3); font-size: var(--t-xs); }
+.why__files > li + li { border-top: 1px solid var(--line); }
+.why__files a { min-width: 0; overflow-wrap: anywhere; }
+.why__fstatus { min-width: 56px; color: var(--ink-3); }
+.why__fstatus.is-A { color: var(--clear); }
+.why__fstatus.is-D { color: var(--danger); }
+.why__fstat { margin-left: auto; }
+.why__plus { color: var(--clear); }
+.why__minus { color: var(--danger); }
 
 .ladder {
   display: grid;
@@ -181,7 +253,37 @@
 }
 .ctable td { padding: var(--s-2) var(--s-3); border-top: 1px solid var(--line); white-space: nowrap; }
 .ctable tr:first-child td { border-top: 0; }
+.ctable tr.is-open td { background: var(--surface-1); }
+.ctable__why { min-height: 24px; color: var(--accent); font-size: var(--t-xs); font-weight: 500; }
+.ctable__why:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ctable__evrow td { white-space: normal; background: var(--surface-1); border-top: 0; padding-top: 0; }
+.evid { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.evid__item { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); border-left: 2px solid var(--line-strong); color: var(--ink-2); line-height: var(--lh-xs); }
+.evid__head { color: var(--ink-1); }
 
+/* loading */
+.lskel { display: grid; gap: 9px; padding: var(--s-2) 0; animation: lskel-show 160ms var(--ease-out) both; }
+.lskel__line {
+  display: block;
+  height: 10px;
+  border-radius: var(--r-1);
+  background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in oklch, var(--surface-2) 45%, var(--bg)) 50%, var(--surface-2) 75%);
+  background-size: 300% 100%;
+  animation: lskel-shimmer 1.6s linear infinite;
+}
+.lskel-wait { min-height: 120px; }
+@keyframes lskel-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@keyframes lskel-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (pointer: coarse) {
+  .lrow__file, .ctable__why, .logbook__clear, .why__plandetails summary, .why__note summary { min-height: 44px; }
+}
 @media (max-width: 1180px) {
   .lrow { grid-template-columns: 80px minmax(0, 1fr) 120px 140px 70px; }
   .lrow .lrow__corr, .lrow .lrow__time { display: none; }
@@ -197,7 +299,8 @@
     grid-template-areas:
       "sha time"
       "title title"
-      "method agent";
+      "method agent"
+      "files files";
     gap: 4px var(--s-3);
   }
   .lrow .lrow__sha { grid-area: sha; }
@@ -205,8 +308,11 @@
   .lrow .lrow__title { grid-area: title; }
   .lrow .lrow__method { grid-area: method; }
   .lrow .lrow__agent { grid-area: agent; justify-self: end; }
+  .lrow .lrow__files { grid-area: files; grid-column: auto; }
   .lrow .lrow__checks, .lrow .lrow__corr { display: none; }
   .lrow--header { display: none; }
+  .logbook__keys { display: none; }
+  .logbook__filter { flex: 1 1 100%; }
   .logbook.has-detail { grid-template-columns: minmax(0, 1fr); }
   .logbook.has-detail .logbook__list { display: none; }
   .why { padding: var(--s-5) var(--s-4) var(--s-10); }
@@ -215,4 +321,7 @@
   .ladder { grid-template-columns: 1fr; }
   .ladder__rung { border-left: 0; border-top: 1px solid var(--line); }
   .ladder__rung:first-child { border-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lskel, .lskel__line { animation: none; }
 }
