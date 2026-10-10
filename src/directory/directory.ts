@@ -317,19 +317,22 @@ export class Directory extends DurableObject<Env> {
       .filter((r): r is { subject: string; login: string } => Boolean(r.login));
     if (!ids.length) return { ...base, read: false, push: false, message: "Sign in with GitHub, so that gitring can check what you may do in the repository." };
     if (!access.ok) return { ...base, read: false, push: false, message: access.message };
+    const appAuth = { ...GITHUB_HEADERS, Authorization: `Bearer ${access.token}` };
+    // Whether the repository is private, as the app sees it: a public repository is readable by anyone.
+    const info = await fetch(`https://api.github.com/repos/${repo}`, { headers: appAuth }).catch(() => null);
+    const isPrivate = info?.status === 200 ? Boolean((await info.json<{ private?: boolean }>()).private) : undefined;
+    const known = isPrivate === undefined ? {} : { private: isPrivate };
     for (const id of ids) {
-      const res = await fetch(`https://api.github.com/repos/${repo}/collaborators/${encodeURIComponent(id.login)}/permission`, {
-        headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${access.token}` },
-      }).catch(() => null);
+      const res = await fetch(`https://api.github.com/repos/${repo}/collaborators/${encodeURIComponent(id.login)}/permission`, { headers: appAuth }).catch(() => null);
       if (!res?.ok) continue;
       const p = await res.json<{ permission?: string; role_name?: string; user?: { id?: number } }>();
       // The login must still belong to this person's GitHub account.
       if (String(p.user?.id ?? "") !== id.subject) continue;
       const push = ["admin", "maintain", "write"].includes(p.role_name ?? "") || ["admin", "write"].includes(p.permission ?? "");
-      const read = push || ["read", "triage"].includes(p.role_name ?? "") || p.permission === "read";
-      return { ...base, read, push, message: push ? `${id.login} can push to ${repo}.` : `Your GitHub account (${id.login}) cannot push to ${repo}.` };
+      const read = push || ["read", "triage"].includes(p.role_name ?? "") || p.permission === "read" || isPrivate === false;
+      return { ...base, ...known, read, push, message: push ? `${id.login} can push to ${repo}.` : `Your GitHub account (${id.login}) cannot push to ${repo}.` };
     }
-    return { ...base, read: false, push: false, message: `Your GitHub account cannot push to ${repo}.` };
+    return { ...base, ...known, read: isPrivate === false, push: false, message: `Your GitHub account cannot push to ${repo}.` };
   }
 
   /** Can this person push to the GitHub repository (and is the app installed there)? */
@@ -438,10 +441,14 @@ export class Directory extends DurableObject<Env> {
       this.sql.exec("UPDATE identities SET token = NULL WHERE provider = 'github' AND subject = ?", id.subject);
       return { ok: false, state: "expired", reason: "GitHub refused the saved sign-in. Connect GitHub again." };
     }
-    return this.refreshGithub(id.subject, id.login, t);
+    return this.refreshGithub(id.subject, id.login, t, id.token);
   }
 
-  private async refreshGithub(subject: string, login: string, t: GithubUserToken): Promise<GithubUserTokenResult> {
+  /**
+   * Refresh a token at GitHub. The new token is stored only where the old sealed token still is: a
+   * disconnect (or a new sign-in) that happened meanwhile wins, and the new token is revoked again.
+   */
+  private async refreshGithub(subject: string, login: string, t: GithubUserToken, sealedOld: string): Promise<GithubUserTokenResult> {
     const app = await this.githubApp().catch(() => null);
     if (!app) return { ok: false, state: "no-app", reason: "This gitring has no GitHub App." };
     if (t.refreshExpiresAt && t.refreshExpiresAt < Date.now()) {
@@ -466,26 +473,41 @@ export class Directory extends DurableObject<Env> {
       return { ok: false, state: "expired", reason: "GitHub asks you to sign in again. Connect GitHub again." };
     }
     const next = githubUserToken(answer);
-    this.sql.exec("UPDATE identities SET token = ? WHERE provider = 'github' AND subject = ?", await seal(this.secret(), next, GITHUB_TOKEN_PURPOSE), subject);
+    const sealedNext = await seal(this.secret(), next, GITHUB_TOKEN_PURPOSE);
+    this.sql.exec("UPDATE identities SET token = ? WHERE provider = 'github' AND subject = ? AND token = ?", sealedNext, subject, sealedOld);
+    const stored = this.sql.exec<{ token: string | null }>("SELECT token FROM identities WHERE provider = 'github' AND subject = ?", subject).toArray()[0]?.token;
+    if (stored !== sealedNext) {
+      // The person disconnected GitHub (or signed in again) while GitHub made the token: it is not used.
+      await this.revokeGithubToken(app, next.access);
+      return { ok: false, state: "expired", reason: "Connect GitHub again." };
+    }
     return { ok: true, token: next.access, login, expiresAt: next.expiresAt ?? null };
   }
 
-  /** Disconnect GitHub: revoke the token at GitHub and forget it. The GitHub sign-in stays. */
+  /** DELETE /applications/{client_id}/token revokes one user token (best effort). */
+  private async revokeGithubToken(app: GithubAppConfig, access: string): Promise<void> {
+    await fetch(`https://api.github.com/applications/${encodeURIComponent(app.clientId)}/token`, {
+      method: "DELETE",
+      headers: { ...GITHUB_HEADERS, Authorization: `Basic ${btoa(`${app.clientId}:${app.clientSecret}`)}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: access }),
+    }).catch(() => undefined);
+  }
+
+  /**
+   * Disconnect GitHub: revoke the token at GitHub and forget it. The GitHub sign-in stays. A refresh in
+   * flight for the account finishes first, so that the token it made is the one revoked here.
+   */
   async githubDisconnect(userId: string): Promise<void> {
     const app = await this.githubApp().catch(() => null);
+    for (const r of this.sql.exec<{ subject: string }>("SELECT subject FROM identities WHERE user_id = ? AND provider = 'github'", userId).toArray()) {
+      await this.githubRefreshes.get(r.subject)?.catch(() => undefined);
+    }
     const rows = this.sql.exec<{ subject: string; token: string | null }>("SELECT subject, token FROM identities WHERE user_id = ? AND provider = 'github'", userId).toArray();
     for (const r of rows) {
       if (!r.token) continue;
       const t = await this.openToken(r.token);
       this.sql.exec("UPDATE identities SET token = NULL WHERE provider = 'github' AND subject = ?", r.subject);
-      if (t && app) {
-        // DELETE /applications/{client_id}/token revokes this one token (best effort).
-        await fetch(`https://api.github.com/applications/${encodeURIComponent(app.clientId)}/token`, {
-          method: "DELETE",
-          headers: { ...GITHUB_HEADERS, Authorization: `Basic ${btoa(`${app.clientId}:${app.clientSecret}`)}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: t.access }),
-        }).catch(() => undefined);
-      }
+      if (t && app) await this.revokeGithubToken(app, t.access);
     }
   }
 
@@ -920,18 +942,16 @@ export class Directory extends DurableObject<Env> {
   }
 
   /**
-   * Projects imported from a GitHub repository in which a GitHub login may open intents (member or
-   * owner, also as a pending invite). An issue event from an installed repository only reaches these.
+   * Projects imported from (or linked to) a GitHub repository in which the sender of an issue may open
+   * intents: a member or owner, matched by GitHub account id (a login can be renamed and taken by
+   * someone else), or a pending invite of the login (nobody accepted it yet, so the login is all there is).
+   * An issue event from an installed repository only reaches these.
    */
   async projectsForGithubLogin(url: string, login: string, senderId?: number): Promise<string[]> {
     const want = normalizeRemote(url);
     const l = String(login ?? "").toLowerCase();
     if (!l) return [];
-    // The GitHub account id identifies the person (a login can be renamed and taken by someone else).
-    const userId =
-      (senderId !== undefined
-        ? this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND subject = ?", String(senderId)).toArray()[0]?.user_id
-        : this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND lower(login) = ?", l).toArray()[0]?.user_id) ?? null;
+    const userId = senderId !== undefined ? (this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND subject = ?", String(senderId)).toArray()[0]?.user_id ?? null) : null;
     const out: string[] = [];
     const repo = /github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i.exec(url)?.[1]?.toLowerCase() ?? "";
     const linked = new Set(repo ? this.sql.exec<{ project_id: string }>("SELECT project_id FROM github_links WHERE repo = ?", repo).toArray().map((r) => r.project_id) : []);
@@ -940,7 +960,7 @@ export class Directory extends DurableObject<Env> {
       const match = (s.kind === "git" && normalizeRemote(s.url) === want) || (s.kind === "github" && s.repo.toLowerCase() === repo) || linked.has(row.id);
       if (!match) continue;
       const role = userId ? this.roleIn(row, userId) : null;
-      const invited = this.sql.exec<{ role: A.Role }>("SELECT role FROM members WHERE project_id = ? AND handle = ?", row.id, `github:${l}`).toArray()[0]?.role ?? null;
+      const invited = this.sql.exec<{ role: A.Role }>("SELECT role FROM members WHERE project_id = ? AND handle = ? AND user_id IS NULL", row.id, `github:${l}`).toArray()[0]?.role ?? null;
       if ((role === "owner" || role === "member") || invited === "owner" || invited === "member") out.push(row.id);
     }
     return out;

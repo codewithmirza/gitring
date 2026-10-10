@@ -303,7 +303,7 @@ describe("projects and roles", () => {
 });
 
 describe("GitHub issue routing", () => {
-  it("opens intents only in projects where the sender may act", async () => {
+  it("opens intents only in projects where the sender may act: members by account id, invites by login", async () => {
     const dir = make();
     await withGithubApp(dir);
     const { user: robin } = await githubSignIn(dir, { id: 50, login: "robin" });
@@ -314,12 +314,20 @@ describe("GitHub issue routing", () => {
     await dir.addMember(mine.id, "pat", "member");
     await dir.addMember(mine.id, "vic", "viewer");
 
-    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "Robin")).toEqual([mine.id]);
-    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "other")).toEqual([theirs.id]);
-    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "pat")).toEqual([mine.id]);
-    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "vic")).toEqual([]);
-    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "mallory")).toEqual([]);
-    expect(await dir.projectsForGithubLogin("https://github.com/acme/other", "robin")).toEqual([]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "Robin", 50)).toEqual([mine.id]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "other", 51)).toEqual([theirs.id]);
+    // A pending invite has only a login: it matches by login, until the person accepts it.
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "pat", 52)).toEqual([mine.id]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "vic", 53)).toEqual([]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "mallory", 54)).toEqual([]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/other", "robin", 50)).toEqual([]);
+    // An accepted member matches by GitHub account id only: a login can change hands.
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "robin", 666)).toEqual([]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "robin")).toEqual([]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "renamed-robin", 50)).toEqual([mine.id]);
+    await githubSignIn(dir, { id: 52, login: "pat" });
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "pat", 52)).toEqual([mine.id]);
+    expect(await dir.projectsForGithubLogin("https://github.com/acme/shop", "pat", 666)).toEqual([]);
   });
 });
 
