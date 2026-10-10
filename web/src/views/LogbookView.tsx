@@ -637,7 +637,9 @@ export function LogbookView({ id }: { id?: string }) {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog'], .b-pop, .b-popover, a[data-lrow]")) return;
+      if (t?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog'], .b-pop, .b-popover")) return;
+      // A row handles its own j / k; Escape works from anywhere.
+      if (t?.closest?.("a[data-lrow]") && e.key !== "Escape") return;
       if (e.key === "g") {
         gAt = Date.now();
         return;
@@ -653,6 +655,8 @@ export function LogbookView({ id }: { id?: string }) {
       } else if (e.key === "Escape" && id) {
         e.preventDefault();
         navigate("/history");
+        // Focus goes back to the row of the record that was open.
+        requestAnimationFrame(() => document.querySelector<HTMLElement>(`a[data-lrow][href^="/history/${CSS.escape(id)}"]`)?.focus());
       }
     };
     window.addEventListener("keydown", onKey);
