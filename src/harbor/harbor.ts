@@ -39,7 +39,7 @@ import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
 import { merge3 } from "../core/text/merge3";
 import { landingMessage, landingNote, intentFile } from "../core/logbook";
-import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, textEligible } from "../core/repo-rules";
+import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, publicHostname, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
@@ -3499,8 +3499,9 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
   const wait = num(raw.redoWaitMinutes, 5, 120);
   if (wait !== undefined) out.redoWaitMinutes = Math.round(wait);
   if (Array.isArray(raw.webhooks)) {
+    // Outbound webhooks: https to a public host (gitring posts to it from the server).
     out.webhooks = raw.webhooks
-      .filter((w) => w && typeof w.url === "string" && /^https:\/\/[^\s/]+\.[^\s]+$/.test(w.url))
+      .filter((w) => w && typeof w.url === "string" && /^https:\/\/[^\s/]+\.[^\s]+$/.test(w.url) && publicWebhookUrl(w.url))
       .slice(0, 5)
       .map((w, n) => ({
         id: typeof w.id === "string" ? w.id.slice(0, 40) : `wh_${n + 1}`,
@@ -3511,6 +3512,15 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
       }));
   }
   return out;
+}
+
+function publicWebhookUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && !u.username && !u.password && publicHostname(u.hostname);
+  } catch {
+    return false;
+  }
 }
 
 /** A file of an uploaded folder: text, or bytes in base64. */

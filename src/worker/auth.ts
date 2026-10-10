@@ -239,7 +239,7 @@ function browserConversionPage(code: string, state: string): Response {
     const res = await fetch("/setup/github/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ state, app }) });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || "gitring did not save the app.");
-    location.replace("/setup/github/ready?slug=" + encodeURIComponent(out.slug));
+    location.replace("/setup/github/ready");
   } catch (e) {
     msg.className = "warn";
     msg.textContent = "The GitHub App was not saved. " + (e && e.message ? e.message : e);
@@ -383,7 +383,14 @@ export function authRoutes(app: Hono<HonoEnv>): void {
     }
   });
 
-  app.get("/setup/github/ready", (c) => appReadyPage(c.req.query("slug") ?? ""));
+  // The app's slug comes from the saved setup, never from the link: a link with another slug would send
+  // the owner to install someone else's app.
+  app.get("/setup/github/ready", async (c) => {
+    const providers = await directory(c.env)
+      .providers()
+      .catch(() => ({ github: null }));
+    return appReadyPage(providers.github?.slug ?? "");
+  });
 
   // The GitHub App's setup URL: GitHub sends people here after they install the app or change its
   // repositories. The installation_id in the URL is not trusted; the app reloads the list with the

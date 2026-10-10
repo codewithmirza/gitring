@@ -145,12 +145,34 @@ describe("dynamic client registration", () => {
     expect((await s.register(null)).status).toBe(400);
   });
 
-  it("limits registrations per hour", async () => {
+  it("limits registrations per hour: per address first, then for the whole server", async () => {
     const { s, tick } = store();
-    for (let i = 0; i < 300; i++) expect((await s.register({ redirect_uris: [CB] })).status).toBe(201);
-    expect((await s.register({ redirect_uris: [CB] })).status).toBe(429);
+    // One address: 30 an hour. Other addresses go on.
+    for (let i = 0; i < 30; i++) expect((await s.register({ redirect_uris: [CB] }, "203.0.113.9")).status).toBe(201);
+    expect((await s.register({ redirect_uris: [CB] }, "203.0.113.9")).status).toBe(429);
+    expect((await s.register({ redirect_uris: [CB] }, "203.0.113.10")).status).toBe(201);
     tick(3600_001);
-    expect((await s.register({ redirect_uris: [CB] })).status).toBe(201);
+    expect((await s.register({ redirect_uris: [CB] }, "203.0.113.9")).status).toBe(201);
+    // The whole server: 3000 an hour, whatever the addresses.
+    for (let i = 0; i < 2999; i++) expect((await s.register({ redirect_uris: [CB] }, `198.51.100.${i % 200}:${i}`)).status).toBe(201);
+    expect((await s.register({ redirect_uris: [CB] }, "192.0.2.1")).status).toBe(429);
+    tick(3600_001);
+    expect((await s.register({ redirect_uris: [CB] }, "192.0.2.1")).status).toBe(201);
+  });
+
+  it("removes clients that nobody allowed after a day, and keeps the ones with a grant", async () => {
+    const { s, tick } = store();
+    const unused = await register(s);
+    const used = await register(s);
+    const q = { client_id: used.client_id, redirect_uri: CB, response_type: "code", code_challenge: "a".repeat(43), code_challenge_method: "S256" };
+    const start = await s.startRequest(q, O);
+    if (!start.ok) throw new Error("start");
+    await s.approve(start.request.id, "u_1", O);
+    tick(25 * 3600_000);
+    // Cleanup runs at most every ten minutes, from the next request on.
+    await s.startRequest({ ...q, client_id: unused.client_id }, O).catch(() => undefined);
+    expect(await s.client(unused.client_id)).toBeNull();
+    expect(await s.client(used.client_id)).not.toBeNull();
   });
 });
 

@@ -3,7 +3,22 @@
  * a tree it reads as text. Pure module (no platform APIs).
  */
 
-/** An https git remote for Artifacts import: https only, no credentials, ".git" optional. */
+/**
+ * A host name on the public Internet: a domain with a dot, not an IP address (10.0.0.1, 169.254.169.254
+ * and [fd00::1] included), not a local or internal name. gitring fetches from such hosts (imports,
+ * webhooks, client metadata), so none of them may point into a private network.
+ */
+export function publicHostname(host: string): boolean {
+  const h = String(host ?? "")
+    .toLowerCase()
+    .replace(/\.$/, "");
+  if (!h.includes(".")) return false;
+  if (/^[\d.]+$/.test(h) || /^0x/.test(h) || h.startsWith("[") || h.includes(":")) return false; // IPv4 and IPv6 literals
+  if (/(^|\.)(localhost|local|internal|intranet|lan|home|corp|localdomain|home\.arpa|in-addr\.arpa|ip6\.arpa|test|example|invalid|onion)$/.test(h)) return false;
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h);
+}
+
+/** An https git remote for Artifacts import: https only, no credentials, a public host, ".git" optional. */
 export function normalizeGitUrl(raw: string): string {
   let u: URL;
   try {
@@ -13,7 +28,7 @@ export function normalizeGitUrl(raw: string): string {
   }
   if (u.protocol !== "https:") throw new Error("Use an https URL.");
   if (u.username || u.password) throw new Error("Do not put credentials in the URL.");
-  if (["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].includes(u.hostname) || /\.(local|internal)$/.test(u.hostname)) throw new Error("gitring cannot import from a private host.");
+  if (!publicHostname(u.hostname)) throw new Error("gitring cannot import from a private host. Give the address of a public git host.");
   u.hash = "";
   u.search = "";
   return u.toString().replace(/\/+$/, "");

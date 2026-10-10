@@ -6,12 +6,14 @@
  *   RL_TOKEN  OAuth token and revocation calls, per address             (120 per minute)
  *   RL_MCP    MCP calls, per person (or address before sign-in)         (600 per minute)
  *   RL_API    other API calls, per person (or address)                  (1200 per minute)
+ *   RL_CRED   credential lookups, per address, before gitring looks the credential up (3000 per minute):
+ *             a flood of keys or cookies that are not valid stops at the edge, not at the account store
  */
 import type { Env } from "./env";
 
-export type LimitKind = "auth" | "token" | "mcp" | "api";
+export type LimitKind = "auth" | "token" | "mcp" | "api" | "cred";
 
-const BINDING: Record<LimitKind, keyof Env> = { auth: "RL_AUTH", token: "RL_TOKEN", mcp: "RL_MCP", api: "RL_API" };
+const BINDING: Record<LimitKind, keyof Env> = { auth: "RL_AUTH", token: "RL_TOKEN", mcp: "RL_MCP", api: "RL_API", cred: "RL_CRED" };
 
 /** True when the caller is over the limit. A failing limiter never blocks the request. */
 export async function overLimit(env: Env, kind: LimitKind, key: string): Promise<boolean> {
@@ -36,10 +38,15 @@ export function tooMany(retryAfterS = 60, cors = false): Response {
   });
 }
 
+/** True when the request carries a credential that needs a lookup (a Bearer token or a session cookie). */
+export function hasCredential(req: Request): boolean {
+  return /^Bearer\s+\S/i.test(req.headers.get("authorization") ?? "") || /(?:^|;\s*)__Host-gitring=/.test(req.headers.get("cookie") ?? "");
+}
+
 /** Which limit a path falls under (null: none). */
 export function limitFor(_method: string, path: string): LimitKind | null {
   if (path === "/oauth/register" || path === "/oauth/authorize" || /^\/auth\/[^/]+\/start$/.test(path)) return "auth";
   if (path === "/oauth/token" || path === "/oauth/revoke") return "token";
-  if (path.startsWith("/api/") && path !== "/api/health") return "api";
+  if ((path.startsWith("/api/") && path !== "/api/health") || path.startsWith("/ws/")) return "api";
   return null;
 }

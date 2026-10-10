@@ -16,8 +16,9 @@
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
 import { directory, esc, forgetPrincipal, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
-import { basicAuth } from "../directory/oauth";
+import { basicAuth, isCimdId } from "../directory/oauth";
 import { sameString } from "../directory/crypto";
+import { clientAddress } from "./limits";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
 type C = Context<HonoEnv>;
@@ -106,6 +107,21 @@ function hostOf(uri: string): string {
   }
 }
 
+/**
+ * Where the app's access code goes: the only thing about a registered app that gitring can vouch for.
+ * A metadata document client is known by its document's host as well.
+ */
+function destinationText(redirectUri: string): string {
+  try {
+    const u = new URL(redirectUri);
+    if (u.protocol === "https:") return `<code>${esc(u.host)}</code>`;
+    if (u.protocol === "http:") return `an app on this computer (<code>${esc(u.host)}</code>)`;
+    return `the app on this computer that opens <code>${esc(u.protocol)}//</code> links`;
+  } catch {
+    return "the app";
+  }
+}
+
 async function signInPage(c: C, clientName: string, reqId: string): Promise<Response> {
   const providers = await directory(c.env)
     .providers()
@@ -121,29 +137,53 @@ async function signInPage(c: C, clientName: string, reqId: string): Promise<Resp
   );
 }
 
-function consentPage(user: NonNullable<Principal["user"]>, r: { id: string; clientName: string; clientUri?: string; redirectUri: string }): Response {
+function consentPage(user: NonNullable<Principal["user"]>, r: { id: string; clientId: string; clientName: string; clientUri?: string; redirectUri: string }): Response {
   const who = user.identities.find((i) => i.login)?.login ?? user.email ?? user.name;
-  const host = hostOf(r.clientUri ?? r.redirectUri);
+  // Anyone can register an app with any name: the heading names what gitring checked. A metadata
+  // document client is known by the host of its document; a registered one only by where its code goes.
+  const cimd = isCimdId(r.clientId);
+  const known = cimd ? `<code>${esc(hostOf(r.clientId))}</code>` : destinationText(r.redirectUri);
+  const says = [r.clientName && `calls itself “${esc(r.clientName)}”`, r.clientUri && `says that it is from <code>${esc(hostOf(r.clientUri))}</code>`].filter(Boolean).join(" and ");
   return page(
     "Allow the app",
-    `<h1>Allow ${esc(r.clientName)} (${esc(host)}) to use gitring as ${esc(user.name)}?</h1>
-<p class="muted">You are signed in as ${esc(who)}. ${r.clientUri ? `The app says that it is from <code>${esc(hostOf(r.clientUri))}</code>; gitring did not check this.` : ""}</p>
+    `<style>
+button[value=allow]{animation:arm 1s step-end forwards;pointer-events:none}
+@keyframes arm{to{pointer-events:auto}}
+</style>
+<h1>Allow the app at ${known} to use gitring as ${esc(user.name)}?</h1>
+<p class="muted">You are signed in as ${esc(who)}. ${cimd ? `The app's details come from its own site.` : `The app ${says || "gave no name"}; gitring did not check this. Only allow it when you added gitring to this app yourself.`}</p>
 <div class="card">
 <h2>It can</h2>
 <p>Read your projects and their tasks, send plans, write code to work copies, run tests and ask gitring to merge the work (in projects where you are a member).</p>
 <h2>It cannot</h2>
 <p>Change project settings or members, see your API keys, or act after you remove it (Account → Connected apps).</p>
 </div>
-<p class="muted">After you allow it, you go back to <code>${esc(hostOf(r.redirectUri))}</code>.</p>
+<p class="muted">After you allow it, gitring sends the app's access code to ${destinationText(r.redirectUri)}.</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="req" value="${esc(r.id)}">
-<button type="submit" name="decision" value="allow" autofocus>Allow</button>
+<button type="submit" name="decision" value="allow">Allow</button>
 <button type="submit" name="decision" value="deny" class="btn secondary">Cancel</button>
 </form>`,
     200,
     { "set-cookie": requestCookie(r.id) },
     // The answer to the form redirects to the app: the policy must allow that place.
     { formAction: [redirectSource(r.redirectUri)].filter(Boolean) },
+  );
+}
+
+/**
+ * A request that cannot go on (no PKCE, a wrong response type, an unknown scope). RFC 6749 sends the
+ * error to the app's redirect URI; with open registration, that would make gitring send anyone to any
+ * address. So the person sees the problem and chooses to go back; only an app that this person allowed
+ * before gets the answer at once.
+ */
+function requestErrorPage(clientName: string, reason: string, redirect: string): Response {
+  return page(
+    "Connect an app",
+    `<h1>gitring cannot connect ${esc(clientName || "this app")}</h1><p>${esc(reason)}</p>
+<p class="muted">The app can get this answer at ${destinationText(redirect)}.</p>
+<p><a class="btn secondary" href="${esc(redirect)}" rel="noreferrer">Send the answer to the app</a></p>`,
+    400,
   );
 }
 
@@ -176,7 +216,7 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
 
   app.post("/oauth/register", async (c) => {
     const body = await c.req.json().catch(() => null);
-    const res = await directory(c.env).oauthRegister(body);
+    const res = await directory(c.env).oauthRegister(body, clientAddress(c.req.raw));
     return json(res.body, res.status, { ...CORS, "cache-control": "no-store" });
   });
 
@@ -195,10 +235,12 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
         return page("Connect an app", `<h1>Open this link in the same browser</h1><p>Start again from the app that wants to connect.</p>`, 400);
       }
     } else {
-      const res = await dir.oauthStart(q, o);
+      const res = await dir.oauthStart(q, o, clientAddress(c.req.raw));
       if (!res.ok) {
         if ("page" in res) return page("Connect an app", `<h1>gitring cannot connect this app</h1><p>${esc(res.page)}</p>`, 400);
-        return redirect(res.redirect);
+        const p = c.get("principal");
+        const trusted = p.via === "session" && p.user ? await dir.oauthHasGrant(p.user.id, res.clientId) : false;
+        return trusted ? redirect(res.redirect) : requestErrorPage(res.clientName, res.reason, res.redirect);
       }
       request = res.request;
     }
@@ -227,7 +269,7 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
 
   app.post("/oauth/token", async (c) => {
     const form = await formOf(c);
-    const res = await directory(c.env).oauthToken(form, basicAuth(c.req.header("authorization")), originOf(c));
+    const res = await directory(c.env).oauthToken(form, basicAuth(c.req.header("authorization")), originOf(c), clientAddress(c.req.raw));
     return json(res.body, res.status, { ...CORS, ...(res.headers ?? {}) });
   });
 

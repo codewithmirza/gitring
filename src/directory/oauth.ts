@@ -15,6 +15,7 @@
  * (SQLite); pure enough to test in Node.
  */
 import { randomToken, sameString, sha256B64url } from "./crypto";
+import { publicHostname } from "../core/repo-rules";
 
 export const ACCESS_TTL_S = 3600;
 export const REFRESH_TTL_S = 30 * 24 * 3600;
@@ -25,8 +26,11 @@ const REUSE_GRACE_MS = 30_000;
 const CIMD_TTL_MS = 24 * 3600_000;
 const CIMD_STALE_MS = 7 * 24 * 3600_000;
 const MAX_REDIRECTS = 10;
-const MAX_CLIENTS_PER_HOUR = 300;
-/** A registered client that nobody allowed within this time is removed. */
+/** New clients (registrations and metadata documents) per hour: per address, and for the whole server. */
+const MAX_CLIENTS_PER_ADDRESS_HOUR = 30;
+const MAX_CLIENTS_PER_HOUR = 3000;
+/** A client that nobody ever allowed is removed after a day; one whose grants are all revoked, after 30 days. */
+const NEVER_ALLOWED_CLIENT_MS = 24 * 3600_000;
 const UNUSED_CLIENT_MS = 30 * 24 * 3600_000;
 export const SCOPE = "mcp";
 
@@ -169,17 +173,7 @@ export function isCimdId(clientId: string): boolean {
   return !raw.split("/").some((seg) => seg === "." || seg === "..");
 }
 
-/**
- * A host name that can belong to a public site: a domain with a dot, not an IP address, not a local or
- * internal name. gitring fetches client metadata from it, so it must not point into private networks.
- */
-export function publicHostname(host: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  if (!h.includes(".")) return false;
-  if (/^[\d.]+$/.test(h) || h.startsWith("[") || h.includes(":")) return false; // IPv4 and IPv6 literals
-  if (/(^|\.)(localhost|local|internal|intranet|lan|home|corp|localdomain|home\.arpa|in-addr\.arpa|ip6\.arpa|test|example|invalid)$/.test(h)) return false;
-  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h);
-}
+export { publicHostname };
 
 /* ───────────────────────── the store ───────────────────────── */
 
@@ -200,12 +194,25 @@ export class OAuthStore {
     this.sql.exec("CREATE INDEX IF NOT EXISTS oauth_tokens_family ON oauth_tokens (family)");
     const codeCols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_codes)").toArray().map((c) => c.name);
     if (!codeCols.includes("family")) this.sql.exec("ALTER TABLE oauth_codes ADD COLUMN family TEXT");
+    // The address that made a client known (registration, or the first metadata document fetch): the caps per address.
+    const clientCols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_clients)").toArray().map((c) => c.name);
+    if (!clientCols.includes("address")) this.sql.exec("ALTER TABLE oauth_clients ADD COLUMN address TEXT");
+  }
+
+  /** Too many new clients in the last hour, from this address or in all. */
+  private clientCapReached(address: string | undefined): boolean {
+    const hourAgo = this.now() - 3600_000;
+    if (address) {
+      const mine = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE address = ? AND created_at > ?", address, hourAgo).one().n;
+      if (mine >= MAX_CLIENTS_PER_ADDRESS_HOUR) return true;
+    }
+    return this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE created_at > ?", hourAgo).one().n >= MAX_CLIENTS_PER_HOUR;
   }
 
   /* ───────────── clients ───────────── */
 
-  /** RFC 7591 dynamic client registration. Answers the registration response or an error. */
-  async register(raw: unknown): Promise<{ status: number; body: JsonObject }> {
+  /** RFC 7591 dynamic client registration. Answers the registration response or an error. `address`: the caller, for the caps. */
+  async register(raw: unknown, address?: string): Promise<{ status: number; body: JsonObject }> {
     const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
     const uris = Array.isArray(m.redirect_uris) ? m.redirect_uris.filter((u): u is string => typeof u === "string") : [];
     if (!uris.length) return { status: 400, body: err("invalid_redirect_uri", "Give at least one redirect URI.") };
@@ -222,16 +229,14 @@ export class OAuthStore {
     }
     const responses = Array.isArray(m.response_types) ? m.response_types : ["code"];
     if (responses.some((r) => r !== "code")) return { status: 400, body: err("invalid_client_metadata", "gitring supports the response type code.") };
-    const hourAgo = this.now() - 3600_000;
-    const recent = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE kind = 'dcr' AND created_at > ?", hourAgo).one().n;
-    if (recent >= MAX_CLIENTS_PER_HOUR) return { status: 429, body: err("temporarily_unavailable", "Too many registrations in the last hour. Try again later.") };
+    if (this.clientCapReached(address)) return { status: 429, body: err("temporarily_unavailable", "Too many registrations in the last hour. Try again later.") };
     const name = typeof m.client_name === "string" && m.client_name.trim() ? m.client_name.trim().slice(0, 100) : "MCP client";
     const uri = typeof m.client_uri === "string" && /^https:\/\//.test(m.client_uri) ? m.client_uri.slice(0, 300) : undefined;
     const clientId = `gitring-${rand(18)}`;
     const secret = method === "none" ? undefined : `gcs_${randomToken(32)}`;
     const now = this.now();
     this.sql.exec(
-      "INSERT INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at) VALUES (?, ?, ?, ?, ?, ?, 'dcr', ?)",
+      "INSERT INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at, address) VALUES (?, ?, ?, ?, ?, ?, 'dcr', ?, ?)",
       clientId,
       secret ? await sha256B64url(secret) : null,
       name,
@@ -239,6 +244,7 @@ export class OAuthStore {
       JSON.stringify(uris),
       method,
       now,
+      address ?? null,
     );
     return {
       status: 201,
@@ -262,7 +268,7 @@ export class OAuthStore {
    * for a day. When a refetch fails, the cached document stays in use for up to a week (stale-if-error),
    * so that a short outage of the client's site does not sign people out.
    */
-  async client(clientId: string): Promise<OAuthClient | null> {
+  async client(clientId: string, address?: string): Promise<OAuthClient | null> {
     if (!clientId || clientId.length > 500) return null;
     const row = this.sql
       .exec<{ client_id: string; name: string; uri: string | null; redirect_uris: string; auth_method: string; kind: string; fetched_at: number | null }>(
@@ -276,14 +282,14 @@ export class OAuthStore {
     const age = this.now() - (row?.fetched_at ?? 0);
     if (cached && (cached.kind !== "cimd" || age < CIMD_TTL_MS)) return cached;
     if (!isCimdId(clientId)) return null;
-    const fetched = await this.fetchMetadataDocument(clientId);
+    const fetched = await this.fetchMetadataDocument(clientId, address);
     if (fetched === "invalid") return null;
     if (fetched) return fetched;
     return cached && age < CIMD_STALE_MS ? cached : null;
   }
 
   /** Fetch and store a metadata document. Answers null when the fetch failed, "invalid" for a bad document. */
-  private async fetchMetadataDocument(clientId: string): Promise<OAuthClient | null | "invalid"> {
+  private async fetchMetadataDocument(clientId: string, address?: string): Promise<OAuthClient | null | "invalid"> {
     let doc: Record<string, unknown>;
     try {
       const res = await this.fetcher(clientId, { headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(5000) });
@@ -302,21 +308,21 @@ export class OAuthStore {
     if (!uris.length) return "invalid";
     const name = typeof doc.client_name === "string" && doc.client_name.trim() ? doc.client_name.trim().slice(0, 100) : new URL(clientId).hostname;
     const uri = typeof doc.client_uri === "string" && /^https:\/\//.test(doc.client_uri) ? doc.client_uri.slice(0, 300) : undefined;
-    // New metadata documents count against the same hourly cap as registrations (storage growth).
+    // New metadata documents count against the same hourly caps as registrations (storage growth). A
+    // document fetched again keeps its first-seen time.
     const known = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE client_id = ?", clientId).one().n > 0;
-    if (!known) {
-      const recent = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE kind = 'cimd' AND created_at > ?", this.now() - 3600_000).one().n;
-      if (recent >= MAX_CLIENTS_PER_HOUR) return null;
-    }
+    if (!known && this.clientCapReached(address)) return null;
     // A metadata document client authenticates with PKCE only (private_key_jwt is not supported here).
     this.sql.exec(
-      "INSERT OR REPLACE INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at, fetched_at) VALUES (?, NULL, ?, ?, ?, 'none', 'cimd', ?, ?)",
+      `INSERT INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at, fetched_at, address) VALUES (?, NULL, ?, ?, ?, 'none', 'cimd', ?, ?, ?)
+       ON CONFLICT (client_id) DO UPDATE SET name = excluded.name, uri = excluded.uri, redirect_uris = excluded.redirect_uris, fetched_at = excluded.fetched_at`,
       clientId,
       name,
       uri ?? null,
       JSON.stringify(uris),
       this.now(),
       this.now(),
+      address ?? null,
     );
     return { clientId, name, uri, redirectUris: uris, authMethod: "none", kind: "cimd" };
   }
@@ -330,9 +336,10 @@ export class OAuthStore {
   async startRequest(
     q: Record<string, string | undefined>,
     origin: string,
-  ): Promise<{ ok: true; request: PendingRequest } | { ok: false; page: string } | { ok: false; redirect: string }> {
+    address?: string,
+  ): Promise<{ ok: true; request: PendingRequest } | { ok: false; page: string } | { ok: false; redirect: string; clientId: string; clientName: string; reason: string }> {
     const clientId = q.client_id ?? "";
-    const client = await this.client(clientId);
+    const client = await this.client(clientId, address);
     if (!client) return { ok: false, page: "This app is not registered with gitring. Add gitring to the app again." };
     let redirectUri = q.redirect_uri;
     if (!redirectUri) {
@@ -340,7 +347,13 @@ export class OAuthStore {
       redirectUri = client.redirectUris[0];
     }
     if (!redirectMatches(client.redirectUris, redirectUri)) return { ok: false, page: "The app asked to go back to an address that it did not register." };
-    const back = (e: OAuthError) => ({ ok: false as const, redirect: withParams(redirectUri!, { error: e.error, error_description: e.error_description, state: q.state, iss: origin }) });
+    const back = (e: OAuthError) => ({
+      ok: false as const,
+      redirect: withParams(redirectUri!, { error: e.error, error_description: e.error_description, state: q.state, iss: origin }),
+      clientId: client.clientId,
+      clientName: client.name,
+      reason: e.error_description,
+    });
     if (q.response_type !== "code") return back(err("unsupported_response_type", "gitring supports response_type=code."));
     if (!q.code_challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(q.code_challenge)) return back(err("invalid_request", "Send a PKCE code_challenge (S256)."));
     if ((q.code_challenge_method ?? "") !== "S256") return back(err("invalid_request", "code_challenge_method must be S256."));
@@ -417,10 +430,10 @@ export class OAuthStore {
    * POST /oauth/token. `form` holds the request parameters; `basic` is the decoded HTTP Basic
    * client authentication, if any.
    */
-  async token(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string): Promise<TokenAnswer> {
+  async token(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string, address?: string): Promise<TokenAnswer> {
     const noStore = { "cache-control": "no-store", pragma: "no-cache" };
     const fail = (status: number, e: OAuthError, extra: Record<string, string> = {}): TokenAnswer => ({ status, body: e, headers: { ...noStore, ...extra } });
-    const auth = await this.authenticateClient(form, basic);
+    const auth = await this.authenticateClient(form, basic, address);
     if (!auth.ok) return fail(401, auth.error, basic ? { "www-authenticate": 'Basic realm="gitring"' } : {});
     const client = auth.client;
     if (!resourceOk(form.resource, origin)) return fail(400, err("invalid_target", `This server serves the resource ${resourceOf(origin)}.`));
@@ -493,9 +506,10 @@ export class OAuthStore {
   private async authenticateClient(
     form: Record<string, string | undefined>,
     basic: { id: string; secret: string } | null,
+    address?: string,
   ): Promise<{ ok: true; client: OAuthClient } | { ok: false; error: OAuthError }> {
     const clientId = basic?.id ?? form.client_id ?? "";
-    const client = await this.client(clientId);
+    const client = await this.client(clientId, address);
     if (!client) return { ok: false, error: err("invalid_client", "Unknown client.") };
     if (client.authMethod === "none") return { ok: true, client };
     const secret = basic?.secret ?? form.client_secret ?? "";
@@ -617,6 +631,10 @@ export class OAuthStore {
     this.sql.exec("DELETE FROM oauth_requests WHERE expires_at < ?", now);
     this.sql.exec("DELETE FROM oauth_codes WHERE expires_at < ?", now - 3600_000);
     this.sql.exec("DELETE FROM oauth_tokens WHERE expires_at < ?", now - 24 * 3600_000);
+    this.sql.exec(
+      "DELETE FROM oauth_clients WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.client_id)",
+      now - NEVER_ALLOWED_CLIENT_MS,
+    );
     this.sql.exec(
       "DELETE FROM oauth_clients WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.client_id AND g.revoked = 0)",
       now - UNUSED_CLIENT_MS,

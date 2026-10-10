@@ -170,12 +170,12 @@ export class Directory extends DurableObject<Env> {
 
   /* ════════════════════ OAuth for MCP clients ════════════════════ */
 
-  async oauthRegister(body: unknown): Promise<{ status: number; body: JsonObject }> {
-    return this.oauth.register(body);
+  async oauthRegister(body: unknown, address?: string): Promise<{ status: number; body: JsonObject }> {
+    return this.oauth.register(body, address);
   }
 
-  async oauthStart(query: Record<string, string | undefined>, origin: string) {
-    return this.oauth.startRequest(query, origin);
+  async oauthStart(query: Record<string, string | undefined>, origin: string, address?: string) {
+    return this.oauth.startRequest(query, origin, address);
   }
 
   async oauthRequest(id: string): Promise<PendingRequest | null> {
@@ -195,8 +195,8 @@ export class Directory extends DurableObject<Env> {
     return this.oauth.deny(requestId, origin);
   }
 
-  async oauthToken(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string): Promise<TokenAnswer> {
-    return this.oauth.token(form, basic, origin);
+  async oauthToken(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string, address?: string): Promise<TokenAnswer> {
+    return this.oauth.token(form, basic, origin, address);
   }
 
   async oauthRevoke(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null): Promise<{ status: number; body?: Record<string, string>; userId?: string }> {

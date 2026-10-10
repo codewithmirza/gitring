@@ -91,6 +91,9 @@ describe("imports", () => {
     expect(() => normalizeGitUrl("http://github.com/a/b")).toThrow(/https/);
     expect(() => normalizeGitUrl("https://user:pw@github.com/a/b")).toThrow(/credentials/);
     expect(() => normalizeGitUrl("https://localhost/a/b")).toThrow(/private host/);
+    for (const host of ["169.254.169.254", "10.0.0.1", "192.168.1.1", "[fd00::1]", "[::1]", "0x7f000001", "metadata.internal", "git.corp", "intranet", "build.lan"]) {
+      expect(() => normalizeGitUrl(`https://${host}/a/b`), host).toThrow(/private host/);
+    }
     expect(() => normalizeGitUrl("not a url")).toThrow(/https URL/);
   });
 

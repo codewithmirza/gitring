@@ -20,7 +20,8 @@
     { "name": "RL_AUTH", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } },
     { "name": "RL_TOKEN", "namespace_id": "4102", "simple": { "limit": 120, "period": 60 } },
     { "name": "RL_MCP", "namespace_id": "4103", "simple": { "limit": 600, "period": 60 } },
-    { "name": "RL_API", "namespace_id": "4104", "simple": { "limit": 1200, "period": 60 } }
+    { "name": "RL_API", "namespace_id": "4104", "simple": { "limit": 1200, "period": 60 } },
+    { "name": "RL_CRED", "namespace_id": "4105", "simple": { "limit": 3000, "period": 60 } }
   ],
   "durable_objects": {
     "bindings": [

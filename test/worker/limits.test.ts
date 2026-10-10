@@ -1,6 +1,6 @@
 /** Rate limits: which paths fall under which limit, and how a limiter answer turns into a 429. */
 import { describe, expect, it } from "vitest";
-import { clientAddress, limitFor, overLimit, tooMany } from "../../src/worker/limits";
+import { clientAddress, hasCredential, limitFor, overLimit, tooMany } from "../../src/worker/limits";
 import type { Env } from "../../src/worker/env";
 
 describe("rate limits", () => {
@@ -11,6 +11,7 @@ describe("rate limits", () => {
     expect(limitFor("POST", "/oauth/token")).toBe("token");
     expect(limitFor("POST", "/oauth/revoke")).toBe("token");
     expect(limitFor("GET", "/api/projects")).toBe("api");
+    expect(limitFor("GET", "/ws/shop")).toBe("api");
     expect(limitFor("GET", "/api/health")).toBeNull();
     expect(limitFor("GET", "/auth/github/callback")).toBeNull();
     expect(limitFor("GET", "/projects")).toBeNull();
@@ -28,6 +29,13 @@ describe("rate limits", () => {
     expect(keys[0]).toBe("api:u_1");
     expect(await overLimit(env, "mcp", "u_1")).toBe(false);
     expect(await overLimit(env, "auth", "1.2.3.4")).toBe(false);
+  });
+
+  it("sees a credential that needs a lookup", () => {
+    expect(hasCredential(new Request("https://x/api/me", { headers: { authorization: "Bearer gk_abc" } }))).toBe(true);
+    expect(hasCredential(new Request("https://x/api/me", { headers: { cookie: "gitring_last=github; __Host-gitring=tok" } }))).toBe(true);
+    expect(hasCredential(new Request("https://x/api/me", { headers: { cookie: "gitring_last=github" } }))).toBe(false);
+    expect(hasCredential(new Request("https://x/api/me"))).toBe(false);
   });
 
   it("answers 429 with Retry-After, and reads the client address", async () => {

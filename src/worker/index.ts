@@ -26,7 +26,7 @@ import { GithubClient, GithubError } from "../platform/github/api";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
-import { clientAddress, limitFor, overLimit, tooMany } from "./limits";
+import { clientAddress, hasCredential, limitFor, overLimit, tooMany } from "./limits";
 import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
@@ -74,6 +74,9 @@ app.use("*", async (c, next) => {
   const kind = limitFor(c.req.method, path);
   // Sign-in and OAuth endpoints are limited per address before any lookup.
   if ((kind === "auth" || kind === "token") && (await overLimit(c.env, kind, clientAddress(c.req.raw)))) return tooMany(60, kind === "token");
+  // Credential lookups are limited per address before the lookup: keys and cookies that are not valid
+  // are never cached, so a flood of them must stop here and not at the account store.
+  if (kind === "api" && hasCredential(c.req.raw) && (await overLimit(c.env, "cred", clientAddress(c.req.raw)))) return tooMany();
   const p = await resolvePrincipal(c.env, c.req.raw);
   if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Account → API keys)." }, 401);
   c.set("principal", p);
@@ -927,6 +930,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
       if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null })(request, env, ctx);
+      if (hasCredential(request) && (await overLimit(env, "cred", clientAddress(request)))) return tooMany(60, true);
       const p = await resolvePrincipal(env, request, { oauth: true });
       if (await overLimit(env, "mcp", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(request)))) return tooMany(60, true);
       if (!p.user && p.via !== "operator") {
