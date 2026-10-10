@@ -262,14 +262,14 @@ for (const [w, h] of [
     ok((await page.getByRole("tree").getByRole("treeitem").filter({ hasText: ".js" }).count()) === 2, `${tag}: the diff shows only the changed files in the tree`);
 
     // A change of the work copy: its tree loads again (one request) and shows the new file.
-    await reset();
+    await fetch(`${BASE}/__mock/reset?data=keep`, { method: "POST" });
     await fetch(`${BASE}/__mock/bump`, { method: "POST" });
     await page.getByRole("treeitem", { name: /total\.test\.js/ }).waitFor({ timeout: 5000 });
     l = await log();
     ok(count(l, /attempts\/at_s1\/diff/) === 1, `${tag}: one diff request after the work copy changed`, JSON.stringify(l.map((r) => r.path)));
     // Back to main and to the work copy: the tree revalidates with its ETag (304).
     await page.goto(`${BASE}/code/main/src/cart.js?project=shop`, { waitUntil: "networkidle" });
-    await reset();
+    await fetch(`${BASE}/__mock/reset?data=keep`, { method: "POST" });
     await page.locator("body").press("w");
     await page.getByRole("combobox", { name: /Filter main and the work copies/ }).fill("total");
     await page.keyboard.press("Enter");

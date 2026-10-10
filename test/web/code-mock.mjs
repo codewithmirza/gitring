@@ -6,7 +6,7 @@
 // It serves dist/client with the single-page fallback, the API that these views use (tree and file with
 // ETag and 304, work copy diffs, merge records), live events over /ws/:p, and test hooks:
 //   GET  /__mock/log      every request: { method, path, status, ws? }
-//   POST /__mock/reset    clear the log
+//   POST /__mock/reset    clear the log and the data (?data=keep keeps the data)
 //   POST /__mock/emit     { events: [...] } → send to every socket
 //   POST /__mock/drop     close every socket (the app must reconnect)
 //   POST /__mock/bump     change the work copy at_s1 (a new version of its tree and files) and send the event
@@ -301,6 +301,7 @@ const server = http.createServer(async (req, res) => {
   if (p === "/__mock/log") return send(res, 200, log);
   if (p === "/__mock/reset") {
     log = [];
+    if (url.searchParams.get("data") !== "keep") s1Version = 1;
     return send(res, 200, { ok: true });
   }
   if (p === "/__mock/emit") {
