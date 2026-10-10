@@ -39,4 +39,9 @@ export interface Env {
   GITHUB_WEBHOOK_SECRET?: string;
   /** Optional: verify Slack request signatures (X-Slack-Signature). */
   SLACK_SIGNING_SECRET?: string;
+  /** Rate limits (src/worker/limits.ts). Absent in local development and tests. */
+  RL_AUTH?: RateLimit;
+  RL_TOKEN?: RateLimit;
+  RL_MCP?: RateLimit;
+  RL_API?: RateLimit;
 }

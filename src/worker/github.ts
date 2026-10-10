@@ -88,8 +88,11 @@ export function githubRoutes(app: Hono<HonoEnv>): void {
     const providers = await directory(c.env).providers();
     const installUrl = providers.github?.installUrl;
     if (!providers.github) return json({ connected: false, repos: [], reason: "This gitring has no GitHub App. An owner sets it up on /setup." } satisfies RepoList);
+    // ?q= filters the list (name, owner, description); the full list stays cached for the next keystroke.
+    const q = (c.req.query("q") ?? "").trim().toLowerCase();
+    const filtered = (v: RepoList): RepoList => (q ? { ...v, repos: v.repos.filter((r) => r.fullName.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q)) } : v);
     const cached = lists.get(user.id);
-    if (cached && c.req.query("refresh") !== "1" && Date.now() - cached.at < LIST_TTL_MS) return json(cached.value, 200, { "cache-control": "private, max-age=30" });
+    if (cached && c.req.query("refresh") !== "1" && Date.now() - cached.at < LIST_TTL_MS) return json(filtered(cached.value), 200, { "cache-control": "private, max-age=30" });
     let res;
     try {
       res = await withGithub(c.env, user.id, (gh) => listUserRepos(gh));
@@ -107,7 +110,7 @@ export function githubRoutes(app: Hono<HonoEnv>): void {
     };
     lists.set(user.id, { at: Date.now(), value });
     if (lists.size > 2000) lists.delete(lists.keys().next().value!);
-    return json(value, 200, { "cache-control": "private, max-age=30" });
+    return json(filtered(value), 200, { "cache-control": "private, max-age=30" });
   });
 
   app.get("/api/github/guess", async (c) => {

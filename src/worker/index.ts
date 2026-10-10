@@ -25,6 +25,7 @@ import type { RepoJson } from "../platform/github/repos";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
+import { clientAddress, limitFor, overLimit, tooMany } from "./limits";
 import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
@@ -67,14 +68,30 @@ app.onError((e, c) => {
 /* ───────────── who is calling ───────────── */
 
 app.use("*", async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  const kind = limitFor(c.req.method, path);
+  // Sign-in and OAuth endpoints are limited per address before any lookup.
+  if ((kind === "auth" || kind === "token") && (await overLimit(c.env, kind, clientAddress(c.req.raw)))) return tooMany(60, kind === "token");
   const p = await resolvePrincipal(c.env, c.req.raw);
-  if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Connect → API keys)." }, 401);
+  if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Account → API keys)." }, 401);
   c.set("principal", p);
+  if (kind === "api" && (await overLimit(c.env, "api", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(c.req.raw))))) return tooMany();
   // A browser session may only change state from gitring's own pages (no cross-site requests).
   if (p.via === "session" && isCrossSiteWrite(c.req.method, c.req.header("origin"), c.req.header("sec-fetch-site"), new URL(c.req.url).origin)) {
     return c.json({ error: "Cross-site requests are not allowed." }, 403);
   }
   await next();
+  // Defaults for every Worker answer (pages set stricter ones themselves). Answers that came from
+  // another object (WebSocket upgrades, previews) have fixed headers: leave them.
+  if (c.res.status === 101) return;
+  try {
+    const h = c.res.headers;
+    if (!h.has("x-content-type-options")) h.set("x-content-type-options", "nosniff");
+    if (!h.has("referrer-policy")) h.set("referrer-policy", "strict-origin-when-cross-origin");
+    if (path.startsWith("/api/") && !h.has("cache-control")) h.set("cache-control", "private, no-store");
+  } catch {
+    /* immutable headers */
+  }
 });
 
 /*
@@ -789,6 +806,7 @@ export default {
     if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
       if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null })(request, env, ctx);
       const p = await resolvePrincipal(env, request, { oauth: true });
+      if (await overLimit(env, "mcp", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(request)))) return tooMany(60, true);
       if (!p.user && p.via !== "operator") {
         // MCP authorization: the challenge points the client to the protected resource metadata, and the
         // client signs the person in with OAuth. Scripts and hooks send a personal API key instead.
