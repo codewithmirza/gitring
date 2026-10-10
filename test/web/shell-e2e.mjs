@@ -59,8 +59,8 @@ for (const [w, h] of [
   await dlg.waitFor();
   ok(await signInBtn.getAttribute("aria-expanded") === "true", `${tag}: Sign in has aria-expanded=true`);
   ok(await page.locator(".b-pop__tail").isVisible(), `${tag}: the sign-in popover has a tail`);
-  ok(await dlg.getByRole("button", { name: "Continue with GitHub" }).isVisible(), `${tag}: Continue with GitHub`);
-  ok(await dlg.getByRole("button", { name: "Continue with Google" }).isVisible(), `${tag}: Continue with Google`);
+  ok(await dlg.getByRole("link", { name: "Continue with GitHub" }).isVisible(), `${tag}: Continue with GitHub`);
+  ok(await dlg.getByRole("link", { name: "Continue with Google" }).isVisible(), `${tag}: Continue with Google`);
   ok((await dlg.locator(".brand-mark--github path").count()) === 1 && (await dlg.locator("img.brand-mark--google").count()) === 1, `${tag}: both provider marks render`);
   ok(await inPopover(page), `${tag}: focus moved into the sign-in popover`);
   await noOverflow(page, `${tag} sign-in open`);

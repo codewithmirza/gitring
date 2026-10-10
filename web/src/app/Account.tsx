@@ -8,7 +8,8 @@ import { Button, Menu, MenuItem, MenuSeparator, Popover, SkeletonRows, usePopove
 import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
 import { useStore } from "../state/store";
-import { openProject, signIn, signOut, useCanAct, useMe } from "../state/account";
+import { openProject, signOut, useCanAct, useMe } from "../state/account";
+import { githubSignInUrl, googleSignInUrl } from "../state/signin";
 import { Link, linkProps, navigate } from "./router";
 import { openSignIn, rememberAfterSignIn, setUi, useUi } from "./ui";
 import { fuzzyScore } from "./palette";
@@ -224,8 +225,14 @@ export function UserMenu() {
 const LAST_KEY = "gitring.lastProvider";
 const PROVIDER_NAME: Record<Provider, string> = { github: "GitHub", google: "Google" };
 
-function lastProvider(): Provider | null {
+/**
+ * The provider of the last sign-in in this browser: the server's cookie "gitring_last" (set when a
+ * sign-in finishes), else the provider that the person chose last here.
+ */
+export function lastProvider(): Provider | null {
   try {
+    const m = /(?:^|;\s*)gitring_last=(github|google)\b/.exec(document.cookie);
+    if (m) return m[1] as Provider;
     const v = localStorage.getItem(LAST_KEY);
     return v === "github" || v === "google" ? v : null;
   } catch {
@@ -233,16 +240,29 @@ function lastProvider(): Provider | null {
   }
 }
 
-/** The sign-in buttons: real provider marks, the last used provider first, one click to the provider. */
-export function SignInChoices({ reason, error }: { reason?: string | null; error?: string | null }) {
+/**
+ * The sign-in choices: real provider marks, the last used provider first, one click to the provider.
+ * Each choice is a link (it leaves for the provider), and it shows "Opening …" until the page changes.
+ * `returnTo` is the page to come back to (default: this page).
+ */
+export function SignInChoices({ reason, error, returnTo }: { reason?: string | null; error?: string | null; returnTo?: string }) {
   const me = useMe();
   const ui = useUi();
   const [busy, setBusy] = useState<Provider | null>(null);
+  useEffect(() => {
+    // Back from the provider (the page comes from the back-forward cache): the choices work again.
+    const reset = (e: PageTransitionEvent) => {
+      if (e.persisted) setBusy(null);
+    };
+    addEventListener("pageshow", reset);
+    return () => removeEventListener("pageshow", reset);
+  }, []);
   const last = lastProvider();
   if (!me) return <SkeletonRows rows={2} label="Loading the sign-in choices" />;
   const available = (["github", "google"] as Provider[]).filter((p) => me.providers[p]);
   const ordered = last && available.includes(last) ? [last, ...available.filter((p) => p !== last)] : available;
-  const go = (p: Provider) => {
+  const back = returnTo ?? location.pathname + location.search;
+  const chose = (p: Provider) => {
     setBusy(p);
     try {
       localStorage.setItem(LAST_KEY, p);
@@ -250,7 +270,6 @@ export function SignInChoices({ reason, error }: { reason?: string | null; error
       /* storage off */
     }
     rememberAfterSignIn(ui.signInThen);
-    signIn(p);
   };
   return (
     <div className="signin">
@@ -266,11 +285,22 @@ export function SignInChoices({ reason, error }: { reason?: string | null; error
       ) : (
         <div className="signin__buttons">
           {ordered.map((p, i) => (
-            <button key={p} type="button" className="b-provider" aria-busy={busy === p || undefined} onClick={() => go(p)} data-autofocus={i === 0 ? "" : undefined}>
+            <a
+              key={p}
+              className="b-provider"
+              href={p === "github" ? githubSignInUrl(back) : googleSignInUrl(back)}
+              aria-busy={busy === p || undefined}
+              onClick={(e) => {
+                // A new tab or window keeps this page as it is.
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                chose(p);
+              }}
+              data-autofocus={i === 0 ? "" : undefined}
+            >
               {p === "github" ? <GitHubMark size={18} /> : <GoogleG size={18} />}
               <span className="b-provider__text">{busy === p ? `Opening ${PROVIDER_NAME[p]}…` : `Continue with ${PROVIDER_NAME[p]}`}</span>
               {p === last && ordered.length > 1 && <span className="b-provider__tag">Last used</span>}
-            </button>
+            </a>
           ))}
         </div>
       )}

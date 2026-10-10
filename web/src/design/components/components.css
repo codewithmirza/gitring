@@ -1163,6 +1163,7 @@ dialog.b-drawer::backdrop { background: var(--scrim); }
 .b-menu__label-row { padding: var(--s-2) var(--s-3) var(--s-1); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 @media (pointer: coarse) {
   .b-menu__item { min-height: 44px; }
+  .b-provider { min-height: 48px; }
 }
 
 /* ───────────── Inline confirm ───────────── */
@@ -1175,6 +1176,16 @@ dialog.b-drawer::backdrop { background: var(--scrim); }
   gap: var(--s-1) var(--s-2);
   padding-bottom: 4px;
 }
+.b-confirm--box {
+  justify-content: flex-start;
+  max-width: 100%;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+  border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent);
+  border-radius: var(--r-2);
+  background: var(--danger-tint);
+  animation: b-fade-in var(--dur-1) var(--ease-out);
+}
+.b-confirm--box .b-confirm__msg { flex: 1 1 24ch; max-width: none; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); overflow-wrap: anywhere; }
 .b-confirm__msg { max-width: 44ch; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .b-confirm__msg.is-error { color: var(--danger); }
 .b-confirm__timer {
@@ -1257,6 +1268,14 @@ dialog.b-drawer::backdrop { background: var(--scrim); }
  * 14/20 medium text; 12px before the logo, 10px after it, 12px after the text. Both providers use the same
  * shape and weight. The GitHub mark is black on light and white on dark (github.com/logos).
  */
+/* The GitHub mark: black on light themes, white on dark themes (GitHub logo rules: no other colors). */
+.brand-mark--github { fill: #000000; }
+:root[data-theme="dusk"] .brand-mark--github,
+:root[data-theme="night"] .brand-mark--github { fill: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .brand-mark--github { fill: #ffffff; }
+}
+
 .b-provider {
   position: relative;
   display: flex;

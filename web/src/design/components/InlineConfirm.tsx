@@ -16,8 +16,12 @@ interface InlineConfirmProps {
   size?: "sm" | "md";
   /** Accessible name of the first button when the label alone is not clear, for example "Revoke the key ci". */
   ariaLabel?: string;
-  /** Seconds before the row goes back by itself (default 8). */
+  /** Seconds before the row goes back by itself (default 8). 0: it stays until Keep or Escape. */
   timeout?: number;
+  /** Look of the first button (default ghost). */
+  variant?: "ghost" | "secondary" | "danger";
+  /** A tinted box around the question: for actions with large effects (archive a project). */
+  box?: boolean;
   className?: string;
 }
 
@@ -26,13 +30,15 @@ interface InlineConfirmProps {
  * The confirm button takes the place (and the focus) of the first button, so a second click confirms.
  * It arms after 300 ms, so a double click does not confirm by accident. The row goes back after a
  * short countdown, or on Escape or Keep.
+ * With `box` (actions with large effects), focus goes to Keep instead: the person moves to the action.
  */
-export function InlineConfirm({ label, icon, consequence, confirmLabel, cancelLabel = "Keep", onConfirm, size = "sm", ariaLabel, timeout = 8, className }: InlineConfirmProps) {
+export function InlineConfirm({ label, icon, consequence, confirmLabel, cancelLabel = "Keep", onConfirm, size = "sm", ariaLabel, timeout = 8, variant = "ghost", box = false, className }: InlineConfirmProps) {
   const [state, setState] = useState<"idle" | "ask" | "busy">("idle");
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const first = useRef<HTMLButtonElement | null>(null);
   const yes = useRef<HTMLButtonElement | null>(null);
+  const keep = useRef<HTMLButtonElement | null>(null);
   const msgId = useId();
   const mounted = useRef(true);
   useEffect(
@@ -44,17 +50,20 @@ export function InlineConfirm({ label, icon, consequence, confirmLabel, cancelLa
 
   useEffect(() => {
     if (state !== "ask") return;
-    yes.current?.focus();
+    (box ? keep : yes).current?.focus();
     const arm = setTimeout(() => setArmed(true), 300);
-    const back = setTimeout(() => {
-      setState("idle");
-      setError(null);
-    }, timeout * 1000);
+    const back =
+      timeout > 0
+        ? setTimeout(() => {
+            setState("idle");
+            setError(null);
+          }, timeout * 1000)
+        : undefined;
     return () => {
       clearTimeout(arm);
-      clearTimeout(back);
+      if (back) clearTimeout(back);
     };
-  }, [state, timeout]);
+  }, [state, timeout, box]);
 
   const cancel = () => {
     setState("idle");
@@ -79,14 +88,14 @@ export function InlineConfirm({ label, icon, consequence, confirmLabel, cancelLa
 
   if (state === "idle") {
     return (
-      <Button ref={first} size={size} variant="ghost" icon={icon} className={className} aria-label={ariaLabel} onClick={() => setState("ask")}>
+      <Button ref={first} size={size} variant={variant} icon={icon} className={className} aria-label={ariaLabel} onClick={() => setState("ask")}>
         {label}
       </Button>
     );
   }
   return (
     <span
-      className={["b-confirm", className].filter(Boolean).join(" ")}
+      className={["b-confirm", box && "b-confirm--box", className].filter(Boolean).join(" ")}
       role="group"
       aria-label={ariaLabel ?? label}
       aria-describedby={consequence || error ? msgId : undefined}
@@ -107,10 +116,10 @@ export function InlineConfirm({ label, icon, consequence, confirmLabel, cancelLa
       <Button ref={yes} size={size} variant="danger" busy={state === "busy"} onClick={() => void confirm()}>
         {confirmLabel ?? label}
       </Button>
-      <Button size={size} variant="ghost" onClick={cancel}>
+      <Button ref={keep} size={size} variant="ghost" onClick={cancel}>
         {cancelLabel}
       </Button>
-      <span className="b-confirm__timer" aria-hidden="true" />
+      {timeout > 0 && <span className="b-confirm__timer" aria-hidden="true" />}
     </span>
   );
 }

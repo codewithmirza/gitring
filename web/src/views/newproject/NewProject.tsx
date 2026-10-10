@@ -3,11 +3,10 @@
  * "Create project" button. The same content shows in the panel of the "New project" button and, for a
  * person without projects, right on the page.
  */
-import { useRef, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useRef, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import type { MeWithInstall } from "../../state/account";
-import { githubSignInUrl, googleSignInUrl } from "../../state/github";
+import { SignInChoices } from "../../app/Account";
 import type { FormValues, NewProjectDraft, SourceStep } from "./draft";
-import { GithubMark, GoogleMark } from "./marks";
 import { SourceList, type SourceOption } from "./SourceList";
 import { GithubStep, PlainStep, UploadStep, UrlStep } from "./steps";
 import "./newproject.css";
@@ -84,7 +83,10 @@ export function NewProject({ me, draft, onDraft, headingId, returnTo, autoFocus 
           <span className="np-skel" style={{ width: "100%", height: 36 }} />
         </div>
       ) : !me.user ? (
-        <SignInChoices me={me} returnTo={returnTo} />
+        <SignInChoices
+          returnTo={returnTo}
+          reason={`Sign in to make a project.${me.providers.github ? " With GitHub, gitring also shows your repositories, private ones too." : ""}`}
+        />
       ) : step.kind === "list" ? (
         <SourceList me={me} query={draft.query} onQuery={(query) => onDraft((d) => ({ ...d, query }))} onPick={pick} returnTo={returnTo} autoFocus={autoFocus} />
       ) : step.kind === "github" ? (
@@ -107,41 +109,6 @@ export function NewProject({ me, draft, onDraft, headingId, returnTo, autoFocus 
         webkitdirectory=""
         onChange={onFiles}
       />
-    </div>
-  );
-}
-
-/** The provider of the last sign-in in this browser (the server sets the cookie "gitring_last"). */
-function lastProvider(): "github" | "google" | null {
-  try {
-    const m = /(?:^|;\s*)gitring_last=(github|google)\b/.exec(document.cookie);
-    return m ? (m[1] as "github" | "google") : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Signed out: the providers of this server, with their real marks; the last one used comes first. */
-export function SignInChoices({ me, returnTo }: { me: MeWithInstall; returnTo: string }) {
-  const last = lastProvider();
-  const list = (
-    [
-      me.providers.github && { id: "github" as const, href: githubSignInUrl(returnTo), mark: <GithubMark size={18} />, label: "Continue with GitHub" },
-      me.providers.google && { id: "google" as const, href: googleSignInUrl(returnTo), mark: <GoogleMark size={18} />, label: "Continue with Google" },
-    ].filter(Boolean) as { id: "github" | "google"; href: string; mark: ReactNode; label: string }[]
-  ).sort((a, b) => Number(b.id === last) - Number(a.id === last));
-  return (
-    <div className="np-signin">
-      <p className="np-signin__text">Sign in to make a project.{me.providers.github ? " With GitHub, gitring also shows your repositories, private ones too." : ""}</p>
-      {list.map((p, i) => (
-        <a key={p.id} className="np-provider" href={p.href} data-autofocus={i === 0 ? true : undefined}>
-          {p.mark}
-          {p.label}
-          {p.id === last && <span className="np-tag np-provider__last">Last used</span>}
-        </a>
-      ))}
-      {!list.length && <p className="np-signin__text">Sign-in is not set up on this server yet. Its owner opens /setup to add GitHub or Google.</p>}
-      <p className="np-signin__note">gitring keeps your name, email and avatar. It does not post anything for you.</p>
     </div>
   );
 }

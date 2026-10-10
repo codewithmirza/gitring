@@ -61,8 +61,8 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 .st-members { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
 .st-members li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); min-height: 44px; }
 /* The inline confirm takes its own line under the member. */
-.st-members li:has(.np-confirm) .st-members__act { grid-column: 1 / -1; justify-self: stretch; }
-.st-members li:has(.np-confirm) .np-confirm { display: flex; width: 100%; }
+.st-members li:has(.b-confirm) .st-members__act { grid-column: 1 / -1; justify-self: stretch; }
+.st-members li:has(.b-confirm) .b-confirm { display: flex; width: 100%; }
 .st-members__name { font-weight: 500; overflow-wrap: anywhere; }
 .st-members__handle, .st-members__role { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
 .st-members__act { justify-self: end; }

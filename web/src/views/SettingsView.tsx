@@ -4,7 +4,7 @@
  * Destructive actions confirm in place (no modal dialogs).
  */
 import { useEffect, useId, useRef, useState } from "react";
-import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
+import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, InlineConfirm, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
 import type { CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, GitringEventType, ProjectSettings, RedoPolicy, WebhookTarget } from "../../../src/core/types";
@@ -14,7 +14,6 @@ import { isAbort, pullFromGithub, sendToGithub, syncStatus } from "../state/gith
 import { useStore } from "../state/store";
 import { ago, shortSha } from "../state/format";
 import { Link } from "../app/router";
-import { InlineConfirm } from "./newproject/InlineConfirm";
 import { RepoSelect } from "./newproject/RepoSelect";
 import "./projects.css";
 
@@ -234,9 +233,8 @@ export function SettingsView() {
                     label="Remove"
                     ariaLabel={`Remove ${m.name}`}
                     size="sm"
-                    variant="ghost"
                     icon="close"
-                    question={`Remove ${m.name}? ${m.pending ? "The invitation ends." : "They lose access at once."}`}
+                    consequence={`Remove ${m.name}? ${m.pending ? "The invitation ends." : "They lose access at once."}`}
                     confirmLabel="Remove"
                     onConfirm={async () => {
                       try {
@@ -333,7 +331,11 @@ export function SettingsView() {
           <div>
             <InlineConfirm
               label="Archive project"
-              question={`Archive ${title}? It leaves every list at once.`}
+              size="md"
+              variant="danger"
+              box
+              timeout={0}
+              consequence={`Archive ${title}? It leaves every list at once.`}
               confirmLabel="Archive"
               onConfirm={async () => {
                 try {

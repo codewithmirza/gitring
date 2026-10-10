@@ -353,44 +353,8 @@
 .np-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3); }
 .np-actions__key, .np-actions__why { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 
-/* ───────────── sign-in choices ───────────── */
-.np-signin { display: grid; gap: var(--s-3); }
-.np-signin__text { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
-.np-signin__note { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
-.np-provider {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s-3);
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-2);
-  background: var(--bg);
-  color: var(--ink-1);
-  font-size: var(--t-sm);
-  font-weight: 500;
-  text-decoration: none;
-}
-.np-provider:hover { background: var(--surface-2); }
-.np-provider { position: relative; }
-.np-provider__last { position: absolute; right: var(--s-3); }
-
-/* ───────────── inline confirm ───────────── */
-.np-confirm {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-2) var(--s-3);
-  max-width: 100%;
-  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
-  border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent);
-  border-radius: var(--r-2);
-  background: var(--danger-tint);
-  animation: b-fade-in var(--dur-1) var(--ease-out);
-}
-.np-confirm__q { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); min-width: 0; overflow-wrap: anywhere; }
-.np-confirm__acts { display: inline-flex; gap: var(--s-2); }
+/* The shared sign-in choices sit in the panel's own padding. */
+.np .signin { padding: 0; }
 
 /* ───────────── repository field ───────────── */
 .np-select { position: relative; width: 100%; min-width: 0; }
@@ -435,12 +399,11 @@
   .np-back { min-height: 44px; }
   .np-search__act { width: 40px; height: 40px; right: 4px; }
   .np-chip { height: 44px; border-radius: 22px; padding: 0 var(--s-4); }
-  .np-provider { height: 48px; }
   .np-select__toggle { width: 40px; height: 40px; right: 2px; }
   /* 16 px text keeps iOS from zooming into a focused field. */
   .np-search__input, .np-in, .np-select__input { font-size: 16px; }
   .np-search__input { height: 48px; }
-  .np .b-btn, .np-confirm .b-btn { min-height: 44px; }
+  .np .b-btn { min-height: 44px; }
   .np-pop__body { padding: var(--s-4) var(--s-4) var(--s-5); }
 }
 @media (pointer: coarse) {
@@ -450,5 +413,5 @@
 @media (prefers-reduced-motion: reduce) {
   .np-pop, .np-pop.is-above { animation: b-fade-in 120ms var(--ease-out); }
   .np-skel, .np-search__busy { animation: none; }
-  .np-confirm, .np-select__pop { animation: none; }
+  .np-select__pop { animation: none; }
 }
