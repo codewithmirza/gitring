@@ -38,7 +38,11 @@ async function send<T>(method: string, path: string, body?: unknown, signal?: Ab
   }
   if (res.status === 204) return undefined as T;
   const json = (await res.json().catch(() => ({}))) as { error?: string };
-  if (res.status === 401) throw new ConnectionError(401, json.error ?? "Your session ended. Sign in again.");
+  if (res.status === 401) {
+    // The session ended (signed out elsewhere, or expired): ask who is signed in, so the page shows the sign-in.
+    void loadMe().catch(() => undefined);
+    throw new ConnectionError(401, json.error ?? "Your session ended. Sign in again.");
+  }
   if (!res.ok) throw new ConnectionError(res.status, json.error ?? `The request failed with status ${res.status}. Try again.`);
   return json as T;
 }
