@@ -1,0 +1,31 @@
+/* Overview: what the view needs before the map's own chunk (and chart.css) is there. */
+
+.c-chart--loading {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.c-chart__wait {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  animation: chartview-show 160ms var(--ease-out) both;
+}
+.c-chart__wait .b-empty__art { color: var(--line-strong); }
+@keyframes chartview-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Two actions in the bar of the selected agent: only the first one moves to the right end. */
+.chartview__selbar .b-btn + .b-btn { margin-left: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .c-chart__wait { animation: none; }
+}

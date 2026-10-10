@@ -57,4 +57,19 @@ export default defineConfig({
   root: ".",
   plugins: [react(), cloudflare(), staticHeaders()],
   build: { outDir: "dist" },
+  environments: {
+    client: {
+      build: {
+        rolldownOptions: {
+          output: {
+            // React changes far less often than the app: in a chunk of its own, the browser keeps it across deploys.
+            // Views are lazy chunks; the overview map (with d3-hierarchy) is a lazy chunk of the overview.
+            codeSplitting: {
+              groups: [{ name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 10 }],
+            },
+          },
+        },
+      },
+    },
+  },
 });
