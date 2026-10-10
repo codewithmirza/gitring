@@ -387,7 +387,7 @@ step("D. Google sign-in without GitHub");
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/projects\?new=1&q=next/, { timeout: 8000 });
   l = await log();
-  check(l.some((e) => /^\/auth\/github\/start\?return=%2Fprojects%3Fnew%3D1%26q%3Dnext$/.test(e.path)), "Connect GitHub goes to GitHub and back with the text", l.filter((e) => e.path.startsWith("/auth")).map((e) => e.path));
+  check(l.some((e) => /^\/auth\/github\/start\?link=1&return=%2Fprojects%3Fnew%3D1%26q%3Dnext$/.test(e.path)), "Connect GitHub goes to GitHub and back with the text", l.filter((e) => e.path.startsWith("/auth")).map((e) => e.path));
   await page.getByRole("dialog", { name: "New project" }).waitFor();
   await page.waitForTimeout(600);
   check((await page.getByRole("combobox").inputValue()) === "next", "the picker opens again, filled");

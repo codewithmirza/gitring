@@ -5,7 +5,7 @@
  */
 import { useRef, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { MeWithInstall } from "../../state/account";
-import { githubConnectUrl, googleSignInUrl } from "../../state/github";
+import { githubSignInUrl, googleSignInUrl } from "../../state/github";
 import type { FormValues, NewProjectDraft, SourceStep } from "./draft";
 import { GithubMark, GoogleMark } from "./marks";
 import { SourceList, type SourceOption } from "./SourceList";
@@ -126,7 +126,7 @@ export function SignInChoices({ me, returnTo }: { me: MeWithInstall; returnTo: s
   const last = lastProvider();
   const list = (
     [
-      me.providers.github && { id: "github" as const, href: githubConnectUrl(returnTo), mark: <GithubMark size={18} />, label: "Continue with GitHub" },
+      me.providers.github && { id: "github" as const, href: githubSignInUrl(returnTo), mark: <GithubMark size={18} />, label: "Continue with GitHub" },
       me.providers.google && { id: "google" as const, href: googleSignInUrl(returnTo), mark: <GoogleMark size={18} />, label: "Continue with Google" },
     ].filter(Boolean) as { id: "github" | "google"; href: string; mark: ReactNode; label: string }[]
   ).sort((a, b) => Number(b.id === last) - Number(a.id === last));
