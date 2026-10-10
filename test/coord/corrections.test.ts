@@ -203,8 +203,8 @@ describe("other corrections", () => {
     const d = draftDuplicateCorrection(darkThemeVessel(), darkModeVessel());
     expect(d.kind).toBe("duplicate");
     expect(d.message).toBe(
-      'KESTREL-7 does the same work in the intent "Add dark mode". Do not do this work twice. ' +
-        "Change your course to the parts that are different. The two intents go to a human for a merge decision. Continue your work.",
+      'KESTREL-7 does the same work in the task "Add dark mode". Do not do this work twice. ' +
+        "Change your plan to the parts that are different. A person decides how to join the two tasks. Continue your work.",
     );
     expectSTE(d.message);
   });
@@ -217,7 +217,7 @@ describe("other corrections", () => {
     });
     expect(d.kind).toBe("upstream");
     expect(d.message).toBe(
-      'The intent "Add currency support" landed on main. It changed src/products.js and src/render.js. ' +
+      'The task "Add currency support" merged into main. It changed src/products.js and src/render.js. ' +
         "formatPrice in src/products.js is now formatPrice(cents, currency). Call formatPrice(cents, currency) in src/render.js. " +
         "Read src/render.js again before your next edit. Continue your work.",
     );
@@ -237,8 +237,8 @@ describe("other corrections", () => {
     );
     expect(d.kind).toBe("upstream");
     expect(d.message).toBe(
-      'The intent "Add currency support" landed on main. gitring moved your work onto the new main (8df749b). ' +
-        "Your copies of src/products.js now include the landed change. " +
+      'The task "Add currency support" merged into main. gitring moved your work onto the new main (8df749b). ' +
+        "Your copies of src/products.js now include the merged change. " +
         "formatPrice in src/products.js is now formatPrice(cents, currency). Call formatPrice(cents, currency) in src/render.js. " +
         "Read src/products.js again before your next edit. Continue your work.",
     );
@@ -256,8 +256,8 @@ describe("other corrections", () => {
     );
     const [sentences, rest] = d.message.split("\n\n");
     expect(sentences).toBe(
-      'The intent "Mark staff picks" landed on main. gitring moved your work onto the new main (c57540a). ' +
-        "Your change to src/render.js overlaps the landed change. gitring kept the main version of src/render.js. " +
+      'The task "Mark staff picks" merged into main. gitring moved your work onto the new main (c57540a). ' +
+        "Your change to src/render.js overlaps the merged change. gitring kept the main version of src/render.js. " +
         "Make your change again on the new text. Read src/render.js again before your next edit. Continue your work.",
     );
     expectSTE(sentences);
@@ -321,7 +321,7 @@ describe("other corrections", () => {
       text: "Show at most three staff picks. Hide the section when the list is empty, also on small screens.",
     });
     expect(d.kind).toBe("intent-amended");
-    expect(d.message.startsWith('A human changed the intent "Add staff picks" to version 2.')).toBe(true);
+    expect(d.message.startsWith('A person changed the task "Add staff picks" to version 2.')).toBe(true);
     expect(d.constraints.notes).toEqual(["Show at most three staff picks. Hide the section when the list is empty, also on small screens."]);
     expectSTE(d.message);
   });

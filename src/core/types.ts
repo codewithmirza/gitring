@@ -401,6 +401,14 @@ export interface Attempt {
   drift?: { mainSha: string; overlaps: string[] };
   /** Built-in agents only: the hourly AI budget is used, so the agent starts at this time (gitring retries then). */
   waitsForBudget?: Millis;
+  /**
+   * Outside agents: the work could not merge and came back to its agent (redo policy). Any tool call of
+   * the agent on this work copy clears it. At `until`, a built-in agent (agent-first) or a person
+   * (agent-only) takes over.
+   */
+  returned?: { at: Millis; until: Millis; reason: string; policy: "agent-first" | "agent-only" };
+  /** How many times the work came back to its agent. */
+  returns?: number;
   summary?: string;
   stats: { filesChanged: number; additions: number; deletions: number; steps: number; tokens?: number };
   createdAt: Millis;
@@ -697,6 +705,11 @@ export interface AgentIdentity {
   model?: string;
   kind?: AgentKind;
 }
+
+/** Answer of gitring_update: how the agent brings the new main into its work copy. */
+export type UpdateResult =
+  | { mode: "api"; mainSha: string; merged: string[]; readAgain: string[]; message: string }
+  | { mode: "git"; mainSha: string; branch: string; remote: string; token: string; tokenExpiresAt: string; commands: string[]; message: string };
 
 export interface DeclareInput {
   agent: AgentIdentity;

@@ -42,6 +42,7 @@ import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, textEl
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
+import { syncToGithub } from "../platform/github/sync";
 import {
   ACTIVE,
   WAITING,
@@ -65,7 +66,7 @@ import {
 import bundle from "../../sample/bundle.json";
 
 const GITRING_AUTHOR = { name: "gitring", email: "harbor@gitring.dev" };
-export const BUILD_ID = "0.5.0+20261009l";
+export const BUILD_ID = "0.6.0+20261010a";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
@@ -260,7 +261,7 @@ export class HarborMaster extends DurableObject<Env> {
         ? Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }) as { path: string; content: string | Uint8Array; mode?: string })
         : source.kind === "upload"
           ? uploaded
-          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in gitring. Agents declare intents before they change it.\n` }];
+          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in gitring. Agents send a plan before they change it.\n` }];
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
@@ -368,7 +369,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.db.setMeta("mainSeq", [sha]);
     this.mainView = undefined;
     const main = await this.loadMain();
-    this.addLog({ kind: "system", message: `${url === "git push" ? "Push received" : `Import done: ${url}`} at ${sha.slice(0, 7)} on ${branch} (${main.files.length} files). Open intents for agents.` });
+    this.addLog({ kind: "system", message: `${url === "git push" ? "Push received" : `Import done: ${url}`} at ${sha.slice(0, 7)} on ${branch} (${main.files.length} files). Write tasks for agents.` });
     this.persistStats();
     this.emit({ type: "snapshot", state: await this.state() });
   }
@@ -749,9 +750,9 @@ export class HarborMaster extends DurableObject<Env> {
       );
       createdIntent = true;
     }
-    if (!intent) throw new Error("Unknown intent. Give intentId from gitring_intents, or give newIntent.");
+    if (!intent) throw new Error("Unknown task. Give intentId from gitring_intents, or give newIntent.");
     if (intent.status === "landed" || intent.status === "parked") {
-      throw new Error(`Intent "${intent.title}" is ${intent.status}. Choose an open intent.`);
+      throw new Error(`The task "${intent.title}" is ${taskStatusWord(intent.status)}. Choose an open task.`);
     }
 
     const mode = input.mode ?? "api";
@@ -808,7 +809,7 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId: attempt.id,
       agentId: agent.id,
       intentId: intent.id,
-      message: `${agent.callsign} declares a course on "${intent.title}": ${course.approach || course.plan[0] || "no approach given"}`,
+      message: `${agent.callsign} sends a plan for "${intent.title}": ${course.approach || course.plan[0] || "no approach given"}`,
       files: course.files,
     });
 
@@ -870,7 +871,7 @@ export class HarborMaster extends DurableObject<Env> {
           branch: this.branch,
           parent: tip,
           changes: intent.checks.map((c) => ({ path: c.path, content: c.content })),
-          message: `Add checks for "${intent.title}"\n\nGitring-Intent: ${intent.id}\nGitring-Attempt: ${a.id}`,
+          message: `Add the tests of "${intent.title}"\n\nGitring-Intent: ${intent.id}\nGitring-Attempt: ${a.id}`,
           author: GITRING_AUTHOR,
         });
         a.headSha = res.sha;
@@ -885,6 +886,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async log(input: T.LogInput): Promise<T.Clearance> {
     const a = this.mustAttempt(input.attemptId);
+    this.heard(a);
     const agent = this.agents.get(a.agentId);
     if (agent) {
       agent.lastSeen = Date.now();
@@ -916,10 +918,36 @@ export class HarborMaster extends DurableObject<Env> {
     return this.clearanceFor(a.id);
   }
 
+  /**
+   * Git mode: take the latest push to the work copy, so that an agent that did not report its push with
+   * gitring_log is still checked and tested on its own code. Returns true when the head moved.
+   */
+  private async adoptForkTip(a: T.Attempt): Promise<boolean> {
+    if (a.mode !== "git" || TERMINAL.has(a.status)) return false;
+    const tip = await this.backend.resolve(a.fork.repo, this.branch).catch(() => null);
+    if (!tip || tip === a.headSha) return false;
+    a.headSha = tip;
+    this.db.clearWorktree(a.id); // the push supersedes shadow edits
+    if (a.status === "declared") a.status = "underway";
+    await this.refreshFootprint(a);
+    this.putAttempt(a);
+    this.addLog({
+      kind: "push",
+      attemptId: a.id,
+      agentId: a.agentId,
+      intentId: a.intentId,
+      message: `${this.callsign(a.id)} pushed ${tip.slice(0, 7)} to its work copy.`,
+      files: Object.keys(a.footprint.files),
+    });
+    await this.courseCheck(a.id, "push");
+    return true;
+  }
+
   async write(input: T.WriteInput): Promise<T.WriteResult> {
     const a = this.mustAttempt(input.attemptId);
-    if (TERMINAL.has(a.status)) throw new Error(`Attempt ${a.id} is ${a.status}. Declare a new course to continue.`);
-    if (a.mode === "git") throw new Error("This attempt uses git mode. Push to your fork, then call gitring_log with headSha.");
+    this.heard(a);
+    if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. Send a new plan with gitring_declare to continue.`);
+    if (a.mode === "git") throw new Error("This work copy uses git mode. Push to its remote. gitring reads your latest push at gitring_check and gitring_submit.");
     const intent = this.intents.get(a.intentId);
     const protectedPaths = new Set(
       [...this.intents.values()].filter((i) => i.id !== a.intentId).flatMap((i) => i.checks.map((c) => c.path)),
@@ -979,6 +1007,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async read(attemptId: string, path: string): Promise<{ path: string; content: string | null }> {
     const a = this.mustAttempt(attemptId);
+    this.heard(a);
     const view = await this.attemptView(a);
     const p = normPath(path);
     const content = view.files.get(p) ?? null;
@@ -1002,7 +1031,7 @@ export class HarborMaster extends DurableObject<Env> {
     const seen = this.db.seen(a.id, path);
     if (seen === undefined || seen === current || content === current) return { content };
     if (content === null) return { content, refused: `${path} changed on main after your last read. Read ${path} again before you delete it.` };
-    if (current === null) return { content, refused: `Main deleted ${path} after your last read. Read the traffic before you add ${path} again.` };
+    if (current === null) return { content, refused: `Main deleted ${path} after your last read. Call gitring_traffic before you add ${path} again.` };
     const m = merge3(seen ?? "", current, content);
     if (!m.clean) return { content, refused: `${path} changed after your last read: main moved. Read ${path} again, then write your change on the new text.` };
     return { content: m.content, merged: m.content !== content };
@@ -1010,6 +1039,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async list(attemptId: string, dir?: string): Promise<string[]> {
     const a = this.mustAttempt(attemptId);
+    this.heard(a);
     const view = await this.attemptView(a);
     const prefix = dir ? normPath(dir).replace(/\/?$/, "/") : "";
     return [...view.files.keys()].filter((p) => !prefix || p.startsWith(prefix)).sort();
@@ -1017,6 +1047,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async traffic(attemptId: string): Promise<T.TrafficReport> {
     const a = this.mustAttempt(attemptId);
+    this.heard(a);
     const main = await this.loadMain();
     const vessels = this.trafficFor(a);
     const seqList = this.db.getMeta<string[]>("mainSeq") ?? [];
@@ -1055,6 +1086,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async ack(attemptId: string, correctionId: string, note?: string): Promise<T.Clearance> {
     const a = this.mustAttempt(attemptId);
+    this.heard(a);
     const c = this.corrections.get(correctionId);
     if (c && c.attemptId === a.id && c.status !== "superseded") {
       c.status = "acknowledged";
@@ -1087,7 +1119,7 @@ export class HarborMaster extends DurableObject<Env> {
   async brief(attemptId: string | undefined, intentId?: string): Promise<Brief> {
     const a = attemptId ? this.attempts.get(attemptId) : undefined;
     const intent = this.intents.get(a?.intentId ?? intentId ?? "");
-    if (!intent) throw new Error("Unknown intent.");
+    if (!intent) throw new Error("Unknown task.");
     const main = await this.loadMain();
     const files = a ? (await this.attemptView(a)).files : main.text;
     const context: Record<string, string> = {};
@@ -1326,10 +1358,10 @@ export class HarborMaster extends DurableObject<Env> {
       agentId: a.agentId,
       intentId: a.intentId,
       message:
-        `Course check (${trigger}): ${check.verdict}. ` +
-        (cands.length ? `${cands.length} vessel${cands.length > 1 ? "s" : ""} in range, closest R${closest}` : "Open water") +
-        (closing.length ? `, closing with ${closing.join(", ")}` : "") +
-        ` · ${source} ${latencyMs} ms`,
+        `Conflict check (${TRIGGER_WORD[trigger] ?? trigger}): ${VERDICT_WORD[check.verdict] ?? check.verdict}. ` +
+        (cands.length ? `${cands.length} other work ${cands.length > 1 ? "copies" : "copy"} near, closest at distance ${closest}` : "No other work near") +
+        (closing.length ? `, coming closer: ${closing.join(", ")}` : "") +
+        ` · ${source === "rules" ? "rules" : "AI model"} ${latencyMs} ms`,
       data: { checkId: check.id, source, latencyMs },
     });
 
@@ -1419,7 +1451,7 @@ export class HarborMaster extends DurableObject<Env> {
             version: intent.version,
             at: Date.now(),
             by: SYSTEM,
-            reason: `Correction ${corr.id} (${drafted.kind}, ${rule.split("-")[0]}) for ${this.callsign(attemptId)}`,
+            reason: `Change request ${corr.id} (${KIND_WORD[drafted.kind] ?? drafted.kind}) for ${this.callsign(attemptId)}`,
             text: lines.join(" "),
           },
         ];
@@ -1431,8 +1463,8 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId,
       agentId: target.agentId,
       intentId: target.intentId,
-      // The radio log keeps the sentences; the earlier diffs stay on the correction itself.
-      message: `Correction for ${this.callsign(attemptId)} · ${drafted.kind} · ${rule === "human" ? "human" : rule.split("-")[0]}${standOnAttemptId ? ` · ${this.callsign(standOnAttemptId)} stands on` : ""}: ${drafted.message.split("\n\n")[0]}`,
+      // The activity feed keeps the sentences; the earlier diffs stay on the change request itself.
+      message: `Change request for ${this.callsign(attemptId)} (${KIND_WORD[drafted.kind] ?? drafted.kind}${standOnAttemptId ? `; ${this.callsign(standOnAttemptId)} continues` : ""}): ${drafted.message.split("\n\n")[0]}`,
       files: [...new Set([...(drafted.constraints.avoidRegions ?? []).map((r) => r.path), ...(drafted.constraints.reapply ?? []).map((r) => r.path)])],
       data: { correctionId: corr.id },
     });
@@ -1454,13 +1486,13 @@ export class HarborMaster extends DurableObject<Env> {
     this.bump(a.id);
     this.putAttempt(a);
     const msg =
-      `Your intent "${newIntent.title}" duplicates "${target.title}". gitring joins your attempt to that intent. ` +
-      `Follow its goal and checks. Your work is compared with the other attempts. Continue your work.`;
+      `Your task "${newIntent.title}" is the same as "${target.title}". gitring joins your work copy to that task. ` +
+      `Follow its goal and tests. gitring compares your work with the other work copies. Continue your work.`;
     if (dupCorr) {
       dupCorr.message = msg;
       this.putCorrection(dupCorr);
     }
-    this.addLog({ kind: "intent", intentId: target.id, attemptId: a.id, message: `"${newIntent.title}" merges into "${target.title}". ${this.callsign(a.id)} becomes another attempt on it.` });
+    this.addLog({ kind: "intent", intentId: target.id, attemptId: a.id, message: `"${newIntent.title}" is the same task as "${target.title}". ${this.callsign(a.id)} becomes another work copy on it.` });
     await this.refreshFootprint(a);
     return (await this.courseCheck(a.id, "declare")) ?? check;
   }
@@ -1496,7 +1528,7 @@ export class HarborMaster extends DurableObject<Env> {
       .budgetTake(p.ownerId ?? null, 1, perOwner, global, "checks")
       .catch(() => ({ granted: 1, retryAt: 0 }));
     if (!budget.granted) {
-      const res: DrydockResult = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The hourly budget for check runs is used. Run the checks again after ${clock(budget.retryAt)} UTC.` };
+      const res: DrydockResult = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The hourly budget for test runs is used. Run the tests again after ${clock(budget.retryAt)} UTC.` };
       return containerRun(res, { key, scope, cs, ms: 0 });
     }
     const dock = this.env.DRYDOCK.get(this.env.DRYDOCK.idFromName(`${p.id}:${attemptId}`));
@@ -1504,13 +1536,15 @@ export class HarborMaster extends DurableObject<Env> {
     try {
       res = (await dock.run({ tree: await packTree(files), install: cs.install, test: cs.test, timeoutSec: cs.timeoutSec ?? 600 })) as DrydockResult;
     } catch (e) {
-      res = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The check container did not answer: ${String((e as Error)?.message ?? e)}` };
+      res = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The test container did not answer: ${String((e as Error)?.message ?? e)}` };
     }
     return containerRun(res, { key, scope, cs, ms: Date.now() - t0 });
   }
 
   async check(attemptId: string): Promise<T.CheckRun> {
     const a = this.mustAttempt(attemptId);
+    this.heard(a);
+    await this.adoptForkTip(a);
     const view = await this.attemptView(a);
     const run = await this.runTreeChecks(view.files, "attempt", a.id);
     a.checks = run;
@@ -1520,7 +1554,7 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId: a.id,
       agentId: a.agentId,
       intentId: a.intentId,
-      message: `${this.callsign(a.id)} checks: ${run.passed}/${run.passed + run.failed} pass${run.error ? ` (${run.error.slice(0, 120)})` : ""}.`,
+      message: `${this.callsign(a.id)} tests: ${run.passed}/${run.passed + run.failed} pass${run.error ? ` (${run.error.slice(0, 120)})` : ""}.`,
       data: { checkRunId: run.id, ok: run.ok },
     });
     return run;
@@ -1531,8 +1565,10 @@ export class HarborMaster extends DurableObject<Env> {
   async submit(attemptId: string, summary?: string): Promise<T.SubmitResult> {
     const a = this.mustAttempt(attemptId);
     if (TERMINAL.has(a.status)) {
-      return { attemptId, status: a.status, next: a.status === "landed" ? "landed" : "fix-checks", message: `The attempt is ${a.status}.`, clearance: this.clearanceFor(a.id) };
+      return { attemptId, status: a.status, next: a.status === "landed" ? "landed" : "fix-checks", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
     }
+    this.heard(a);
+    await this.adoptForkTip(a);
     a.summary = summary ? String(summary).slice(0, 600) : a.summary;
     a.status = "submitted";
     this.putAttempt(a);
@@ -1553,14 +1589,14 @@ export class HarborMaster extends DurableObject<Env> {
       const needPick = !picked && (!this.requireProject().settings.autoLand || siblings.length > 0);
       if (needPick) {
         next = "awaiting-pick";
-        message = `All checks pass. ${siblings.length ? `${siblings.length + 1} attempts compete on this intent.` : ""} A human picks the attempt to land.`;
+        message = `All tests pass. ${siblings.length ? `${siblings.length + 1} work copies compete on this task.` : ""} A person chooses the one to merge.`;
         if (siblings.every((x) => x.status === "ready")) {
           intent.status = "judging";
           this.putIntent(intent);
         }
       } else {
         next = "landing-queue";
-        message = "All checks pass. The attempt is in the landing queue.";
+        message = "All tests pass. The work copy is in the merge queue.";
         this.enqueueLanding(a);
       }
     }
@@ -1599,7 +1635,7 @@ export class HarborMaster extends DurableObject<Env> {
       author: { name: agent?.callsign ?? "agent", email: `${(agent?.callsign ?? "agent").toLowerCase()}@agents.gitring.dev` },
     });
     a.headSha = res.sha;
-    this.addLog({ kind: "push", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${agent?.callsign} work is in fork ${a.fork.repo} at ${res.sha.slice(0, 7)}.`, files: changes.map((c) => c.path) });
+    this.addLog({ kind: "push", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The work of ${agent?.callsign} is in its work copy ${a.fork.repo} at ${res.sha.slice(0, 7)}.`, files: changes.map((c) => c.path) });
   }
 
   private enqueueLanding(a: T.Attempt): void {
@@ -1620,7 +1656,7 @@ export class HarborMaster extends DurableObject<Env> {
         console.error("landOne", id, err);
         a.status = "ready";
         this.putAttempt(a);
-        this.addLog({ kind: "system", attemptId: a.id, message: `Landing of ${this.callsign(a.id)} stopped: ${String(err).slice(0, 200)}. Try again.` });
+        this.addLog({ kind: "system", attemptId: a.id, message: `The merge of the work of ${this.callsign(a.id)} stopped: ${String(err).slice(0, 200)}. Try again.` });
       }
     }
   }
@@ -1663,7 +1699,7 @@ export class HarborMaster extends DurableObject<Env> {
     a.composedChecks = run;
     this.putAttempt(a);
     if (!run.ok) {
-      await this.markStale(a, `Checks fail when combined with main. ${failureSummary(run.cases, 3)}`);
+      await this.markStale(a, `Tests fail on main plus this work. ${failureSummary(run.cases, 3)}`);
       return;
     }
     const method: T.LandingMethod = a.lineage.generation > 1 ? "rederive" : result.method;
@@ -1742,11 +1778,14 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId: a.id,
       agentId: a.agentId,
       intentId: intent.id,
-      message: `"${intent.title}" lands on main by ${method} (${committed.sha.slice(0, 7)}). Checks ${run.passed}/${run.passed + run.failed} pass.`,
+      message: `"${intent.title}" merged into main by ${METHOD_WORD[method]} (${committed.sha.slice(0, 7)}). Tests ${run.passed}/${run.passed + run.failed} pass.`,
       files: result.touched,
     });
     this.persistStats();
     this.webhook("landing", { landing, intent: { id: intent.id, title: intent.title }, callsign: agent.callsign, mainSha: committed.sha });
+    if (p.settings.github.mode !== "off" && p.settings.github.repo) {
+      this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+    }
     await this.upstreamCorrections(a, newMain);
   }
 
@@ -1785,7 +1824,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (quiet.length) {
       this.addLog({
         kind: "replot",
-        message: `gitring moves the work of ${quiet.join(", ")} onto main ${main.sha.slice(0, 7)}. Their files do not overlap the landed change.`,
+        message: `gitring rebases the work of ${quiet.join(", ")} onto main ${main.sha.slice(0, 7)}. Their files do not overlap the merged change.`,
       });
     }
   }
@@ -1856,26 +1895,154 @@ export class HarborMaster extends DurableObject<Env> {
         agentId: a.agentId,
         intentId: a.intentId,
         message:
-          `gitring moves ${callsign}'s work from ${from.slice(0, 7)} onto main ${main.sha.slice(0, 7)}.` +
+          `gitring rebases the work of ${callsign} from ${from.slice(0, 7)} onto main ${main.sha.slice(0, 7)}.` +
           (merged.length ? ` Merged: ${merged.join(", ")}.` : "") +
-          (reapply.length ? ` ${callsign} makes the change to ${reapply.map((r) => r.path).join(", ")} again.` : ""),
+          (reapply.length ? ` ${callsign} makes its change to ${reapply.map((r) => r.path).join(", ")} again.` : ""),
         files: result.touched,
       });
     }
     return { merged, reapply };
   }
 
+  /** Give work that cannot merge back to its outside agent, on the new main. */
+  private async returnToAgent(a: T.Attempt, reason: string, policy: "agent-first" | "agent-only"): Promise<void> {
+    const p = this.requireProject();
+    const intent = this.intents.get(a.intentId)!;
+    const main = await this.loadMain();
+    const now = Date.now();
+    const minutes = Math.max(5, Math.min(120, Math.round(p.settings.redoWaitMinutes || 15)));
+    const name = this.callsign(a.id) ?? a.agentId;
+    a.status = "underway";
+    a.returns = (a.returns ?? 0) + 1;
+    a.returned = { at: now, until: now + minutes * 60_000, reason, policy };
+    this.putAttempt(a);
+    if (intent.status !== "underway") {
+      intent.status = "underway";
+      this.putIntent(intent);
+    }
+    let steps: string;
+    if (a.mode === "api") {
+      const moved = await this.replot(a, main).catch((e) => {
+        console.warn("replot failed", a.id, String(e));
+        return undefined;
+      });
+      const again = moved?.reapply.map((r) => r.path) ?? [];
+      steps =
+        `gitring moved your work copy onto the new main.` +
+        (again.length ? ` Read ${again.join(", ")} again, and make your change on the new text.` : "") +
+        ` Then call gitring_check and gitring_submit again.`;
+    } else {
+      steps = `Call gitring_update to get the new main. Merge it into your work, fix the conflicts, run the tests, push, then call gitring_submit again.`;
+    }
+    const after = policy === "agent-first" ? `If you do not answer in ${minutes} minutes, a built-in agent does the task again.` : `If you do not answer in ${minutes} minutes, a person decides.`;
+    this.issueCorrection(
+      a.id,
+      undefined,
+      { kind: "upstream", message: `Your work on "${intent.title}" cannot merge into main ${main.sha.slice(0, 7)}: ${reason} ${steps} ${after}`, constraints: {} },
+      "R1-landed-has-way",
+      "redo",
+      95,
+    );
+    this.addLog({
+      kind: "stale",
+      attemptId: a.id,
+      agentId: a.agentId,
+      intentId: a.intentId,
+      message: `${name} cannot merge "${intent.title}": ${reason} gitring gives the work back to ${name} (try ${a.returns} of 3).`,
+    });
+    await this.scheduleBudgetRetry(a.returned.until);
+  }
+
+  /** The outside agent did not answer in time: a built-in agent (agent-first) or a person (agent-only) takes over. */
+  private async returnTimedOut(a: T.Attempt): Promise<void> {
+    const r = a.returned;
+    if (!r) return;
+    a.returned = undefined;
+    this.putAttempt(a);
+    const intent = this.intents.get(a.intentId);
+    const name = this.callsign(a.id) ?? a.agentId;
+    const minutes = Math.round((r.until - r.at) / 60_000);
+    if (r.policy === "agent-first") {
+      this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${name} did not answer in ${minutes} minutes. A built-in agent does "${intent?.title}" again on the new main.` });
+      await this.rederive(a.id, `${name} did not answer after the merge failed. ${r.reason}`, SYSTEM);
+      return;
+    }
+    if (intent) {
+      intent.status = "judging";
+      this.putIntent(intent);
+    }
+    this.stats.escalations += 1;
+    this.persistStats();
+    this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `${name} did not answer in ${minutes} minutes. A person must decide on "${intent?.title}".` });
+  }
+
+  /** Any tool call of the agent on its work copy is an answer: the work no longer waits for it. */
+  private heard(a: T.Attempt): void {
+    if (!a.returned) return;
+    a.returned = undefined;
+    this.putAttempt(a);
+  }
+
+  /**
+   * Bring the new main into a work copy (MCP gitring_update).
+   *   api  gitring moves the work copy onto main; files where both sides changed go back to main, and the agent writes its change again
+   *   git  a read-only remote and token for main (6 hours), to merge main with git
+   */
+  async update(attemptId: string): Promise<T.UpdateResult> {
+    const a = this.mustAttempt(attemptId);
+    if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. Send a new plan with gitring_declare.`);
+    this.heard(a);
+    const p = this.requireProject();
+    const main = await this.loadMain();
+    if (a.mode === "api") {
+      if (a.baseSha === main.sha) return { mode: "api", mainSha: main.sha, merged: [], readAgain: [], message: "Your work copy is on the current main." };
+      const moved = await this.replot(a, main);
+      const readAgain = moved?.reapply.map((r) => r.path) ?? [];
+      return {
+        mode: "api",
+        mainSha: main.sha,
+        merged: moved?.merged ?? [],
+        readAgain,
+        message: moved
+          ? `Your work copy is on main ${main.sha.slice(0, 7)}.${readAgain.length ? ` Read ${readAgain.join(", ")} again, and make your change on the new text.` : ""}`
+          : "gitring could not move this work copy now (it waits to merge). Submit again after the merge queue.",
+      };
+    }
+    const tok = await this.backend.createToken(p.repo.name, "read", 6 * 3600);
+    const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name));
+    if (!tok || !remote) throw new Error("gitring cannot give a remote for main now. Try again.");
+    const secret = tok.token.split("?expires=")[0];
+    const auth = `https://x:${secret}@${remote.replace(/^https:\/\//, "")}`;
+    return {
+      mode: "git",
+      mainSha: main.sha,
+      branch: this.branch,
+      remote,
+      token: tok.token,
+      tokenExpiresAt: tok.expiresAt,
+      commands: [`git pull --no-rebase "${auth}" ${this.branch}`, "# fix conflicts, run the tests, commit", "git push", "# then call gitring_submit"],
+      message: `Main is at ${main.sha.slice(0, 7)}. The token is read-only and ends in 6 hours.`,
+    };
+  }
+
   private async markStale(a: T.Attempt, reason: string): Promise<void> {
+    const agent = this.agents.get(a.agentId);
+    const policy = this.requireProject().settings.redo;
+    // Work of an outside agent goes back to that agent first (redo policy), at most 3 times.
+    if (agent && agent.kind !== "builtin" && policy !== "builtin" && (a.returns ?? 0) < 3) {
+      await this.returnToAgent(a, reason, policy);
+      return;
+    }
     a.status = "stale";
     this.putAttempt(a);
     const intent = this.intents.get(a.intentId)!;
     intent.status = "underway";
     this.putIntent(intent);
-    this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${this.callsign(a.id)} cannot land: ${reason} gitring re-derives the intent on the new main.` });
+    this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The work of ${this.callsign(a.id)} cannot merge: ${reason} gitring does the task again on the new main.` });
     if (a.lineage.generation >= 3) {
       this.stats.escalations += 1;
       this.persistStats();
-      this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `Two re-derives failed for "${intent.title}". A human must decide.` });
+      this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `Two redos failed for "${intent.title}". A person must decide.` });
       intent.status = "judging";
       this.putIntent(intent);
       return;
@@ -1909,14 +2076,14 @@ export class HarborMaster extends DurableObject<Env> {
       source: input.source ?? { kind: "ui" },
     };
     this.putIntent(intent);
-    this.addLog({ kind: "intent", intentId: intent.id, message: `${by.name} opens intent "${intent.title}"${intent.source.kind !== "ui" ? ` (from ${intent.source.kind}${intent.source.ref ? ` ${intent.source.ref}` : ""})` : ""}.` });
+    this.addLog({ kind: "intent", intentId: intent.id, message: `${by.name} opens the task "${intent.title}"${intent.source.kind !== "ui" ? ` (from ${intent.source.kind}${intent.source.ref ? ` ${intent.source.ref}` : ""})` : ""}.` });
     this.webhook("intent", { intent: { id: intent.id, title: intent.title } });
     return intent;
   }
 
   async amendIntent(id: string, patch: { goal?: string; constraints?: string[]; reason: string }, by: T.Actor = HUMAN): Promise<T.Intent> {
     const intent = this.intents.get(id);
-    if (!intent) throw new Error("Unknown intent.");
+    if (!intent) throw new Error("Unknown task.");
     const parts: string[] = [];
     if (patch.goal && patch.goal !== intent.goal) {
       intent.goal = patch.goal;
@@ -1929,10 +2096,10 @@ export class HarborMaster extends DurableObject<Env> {
     }
     if (!parts.length) return intent;
     intent.version += 1;
-    const amendment: T.Amendment = { version: intent.version, at: Date.now(), by, reason: patch.reason || "Amended", text: parts.join(" ") };
+    const amendment: T.Amendment = { version: intent.version, at: Date.now(), by, reason: patch.reason || "Goal changed", text: parts.join(" ") };
     intent.amendments = [...intent.amendments, amendment];
     this.putIntent(intent);
-    this.addLog({ kind: "intent", intentId: id, message: `${by.name} amends "${intent.title}" to v${intent.version}: ${patch.reason || "no reason given"}.` });
+    this.addLog({ kind: "intent", intentId: id, message: `${by.name} changes the goal of "${intent.title}" (version ${intent.version}): ${patch.reason || "no reason given"}.` });
     // Every vessel on this intent gets the change as a correction.
     const main = await this.loadMain();
     for (const a of this.attempts.values()) {
@@ -1941,15 +2108,15 @@ export class HarborMaster extends DurableObject<Env> {
       const v = vesselView(a, intent, agent, (await this.attemptView(a)).signatures, main.signatures, "active");
       this.issueCorrection(a.id, undefined, draftIntentAmendedCorrection(v, amendment), "human", "amend");
     }
-    this.recordDecision({ kind: "amend", intentId: id, attemptIds: [], by, rationale: patch.reason || "Amended" });
+    this.recordDecision({ kind: "amend", intentId: id, attemptIds: [], by, rationale: patch.reason || "Goal changed" });
     return intent;
   }
 
   async launch(intentId: string, input: LaunchInput = {}, by: T.Actor = HUMAN): Promise<{ attempts: T.Attempt[]; waiting: number }> {
     const p = this.requireProject();
     const intent = this.intents.get(intentId);
-    if (!intent) throw new Error("Unknown intent.");
-    if (["landed", "parked", "merged-into"].includes(intent.status)) throw new Error(`Intent "${intent.title}" is ${intent.status}.`);
+    if (!intent) throw new Error("Unknown task.");
+    if (["landed", "parked", "merged-into"].includes(intent.status)) throw new Error(`The task "${intent.title}" is ${taskStatusWord(intent.status)}.`);
     const main = await this.loadMain();
     const fanout = Math.max(1, Math.min(4, Math.round(Number(input.fanout ?? intent.suggestedFanout ?? p.settings.fanout) || 1)));
     const ok = this.allowedModels();
@@ -1973,7 +2140,7 @@ export class HarborMaster extends DurableObject<Env> {
         baseSha: main.sha,
         baseTree: main.tree,
         status: "declared",
-        course: { plan: ["Read the intent and the code", "Plan the change"], files: [], symbols: [], approach: "Planning", declaredAt: now },
+        course: { plan: ["Read the task and the code", "Plan the change"], files: [], symbols: [], approach: "Planning", declaredAt: now },
         footprint: emptyFootprint(),
         corrections: [],
         lineage: { generation: 1 },
@@ -1999,7 +2166,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.addLog({
       kind: "intent",
       intentId,
-      message: `${by.name} launches ${fanout} built-in agent${fanout > 1 ? "s" : ""} on "${intent.title}" (${names}).${waiting ? ` ${waiting} ${waiting === 1 ? "waits" : "wait"} for the hourly AI budget and ${waiting === 1 ? "starts" : "start"} at ${clock(budget.retryAt)} UTC.` : ""}`,
+      message: `${by.name} starts ${fanout} built-in agent${fanout > 1 ? "s" : ""} on "${intent.title}" (${names}).${waiting ? ` ${waiting} ${waiting === 1 ? "waits" : "wait"} for the hourly AI budget and ${waiting === 1 ? "starts" : "start"} at ${clock(budget.retryAt)} UTC.` : ""}`,
     });
     return { attempts: created, waiting };
   }
@@ -2068,8 +2235,14 @@ export class HarborMaster extends DurableObject<Env> {
         }
       }
     }
-    const left = waiting();
-    if (left.length) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(...left.map((a) => a.waitsForBudget!))));
+    for (const a of [...this.attempts.values()]) {
+      if (a.returned && a.returned.until <= Date.now() && !TERMINAL.has(a.status)) await this.returnTimedOut(a);
+    }
+    const next = [
+      ...waiting().map((a) => a.waitsForBudget!),
+      ...[...this.attempts.values()].filter((a) => a.returned && !TERMINAL.has(a.status)).map((a) => a.returned!.until),
+    ];
+    if (next.length) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(...next)));
   }
 
   private async startVessel(a: T.Attempt, agent: T.AgentInfo, rederiveOf?: string): Promise<void> {
@@ -2091,7 +2264,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   async park(intentId: string, reason: string, by: T.Actor = HUMAN): Promise<T.Intent> {
     const intent = this.intents.get(intentId);
-    if (!intent) throw new Error("Unknown intent.");
+    if (!intent) throw new Error("Unknown task.");
     intent.status = "parked";
     this.putIntent(intent);
     for (const a of this.attempts.values()) {
@@ -2102,7 +2275,7 @@ export class HarborMaster extends DurableObject<Env> {
       }
     }
     this.recordDecision({ kind: "park", intentId, attemptIds: [], by, rationale: reason });
-    this.addLog({ kind: "decision", intentId, message: `${by.name} parks "${intent.title}": ${reason || "no reason given"}.` });
+    this.addLog({ kind: "decision", intentId, message: `${by.name} pauses "${intent.title}": ${reason || "no reason given"}.` });
     return intent;
   }
 
@@ -2121,11 +2294,11 @@ export class HarborMaster extends DurableObject<Env> {
 
   async land(attemptId: string, rationale: string, by: T.Actor = HUMAN): Promise<{ status: T.AttemptStatus; message: string; landing?: T.Landing }> {
     const a = this.mustAttempt(attemptId);
-    if (a.status === "landed") return { status: a.status, message: "The attempt is already on main." };
-    if (TERMINAL.has(a.status)) return { status: a.status, message: `The attempt is ${a.status}. Re-derive it first.` };
+    if (a.status === "landed") return { status: a.status, message: "This work copy is already on main." };
+    if (TERMINAL.has(a.status)) return { status: a.status, message: `The work copy is ${copyStatusWord(a.status)}. Redo it on the new main first.` };
     if (!a.checks?.ok) {
       const run = await this.check(a.id);
-      if (!run.ok) return { status: a.status, message: `${failureSummary(run.cases)} gitring cannot land a failed attempt.` };
+      if (!run.ok) return { status: a.status, message: `${failureSummary(run.cases)} gitring does not merge work whose tests fail.` };
     }
     this.recordDecision({ kind: "pick", intentId: a.intentId, attemptIds: [a.id], by, rationale });
     a.status = "ready";
@@ -2137,7 +2310,7 @@ export class HarborMaster extends DurableObject<Env> {
     return {
       status: now.status,
       landing,
-      message: landing ? `Landed by ${landing.method} at ${landing.mainAfter.slice(0, 7)}.` : `The attempt did not land (${now.status}). gitring re-derives it.`,
+      message: landing ? `Merged by ${METHOD_WORD[landing.method]} at ${landing.mainAfter.slice(0, 7)}.` : `The work did not merge (${copyStatusWord(now.status)}). gitring does the task again on the new main.`,
     };
   }
 
@@ -2180,9 +2353,9 @@ export class HarborMaster extends DurableObject<Env> {
     this.stats.rederives += 1;
     this.persistStats();
     if (by.kind === "human") this.recordDecision({ kind: "rederive", intentId: a.intentId, attemptIds: [old.id, a.id], by, rationale: reason });
-    this.addLog({ kind: "rederive", attemptId: a.id, agentId: agent.id, intentId: a.intentId, message: `Re-derive "${this.intents.get(a.intentId)?.title}" on main ${main.sha.slice(0, 7)} (generation ${a.lineage.generation}). Reason: ${reason}` });
+    this.addLog({ kind: "rederive", attemptId: a.id, agentId: agent.id, intentId: a.intentId, message: `Redo "${this.intents.get(a.intentId)?.title}" on main ${main.sha.slice(0, 7)} (try ${a.lineage.generation}). Reason: ${reason}` });
     if (!builtin && oldAgent) {
-      this.issueCorrection(old.id, undefined, { kind: "upstream", message: `Your attempt cannot land on the new main. gitring re-derives it as ${a.id}. Stop work on ${old.id}.`, constraints: {} }, "R1-landed-has-way", "rederive");
+      this.issueCorrection(old.id, undefined, { kind: "upstream", message: `Your work cannot merge into the new main. A built-in agent does the task again as ${a.id}. Stop work on ${old.id}.`, constraints: {} }, "R1-landed-has-way", "rederive");
     }
     if (a.waitsForBudget) await this.scheduleBudgetRetry(a.waitsForBudget);
     else await this.startVessel(a, agent, old.id);
@@ -2287,9 +2460,78 @@ export class HarborMaster extends DurableObject<Env> {
     return { state: "pending", message: "gitring sends main to GitHub after the next merge, or when you choose Sync now.", repo: g.repo, mode: g.mode, branch: g.mode === "main" ? undefined : g.branch };
   }
 
-  /** Send main to GitHub now (settings.github). */
+  private githubRun?: Promise<T.GithubSyncStatus>;
+  private githubAgain = false;
+
+  /** Send main to GitHub now (settings.github). One run at a time; a request during a run runs again after it. */
   async githubSync(): Promise<T.GithubSyncStatus> {
-    return this.githubStatus();
+    const p = this.requireProject();
+    const g = p.settings.github;
+    if (g.mode === "off" || !g.repo) return this.githubStatus();
+    if (this.githubRun) {
+      this.githubAgain = true;
+      return this.githubRun;
+    }
+    this.githubRun = this.githubSyncOnce(p, g.repo, g.mode, g.branch).finally(() => {
+      this.githubRun = undefined;
+      if (this.githubAgain) {
+        this.githubAgain = false;
+        this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+      }
+    });
+    return this.githubRun;
+  }
+
+  private async githubSyncOnce(p: T.Project, repo: string, mode: "pull-request" | "main", branch: string): Promise<T.GithubSyncStatus> {
+    const base = { repo, mode, ...(mode === "pull-request" ? { branch } : {}) };
+    if (!p.mainSha) return this.setGithub({ state: "pending", message: "Main is empty. gitring syncs after the first commit.", ...base });
+    const before = p.github;
+    this.setGithub({ ...(before?.repo === repo ? before : {}), state: "pending", message: "gitring sends main to GitHub.", ...base, at: Date.now() });
+    const access = await this.directory()
+      .githubRepoAccess(repo)
+      .catch((e) => ({ ok: false as const, state: "error" as const, message: `gitring could not ask GitHub: ${String((e as Error)?.message ?? e).slice(0, 160)}`, installUrl: undefined as string | undefined }));
+    if (!access.ok) {
+      return this.setGithub({ state: access.state, message: access.message, ...base, ...(access.installUrl ? { installUrl: access.installUrl } : {}), at: Date.now() });
+    }
+    const known = this.db.getMeta<Record<string, string>>("githubKnown") ?? {};
+    const out = await syncToGithub(
+      { repo, token: access.token },
+      {
+        backend: this.backend,
+        source: p.repo.name,
+        mainSha: p.mainSha,
+        mode,
+        branch,
+        known,
+        pr: {
+          title: `gitring: merged work for ${p.name}`,
+          body: [
+            "This pull request holds the work that gitring merged on main.",
+            "Each commit is one merged task. Its record (plan, conflict checks, change requests, tests) is a git note on `refs/notes/gitring` in the gitring repository.",
+            "",
+            "Merge it with **Create a merge commit**: then the next pull request shows only new work.",
+          ].join("\n"),
+        },
+      },
+    );
+    // Keep the most recent pairs only.
+    const pairs = Object.entries(out.known);
+    this.db.setMeta("githubKnown", Object.fromEntries(pairs.slice(-1000)));
+    const st = this.setGithub(out.status);
+    if (st.state === "ok" && st.githubSha !== before?.githubSha) {
+      this.addLog({ kind: "system", message: `GitHub ${repo}: ${st.message}` });
+    } else if (st.state !== "ok" && (st.state !== before?.state || st.message !== before?.message)) {
+      this.addLog({ kind: "system", message: `GitHub sync of ${repo} stopped: ${st.message}` });
+    }
+    return st;
+  }
+
+  private setGithub(st: T.GithubSyncStatus): T.GithubSyncStatus {
+    const p = this.requireProject();
+    p.github = st;
+    this.db.setMeta("project", p);
+    this.emit({ type: "github", github: st });
+    return st;
   }
 
   /* ════════════════════════════ Claude Code hook ════════════════════════════ */
@@ -2362,7 +2604,7 @@ export class HarborMaster extends DurableObject<Env> {
       hookSpecificOutput: {
         hookEventName: "PostToolUse",
         additionalContext: [
-          "GITRING COURSE CORRECTION — apply it in your next edits, then call gitring_ack. Continue your work.",
+          "GITRING CHANGE REQUEST — apply it in your next edits, then call gitring_ack. Continue your work.",
           ...clr.corrections.map((c) => `- [${c.id}] ${c.message}`),
         ].join("\n"),
       },
@@ -2378,9 +2620,20 @@ export class HarborMaster extends DurableObject<Env> {
   async updateSettings(raw: Partial<T.ProjectSettings>): Promise<T.ProjectSettings> {
     const p = this.requireProject();
     const patch = sanitizeSettings(raw, this.allowedModels());
-    p.settings = { ...p.settings, ...patch, thresholds: { ...p.settings.thresholds, ...(patch.thresholds ?? {}) } };
+    const oldGithub = p.settings.github;
+    p.settings = withDefaults({ ...p.settings, ...patch, thresholds: { ...p.settings.thresholds, ...(patch.thresholds ?? {}) } });
+    const g = p.settings.github;
+    const githubChanged = Boolean(patch.github) && (g.repo !== oldGithub.repo || g.mode !== oldGithub.mode || g.branch !== oldGithub.branch);
+    if (patch.github && g.repo?.toLowerCase() !== oldGithub.repo?.toLowerCase()) {
+      this.db.setMeta("githubKnown", {});
+      p.github = undefined;
+    }
     this.db.setMeta("project", p);
     this.addLog({ kind: "system", message: `Settings change: ${Object.keys(patch).join(", ")}.` });
+    if (githubChanged) {
+      if (g.mode !== "off" && g.repo) this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+      else this.setGithub(await this.githubStatus());
+    }
     return p.settings;
   }
 
@@ -2411,7 +2664,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   private mustAttempt(id: string): T.Attempt {
     const a = this.attempts.get(id);
-    if (!a) throw new Error(`Unknown attempt ${id}. Call gitring_declare first.`);
+    if (!a) throw new Error(`Unknown work copy ${id}. Call gitring_declare first.`);
     return a;
   }
 
@@ -2642,9 +2895,9 @@ export function containerRun(res: DrydockResult, o: { key: string; scope: T.Chec
     res.stage === "start"
       ? res.log.slice(0, 500)
       : res.stage === "no-test"
-        ? "No test command. The project has no package.json test script. An owner sets the test command in Project settings → Checks."
+        ? "No test command. The project has no package.json test script. An owner sets the test command in Settings → Tests."
         : res.stage === "timeout"
-          ? `The checks took more than ${o.cs.timeoutSec ?? 600} s. gitring stopped them.`
+          ? `The tests took more than ${o.cs.timeoutSec ?? 600} s. gitring stopped them.`
           : undefined;
   return {
     id: newId("cr"),
@@ -2687,17 +2940,33 @@ function slackText(event: string, p: Record<string, unknown>): string {
   if (event === "landing") {
     const l = p.landing as T.Landing;
     const i = p.intent as { title: string };
-    return `:anchor: *${i.title}* landed on main by ${l.method} (\`${String(p.mainSha).slice(0, 7)}\`) · ${p.callsign} · checks ${l.checks.passed}/${l.checks.passed + l.checks.failed}`;
+    return `:white_check_mark: *${i.title}* merged into main by ${METHOD_WORD[l.method]} (\`${String(p.mainSha).slice(0, 7)}\`) · ${p.callsign} · tests ${l.checks.passed}/${l.checks.passed + l.checks.failed}`;
   }
   if (event === "correction") {
     const c = p.correction as T.Correction;
-    return `:large_purple_diamond: Correction for ${p.callsign} (${c.kind}, ${c.rule}): ${c.message}`;
+    return `:large_purple_diamond: Change request for ${p.callsign} (${KIND_WORD[c.kind] ?? c.kind}): ${c.message}`;
   }
   if (event === "decision") {
     const d = p.decision as T.Decision;
-    return `:scales: Decision (${d.kind}) by ${d.by.name}: ${d.rationale}`;
+    return `:scales: ${d.by.name} decided (${DECISION_WORD[d.kind] ?? d.kind}): ${d.rationale}`;
   }
-  if (event === "intent") return `:compass: New intent: *${(p.intent as { title: string }).title}*`;
+  if (event === "intent") return `:memo: New task: *${(p.intent as { title: string }).title}*`;
   return `${event}: ${JSON.stringify(p).slice(0, 300)}`;
 }
 
+/* Plain words for people and agents (activity feed, tool results, Slack). */
+const METHOD_WORD: Record<T.LandingMethod, string> = { "fast-forward": "fast-forward", merge: "3-way merge", rederive: "redo" };
+const VERDICT_WORD: Record<T.Verdict, string> = { clear: "clear", correct: "change request", "merge-intents": "same task as other work", escalate: "a person decides" };
+const KIND_WORD: Record<T.CorrectionKind, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed" };
+const TRIGGER_WORD: Record<T.CourseCheck["trigger"], string> = { declare: "plan", log: "report", write: "write", push: "push", "main-advanced": "main moved", "intent-amended": "task changed" };
+const DECISION_WORD: Record<T.DecisionKind, string> = { pick: "chose a work copy", rederive: "redo", amend: "changed the goal", park: "paused the task", "approve-checks": "approved the tests", "resolve-escalation": "decided" };
+
+function taskStatusWord(s: T.IntentStatus): string {
+  const words: Partial<Record<T.IntentStatus, string>> = { landed: "merged", parked: "paused", "merged-into": "joined to another task", judging: "waiting for a person", underway: "in work", landing: "merging", draft: "a draft" };
+  return words[s] ?? s;
+}
+
+function copyStatusWord(s: T.AttemptStatus): string {
+  const words: Partial<Record<T.AttemptStatus, string>> = { landed: "merged", landing: "merging", stale: "out of date", rederiving: "in a redo", alternate: "an alternative", abandoned: "stopped", declared: "new", underway: "in work", ready: "ready to merge" };
+  return words[s] ?? s;
+}

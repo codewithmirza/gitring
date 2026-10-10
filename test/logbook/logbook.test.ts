@@ -65,7 +65,7 @@ describe("landingMessage", () => {
     expect(subject).toBe("Add currency support");
     expect(blank).toBe("");
     expect(msg).toContain("formatPrice takes a currency code. The list shows prices in USD by\ndefault.");
-    expect(msg).toContain("\n\nLanded by HERON-3 with merge. Generation 1.\nCorrections: 1. Checks: 7/7 pass.\n\nGitring-Intent:");
+    expect(msg).toContain("\n\nMerged by gitring: work of HERON-3, a 3-way merge.\nTry 1.\nChange requests: 1. Tests: 7/7 pass.\n\nGitring-Intent:");
     expect(parseTrailers(msg)).toEqual({
       "Gitring-Intent": "int_currency",
       "Gitring-Attempt": "att_currency",
@@ -87,7 +87,7 @@ describe("landingMessage", () => {
     const subject = msg.split("\n")[0];
     expect(subject.length).toBeLessThanOrEqual(72);
     expect(subject.endsWith("…")).toBe(true);
-    expect(msg).toContain("Generation 2 (re-derived from att_old).");
+    expect(msg).toContain("Try 2 (a redo of att_old).");
     expect(msg).not.toContain("Second paragraph");
     const t = parseTrailers(msg);
     expect(t["Gitring-Generation"]).toBe("2");

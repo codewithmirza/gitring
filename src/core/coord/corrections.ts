@@ -287,7 +287,7 @@ export function draftUpstreamCorrection(
   landed: { intentTitle: string; files: string[]; signatureChanges: { symbol: SymbolKey; signature: string }[] },
 ): DraftedCorrection {
   const c: Constraints = {};
-  const parts: string[] = [`The intent ${quoteTitle(landed.intentTitle)} landed on main`];
+  const parts: string[] = [`The task ${quoteTitle(landed.intentTitle)} merged into main`];
   if (landed.files.length) parts.push(`It changed ${listFiles(landed.files)}`);
   const myCode = v.shape.files.filter(isCodePath);
   const mine = [...v.shape.referenced, ...v.shape.changed];
@@ -320,9 +320,9 @@ export function draftReplotCorrection(
   moved: { mainSha: string; merged: string[]; reapply: { path: string; diff: string }[] },
 ): DraftedCorrection {
   const c: Constraints = {};
-  const parts: string[] = [`The intent ${quoteTitle(landed.intentTitle)} landed on main`];
+  const parts: string[] = [`The task ${quoteTitle(landed.intentTitle)} merged into main`];
   parts.push(`gitring moved your work onto the new main (${moved.mainSha.slice(0, 7)})`);
-  if (moved.merged.length) parts.push(`Your copies of ${listFiles(moved.merged)} now include the landed change`);
+  if (moved.merged.length) parts.push(`Your copies of ${listFiles(moved.merged)} now include the merged change`);
   const myCode = v.shape.files.filter(isCodePath);
   const mine = [...v.shape.referenced, ...v.shape.changed];
   for (const s of landed.signatureChanges.slice(0, MAX_LIST)) {
@@ -335,7 +335,7 @@ export function draftReplotCorrection(
   }
   const again = moved.reapply.map((r) => r.path);
   if (again.length) {
-    parts.push(`Your change to ${listFiles(again)} overlaps the landed change`);
+    parts.push(`Your change to ${listFiles(again)} overlaps the merged change`);
     parts.push(`gitring kept the main version of ${again.length > 1 ? "these files" : again[0]}`);
     parts.push(`Make your change again on the new text`);
     pushNote(c, `Make the change to ${listFiles(again)} again on the new main`);
@@ -361,20 +361,20 @@ export function draftDuplicateCorrection(v: VesselView, other: VesselView): Draf
   const c: Constraints = {};
   const title = quoteTitle(other.intent.title);
   const parts = [
-    `${O} does the same work in the intent ${title}`,
+    `${O} does the same work in the task ${title}`,
     `Do not do this work twice`,
-    `Change your course to the parts that are different`,
-    `The two intents go to a human for a merge decision`,
+    `Change your plan to the parts that are different`,
+    `A person decides how to join the two tasks`,
   ];
-  pushNote(c, `Do not duplicate the work of ${O} in the intent ${title}`);
+  pushNote(c, `Do not duplicate the work of ${O} in the task ${title}`);
   return finish("duplicate", parts, c);
 }
 
 /** A human (or gitring) amended the intent of `v` (addition: kind "intent-amended"). */
 export function draftIntentAmendedCorrection(v: VesselView, amendment: Amendment): DraftedCorrection {
   const c: Constraints = {};
-  const who = amendment.by?.kind === "human" ? "A human" : amendment.by?.kind === "agent" ? `Agent ${amendment.by.name || amendment.by.id}` : "The system";
-  const parts = [`${who} changed the intent ${quoteTitle(v.intent.title)} to version ${amendment.version}`];
+  const who = amendment.by?.kind === "human" ? "A person" : amendment.by?.kind === "agent" ? `Agent ${amendment.by.name || amendment.by.id}` : "The system";
+  const parts = [`${who} changed the task ${quoteTitle(v.intent.title)} to version ${amendment.version}`];
   const words = (amendment.text ?? "").replace(/["\s]+/g, " ").trim().split(" ").filter(Boolean);
   if (words.length) {
     parts.push(`Read the new text: "${words.length > 12 ? `${words.slice(0, 12).join(" ")}…` : words.join(" ")}"`);

@@ -1,5 +1,5 @@
 /**
- * Logbook: the "why" record of every landing.
+ * History: the record of why each merge happened.
  *
  *  - landingMessage: commit message = subject (intent title) + short body + gitring-* trailers.
  *  - landingNote:    git note (refs/notes/gitring) = pretty JSON, schema "gitring.logbook/v1".
@@ -90,11 +90,13 @@ export function landingMessage(args: {
   const body: string[] = [];
   const summary = summaryOf(attempt, intent);
   if (summary) body.push(wrap(summary));
-  const rederived = attempt.lineage?.rederivedFrom ? ` (re-derived from ${attempt.lineage.rederivedFrom})` : "";
+  const rederived = attempt.lineage?.rederivedFrom ? ` (a redo of ${attempt.lineage.rederivedFrom})` : "";
+  const how = method === "rederive" ? "a redo on the new main" : method === "merge" ? "a 3-way merge" : "a fast-forward";
   body.push(
     [
-      wrap(`Landed by ${oneLine(agent.callsign)} with ${method}. Generation ${generation}${rederived}.`),
-      `Corrections: ${corrections.length}. Checks: ${passed}/${total} pass.`,
+      wrap(`Merged by gitring: work of ${oneLine(agent.callsign)}, ${how}.`),
+      `Try ${generation}${rederived}.`,
+      `Change requests: ${corrections.length}. Tests: ${passed}/${total} pass.`,
     ].join("\n"),
   );
   const trailers = [

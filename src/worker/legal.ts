@@ -17,7 +17,7 @@ export function privacyBody(contact: string | null): string {
 <li><b>Your account.</b> When you sign in with GitHub or Google, gitring keeps your account id at that provider, your name, your email address, the address of your profile picture and, for GitHub, your login. gitring uses them to sign you in, to show who did what, and to give you access to your projects. gitring does not keep the provider's access tokens.</li>
 <li><b>Your session.</b> One cookie keeps you signed in for at most 30 days. gitring keeps only a hash of it. gitring uses no advertising or tracking cookies.</li>
 <li><b>API keys.</b> gitring keeps a hash of each key, its name and its first characters. It cannot show a key again.</li>
-<li><b>Your projects.</b> Code, intents, course checks, logbook entries and check output stay in Cloudflare (Artifacts and Durable Objects). Anyone can see a public project. Only members can see a private project.</li>
+<li><b>Your projects.</b> Code, tasks, conflict checks, merge records and test output stay in Cloudflare (Artifacts and Durable Objects). When an owner turns on GitHub sync, gitring also sends merged code to the GitHub repository that the owner links. Anyone can see a public project. Only members can see a private project.</li>
 </ul></div>
 <div class="card"><h2>Who else processes it</h2><ul>
 <li><b>Cloudflare</b> hosts gitring and runs its AI models (Workers AI) and check containers. Built-in agents and course checks send project text to these models.</li>

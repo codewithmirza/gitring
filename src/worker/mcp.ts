@@ -3,8 +3,8 @@
  * Stateless (MCP 2026-07-28 via createMcpHandler); all state lives in the project's HarborMaster.
  * Every call carries a personal API key; each tool checks the caller's role on the project.
  *
- * Every tool result starts with a one-line status. When gitring has new corrections for the agent,
- * the result starts with "GITRING COURSE CORRECTION" so the model cannot miss it.
+ * Every tool result starts with a one-line status. When gitring has new change requests for the agent,
+ * the result starts with "GITRING CHANGE REQUEST" so the model cannot miss it.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
@@ -16,13 +16,13 @@ import { atLeast, PROJECT_ID } from "../core/accounts";
 import type { HarborMaster } from "../harbor/harbor";
 import { directory, type Principal } from "./auth";
 
-type HarborApi = Pick<HarborMaster, "ensure" | "openIntents" | "declare" | "log" | "traffic" | "read" | "list" | "write" | "check" | "submit" | "ack">;
+type HarborApi = Pick<HarborMaster, "ensure" | "openIntents" | "declare" | "log" | "traffic" | "read" | "list" | "write" | "check" | "submit" | "ack" | "update">;
 
 function text(obj: unknown, headline: string, clr?: T.Clearance) {
   const lines: string[] = [];
   if (clr?.corrections?.length) {
-    lines.push("GITRING COURSE CORRECTION — apply it in your next edits, then call gitring_ack. Do not stop.");
-    for (const c of clr.corrections) lines.push(`- [${c.id}] (${c.kind}${c.from ? `, ${c.from} stands on` : ""}) ${c.message}`);
+    lines.push("GITRING CHANGE REQUEST — apply it in your next edits, then call gitring_ack. Do not stop.");
+    for (const c of clr.corrections) lines.push(`- [${c.id}] (${KIND_WORD[c.kind] ?? c.kind}${c.from ? `; ${c.from} continues` : ""}) ${c.message}`);
     lines.push("");
   }
   lines.push(headline);
@@ -35,11 +35,14 @@ function fail(err: unknown) {
   return { content: [{ type: "text" as const, text: `Error: ${String((err as Error)?.message ?? err)}` }], isError: true };
 }
 
+const KIND_WORD: Record<string, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed" };
+const VERDICT_WORD: Record<string, string> = { clear: "clear", correct: "change request", "merge-intents": "same task as other work", escalate: "a person decides" };
+
 const project = z.string().describe("Project id (gitring_intents without a project lists your projects).");
-const attemptId = z.string().describe("Your attempt id from gitring_declare.");
+const attemptId = z.string().describe("Your work copy id (attemptId) from gitring_declare.");
 
 function createServer(env: Env, who: Principal) {
-  const server = new McpServer({ name: "gitring", version: "0.5.0" });
+  const server = new McpServer({ name: "gitring", version: "0.6.0" });
 
   /** The project's HarborMaster, after a role check (member to act, viewer to read). */
   async function harbor(raw: string | undefined, need: A.Role = "member"): Promise<{ id: string; stub: HarborApi }> {
@@ -58,7 +61,7 @@ function createServer(env: Env, who: Principal) {
     "gitring_intents",
     {
       description:
-        "List the open intents (goal + checks) and the traffic size. Call this first. Then call gitring_declare for one intent, or bring a new intent.",
+        "List the open tasks of a project (goal and test files) and how much work is active. Call this first. Then call gitring_declare for one task, or bring a new task.",
       inputSchema: { project: z.string().optional().describe("Project id. Leave it out to list the projects your key can use.") },
     },
     async ({ project: p }) => {
@@ -73,7 +76,7 @@ function createServer(env: Env, who: Principal) {
         const h = await harbor(p, "viewer");
         await h.stub.ensure(h.id);
         const res = await h.stub.openIntents();
-        return text(res, `${res.intents.length} open intents. ${res.traffic} vessels are underway.`);
+        return text(res, `${res.intents.length} open tasks. ${res.traffic} work copies are active.`);
       } catch (e) {
         return fail(e);
       }
@@ -84,16 +87,16 @@ function createServer(env: Env, who: Principal) {
     "gitring_declare",
     {
       description:
-        "Declare your course BEFORE you write code: plan, files, symbols, approach. gitring checks it against all traffic and answers clear or sends corrections. " +
-        "gitring never blocks you. mode 'git' gives you an Artifacts fork remote + token to clone and push. mode 'api' (default) uses gitring_read / gitring_write. " +
-        "Give workdir (your repository root) so the Claude Code hook can deliver corrections mid-task.",
+        "Send your plan BEFORE you write code: steps, files, functions and approach. gitring checks the plan against all active work and answers clear, or with change requests. " +
+        "gitring never blocks you. mode 'git' (best for an agent on a computer) gives a git remote and a token for your work copy: clone it, commit, push. mode 'api' (default) uses gitring_read and gitring_write. " +
+        "Give workdir (your repository folder) so that the Claude Code hook can bring change requests during the task.",
       inputSchema: {
         project,
-        intentId: z.string().optional().describe("An intent id from gitring_intents."),
-        newIntent: z.object({ title: z.string(), goal: z.string() }).optional().describe("Bring a new intent instead. gitring checks it for duplicates."),
+        intentId: z.string().optional().describe("A task id (intentId) from gitring_intents."),
+        newIntent: z.object({ title: z.string(), goal: z.string() }).optional().describe("Bring a new task instead. gitring checks that no other task is the same."),
         plan: z.array(z.string()).describe("Short steps, in order."),
         files: z.array(z.string()).describe("Repo-relative paths you will change."),
-        symbols: z.array(z.string()).optional().describe("path#name of functions you will add or change. Add (params) if you change a signature."),
+        symbols: z.array(z.string()).optional().describe("path#name of the functions you will add or change. Add (params) if you change a signature."),
         approach: z.string().describe("One sentence."),
         mode: z.enum(["api", "git"]).optional(),
         agent: z
@@ -120,7 +123,7 @@ function createServer(env: Env, who: Principal) {
         });
         return text(
           res,
-          `You are ${res.callsign} on "${res.intent.title}" (attempt ${res.attemptId}). Course check: ${res.clearance.verdict}. ${res.clearance.advice}`,
+          `You are ${res.callsign} on the task "${res.intent.title}" (work copy ${res.attemptId}). Conflict check: ${VERDICT_WORD[res.clearance.verdict] ?? res.clearance.verdict}. ${res.clearance.advice}`,
           res.clearance,
         );
       } catch (e) {
@@ -133,13 +136,13 @@ function createServer(env: Env, who: Principal) {
     "gitring_log",
     {
       description:
-        "Log progress like a commit: what you did and which files you touched. Other agents see it as traffic. In git mode, give headSha after each push. The answer can hold corrections.",
+        "Report progress like a commit message: what you did and which files you touched. Other agents see it. In git mode, give headSha after a push to get a conflict check at once. The answer can hold change requests.",
       inputSchema: { project, attemptId, message: z.string(), files: z.array(z.string()).optional(), symbols: z.array(z.string()).optional(), headSha: z.string().optional() },
     },
     async (args) => {
       try {
         const clr = await (await harbor(args.project)).stub.log({ attemptId: args.attemptId, message: args.message, files: args.files, symbols: args.symbols, headSha: args.headSha });
-        return text(clr, `Course check: ${clr.verdict}. ${clr.advice}`, clr);
+        return text(clr, `Conflict check: ${VERDICT_WORD[clr.verdict] ?? clr.verdict}. ${clr.advice}`, clr);
       } catch (e) {
         return fail(e);
       }
@@ -149,13 +152,13 @@ function createServer(env: Env, who: Principal) {
   server.registerTool(
     "gitring_traffic",
     {
-      description: "See the vessels near your work: their intents, courses, files and latest logs (their live context), plus intents that landed after your base.",
+      description: "See the active work near yours: the tasks, plans, files and latest reports of other agents, and the tasks that merged after your work copy started.",
       inputSchema: { project, attemptId },
     },
     async (args) => {
       try {
         const res = await (await harbor(args.project)).stub.traffic(args.attemptId);
-        return text(res, `${res.vessels.length} vessels near you. ${res.landedSinceBase.length} intents landed after your base.`);
+        return text(res, `${res.vessels.length} work copies near you. ${res.landedSinceBase.length} tasks merged after your work copy started.`);
       } catch (e) {
         return fail(e);
       }
@@ -164,7 +167,7 @@ function createServer(env: Env, who: Principal) {
 
   server.registerTool(
     "gitring_read",
-    { description: "Read one file of your attempt (api mode).", inputSchema: { project, attemptId, path: z.string() } },
+    { description: "Read one file of your work copy (api mode).", inputSchema: { project, attemptId, path: z.string() } },
     async (args) => {
       try {
         const r = await (await harbor(args.project)).stub.read(args.attemptId, args.path);
@@ -177,7 +180,7 @@ function createServer(env: Env, who: Principal) {
 
   server.registerTool(
     "gitring_list",
-    { description: "List the files of your attempt (api mode).", inputSchema: { project, attemptId, dir: z.string().optional() } },
+    { description: "List the files of your work copy (api mode).", inputSchema: { project, attemptId, dir: z.string().optional() } },
     async (args) => {
       try {
         const r = await (await harbor(args.project)).stub.list(args.attemptId, args.dir);
@@ -191,7 +194,7 @@ function createServer(env: Env, who: Principal) {
   server.registerTool(
     "gitring_write",
     {
-      description: "Write complete file contents into your attempt (api mode). gitring re-checks your course after each write. The answer can hold corrections.",
+      description: "Write whole files into your work copy (api mode). gitring checks your plan again after each write. The answer can hold change requests.",
       inputSchema: {
         project,
         attemptId,
@@ -206,7 +209,7 @@ function createServer(env: Env, who: Principal) {
           res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read these files again.` : "",
           ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
         ].filter(Boolean);
-        return text(res, `Written: ${res.written.join(", ") || "nothing"}. ${extra.length ? `${extra.join(" ")} ` : ""}Course check: ${res.clearance.verdict}. ${res.clearance.advice}`, res.clearance);
+        return text(res, `Written: ${res.written.join(", ") || "nothing"}. ${extra.length ? `${extra.join(" ")} ` : ""}Conflict check: ${VERDICT_WORD[res.clearance.verdict] ?? res.clearance.verdict}. ${res.clearance.advice}`, res.clearance);
       } catch (e) {
         return fail(e);
       }
@@ -215,11 +218,11 @@ function createServer(env: Env, who: Principal) {
 
   server.registerTool(
     "gitring_check",
-    { description: "Run all checks of your attempt and get each failure.", inputSchema: { project, attemptId } },
+    { description: "Run the tests of your work copy and get each failure. In git mode, gitring tests your latest push.", inputSchema: { project, attemptId } },
     async (args) => {
       try {
         const run = await (await harbor(args.project)).stub.check(args.attemptId);
-        return text(run, `${run.passed}/${run.passed + run.failed} checks pass.${run.error ? ` Runner error: ${run.error}` : ""}`);
+        return text(run, `${run.passed}/${run.passed + run.failed} tests pass.${run.error ? ` Test runner error: ${run.error}` : ""}`);
       } catch (e) {
         return fail(e);
       }
@@ -229,7 +232,7 @@ function createServer(env: Env, who: Principal) {
   server.registerTool(
     "gitring_submit",
     {
-      description: "Submit when your checks pass. gitring lands the work (fast-forward, merge, or re-derive from intent), or asks a human to pick between attempts.",
+      description: "Ask for a merge when your tests pass. gitring tests again, then merges the work (fast-forward, 3-way merge, or a redo on the new main), or asks a person to choose between work copies.",
       inputSchema: { project, attemptId, summary: z.string() },
     },
     async (args) => {
@@ -244,11 +247,29 @@ function createServer(env: Env, who: Principal) {
 
   server.registerTool(
     "gitring_ack",
-    { description: "Acknowledge a correction after you apply it. Say in one line what you changed.", inputSchema: { project, attemptId, correctionId: z.string(), note: z.string().optional() } },
+    { description: "Confirm that you applied a change request (correctionId). Say in one line what you changed.", inputSchema: { project, attemptId, correctionId: z.string(), note: z.string().optional() } },
     async (args) => {
       try {
         const clr = await (await harbor(args.project)).stub.ack(args.attemptId, args.correctionId, args.note);
-        return text(clr, `Acknowledged. ${clr.advice}`, clr);
+        return text(clr, `Confirmed. ${clr.advice}`, clr);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "gitring_update",
+    {
+      description:
+        "Bring the new main into your work copy. api mode: gitring moves your work copy onto main and names the files to read again. " +
+        "git mode: you get a read-only remote and token for main, and the git commands to merge it. Use it after a change request that says main moved.",
+      inputSchema: { project, attemptId },
+    },
+    async (args) => {
+      try {
+        const res = await (await harbor(args.project)).stub.update(args.attemptId);
+        return text(res, res.message);
       } catch (e) {
         return fail(e);
       }

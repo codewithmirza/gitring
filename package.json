@@ -1,8 +1,8 @@
 {
   "name": "gitring",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "gitring: collision avoidance for coding agents. Agents declare a course, gitring checks it against all traffic, and steers instead of stopping. Built on Cloudflare Workers + Artifacts.",
+  "description": "gitring: many coding agents change one codebase at the same time. Agents send a plan, gitring checks it against all active work, sends change requests instead of rejections, and merges work when the tests pass. Built on Cloudflare Workers and Artifacts.",
   "license": "MIT",
   "type": "module",
   "scripts": {

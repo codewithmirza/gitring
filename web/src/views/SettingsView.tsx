@@ -18,6 +18,7 @@ import {
   useAccess,
 } from "../state/account";
 import { useStore } from "../state/store";
+import { harborOrNull } from "../state/api";
 import { ago, shortSha } from "../state/format";
 import "./projects.css";
 
@@ -507,6 +508,13 @@ function GithubSection({ projectId, owner, settings, onSaved, imported }: Sectio
   const live = useStore((s) => s.state?.project.github);
   const firstLive = useRef(live);
   const saved = JSON.stringify(g);
+  const [app, setApp] = useState<{ installUrl: string } | null>(null);
+  useEffect(() => {
+    harborOrNull()
+      ?.connect()
+      .then((i) => setApp(i.githubApp))
+      .catch(() => setApp(null));
+  }, [projectId]);
 
   useEffect(() => {
     setRepo(g.repo ?? imported ?? "");
@@ -613,7 +621,18 @@ function GithubSection({ projectId, owner, settings, onSaved, imported }: Sectio
       )}
       <SaveError error={error} />
       <p className="np__help">
-        The gitring GitHub App must be installed on the repository. To link a repository, sign in with GitHub as a person who can push to it.
+        The gitring GitHub App must be installed on the repository
+        {app ? (
+          <>
+            {" "}
+            (
+            <a href={app.installUrl} target="_blank" rel="noopener noreferrer">
+              install the app
+            </a>
+            )
+          </>
+        ) : null}
+        . To link a repository, sign in with GitHub as a person who can push to it.
       </p>
     </section>
   );

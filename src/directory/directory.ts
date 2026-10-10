@@ -116,8 +116,14 @@ interface Profile {
   avatar?: string;
 }
 
+export type GithubRepoAccess =
+  | { ok: true; token: string; expiresAt: number; permissions: Record<string, string> }
+  | { ok: false; state: "no-app" | "not-installed" | "error"; message: string; installUrl?: string };
+
 export class Directory extends DurableObject<Env> {
   private readonly sql: SqlStorage;
+  /** Installation tokens per repository (lowercase "owner/name"). */
+  private readonly repoTokens = new Map<string, { token: string; expiresAt: number; permissions: Record<string, string> }>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -160,6 +166,63 @@ export class Directory extends DurableObject<Env> {
   /** Worker-only: the GitHub App credentials (webhook verification, installation tokens). */
   async githubApp(): Promise<GithubAppConfig | null> {
     return (await this.getSealed<GithubAppConfig>("github_app")) ?? null;
+  }
+
+  /**
+   * A short-lived token of the GitHub App for one repository ("owner/name"), scoped to that repository.
+   * Worker-only (RPC from a project coordinator). Tokens are cached until 5 minutes before they expire.
+   */
+  async githubRepoAccess(repo: string): Promise<GithubRepoAccess> {
+    const name = String(repo ?? "").trim();
+    if (!/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(name)) return { ok: false, state: "error", message: "Give the GitHub repository as owner/name." };
+    const hit = this.repoTokens.get(name.toLowerCase());
+    if (hit && hit.expiresAt - Date.now() > 5 * 60_000) return { ok: true, token: hit.token, expiresAt: hit.expiresAt, permissions: hit.permissions };
+    const app = await this.githubApp().catch(() => null);
+    if (!app) return { ok: false, state: "no-app", message: "This gitring has no GitHub App. An owner of the deployment sets it up on /setup." };
+    const installUrl = `https://github.com/apps/${app.slug}/installations/new`;
+    const jwt = await githubAppJwt(app.id, app.pem);
+    const auth = { ...GITHUB_HEADERS, Authorization: `Bearer ${jwt}` };
+    const inst = await fetch(`https://api.github.com/repos/${name}/installation`, { headers: auth });
+    if (inst.status === 404) return { ok: false, state: "not-installed", message: `The gitring GitHub App is not installed on ${name}.`, installUrl };
+    if (!inst.ok) return { ok: false, state: "error", message: `GitHub answered ${inst.status} for the installation on ${name}.` };
+    const { id } = await inst.json<{ id: number }>();
+    const tok = await fetch(`https://api.github.com/app/installations/${id}/access_tokens`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ repositories: [name.split("/")[1]] }),
+    });
+    if (!tok.ok) return { ok: false, state: "error", message: `GitHub did not give a token for ${name} (${tok.status}).`, installUrl };
+    const t = await tok.json<{ token: string; expires_at: string; permissions?: Record<string, string> }>();
+    const entry = { token: t.token, expiresAt: Date.parse(t.expires_at) || Date.now() + 50 * 60_000, permissions: t.permissions ?? {} };
+    this.repoTokens.set(name.toLowerCase(), entry);
+    return { ok: true, ...entry };
+  }
+
+  /**
+   * Can this person push to the GitHub repository? Asks GitHub with the app token, for each GitHub
+   * login of the person. Linking a repository to a project needs this, so that no project can push to a
+   * repository of other people.
+   */
+  async githubCanPush(userId: string, repo: string): Promise<{ ok: boolean; message: string; installUrl?: string }> {
+    const logins = this.sql
+      .exec<{ login: string | null }>("SELECT login FROM identities WHERE user_id = ? AND provider = 'github'", userId)
+      .toArray()
+      .map((r) => r.login)
+      .filter((l): l is string => Boolean(l));
+    if (!logins.length) return { ok: false, message: "Sign in with GitHub once, so that gitring can check that you can push to the repository." };
+    const access = await this.githubRepoAccess(repo);
+    if (!access.ok) return { ok: false, message: access.message, installUrl: access.installUrl };
+    for (const login of logins) {
+      const res = await fetch(`https://api.github.com/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`, {
+        headers: { ...GITHUB_HEADERS, Authorization: `Bearer ${access.token}` },
+      });
+      if (!res.ok) continue;
+      const p = await res.json<{ permission?: string; role_name?: string }>();
+      if (["admin", "maintain", "write"].includes(p.role_name ?? "") || ["admin", "write"].includes(p.permission ?? "")) {
+        return { ok: true, message: `${login} can push to ${repo}.` };
+      }
+    }
+    return { ok: false, message: `Your GitHub account (${logins.join(", ")}) cannot push to ${repo}.` };
   }
 
   async setGoogle(cfg: GoogleConfig): Promise<void> {
@@ -213,9 +276,9 @@ export class Directory extends DurableObject<Env> {
       callback_urls: [`${origin}/auth/github/callback`],
       setup_url: `${origin}/setup/github/installed`,
       setup_on_update: true,
-      description: "gitring: many coding agents change one codebase at the same time. Sign in, import repositories, mirror landings.",
+      description: "gitring: many coding agents change one codebase at the same time. Sign in, open tasks from issues, send merged code to GitHub.",
       public: true,
-      default_permissions: { contents: "write", issues: "read", metadata: "read" },
+      default_permissions: { contents: "write", pull_requests: "write", issues: "read", metadata: "read" },
       request_oauth_on_install: false,
     };
     return { postUrl: `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`, manifest: JSON.stringify(manifest) };

@@ -20,7 +20,7 @@ import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, directory, resolvePrincipal, type Principal } from "./auth";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
-import { normalizeGitUrl } from "../core/repo-rules";
+import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
 import type { SeedFile } from "../harbor/harbor";
 
@@ -316,7 +316,7 @@ app.post("/api/projects/:p/attempts/:id/rederive", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "member");
     const body = await c.req.json<{ reason?: string }>().catch(() => ({ reason: "" }));
-    return c.json(await h.rederive(c.req.param("id"), body.reason || "A human asked for a re-derive.", actorOf(c.get("principal"))));
+    return c.json(await h.rederive(c.req.param("id"), body.reason || "A person asked for a redo on the new main.", actorOf(c.get("principal"))));
   } catch (e) {
     return err(c, e);
   }
@@ -335,7 +335,7 @@ app.get("/api/projects/:p/landings/:id", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "viewer");
     const d = await h.landingDetail(c.req.param("id"));
-    return d ? c.json(d) : c.json({ error: "Unknown landing." }, 404);
+    return d ? c.json(d) : c.json({ error: "Unknown merge." }, 404);
   } catch (e) {
     return err(c, e, 500);
   }
@@ -441,7 +441,21 @@ app.get("/api/projects/:p/settings", async (c) => {
 app.put("/api/projects/:p/settings", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "owner");
-    return c.json(await h.updateSettings(await c.req.json()));
+    const body = await c.req.json<Partial<T.ProjectSettings>>().catch(() => ({}) as Partial<T.ProjectSettings>);
+    // Linking a GitHub repository needs a person who can push to it: no project may push to the repositories of other people.
+    const wanted = body?.github && typeof body.github === "object" && typeof body.github.repo === "string" ? body.github.repo.trim() : "";
+    if (wanted) {
+      const repo = githubRepoName(wanted);
+      if (!repo) return c.json({ error: "Give the GitHub repository as owner/name, or as its https://github.com URL." }, 400);
+      const current = (await h.settings()).github?.repo;
+      const principal = c.get("principal");
+      if (repo.toLowerCase() !== current?.toLowerCase() && principal.via !== "operator") {
+        const check = await directory(c.env).githubCanPush(needUser(c).id, repo);
+        if (!check.ok) return c.json({ error: check.message, ...(check.installUrl ? { installUrl: check.installUrl } : {}) }, 403);
+      }
+      body.github = { ...(body.github as T.GithubSettings), repo };
+    }
+    return c.json(await h.updateSettings(body));
   } catch (e) {
     return err(c, e);
   }
@@ -601,7 +615,7 @@ app.post("/hooks/slack", async (c) => {
   const form = Object.fromEntries(new URLSearchParams(raw)) as Record<string, unknown>;
   const text = String(form.text ?? "").trim();
   const user = String(form.user_name ?? "slack");
-  if (!text) return c.json({ response_type: "ephemeral", text: "Write the intent after the command: /gitring Add a dark mode — Readers can switch to a dark theme." });
+  if (!text) return c.json({ response_type: "ephemeral", text: "Write the task after the command: /gitring Add a dark mode — Readers can switch to a dark theme." });
   const [titleRaw, ...rest] = text.split(/\s+[—-]{1,2}\s+/);
   const title = titleRaw ?? text;
   const id = projectId(c.req.query("project"));
@@ -609,7 +623,7 @@ app.post("/hooks/slack", async (c) => {
   const h = harbor(c.env, id);
   await h.ensure(id);
   const intent = await h.createIntent({ title, goal: rest.join(" — ") || title, source: { kind: "webhook", ref: `slack:@${user}` } }, { kind: "system", id: "slack", name: `Slack @${user}` });
-  return c.json({ response_type: "in_channel", text: `:compass: Intent opened: *${intent.title}* (${intent.id}). Agents can take it now.` });
+  return c.json({ response_type: "in_channel", text: `:memo: Task opened: *${intent.title}* (${intent.id}). Agents can take it now.` });
 });
 
 /** Claude Code PostToolUse hook: corrections arrive mid-task as additional context (member API key). */

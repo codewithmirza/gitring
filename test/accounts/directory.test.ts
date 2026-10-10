@@ -71,14 +71,14 @@ describe("GitHub App setup and sign-in", () => {
     expect(manifest.redirect_url).toBe(`${ORIGIN}/setup/github/callback`);
     expect(manifest.hook_attributes.url).toBe(`${ORIGIN}/hooks/github-app`);
     expect(manifest.default_events).toEqual(["issues", "push"]);
-    expect(manifest.default_permissions).toEqual({ contents: "write", issues: "read", metadata: "read" });
+    expect(manifest.default_permissions).toEqual({ contents: "write", pull_requests: "write", issues: "read", metadata: "read" });
     expect((await dir.providers()).github).toBeNull();
 
     routes["https://api.github.com/app-manifests/"] = { json: { id: 7, slug: "gitring-x", client_id: "Iv1.c", client_secret: "s", webhook_secret: "w", pem: "p", html_url: "https://github.com/apps/gitring-x" } };
     await dir.githubManifestDone("abc", stateOf(m.postUrl));
     expect(calls.at(-1)!.url).toBe("https://api.github.com/app-manifests/abc/conversions");
     const providers = await dir.providers();
-    expect(providers.github).toEqual({ slug: "gitring-x", appId: 7, htmlUrl: "https://github.com/apps/gitring-x", installUrl: "https://github.com/apps/gitring-x/installations/new" });
+    expect(providers.github).toEqual({ slug: "gitring-x", appId: 7, htmlUrl: "https://github.com/apps/gitring-x", installUrl: "https://github.com/apps/gitring-x/installations/new", webhook: true });
     // A state works once.
     await expect(dir.githubManifestDone("abc", stateOf(m.postUrl))).rejects.toThrow(/expired or was used/);
   });

@@ -297,13 +297,22 @@ function Lane({ attempt: a, agent, intent, corrections, checks, names, landing, 
           {agent?.kind === "mcp" && <span className="ink-3">via MCP · {agent.client}</span>}
           {a.lineage.generation > 1 && (
             <span className="lane__gen">
-              <Icon name="rederive" size={12} /> generation {a.lineage.generation}
+              <Icon name="rederive" size={12} /> try {a.lineage.generation}
               {rederivedFromName ? ` · redo of ${rederivedFromName}` : ""}
             </span>
           )}
           <span className="ink-3">base {shortSha(a.baseSha)}</span>
         </div>
         {alternate && <p className="lane__note">Alternative. gitring keeps it with its diff.</p>}
+        {a.returned && !landed && !alternate && (
+          <p className="lane__note lane__note--drift">
+            <Icon name="rederive" size={14} />
+            The work could not merge, so gitring gave it back to {callsign}. {a.returned.reason}{" "}
+            If the agent does not answer by{" "}
+            <time dateTime={new Date(a.returned.until).toISOString()}>{new Date(a.returned.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+            {a.returned.policy === "agent-first" ? ", a built-in agent does the task again." : ", a person decides."}
+          </p>
+        )}
         {a.drift && !landed && !alternate && (
           <p className="lane__note lane__note--drift">
             <Icon name="rederive" size={14} />

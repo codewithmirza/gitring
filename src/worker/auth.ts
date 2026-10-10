@@ -153,7 +153,7 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
   let gh: string;
   if (providers.github) {
     gh = `<p class="ok">Connected: ${esc(providers.github.slug)}</p>
-<p>People sign in with GitHub through this app. To import private repositories and mirror landings, install it on them.</p>
+<p>People sign in with GitHub through this app. Install it on a repository to open tasks from its issues and to send merged code to it (Settings → GitHub in a project).</p>
 <p><a class="btn" href="${esc(providers.github.installUrl)}">Install on repositories</a> <a class="btn secondary" href="${esc(providers.github.htmlUrl)}">App settings</a></p>`;
   } else {
     const m = await dir.githubManifest(o);
@@ -241,7 +241,7 @@ export function authRoutes(app: Hono<HonoEnv>): void {
   app.get("/setup/github/ready", (c) => appReadyPage(c.req.query("slug") ?? ""));
 
   app.get("/setup/github/installed", (c) =>
-    page("Installed", `<h1>gitring can see these repositories now</h1><p>Go back to gitring to import one.</p><p><a class="btn" href="/projects?new=github">Open gitring</a></p>`),
+    page("Installed", `<h1>gitring can work with these repositories now</h1><p>Go back to gitring. Import a repository into a new project, or link it to a project in Settings → GitHub to send merged code to it.</p><p><a class="btn" href="/projects">Open gitring</a></p>`),
   );
 
   app.get("/auth/:provider/start", async (c) => {

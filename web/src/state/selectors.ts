@@ -392,6 +392,20 @@ const queueMemo = memo((intents: Intent[], attempts: Attempt[], checks: CourseCh
   for (const i of intents) {
     if (i.status !== "judging") continue;
     const ready = attempts.filter((a) => a.intentId === i.id && a.status === "ready");
+    if (!ready.length) {
+      // No work copy is ready: the work could not merge, or its agent did not answer.
+      const open = attempts.filter((a) => a.intentId === i.id && isActiveAttempt(a));
+      out.push({
+        key: `stuck:${i.id}`,
+        kind: "escalation",
+        intentId: i.id,
+        title: i.title,
+        detail: "The work could not merge. Redo it on the new main, or pause the task",
+        attemptIds: open.map((a) => a.id),
+        at: i.updatedAt,
+      });
+      continue;
+    }
     out.push({
       key: `pick:${i.id}`,
       kind: "pick",

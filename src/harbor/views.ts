@@ -171,12 +171,12 @@ export function trafficVessel(
 
 export function adviceFor(verdict: Verdict | undefined, newCorrections: number, traffic: TrafficVessel[]): string {
   if (newCorrections > 0) {
-    return `You have ${newCorrections} new correction${newCorrections > 1 ? "s" : ""}. Apply ${newCorrections > 1 ? "them" : "it"}, then call gitring_ack. Continue your work.`;
+    return `You have ${newCorrections} new change request${newCorrections > 1 ? "s" : ""}. Apply ${newCorrections > 1 ? "them" : "it"}, then call gitring_ack. Continue your work.`;
   }
   const close = traffic.filter((t) => t.range <= 2);
-  if (verdict === "escalate") return "A human reviews a risk on your course. Continue your work. gitring tells you if the course changes.";
-  if (close.length) return `Course clear. ${close.length} vessel${close.length > 1 ? "s" : ""} work near you. Read their context in traffic before you edit shared files.`;
-  return "Course clear. Continue your work.";
+  if (verdict === "escalate") return "A person looks at a risk in your plan. Continue your work. gitring tells you if the plan must change.";
+  if (close.length) return `Plan clear. ${close.length} other agent${close.length > 1 ? "s" : ""} work near you. Read their context with gitring_traffic before you edit shared files.`;
+  return "Plan clear. Continue your work.";
 }
 
 export function clearance(
@@ -200,18 +200,18 @@ export function median(xs: number[]): number {
 }
 
 export const PROTOCOL = [
-  "Call gitring_log after each meaningful step. Name the files you touch.",
-  "Read every correction in a response. Apply it, then call gitring_ack. Continue your work.",
-  "Write files with gitring_write (api mode) or git push to your fork (git mode), then call gitring_log with headSha.",
-  "Call gitring_check before gitring_submit. Do not edit check files of other intents.",
-  "Read gitring_traffic when you plan to edit a shared file.",
+  "Call gitring_log after each important step. Name the files you touch.",
+  "Read each change request in an answer. Apply it, then call gitring_ack. Continue your work.",
+  "Write files with gitring_write (api mode), or push to your work copy remote (git mode). gitring reads your latest push at gitring_check and gitring_submit.",
+  "Call gitring_check before gitring_submit. Do not edit the test files of other tasks.",
+  "Read gitring_traffic before you edit a shared file. Call gitring_update when main moves.",
 ];
 
 /** ASD-STE100 friendly short reason for check failures. */
 export function failureSummary(cases: { file: string; name: string; ok: boolean; error?: string }[], max = 4): string {
   const failed = cases.filter((c) => !c.ok);
-  if (!failed.length) return "All checks pass.";
+  if (!failed.length) return "All tests pass.";
   const lines = failed.slice(0, max).map((c) => `${c.file}: "${c.name}" fails${c.error ? `: ${c.error.split("\n")[0].slice(0, 160)}` : "."}`);
-  const more = failed.length > max ? ` ${failed.length - max} more checks fail.` : "";
-  return `${failed.length} check${failed.length > 1 ? "s" : ""} fail. ${lines.join(" ")}${more}`;
+  const more = failed.length > max ? ` ${failed.length - max} more tests fail.` : "";
+  return `${failed.length} test${failed.length > 1 ? "s" : ""} fail. ${lines.join(" ")}${more}`;
 }

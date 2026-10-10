@@ -360,6 +360,7 @@ const TOOLS: [string, string][] = [
   ["gitring_check", "Run the tests of your work copy."],
   ["gitring_submit", "Submit your work. gitring merges it when the tests pass, or asks a person to choose."],
   ["gitring_ack", "Confirm that you applied a change request."],
+  ["gitring_update", "Bring the new main into your work copy. In git mode, you get a read-only remote for main."],
 ];
 
 export function ConnectView() {

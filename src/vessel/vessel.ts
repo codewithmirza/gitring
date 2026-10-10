@@ -163,7 +163,7 @@ export class Vessel extends DurableObject<Env> {
         approach: course.approach ?? `Implement "${brief.intent.title}".`,
         mode: "api",
       });
-      st.messages.push({ role: "assistant", content: `My course: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
+      st.messages.push({ role: "assistant", content: `My plan: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
       st.messages.push({ role: "user", content: clearanceText(res.clearance) + "\nNow do the work with the tools." });
       this.absorb(st, res.clearance);
       st.phase = "working";
@@ -204,7 +204,7 @@ export class Vessel extends DurableObject<Env> {
       }
       if (st.corrections.length) {
         st.messages.push({ role: "user", content: correctionsText(st.corrections) });
-        for (const n of st.corrections) await h.ack(c.attemptId, n.id, "I apply this correction.").catch(() => undefined);
+        for (const n of st.corrections) await h.ack(c.attemptId, n.id, "I apply this change request.").catch(() => undefined);
         st.corrections = [];
       }
       return true;
@@ -299,23 +299,23 @@ export class Vessel extends DurableObject<Env> {
 /* ───────────────────────── LLM helpers ───────────────────────── */
 
 const COURSE_REQUEST =
-  "Declare your course before you write code. Reply with JSON only: " +
+  "Send your plan before you write code. Reply with JSON only: " +
   '{"plan": ["short steps"], "files": ["paths you will change"], "symbols": ["path#name for functions you will add or change; add (params) if you change a signature"], "approach": "one sentence"}';
 
 function systemPrompt(callsign: string, runner?: T.CheckSettings): string {
   const container = runner?.runner === "container";
   return [
     `You are ${callsign}, a coding agent inside gitring. Many agents change this repository at the same time.`,
-    "gitring checks your course against all traffic. It never blocks you. It sends corrections.",
+    "gitring checks your plan against all other active work. It never blocks you. It sends change requests.",
     "Rules:",
-    "1. Read every GITRING COURSE CORRECTION. Apply it in your next edits. Continue your work.",
+    "1. Read every GITRING CHANGE REQUEST. Apply it in your next edits. Continue your work.",
     "2. Write complete file contents with write_file. Keep unrelated code unchanged.",
-    "3. Do not edit test files of other intents. Do not edit .gitring/.",
-    "4. Call log_progress after each meaningful step.",
-    "5. The checks are the contract. Read the check files first. Make every assertion pass.",
+    "3. Do not edit the test files of other tasks. Do not edit .gitring/.",
+    "4. Call log_progress after each important step.",
+    "5. The tests are the contract. Read the test files first. Make every assertion pass.",
     "6. Call run_checks after you write. Fix every failure. Then call submit with a one-line summary.",
     container
-      ? "7. Follow the conventions of this repository: its language, style, test framework and folder layout. Use list_files and read_file to learn them. Add a dependency only when the intent needs it, in the manifest (for example package.json)."
+      ? "7. Follow the conventions of this repository: its language, style, test framework and folder layout. Use list_files and read_file to learn them. Add a dependency only when the task needs it, in the manifest (for example package.json)."
       : "7. Plain ES modules only. No dependencies. Use relative links in HTML.",
   ].join("\n");
 }
@@ -330,20 +330,20 @@ function briefPrompt(
   const r = brief.runner;
   const how =
     r?.runner === "container"
-      ? `HOW CHECKS RUN: in a Linux container with Node.js 24: ${r.install || "npm ci (or npm install)"}, then ${r.test || "npm test"}. The whole test suite must pass.` +
-        (brief.checks.length ? "" : " This intent has no check files: add tests for the intent next to the existing tests.")
+      ? `HOW TESTS RUN: in a Linux container with Node.js 24: ${r.install || "npm ci (or npm install)"}, then ${r.test || "npm test"}. The whole test suite must pass.` +
+        (brief.checks.length ? "" : " This task has no test files: add tests for the task next to the existing tests.")
       : "";
   const shown = new Set(Object.keys(brief.context));
   const others = (brief.files ?? []).map((f) => f.path).filter((p) => !shown.has(p));
   return [
-    `INTENT: ${brief.intent.title}`,
+    `TASK: ${brief.intent.title}`,
     brief.intent.goal,
     brief.constraints.length ? `CONSTRAINTS:\n${brief.constraints.map((c) => `- ${c}`).join("\n")}` : "",
-    brief.checks.length ? `CHECKS (must pass): ${brief.checks.map((c) => c.path).join(", ")}` : "",
+    brief.checks.length ? `TESTS (must pass): ${brief.checks.map((c) => c.path).join(", ")}` : "",
     how,
     others.length ? `OTHER FILES (read them with read_file when you need them):\n${others.slice(0, 300).join("\n")}${others.length > 300 ? `\n… and ${others.length - 300} more (list_files)` : ""}` : "",
-    brief.traffic.length ? `TRAFFIC (other agents near your work):\n${brief.traffic.map((t) => `- ${t.callsign} on "${t.intentTitle}": ${t.approach} (files: ${t.files.join(", ")})`).join("\n")}` : "",
-    prior ? `A PREVIOUS ATTEMPT made this diff on an older main. Re-apply its intent on the current files:\n${prior}` : "",
+    brief.traffic.length ? `ACTIVE WORK (other agents near your work):\n${brief.traffic.map((t) => `- ${t.callsign} on "${t.intentTitle}": ${t.approach} (files: ${t.files.join(", ")})`).join("\n")}` : "",
+    prior ? `AN EARLIER WORK COPY made this diff on an older main. Make the same change on the current files:\n${prior}` : "",
     `FILES:\n${files}`,
   ]
     .filter(Boolean)
@@ -351,14 +351,14 @@ function briefPrompt(
 }
 
 function clearanceText(clr: T.Clearance): string {
-  const parts = [`gitring course check: ${clr.verdict}. ${clr.advice}`];
+  const parts = [`gitring conflict check: ${clr.verdict === "correct" ? "change request" : clr.verdict}. ${clr.advice}`];
   if (clr.corrections.length) parts.push(correctionsText(clr.corrections));
-  if (clr.traffic.length) parts.push(`Traffic: ${clr.traffic.map((t) => `${t.callsign} (R${t.range}${t.closing ? ", closing" : ""}) on "${t.intentTitle}"`).join("; ")}.`);
+  if (clr.traffic.length) parts.push(`Active work near you: ${clr.traffic.map((t) => `${t.callsign} (distance ${t.range}${t.closing ? ", coming closer" : ""}) on "${t.intentTitle}"`).join("; ")}.`);
   return parts.join("\n");
 }
 
 function correctionsText(cs: T.CorrectionNotice[]): string {
-  return `GITRING COURSE CORRECTION:\n${cs.map((c) => `- [${c.id}] ${c.message}`).join("\n")}\nApply these corrections in your next edits. Continue your work.`;
+  return `GITRING CHANGE REQUEST:\n${cs.map((c) => `- [${c.id}] ${c.message}`).join("\n")}\nApply these change requests in your next edits. Continue your work.`;
 }
 
 function safeArgs(raw: string): Record<string, unknown> {
@@ -387,7 +387,7 @@ const TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "write_file",
-      description: "Write the COMPLETE new content of one file. gitring checks your course after each write.",
+      description: "Write the COMPLETE new content of one file. gitring checks your plan after each write.",
       parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" }, note: { type: "string", description: "One line: what changed and why." } }, required: ["path", "content"] },
     },
   },
