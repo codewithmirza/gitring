@@ -659,7 +659,9 @@ export function CodeView() {
       });
     }
     const titles = new Map((intents ?? []).map((i) => [i.id, i.title]));
-    for (const l of [...landings].sort((a, b) => b.at - a.at).slice(0, 6)) {
+    // The newest merge is main itself: listing it again would offer the same files twice.
+    const merges = landings.filter((l) => l.mainAfter !== mainSha).sort((a, b) => b.at - a.at);
+    for (const l of merges.slice(0, 6)) {
       out.push({
         id: `m:${l.id}`,
         ref: l.mainAfter,
