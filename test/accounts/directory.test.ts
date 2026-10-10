@@ -205,10 +205,10 @@ describe("API keys", () => {
 });
 
 describe("projects and roles", () => {
-  it("shows the public sample to everyone and private projects only to members", async () => {
+  it("shows public projects to everyone and private projects only to members", async () => {
     const dir = make();
     await withGithubApp(dir);
-    expect(await dir.role("demo", null)).toBe("viewer");
+    expect(await dir.role("demo", null)).toBeNull(); // no sample project any more
     const { user: robin } = await githubSignIn(dir, { id: 10, login: "robin" });
     const { user: sam } = await githubSignIn(dir, { id: 11, login: "sam" });
     const p = await dir.createProject({ name: "Shop!", source: { kind: "empty" }, ownerId: robin.id });
@@ -217,7 +217,7 @@ describe("projects and roles", () => {
     expect(p.role).toBe("owner");
     expect(await dir.role(p.id, sam.id)).toBeNull();
     expect(await dir.role(p.id, null)).toBeNull();
-    expect((await dir.listProjects(sam.id)).map((x) => x.id)).toEqual(["demo"]);
+    expect((await dir.listProjects(sam.id)).map((x) => x.id)).toEqual([]);
 
     await dir.updateProject(p.id, { visibility: "public" });
     expect(await dir.role(p.id, sam.id)).toBe("viewer");
@@ -225,7 +225,6 @@ describe("projects and roles", () => {
 
     await dir.archiveProject(p.id);
     expect(await dir.role(p.id, robin.id)).toBeNull();
-    await expect(dir.archiveProject("demo")).rejects.toThrow(/cannot be archived/);
   });
 
   it("turns an invite by GitHub login or email into a membership at sign-in", async () => {
@@ -267,7 +266,7 @@ describe("projects and roles", () => {
   it("lets the operator key make projects that no person owns", async () => {
     const dir = make({ GITRING_OWNERS: "github:boss" });
     await withGithubApp(dir);
-    const p = await dir.createProject({ name: "Scenario run", source: { kind: "sample" }, ownerId: null });
+    const p = await dir.createProject({ name: "Scenario run", source: { kind: "empty" }, ownerId: null });
     expect(p.role).toBe("owner");
     expect(p.ownerName).toBe("gitring");
     const { user: robin } = await githubSignIn(dir, { id: 60, login: "robin" });

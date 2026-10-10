@@ -25,6 +25,7 @@ import { isCrossSiteWrite } from "./csrf";
 import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
+import { BUILD_ID } from "../harbor/harbor";
 export { Vessel } from "../vessel/vessel";
 export { Directory } from "../directory/directory";
 export { Drydock, Seawall } from "../drydock/drydock";
@@ -110,7 +111,7 @@ function needUser(c: C): A.UserInfo {
 app.get("/api/health", async (c) =>
   c.json({
     ok: true,
-    build: await harbor(c.env, "demo").version().catch(() => "unknown"),
+    build: BUILD_ID,
     backend: "artifacts",
     ai: Boolean(c.env.AI),
     signIn: await directory(c.env)
@@ -176,8 +177,6 @@ app.post("/api/projects", async (c) => {
 function parseSource(raw: unknown, files?: unknown): T.ProjectSource {
   const s = (raw ?? {}) as Record<string, unknown>;
   switch (s.kind) {
-    case "sample":
-      return { kind: "sample" };
     case "empty":
       return { kind: "empty" };
     case "push":
@@ -194,7 +193,7 @@ function parseSource(raw: unknown, files?: unknown): T.ProjectSource {
       return { kind: "git", url, host, ...(branch ? { branch } : {}) };
     }
     default:
-      throw new HTTPError(400, "Choose a source: sample, empty, git (an https URL), push or upload.");
+      throw new HTTPError(400, "Choose a source: github (a repository), git (an https URL), upload, push or empty.");
   }
 }
 
@@ -359,17 +358,7 @@ app.get("/api/projects/:p/attempts/:id/vessel", async (c) => {
   return c.json((await stub.status()) ?? { phase: "none" });
 });
 
-/* ───────────── sample reset, launch all, settings ───────────── */
-
-app.post("/api/projects/:p/reset", async (c) => {
-  try {
-    const h = await ready(c, c.req.param("p"), "owner");
-    const st = (await h.reset()) as unknown as T.ProjectState;
-    return c.json({ ok: true, main: st.project.mainSha });
-  } catch (e) {
-    return err(c, e);
-  }
-});
+/* ───────────── push token, imports, launch all, settings ───────────── */
 
 /** A push project: a 24-hour write token for the owner's first `git push`. */
 app.post("/api/projects/:p/push-token", async (c) => {

@@ -31,8 +31,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS budgets (owner TEXT PRIMARY KEY, starts TEXT NOT NULL)`,
-  // gitring does not keep provider access tokens (privacy page). Clear the ones that older builds kept.
-  `UPDATE identities SET token = NULL WHERE token IS NOT NULL`,
+  // The public sample left the product (2026-10-10): archive its project.
+  `UPDATE projects SET archived = 1 WHERE id = 'demo' AND source LIKE '%"sample"%'`,
 ];
 
 const SESSION_MS = 30 * 24 * 3600_000;
@@ -129,12 +129,6 @@ export class Directory extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     for (const s of SCHEMA) this.sql.exec(s);
-    // The public sample project of the deployment (owned by the deployment, not by a person).
-    this.sql.exec(
-      "INSERT OR IGNORE INTO projects (id, name, owner_id, visibility, source, created_at) VALUES ('demo', 'Saltmarsh Books (sample)', NULL, 'public', ?, ?)",
-      JSON.stringify({ kind: "sample" }),
-      Date.now(),
-    );
   }
 
   /* ════════════════════ sealed config ════════════════════ */
@@ -627,11 +621,10 @@ export class Directory extends DurableObject<Env> {
   /** Undo a creation whose repository could not be made. */
   async dropProject(id: string): Promise<void> {
     this.sql.exec("DELETE FROM members WHERE project_id = ?", id);
-    this.sql.exec("DELETE FROM projects WHERE id = ? AND id != 'demo'", id);
+    this.sql.exec("DELETE FROM projects WHERE id = ?", id);
   }
 
   async archiveProject(id: string): Promise<void> {
-    if (id === "demo") throw new Error("The public sample cannot be archived.");
     this.sql.exec("UPDATE projects SET archived = 1 WHERE id = ?", id);
   }
 

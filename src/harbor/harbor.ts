@@ -63,9 +63,9 @@ import {
   type MainView,
   type TreeText,
 } from "./views";
-import bundle from "../../sample/bundle.json";
 
-const GITRING_AUTHOR = { name: "gitring", email: "harbor@gitring.dev" };
+/** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
+const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
 export const BUILD_ID = "0.6.0+20261010a";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
@@ -74,22 +74,6 @@ const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "
 const LLM_STARTS_PER_HOUR = 40;
 /** Default built-in AI agent starts per hour and person (AI_AGENTS_PER_USER_HOUR overrides). */
 const LLM_STARTS_PER_USER_HOUR = 12;
-
-interface DemoIntent {
-  slug: string;
-  title: string;
-  goal: string;
-  fanout?: number;
-  checks: { path: string; description: string; content: string }[];
-  expect: { files: string[]; symbols: string[] };
-}
-interface DemoBundle {
-  name: string;
-  repo: Record<string, string>;
-  intents: DemoIntent[];
-}
-/** The sample project: a real codebase with intents and checks. New sample projects start from it. */
-export const SAMPLE = bundle as unknown as DemoBundle;
 
 export interface LaunchInput {
   fanout?: number;
@@ -178,12 +162,10 @@ export class HarborMaster extends DurableObject<Env> {
     return this.project?.repo.defaultBranch || "main";
   }
 
-  /** The project, created on first use only for the deployment's public sample ("demo"). */
-  async ensure(projectId: string): Promise<T.Project> {
+  /** The project. A project exists only after init (POST /api/projects). */
+  async ensure(_projectId?: string): Promise<T.Project> {
     if (this.project) return this.project;
-    if (projectId !== "demo") throw new Error("Unknown project. Create it first.");
-    await this.init({ projectId, name: `${SAMPLE.name ?? "Saltmarsh Books"} (sample)`, source: { kind: "sample" } });
-    return this.requireProject();
+    throw new Error("Unknown project. Create it first.");
   }
 
   /**
@@ -197,14 +179,15 @@ export class HarborMaster extends DurableObject<Env> {
    */
   async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] }): Promise<T.ProjectState> {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
-    const source: T.ProjectSource = opts.source ?? { kind: "sample" };
+    const source: T.ProjectSource = opts.source ?? { kind: "empty" };
+    if (source.kind === "sample") throw new Error("The sample left gitring. Import a repository, upload a folder, push with git, or start empty.");
     const namespace = this.env.ARTIFACTS_NAMESPACE ?? "gitring";
     this.project = undefined;
     this.backendCache = undefined;
     const repoName = repoSafe(`${opts.projectId}-g${generation}-${Date.now().toString(36)}`);
     const draft: T.Project = {
       id: opts.projectId,
-      name: opts.name ?? SAMPLE.name ?? "Saltmarsh Books",
+      name: opts.name ?? opts.projectId,
       repo: { backend: "artifacts", namespace, name: repoName, defaultBranch: "main" },
       mainSha: "",
       mainTree: "",
@@ -215,9 +198,10 @@ export class HarborMaster extends DurableObject<Env> {
         ...DEFAULT_SETTINGS,
         decisionModel: "clef-flash",
         agentModels: this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels,
-        intentsInRepo: source.kind === "sample",
-        // The sample's checks use the gitring harness; other repositories run their own tests in a container.
-        ...(source.kind === "sample" ? {} : { checks: { runner: "container" as const } }),
+        // Task files in the repository are a choice of the owner (Settings → Merging).
+        intentsInRepo: false,
+        // Repositories run their own tests in a container.
+        checks: { runner: "container" as const },
       },
     };
     this.project = draft;
@@ -257,29 +241,22 @@ export class HarborMaster extends DurableObject<Env> {
     const uploaded = source.kind === "upload" ? seedChanges(opts.files ?? []) : [];
     if (source.kind === "upload" && !uploaded.length) throw new Error("The folder has no files to upload.");
     const changes =
-      source.kind === "sample"
-        ? Object.entries(SAMPLE.repo).map(([path, content]) => ({ path, content }) as { path: string; content: string | Uint8Array; mode?: string })
-        : source.kind === "upload"
-          ? uploaded
-          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in gitring. Agents send a plan before they change it.\n` }];
+      source.kind === "upload"
+        ? uploaded
+        : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in gitring. Agents send a plan before they change it.\n` }];
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
       parent: "",
       changes,
       message:
-        source.kind === "sample"
-          ? `Seed ${draft.name}\n\nThe starting point of the sample project.\n\nGitring-Seed: sample`
-          : source.kind === "upload"
-            ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nGitring-Seed: upload`
-            : `Start ${draft.name}\n\nGitring-Seed: ${source.kind}`,
+        source.kind === "upload" ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nGitring-Seed: upload` : `Start ${draft.name}\n\nGitring-Seed: ${source.kind}`,
       author: GITRING_AUTHOR,
     });
     draft.mainSha = seed.sha;
     draft.mainTree = seed.tree;
     this.db.setMeta("project", draft);
     this.db.setMeta("mainSeq", [seed.sha]);
-    if (source.kind === "sample") for (const di of SAMPLE.intents) this.seedIntent(di);
     this.addLog({ kind: "system", message: `Project ready. Main is ${seed.sha.slice(0, 7)} in Cloudflare Artifacts (${repoName}).` });
     await this.loadMain();
     this.persistStats();
@@ -414,61 +391,6 @@ export class HarborMaster extends DurableObject<Env> {
     await this.continueImport();
     return this.state();
   }
-
-  /** Sample projects only: wipe the state and start again from the sample's first commit. */
-  async reset(): Promise<T.ProjectState> {
-    if (this.project?.source && this.project.source.kind !== "sample") throw new Error("Only a sample project can be reset.");
-    const id = this.project?.id ?? "demo";
-    // Stop built-in vessels of the old generation.
-    for (const a of this.attempts.values()) {
-      if (ACTIVE.has(a.status)) this.stopVessel(a.id).catch(() => {});
-    }
-    const generation = this.db.getMeta<number>("generation") ?? 0;
-    this.db.wipe();
-    this.db.setMeta("generation", generation);
-    this.intents.clear();
-    this.attempts.clear();
-    this.agents.clear();
-    this.corrections.clear();
-    this.checks = [];
-    this.logs = [];
-    this.landings = [];
-    this.decisions = [];
-    this.radar.clear();
-    this.stats = emptyStats();
-    this.checkLatencies = [];
-    this.mainView = undefined;
-    this.attemptViews.clear();
-    this.attemptVersion.clear();
-    this.forks.clear();
-    this.treeTexts.clear();
-    return this.init({ projectId: id, name: this.project?.name, source: { kind: "sample" }, ownerId: this.project?.ownerId });
-  }
-
-  private seedIntent(di: DemoIntent): T.Intent {
-    const now = Date.now();
-    const intent: T.Intent = {
-      id: newId("i"),
-      title: di.title,
-      goal: di.goal,
-      constraints: [],
-      checks: di.checks.map((c, i) => ({ id: `chk_${i}`, path: c.path, content: c.content, description: c.description })),
-      scope: { paths: di.expect.files },
-      priority: "normal",
-      status: "open",
-      version: 1,
-      amendments: [],
-      createdBy: SYSTEM,
-      createdAt: now,
-      updatedAt: now,
-      source: { kind: "seed", ref: di.slug },
-      suggestedFanout: di.fanout,
-    };
-    this.putIntent(intent);
-    return intent;
-  }
-
-  /* ════════════════════════════ tree + main views ════════════════════════════ */
 
   private async readText(repo: string, sha: string): Promise<string | null> {
     const cached = this.db.getBlobText(sha);
@@ -684,7 +606,7 @@ export class HarborMaster extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.headers.get("Upgrade") === "websocket") {
-      const projectId = url.searchParams.get("project") ?? "demo";
+      const projectId = url.searchParams.get("project") ?? "";
       await this.ensure(projectId);
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
@@ -736,7 +658,7 @@ export class HarborMaster extends DurableObject<Env> {
   /* ════════════════════════════ agent protocol ════════════════════════════ */
 
   async declare(input: T.DeclareInput & { attemptId?: string; projectId?: string; workdir?: string }): Promise<T.DeclareResult> {
-    await this.ensure(input.projectId ?? "demo");
+    await this.ensure(input.projectId);
     const p = this.requireProject();
     const main = await this.loadMain();
     const agent = this.upsertAgent(input.agent ?? {});
@@ -1186,7 +1108,7 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   async openIntents(): Promise<{ intents: { id: string; title: string; goal: string; status: T.IntentStatus; attempts: number; checks: string[] }[]; traffic: number }> {
-    await this.ensure(this.project?.id ?? "demo");
+    await this.ensure(this.project?.id);
     const active = [...this.attempts.values()].filter((a) => ACTIVE.has(a.status));
     return {
       intents: [...this.intents.values()]
@@ -1674,7 +1596,7 @@ export class HarborMaster extends DurableObject<Env> {
       parent: tip,
       changes,
       message: `${intent.title}\n\nWork by ${agent?.callsign ?? a.agentId} (${agent?.model ?? agent?.client ?? "agent"}).\n\nGitring-Intent: ${intent.id}\nGitring-Attempt: ${a.id}\nGitring-Base: ${a.baseSha}`,
-      author: { name: agent?.callsign ?? "agent", email: `${(agent?.callsign ?? "agent").toLowerCase()}@agents.gitring.dev` },
+      author: { name: agent?.callsign ?? "agent", email: `${(agent?.callsign ?? "agent").toLowerCase()}@agents.gitring.invalid` },
     });
     a.headSha = res.sha;
     this.addLog({ kind: "push", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The work of ${agent?.callsign} is in its work copy ${a.fork.repo} at ${res.sha.slice(0, 7)}.`, files: changes.map((c) => c.path) });
@@ -2112,7 +2034,7 @@ export class HarborMaster extends DurableObject<Env> {
     input: { title: string; goal: string; checks?: { path: string; content: string; description?: string }[]; priority?: "normal" | "high"; source?: T.Intent["source"] },
     by: T.Actor = HUMAN,
   ): Promise<T.Intent> {
-    await this.ensure(this.project?.id ?? "demo");
+    await this.ensure(this.project?.id);
     const now = Date.now();
     const intent: T.Intent = {
       id: newId("i"),
@@ -2471,7 +2393,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   /** Files for a live preview: "main" or an attempt id. */
   async previewFiles(ref: string): Promise<{ key: string; files: Record<string, string> } | null> {
-    await this.ensure(this.project?.id ?? "demo");
+    await this.ensure(this.project?.id);
     let files: Map<string, string>;
     if (ref === "main") files = (await this.loadMain()).text;
     else {
@@ -2484,7 +2406,7 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   async connectInfo(origin: string): Promise<T.ConnectInfo> {
-    const p = await this.ensure(this.project?.id ?? "demo");
+    const p = await this.ensure(this.project?.id);
     const providers = await this.directory()
       .providers()
       .catch(() => ({ github: null }));
