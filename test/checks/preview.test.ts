@@ -91,12 +91,26 @@ describe("servePreview", () => {
     expect(echoed.headers.authorization).toBeUndefined();
   });
 
-  it("puts the prefix on root-relative redirects and leaves other redirects alone", async () => {
+  it("puts the prefix on root-relative redirects and drops redirects to other sites", async () => {
     const inside = await servePreview(loader, "echo", ECHO, get(`${BASE}/go`), BASE);
     expect(inside.status).toBe(302);
     expect(inside.headers.get("location")).toBe(`${BASE}/api/products`);
     const outside = await servePreview(loader, "echo", ECHO, get(`${BASE}/away`), BASE);
-    expect(outside.headers.get("location")).toBe("https://example.com/x");
+    expect(outside.headers.get("location")).toBeNull();
+  });
+
+  it("drops headers that could touch the gitring origin (cookies, site data, refresh)", async () => {
+    const files = treeMap({
+      "src/index.js":
+        'export default { async fetch() { return new Response("x", { headers: { "set-cookie": "__Host-gitring=evil; Path=/; Secure", "clear-site-data": "\\"cookies\\"", refresh: "0;url=https://evil.example", "content-type": "text/plain", "cache-control": "no-store" } }); } };',
+    });
+    const res = await servePreview(loader, "cookies", files, get(`${BASE}/`), BASE, { sandbox: true });
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(res.headers.get("clear-site-data")).toBeNull();
+    expect(res.headers.get("refresh")).toBeNull();
+    expect(res.headers.get("content-type")).toBe("text/plain");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("content-security-policy")).toContain("sandbox");
   });
 
   it("passes a response with no body through", async () => {

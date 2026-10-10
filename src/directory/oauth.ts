@@ -163,8 +163,22 @@ export function isCimdId(clientId: string): boolean {
   }
   if (u.protocol !== "https:" || !u.hostname || u.pathname.length <= 1) return false;
   if (u.hash || u.username || u.password || clientId.includes("#")) return false;
+  if (u.port && u.port !== "443") return false;
+  if (!publicHostname(u.hostname)) return false;
   const raw = clientId.slice(clientId.indexOf(u.host) + u.host.length).split(/[?#]/)[0];
   return !raw.split("/").some((seg) => seg === "." || seg === "..");
+}
+
+/**
+ * A host name that can belong to a public site: a domain with a dot, not an IP address, not a local or
+ * internal name. gitring fetches client metadata from it, so it must not point into private networks.
+ */
+export function publicHostname(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  if (!h.includes(".")) return false;
+  if (/^[\d.]+$/.test(h) || h.startsWith("[") || h.includes(":")) return false; // IPv4 and IPv6 literals
+  if (/(^|\.)(localhost|local|internal|intranet|lan|home|corp|localdomain|home\.arpa|in-addr\.arpa|ip6\.arpa|test|example|invalid)$/.test(h)) return false;
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h);
 }
 
 /* ───────────────────────── the store ───────────────────────── */
@@ -180,6 +194,12 @@ export class OAuthStore {
     this.now = deps.now ?? (() => Date.now());
     this.fetcher = deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
     for (const s of OAUTH_SCHEMA) this.sql.exec(s);
+    // Token families (one per code exchange) came after the first tables: add the column once.
+    const cols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_tokens)").toArray().map((c) => c.name);
+    if (!cols.includes("family")) this.sql.exec("ALTER TABLE oauth_tokens ADD COLUMN family TEXT");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS oauth_tokens_family ON oauth_tokens (family)");
+    const codeCols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_codes)").toArray().map((c) => c.name);
+    if (!codeCols.includes("family")) this.sql.exec("ALTER TABLE oauth_codes ADD COLUMN family TEXT");
   }
 
   /* ───────────── clients ───────────── */
@@ -282,6 +302,12 @@ export class OAuthStore {
     if (!uris.length) return "invalid";
     const name = typeof doc.client_name === "string" && doc.client_name.trim() ? doc.client_name.trim().slice(0, 100) : new URL(clientId).hostname;
     const uri = typeof doc.client_uri === "string" && /^https:\/\//.test(doc.client_uri) ? doc.client_uri.slice(0, 300) : undefined;
+    // New metadata documents count against the same hourly cap as registrations (storage growth).
+    const known = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE client_id = ?", clientId).one().n > 0;
+    if (!known) {
+      const recent = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE kind = 'cimd' AND created_at > ?", this.now() - 3600_000).one().n;
+      if (recent >= MAX_CLIENTS_PER_HOUR) return null;
+    }
     // A metadata document client authenticates with PKCE only (private_key_jwt is not supported here).
     this.sql.exec(
       "INSERT OR REPLACE INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at, fetched_at) VALUES (?, NULL, ?, ?, ?, 'none', 'cimd', ?, ?)",
@@ -406,7 +432,7 @@ export class OAuthStore {
       const verifier = form.code_verifier ?? "";
       const verifierHash = await sha256B64url(verifier);
       const row = this.sql
-        .exec<{ hash: string; client_id: string; user_id: string; grant_id: string; redirect_uri: string; challenge: string; scope: string; resource: string | null; expires_at: number; used: number }>(
+        .exec<{ hash: string; client_id: string; user_id: string; grant_id: string; redirect_uri: string; challenge: string; scope: string; resource: string | null; expires_at: number; used: number; family: string | null }>(
           "SELECT * FROM oauth_codes WHERE hash = ?",
           codeHash,
         )
@@ -414,7 +440,8 @@ export class OAuthStore {
       if (!row) return fail(400, err("invalid_grant", "The code is not valid."));
       if (row.used) {
         // A code used twice: someone may have stolen it. Revoke what the first use gave out.
-        this.revokeGrantTokens(row.grant_id);
+        if (row.family) this.revokeFamily(row.family);
+        else this.revokeGrantTokens(row.grant_id);
         return fail(400, err("invalid_grant", "The code was already used."));
       }
       if (row.expires_at < this.now()) return fail(400, err("invalid_grant", "The code expired. Sign in again."));
@@ -424,32 +451,36 @@ export class OAuthStore {
         return fail(400, err("invalid_grant", "The PKCE code_verifier does not match."));
       }
       if (form.resource && row.resource && form.resource.replace(/\/+$/, "") !== row.resource) return fail(400, err("invalid_target", "The resource does not match the authorization request."));
-      this.sql.exec("UPDATE oauth_codes SET used = 1 WHERE hash = ?", row.hash);
+      // Each code exchange starts a token family (one sign-in of one app on one device).
+      const family = `fam_${rand(18)}`;
+      this.sql.exec("UPDATE oauth_codes SET used = 1, family = ? WHERE hash = ?", family, row.hash);
       if (!this.grantActive(row.grant_id)) return fail(400, err("invalid_grant", "The person removed this app."));
-      return { status: 200, body: await this.issue(row.grant_id, row.scope, row.resource ?? form.resource?.replace(/\/+$/, "") ?? null), headers: noStore };
+      return { status: 200, body: await this.issue(row.grant_id, row.scope, row.resource ?? form.resource?.replace(/\/+$/, "") ?? null, family), headers: noStore };
     }
 
     if (form.grant_type === "refresh_token") {
       const hash = await sha256B64url(form.refresh_token ?? "");
       // No await from here to the "used" mark (see above).
       const row = this.sql
-        .exec<{ hash: string; grant_id: string; kind: string; resource: string | null; expires_at: number; used_at: number | null }>("SELECT * FROM oauth_tokens WHERE hash = ?", hash)
+        .exec<{ hash: string; grant_id: string; kind: string; resource: string | null; expires_at: number; used_at: number | null; family: string | null }>("SELECT * FROM oauth_tokens WHERE hash = ?", hash)
         .toArray()[0];
       if (!row || row.kind !== "refresh") return fail(400, err("invalid_grant", "The refresh token is not valid."));
       const grant = this.sql.exec<{ client_id: string; scope: string; revoked: number }>("SELECT client_id, scope, revoked FROM oauth_grants WHERE id = ?", row.grant_id).toArray()[0];
       if (!grant || grant.revoked) return fail(400, err("invalid_grant", "The person removed this app."));
       if (grant.client_id !== client.clientId) return fail(400, err("invalid_grant", "The refresh token belongs to another client."));
       if (row.expires_at < this.now()) return fail(400, err("invalid_grant", "The refresh token expired. Sign in again."));
+      const family = row.family ?? `fam_${rand(18)}`;
       if (row.used_at !== null) {
         if (this.now() - row.used_at > REUSE_GRACE_MS) {
-          // Reuse of a rotated refresh token: the token may be stolen. Revoke the whole grant.
-          this.revokeGrant(row.grant_id);
-          return fail(400, err("invalid_grant", "The refresh token was already used. For safety, gitring removed this app's access. Sign in again."));
+          // Reuse of a rotated refresh token: the token may be stolen. End this sign-in (the family).
+          if (row.family) this.revokeFamily(row.family);
+          else this.revokeGrantTokens(row.grant_id);
+          return fail(400, err("invalid_grant", "The refresh token was already used. For safety, gitring ended this sign-in of the app. Connect it again."));
         }
       } else {
         this.sql.exec("UPDATE oauth_tokens SET used_at = ? WHERE hash = ?", this.now(), row.hash);
       }
-      return { status: 200, body: await this.issue(row.grant_id, grant.scope, row.resource), headers: noStore };
+      return { status: 200, body: await this.issue(row.grant_id, grant.scope, row.resource, family), headers: noStore };
     }
 
     return fail(400, err("unsupported_grant_type", "gitring supports authorization_code and refresh_token."));
@@ -478,13 +509,17 @@ export class OAuthStore {
     return Boolean(this.sql.exec("SELECT id FROM oauth_grants WHERE id = ? AND revoked = 0", grantId).toArray()[0]);
   }
 
-  private async issue(grantId: string, scope: string, resource: string | null): Promise<JsonObject> {
+  private async issue(grantId: string, scope: string, resource: string | null, family: string): Promise<JsonObject> {
     const access = `goa_${randomToken(32)}`;
     const refresh = `gor_${randomToken(32)}`;
     const [accessHash, refreshHash] = await Promise.all([sha256B64url(access), sha256B64url(refresh)]);
     const now = this.now();
-    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, created_at, expires_at) VALUES (?, ?, 'access', ?, ?, ?)", accessHash, grantId, resource, now, now + ACCESS_TTL_S * 1000);
-    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, created_at, expires_at) VALUES (?, ?, 'refresh', ?, ?, ?)", refreshHash, grantId, resource, now, now + REFRESH_TTL_S * 1000);
+    // Only the newest refresh token of a family works. An older one that nobody used (a lost answer,
+    // or a second use within the grace time) now counts as used long ago: if it comes back, gitring
+    // ends the family, so two chains of one family cannot live side by side.
+    this.sql.exec("UPDATE oauth_tokens SET used_at = ? WHERE family = ? AND kind = 'refresh' AND used_at IS NULL", now - REUSE_GRACE_MS - 1, family);
+    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, created_at, expires_at, family) VALUES (?, ?, 'access', ?, ?, ?, ?)", accessHash, grantId, resource, now, now + ACCESS_TTL_S * 1000, family);
+    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, created_at, expires_at, family) VALUES (?, ?, 'refresh', ?, ?, ?, ?)", refreshHash, grantId, resource, now, now + REFRESH_TTL_S * 1000, family);
     this.sql.exec("UPDATE oauth_grants SET last_used = ? WHERE id = ?", now, grantId);
     this.cleanup();
     return { access_token: access, token_type: "Bearer", expires_in: ACCESS_TTL_S, refresh_token: refresh, scope };
@@ -493,10 +528,11 @@ export class OAuthStore {
   /* ───────────── revocation and validation ───────────── */
 
   /**
-   * RFC 7009. A refresh token revokes its grant (and so every token of it); an access token only itself.
-   * Unknown tokens are fine (200). A token of another client is refused.
+   * RFC 7009. A refresh token ends its family (that sign-in of the app: every token of it); an access
+   * token only itself. The person's consent (the grant) stays. Unknown tokens are fine (200). A token of
+   * another client is refused. Answers the person, so that the caller can forget cached lookups.
    */
-  async revoke(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null): Promise<{ status: number; body?: OAuthError }> {
+  async revoke(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null): Promise<{ status: number; body?: OAuthError; userId?: string }> {
     const token = form.token ?? "";
     const hash = await sha256B64url(token);
     // Public clients may leave out client_id at revocation; a client that sends one must be itself.
@@ -507,11 +543,15 @@ export class OAuthStore {
       if (row && row.client_id !== auth.client.clientId) return { status: 400, body: err("unauthorized_client", "This token belongs to another client.") };
     }
     if (!token) return { status: 200 };
-    const row = this.sql.exec<{ grant_id: string; kind: string }>("SELECT grant_id, kind FROM oauth_tokens WHERE hash = ?", hash).toArray()[0];
+    const row = this.sql
+      .exec<{ grant_id: string; kind: string; family: string | null; user_id: string }>("SELECT t.grant_id, t.kind, t.family, g.user_id FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.hash = ?", hash)
+      .toArray()[0];
     if (!row) return { status: 200 };
-    if (row.kind === "refresh") this.revokeGrant(row.grant_id);
-    else this.sql.exec("DELETE FROM oauth_tokens WHERE hash = ?", hash);
-    return { status: 200 };
+    if (row.kind === "refresh") {
+      if (row.family) this.revokeFamily(row.family);
+      else this.revokeGrantTokens(row.grant_id);
+    } else this.sql.exec("DELETE FROM oauth_tokens WHERE hash = ?", hash);
+    return { status: 200, userId: row.user_id };
   }
 
   /**
@@ -563,6 +603,10 @@ export class OAuthStore {
 
   private revokeGrantTokens(grantId: string): void {
     this.sql.exec("DELETE FROM oauth_tokens WHERE grant_id = ?", grantId);
+  }
+
+  private revokeFamily(family: string): void {
+    this.sql.exec("DELETE FROM oauth_tokens WHERE family = ?", family);
   }
 
   /** Drop expired requests, codes and tokens, and clients that nobody uses. At most every ten minutes. */

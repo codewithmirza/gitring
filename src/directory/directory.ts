@@ -193,7 +193,7 @@ export class Directory extends DurableObject<Env> {
     return this.oauth.token(form, basic, origin);
   }
 
-  async oauthRevoke(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null): Promise<{ status: number; body?: Record<string, string> }> {
+  async oauthRevoke(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null): Promise<{ status: number; body?: Record<string, string>; userId?: string }> {
     return this.oauth.revoke(form, basic);
   }
 

@@ -6,7 +6,7 @@ import type { Context, Hono } from "hono";
 import type { Env } from "./env";
 import type * as A from "../core/accounts";
 import type * as T from "../core/types";
-import { sameString } from "../directory/crypto";
+import { randomToken, sameString } from "../directory/crypto";
 import type { ManifestConversion } from "../directory/directory";
 import { privacyBody, termsBody } from "./legal";
 
@@ -98,7 +98,8 @@ export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: b
       const hit = cached(`o:${origin}:${token}`);
       if (hit) return hit;
       const found = await directory(env).oauthUser(token, origin);
-      if (found) return remember(`o:${origin}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId }, found.expiresAt);
+      // OAuth tokens are cached for at most 15 seconds: a revoked token stops working soon everywhere.
+      if (found) return remember(`o:${origin}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId }, Math.min(found.expiresAt, Date.now() + 15_000));
     }
     return { user: null, via: null, badKey: true };
   }
@@ -138,7 +139,30 @@ function setupAllowed(c: C, token?: string | null): boolean {
 
 /* ───────────── pages (setup and sign-in errors) ───────────── */
 
-export function page(title: string, body: string, status = 200, extraHeaders: Record<string, string> = {}): Response {
+export interface PageOptions {
+  /** Nonce of the page's inline script, if it has one (<script nonce="…">). */
+  nonce?: string;
+  /** Extra hosts that the page's script may call. */
+  connect?: string[];
+  /** Extra form targets, and the places a form's answer may redirect to (an OAuth client). */
+  formAction?: string[];
+}
+
+/** A strict Content Security Policy for server pages: no scripts unless a page names one by nonce. */
+function pagePolicy(o: PageOptions): string {
+  return [
+    "default-src 'none'",
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data: https://avatars.githubusercontent.com https://*.googleusercontent.com",
+    `form-action 'self'${o.formAction?.length ? ` ${o.formAction.join(" ")}` : ""}`,
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    ...(o.nonce ? [`script-src 'nonce-${o.nonce}'`] : []),
+    ...(o.connect?.length ? [`connect-src ${o.connect.join(" ")}`] : []),
+  ].join("; ");
+}
+
+export function page(title: string, body: string, status = 200, extraHeaders: Record<string, string> = {}, opts: PageOptions = {}): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · gitring</title><meta name="robots" content="noindex">
 <style>
@@ -165,7 +189,7 @@ ol{padding-left:20px}li{margin:4px 0}
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "x-frame-options": "DENY",
-      "content-security-policy": "frame-ancestors 'none'",
+      "content-security-policy": pagePolicy(opts),
       "referrer-policy": "same-origin",
       ...extraHeaders,
     },
@@ -189,10 +213,11 @@ function appReadyPage(slug: string): Response {
  */
 function browserConversionPage(code: string, state: string): Response {
   const data = JSON.stringify({ code, state }).replace(/</g, "\\u003c");
+  const nonce = randomToken(16);
   return page(
     "GitHub App",
     `<h1>Saving the GitHub App</h1><p id="msg" class="muted">Your browser gets the app credentials from GitHub. Keep this page open.</p>
-<script>
+<script nonce="${nonce}">
 (async () => {
   const { code, state } = ${data};
   const msg = document.getElementById("msg");
@@ -210,6 +235,9 @@ function browserConversionPage(code: string, state: string): Response {
   }
 })();
 </script>`,
+    200,
+    {},
+    { nonce, connect: ["'self'", "https://api.github.com"] },
   );
 }
 
@@ -284,6 +312,9 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
         : `<p class="warn">No owner is set. Set the secret GITRING_OWNERS, for example <code>github:your-login,google:you@example.com</code>.</p>`
     }
 <p><a class="btn" href="/">Open gitring</a></p></div>`,
+    200,
+    {},
+    { formAction: ["https://github.com"] },
   );
 }
 
