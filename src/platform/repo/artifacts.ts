@@ -60,6 +60,8 @@ export interface ArtifactsBackendOptions {
   http?: HttpClient;
   /** Per-request timeout for git HTTP calls. Default 60 000 ms. */
   requestTimeoutMs?: number;
+  /** How many times a git HTTP request is sent when the service answers 429 or 5xx, or the connection breaks. Default 3. */
+  httpTries?: number;
   treeCache?: TreeCache;
 }
 
@@ -84,6 +86,30 @@ export function artifactsErrorCode(err: unknown): string | undefined {
   const message = typeof e?.message === "string" ? e.message : "";
   for (const [re, code] of MESSAGE_CODES) if (re.test(message)) return code;
   return undefined;
+}
+
+/** Answers of a service that has a short problem. A second request usually works (the first real run saw one 500 in about 300 requests). */
+const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
+
+/** A connection that broke (not our own time limit: waiting a second time for a slow request would take too long). */
+function transientNetworkError(err: unknown): boolean {
+  const e = err as { name?: unknown; message?: unknown } | null | undefined;
+  if (e?.name === "AbortError" || e?.name === "TimeoutError") return false;
+  return e instanceof TypeError || /network|connection|socket|reset|fetch failed|ECONN|EAI_AGAIN/i.test(String(e?.message ?? ""));
+}
+
+async function* replay(chunks: Uint8Array[]): AsyncGenerator<Uint8Array> {
+  for (const chunk of chunks) yield chunk;
+}
+
+/** Read an answer to its end, so that the connection is free again. */
+async function drain(body: AsyncIterableIterator<Uint8Array> | undefined): Promise<void> {
+  if (!body) return;
+  try {
+    for await (const chunk of body) void chunk;
+  } catch {
+    /* the answer is not needed */
+  }
 }
 
 function gitErrorCode(err: unknown): string | undefined {
@@ -257,8 +283,29 @@ export class ArtifactsBackend implements RepoBackend {
     this.trees = opts.treeCache ?? new MemoryTreeCache();
     const base = opts.http ?? (webHttp as HttpClient);
     const timeoutMs = opts.requestTimeoutMs ?? 60_000;
+    const tries = Math.max(1, Math.round(opts.httpTries ?? 3));
     this.http = {
-      request: (req) => base.request({ ...req, signal: req.signal ?? AbortSignal.timeout(timeoutMs) }),
+      request: async (req) => {
+        // The body of a request is read once. Keep it, so that a second try can send it again.
+        let body: Uint8Array[] | undefined;
+        if (req.body) {
+          body = [];
+          for await (const chunk of req.body) body.push(chunk);
+        }
+        for (let attempt = 1; ; attempt++) {
+          const last = attempt >= tries;
+          try {
+            const res = await base.request({ ...req, ...(body ? { body: replay(body) } : {}), signal: req.signal ?? AbortSignal.timeout(timeoutMs) });
+            if (last || !TRANSIENT_STATUS.has(res.statusCode)) return res;
+            await drain(res.body);
+          } catch (err) {
+            if (last || !transientNetworkError(err)) throw err;
+          }
+          // A push that the service did apply before it failed shows as a rejected push on the next try:
+          // commit() reads the branch then and takes it as done.
+          await this.sleep(Math.min(200 * 2 ** (attempt - 1), 2000));
+        }
+      },
     };
   }
 

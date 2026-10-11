@@ -501,6 +501,11 @@ export interface Attempt {
    * This is not a failure and does not count as a return. `message` is the plain sentence for people.
    */
   mergeWait?: { until: Millis; message: string };
+  /**
+   * How many times the merge of this work copy stopped with an error (a repository that did not answer, for
+   * example). gitring tries the merge again after a short wait, and asks a person after the fourth stop.
+   */
+  mergeStops?: number;
   summary?: string;
   /**
    * The person who sent the agent: the one who connected it, or who started the built-in agent. Absent on

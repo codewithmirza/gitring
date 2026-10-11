@@ -77,7 +77,7 @@ import {
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
-export const BUILD_ID = "0.9.1+20261011c";
+export const BUILD_ID = "0.9.2+20261011d";
 const MAX_LOGS = 500;
 /** The lines that a "same lines" change request names, as one text. Empty for any other kind of change request. */
 function regionKey(c: { kind: T.CorrectionKind; constraints: T.Correction["constraints"] }): string {
@@ -1948,6 +1948,11 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   private enqueueLanding(a: T.Attempt): void {
+    // New work, or a yes of a person: the stops of an earlier merge do not count any more.
+    if (a.mergeStops) {
+      a.mergeStops = undefined;
+      this.putAttempt(a);
+    }
     this.db.enqueue(a.id, Date.now());
     void this.driveQueue();
   }
@@ -2042,25 +2047,11 @@ export class HarborMaster extends DurableObject<Env> {
   /** Write the marker, merge, then clear the marker and the queue entry. A stop in between leaves both. */
   private async runLanding(a: T.Attempt, tries: number): Promise<void> {
     if (tries > MAX_LANDING_STARTS) {
-      this.db.setMeta("landing", undefined);
-      this.db.dequeue(a.id);
-      const intent = this.intents.get(a.intentId);
-      a.status = "ready";
-      const approval = await this.askApproval(a, { reason: "merge-stopped", why: [`The merge did not finish after ${MAX_LANDING_STARTS} tries. A yes starts it again.`] });
-      this.putAttempt(a);
-      if (intent) {
-        intent.status = "judging";
-        this.putIntent(intent);
-      }
-      this.webhook("approval", { attemptId: a.id, approval, task: intent?.title ?? "", agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
-      this.stats.escalations += 1;
-      this.persistStats();
-      this.addLog({
-        kind: "decision",
-        attemptId: a.id,
-        intentId: a.intentId,
-        message: `The merge of the work of ${this.callsign(a.id)} did not finish after ${MAX_LANDING_STARTS} tries. A person must decide on "${intent?.title ?? "this task"}".`,
-      });
+      await this.askAboutStoppedMerge(
+        a,
+        `The merge did not finish after ${MAX_LANDING_STARTS} tries. A yes starts it again.`,
+        `The merge of the work of ${this.callsign(a.id)} did not finish after ${MAX_LANDING_STARTS} tries. A person must decide on "${this.intents.get(a.intentId)?.title ?? "this task"}".`,
+      );
       return;
     }
     const startedAt = Date.now();
@@ -2072,13 +2063,60 @@ export class HarborMaster extends DurableObject<Env> {
       outcome = await this.landOne(a);
     } catch (err) {
       console.error("landOne", a.id, err);
-      a.status = "ready";
-      this.putAttempt(a);
-      this.addLog({ kind: "system", attemptId: a.id, message: `The merge of the work of ${this.callsign(a.id)} stopped: ${String(err).slice(0, 200)}. Try again.` });
+      outcome = await this.mergeStopped(a, err);
     }
     this.db.setMeta("landing", undefined);
-    // A merge that waits for the test budget stays in the queue.
+    // A merge that waits (for the test budget, or to try again after an error) stays in the queue.
     if (outcome !== "wait") this.db.dequeue(a.id);
+  }
+
+  /**
+   * The merge stopped with an error: the repository did not answer, for example. The work is fine, so the work
+   * copy stays in the queue and gitring tries the merge again after a short wait (1, 2 and 4 seconds). A merge
+   * that stops a fourth time goes to a person. gitring never drops a queued work copy without saying so.
+   */
+  private async mergeStopped(a: T.Attempt, err: unknown): Promise<"done" | "wait"> {
+    const intent = this.intents.get(a.intentId);
+    const name = this.callsign(a.id);
+    const reason = String(err).slice(0, 200);
+    a.status = "ready";
+    a.mergeStops = (a.mergeStops ?? 0) + 1;
+    if (intent?.status === "landing") {
+      intent.status = "underway";
+      this.putIntent(intent);
+    }
+    if (a.mergeStops >= MAX_LANDING_STARTS) {
+      a.mergeWait = undefined;
+      await this.askAboutStoppedMerge(
+        a,
+        `The merge stopped ${a.mergeStops} times with an error: ${reason}. A yes starts it again.`,
+        `The merge of the work of ${name} stopped ${a.mergeStops} times: ${reason}. A person must decide on "${intent?.title ?? "this task"}".`,
+      );
+      return "done";
+    }
+    const seconds = 2 ** (a.mergeStops - 1);
+    a.mergeWait = { until: Date.now() + seconds * 1000, message: `The merge stopped: ${reason}. gitring tries it again in ${seconds} second${seconds === 1 ? "" : "s"}.` };
+    this.putAttempt(a);
+    this.addLog({ kind: "system", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${name} stopped: ${reason}. gitring tries it again in ${seconds} second${seconds === 1 ? "" : "s"}.` });
+    return "wait";
+  }
+
+  /** A merge that cannot finish goes to a person. A yes starts it again. */
+  private async askAboutStoppedMerge(a: T.Attempt, why: string, logMessage: string): Promise<void> {
+    this.db.setMeta("landing", undefined);
+    this.db.dequeue(a.id);
+    const intent = this.intents.get(a.intentId);
+    a.status = "ready";
+    const approval = await this.askApproval(a, { reason: "merge-stopped", why: [why] });
+    this.putAttempt(a);
+    if (intent) {
+      intent.status = "judging";
+      this.putIntent(intent);
+    }
+    this.webhook("approval", { attemptId: a.id, approval, task: intent?.title ?? "", agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
+    this.stats.escalations += 1;
+    this.persistStats();
+    this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: logMessage });
   }
 
   /**
@@ -3066,6 +3104,7 @@ export class HarborMaster extends DurableObject<Env> {
     else if (ap?.status === "approved" && (a.status === "ready" || a.status === "landing")) message = a.mergeWait ? `${a.mergeWait.message} The merge waits in the queue.` : "A person said yes. The merge is in the queue.";
     else if (ap?.status === "withdrawn" && a.status === "underway") message = `${ap.closed ?? "The question closed."} Submit again to ask again.`;
     else if (a.status === "underway" && returned) message = `The work did not merge: ${returned.reason} The work is back with you. Change it on the new main, run the tests, and submit again.`;
+    else if (a.mergeWait && (a.status === "ready" || a.status === "landing")) message = `${a.mergeWait.message} The work copy waits in the merge queue. Do not change it.`;
     else if (a.status === "underway") message = "The work copy is in work. It is not in the merge queue. Change it, run the tests, and call gitring_submit.";
     else if (TERMINAL.has(a.status)) message = `The work copy is ${copyStatusWord(a.status)}. ${this.overAdvice(a)}`;
     else message = `The work copy is ${copyStatusWord(a.status)}.`;

@@ -22,7 +22,7 @@ import { GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github
 import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
 
 /** The version that the server tells to clients. */
-export const MCP_VERSION = "0.9.1";
+export const MCP_VERSION = "0.9.2";
 
 const project = z.string().describe("Project id (gitring_intents without a project lists your projects).");
 const attemptId = z.string().describe("Your work copy id (attemptId) from gitring_declare.");

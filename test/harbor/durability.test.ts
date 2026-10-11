@@ -188,22 +188,123 @@ describe("a merge that never finishes", () => {
 });
 
 describe("a merge that fails with an error", () => {
-  it("keeps the old behaviour: the work copy is ready again and the log says to try again", async () => {
+  const ERROR = "HttpError: HTTP Error: 500 Internal Server Error";
+
+  /** The commit to main fails with an error that is not a conflict, `fails` times. Then it works. */
+  function failCommit(w: CrashWorld, state: { fails: number }): void {
+    const real = w.repo.commit.bind(w.repo);
+    (w.repo as { commit: typeof w.repo.commit }).commit = async (input) => {
+      if (input.repo === w.mainRepo && input.parent !== "" && state.fails > 0) {
+        state.fails -= 1;
+        throw new Error(ERROR);
+      }
+      return real(input);
+    };
+  }
+
+  it("keeps the work copy in the queue, says when it tries again, and merges it on the next try", async () => {
     const w = new CrashWorld();
     await w.start();
     const t = await w.submitTask("alpha", { stop: "queued" });
-    // The commit fails with an error that is not a conflict.
-    const real = w.repo.commit.bind(w.repo);
-    (w.repo as { commit: typeof w.repo.commit }).commit = async (input) => {
-      if (input.repo === w.mainRepo && input.parent !== "") throw new Error("The repository is not available.");
-      return real(input);
-    };
-    w.restart();
+    failCommit(w, { fails: 1 });
+    const h = w.restart();
     await w.settle();
+    // The first stop: the work copy is still in the queue and waits one second. Nothing is lost.
+    const a = w.inner.attempts.get(t.attemptId)!;
     expect(w.status(t.attemptId)).toBe("ready");
+    expect(w.inner.db.queue()).toEqual([t.attemptId]);
+    expect(w.inner.db.getMeta("landing")).toBeUndefined();
+    expect(a.mergeStops).toBe(1);
+    expect(a.mergeWait?.message).toBe(`The merge stopped: Error: ${ERROR}. gitring tries it again in 1 second.`);
+    expect(w.inner.logs.some((l) => l.message.includes(`stopped: Error: ${ERROR}. gitring tries it again in 1 second.`))).toBe(true);
+    const asked = await h.status(t.attemptId);
+    expect(asked.message).toBe(`The merge stopped: Error: ${ERROR}. gitring tries it again in 1 second. The work copy waits in the merge queue. Do not change it.`);
+    expect(asked.mergeWait?.until).toBe(a.mergeWait!.until);
+    expect(w.alarm).toBe(a.mergeWait!.until);
+    expect(w.mainCommits).toHaveLength(0);
+    // The wait ends. The alarm starts the merge again.
+    vi.setSystemTime(a.mergeWait!.until + 1);
+    await h.alarm();
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(w.inner.intents.get(t.intentId)?.status).toBe("landed");
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+    expect(w.inner.landings.filter((l) => l.attemptId === t.attemptId)).toHaveLength(1);
     expect(w.inner.db.queue()).toEqual([]);
     expect(w.inner.db.getMeta("landing")).toBeUndefined();
-    expect(w.inner.logs.some((l) => /stopped: Error: The repository is not available.*Try again\./.test(l.message))).toBe(true);
+    expect(w.inner.stats.escalations).toBe(0);
+  });
+
+  it("does not hold the queue: other work merges while one work copy waits to try again", async () => {
+    const w = new CrashWorld();
+    await w.start();
+    const first = await w.submitTask("alpha", { stop: "queued" });
+    const second = await w.submitTask("beta", { stop: "queued" });
+    failCommit(w, { fails: 1 });
+    const h = w.restart();
+    await w.settle();
+    // The first work copy stopped on its commit and waits. The second one merged.
+    expect(w.status(first.attemptId)).toBe("ready");
+    expect(w.status(second.attemptId)).toBe("landed");
+    expect(w.inner.db.queue()).toEqual([first.attemptId]);
+    const wait = w.inner.attempts.get(first.attemptId)!.mergeWait!;
+    vi.setSystemTime(wait.until + 1);
+    await h.alarm();
+    await w.settle();
+    expect(w.status(first.attemptId)).toBe("landed");
+    expect(w.mainCommits.map((c) => c.message.split("\n")[0])).toEqual(["Add beta", "Add alpha"]);
+  });
+
+  it("waits 1, 2 and 4 seconds, then goes to a person after the fourth stop, and a yes merges the work once", async () => {
+    const w = new CrashWorld();
+    await w.start();
+    const t = await w.submitTask("alpha", { stop: "queued" });
+    const fail = { fails: Number.POSITIVE_INFINITY };
+    failCommit(w, fail);
+    const h = w.restart();
+    await w.settle();
+    for (const [stop, seconds] of [[1, 1], [2, 2], [3, 4]] as const) {
+      const a = w.inner.attempts.get(t.attemptId)!;
+      expect(a.mergeStops).toBe(stop);
+      expect(a.mergeWait!.message).toContain(`tries it again in ${seconds} second${seconds === 1 ? "" : "s"}.`);
+      expect(w.inner.db.queue()).toEqual([t.attemptId]);
+      vi.setSystemTime(a.mergeWait!.until + 1);
+      await h.alarm();
+      await w.settle();
+    }
+    // The fourth stop: a person decides. Nothing is queued, and the question names the error.
+    const a = w.inner.attempts.get(t.attemptId)!;
+    expect(w.status(t.attemptId)).toBe("ready");
+    expect(w.inner.intents.get(t.intentId)?.status).toBe("judging");
+    expect(w.inner.db.queue()).toEqual([]);
+    expect(w.inner.db.getMeta("landing")).toBeUndefined();
+    expect(w.inner.stats.escalations).toBe(1);
+    expect(a.approval?.status).toBe("waiting");
+    expect(a.approval?.why.join(" ")).toContain(`The merge stopped 4 times with an error: Error: ${ERROR}. A yes starts it again.`);
+    expect(w.inner.logs.some((l) => l.message.includes('stopped 4 times') && l.message.includes('A person must decide on "Add alpha".'))).toBe(true);
+    expect(w.mainCommits).toHaveLength(0);
+    // The repository works again. A person says yes. The work merges once.
+    fail.fails = 0;
+    const picked = await h.land(t.attemptId, "Robin says yes.");
+    expect(picked.status).toBe("landed");
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+    expect(w.inner.attempts.get(t.attemptId)!.mergeStops).toBeUndefined();
+  });
+
+  it("starts the count again when the agent submits new work", async () => {
+    const w = new CrashWorld();
+    await w.start();
+    const t = await w.submitTask("alpha", { stop: "queued" });
+    failCommit(w, { fails: 1 });
+    const h = w.restart();
+    await w.settle();
+    expect(w.inner.attempts.get(t.attemptId)!.mergeStops).toBe(1);
+    // The agent submits the same work copy again while it waits.
+    await h.submit(t.attemptId, "Add alpha again");
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(w.inner.attempts.get(t.attemptId)!.mergeStops).toBeUndefined();
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
   });
 });
 

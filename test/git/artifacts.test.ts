@@ -5,6 +5,8 @@
  * The same input on GitStore (emulator) must give the same commit ids.
  */
 import { join } from "node:path";
+import type { GitHttpRequest, GitHttpResponse, HttpClient } from "isomorphic-git";
+import webHttp from "isomorphic-git/http/web";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EMPTY_TREE_SHA, utf8 } from "../../src/core/git/objects";
 import { ArtifactsBackend, artifactsErrorCode, tokenSecret } from "../../src/platform/repo/artifacts";
@@ -167,6 +169,112 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     expect(err).toBeInstanceOf(RepoConflictError);
     expect(err).toMatchObject({ expected: tip, actual: racer });
     expect(gitIn(binding, "demo", ["rev-parse", "main"])).toBe(racer);
+  });
+
+  describe("a service with a short problem (the first real run saw one 500 in about 300 requests)", () => {
+    const answer = (statusCode: number): GitHttpResponse => ({ url: "", statusCode, statusMessage: "Problem", headers: {}, body: undefined });
+
+    /** A git client that goes to the real server, except where `fault` gives an answer or an error. */
+    function flaky(fault: (req: GitHttpRequest, n: number, real: HttpClient["request"]) => Promise<GitHttpResponse | undefined>): { client: HttpClient; seen: string[] } {
+      const seen: string[] = [];
+      let n = 0;
+      const real = (webHttp as HttpClient).request.bind(webHttp);
+      const client: HttpClient = {
+        request: async (req) => {
+          n += 1;
+          seen.push(`${req.method ?? "GET"} ${new URL(req.url).pathname.split("/").pop()}`);
+          return (await fault(req, n, real)) ?? real(req);
+        },
+      };
+      return { client, seen };
+    }
+
+    async function repoWithRoot(name: string): Promise<string> {
+      const be = backend();
+      await be.ensureRepo(name);
+      return (await be.commit({ repo: name, branch: "main", parent: "", message: "root", author, changes: [{ path: "a.txt", content: "a" }] })).sha;
+    }
+
+    const second = (repo: string, parent: string): CommitInput => ({ repo, branch: "main", parent, message: "second", author, changes: [{ path: "b.txt", content: "b" }] });
+
+    it("sends a request again after a 500, and the commit works", async () => {
+      const root = await repoWithRoot("flaky-500");
+      const f = flaky(async (_req, n) => (n === 1 ? answer(500) : undefined));
+      const res = await backend({ http: f.client }).commit(second("flaky-500", root));
+      expect(await backend().resolve("flaky-500", "main")).toBe(res.sha);
+      expect(sleeps).toEqual([200]);
+      expect(f.seen[0]).toBe(f.seen[1]);
+    });
+
+    it("sends a request again after a broken connection", async () => {
+      const root = await repoWithRoot("flaky-net");
+      const f = flaky(async (_req, n) => {
+        if (n === 1) throw new TypeError("fetch failed");
+        return undefined;
+      });
+      const res = await backend({ http: f.client }).commit(second("flaky-net", root));
+      expect(await backend().resolve("flaky-net", "main")).toBe(res.sha);
+      expect(sleeps).toEqual([200]);
+    });
+
+    it("gives up after three tries with the error of the service", async () => {
+      const root = await repoWithRoot("flaky-down");
+      const f = flaky(async () => answer(503));
+      const err = await backend({ http: f.client }).commit(second("flaky-down", root)).catch((e: unknown) => e);
+      expect(String(err)).toMatch(/503/);
+      expect(f.seen).toHaveLength(3);
+      expect(sleeps).toEqual([200, 400]);
+      expect(await backend().resolve("flaky-down", "main")).toBe(root);
+    });
+
+    it("does not send again after an answer that a second try cannot change", async () => {
+      const root = await repoWithRoot("flaky-401");
+      const f = flaky(async () => answer(401));
+      const err = await backend({ http: f.client }).commit(second("flaky-401", root)).catch((e: unknown) => e);
+      expect(String(err)).toMatch(/401/);
+      // isomorphic-git asks once more with its credentials after a 401. gitring waits for nothing and sends nothing more.
+      expect(f.seen.length).toBeLessThanOrEqual(2);
+      expect(sleeps).toEqual([]);
+    });
+
+    it("takes a push as done when the service applied it and then lost the answer", async () => {
+      const root = await repoWithRoot("flaky-lost");
+      let lost = 0;
+      const f = flaky(async (req, _n, real) => {
+        if (req.method === "POST" && req.url.endsWith("git-receive-pack") && lost === 0) {
+          lost += 1;
+          // The service applies the push. The answer is lost: the client sees a 500.
+          const res = await real(req);
+          for await (const chunk of res.body ?? []) void chunk;
+          return answer(500);
+        }
+        return undefined;
+      });
+      const res = await backend({ http: f.client }).commit(second("flaky-lost", root));
+      expect(lost).toBe(1);
+      expect(await backend().resolve("flaky-lost", "main")).toBe(res.sha);
+      // One commit on main for this change, not two.
+      expect(gitIn(binding, "flaky-lost", ["rev-list", "--count", "main"])).toBe("2");
+    });
+
+    it("sends the body of a push again unchanged", async () => {
+      const root = await repoWithRoot("flaky-body");
+      const bodies: string[] = [];
+      const f = flaky(async (req, _n, real) => {
+        if (req.method === "POST" && req.url.endsWith("git-receive-pack")) {
+          const chunks: Uint8Array[] = [];
+          for await (const c of req.body ?? []) chunks.push(c);
+          bodies.push(Buffer.concat(chunks).toString("hex"));
+          if (bodies.length === 1) return answer(502);
+          return real({ ...req, body: (async function* () { yield* chunks; })() });
+        }
+        return undefined;
+      });
+      const res = await backend({ http: f.client }).commit(second("flaky-body", root));
+      expect(bodies).toHaveLength(2);
+      expect(bodies[1]).toBe(bodies[0]);
+      expect(await backend().resolve("flaky-body", "main")).toBe(res.sha);
+    });
   });
 
   it("notes: pushed with the commit, appended by later commits, readable via the binding and via git", async () => {
