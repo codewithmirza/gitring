@@ -8,10 +8,12 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
-import { DEFAULT_SETTINGS, noTestRan, withDefaults } from "../core/types";
+import { DEFAULT_SETTINGS, isLandingMode, noTestRan, withDefaults } from "../core/types";
 import { Db } from "./store";
 import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
-import { hmacSha256Hex } from "../directory/crypto";
+import { hmacSha256Hex, sha256Hex } from "../directory/crypto";
+import { approvalLine, approvalNeeded, approvalPath, canDecide, riskSigns } from "../core/approvals";
+import { atLeast, type Role } from "../core/accounts";
 import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError, type CommitMeta, type FileChange } from "../platform/repo/backend";
@@ -75,7 +77,7 @@ import {
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
-export const BUILD_ID = "0.8.0+20261011b";
+export const BUILD_ID = "0.9.0+20261011a";
 const MAX_LOGS = 500;
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
@@ -177,6 +179,31 @@ export class HarborMaster extends DurableObject<Env> {
     this.checkLatencies = this.db.getMeta<number[]>("latencies") ?? [];
     this.seq = this.db.getMeta<number>("seq") ?? 0;
     this.migrateGithubState();
+    this.migrateApprovals();
+  }
+
+  /**
+   * Work that waited for a person before approvals existed ("ready" in a task that is "judging") gets an
+   * approval with no digest: it has no hash to compare, and any member may answer it.
+   */
+  private migrateApprovals(): void {
+    for (const a of this.attempts.values()) {
+      if (a.status !== "ready" || a.approval) continue;
+      const intent = this.intents.get(a.intentId);
+      if (intent?.status !== "judging") continue;
+      const rivals = [...this.attempts.values()].filter((x) => x.intentId === a.intentId && x.id !== a.id && ACTIVE.has(x.status)).length;
+      const reason: T.ApprovalReason = rivals ? "competing" : "project-asks";
+      a.approval = {
+        id: newId("ap"),
+        status: "waiting",
+        reason,
+        why: [rivals ? `${rivals + 1} work copies compete on this task. A person chooses one.` : "A person must decide to merge this work."],
+        digest: "",
+        ...(a.sender ? { approver: a.sender } : {}),
+        askedAt: a.updatedAt,
+      };
+      this.db.putAttempt(a);
+    }
   }
 
   private get backend(): RepoBackend {
@@ -706,6 +733,7 @@ export class HarborMaster extends DurableObject<Env> {
       deletions += t.deletions;
     }
     a.stats = { ...a.stats, filesChanged: Object.keys(footprint.files).length, additions, deletions };
+    await this.withdrawIfChanged(a, view);
     return view;
   }
 
@@ -762,6 +790,8 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   private putAttempt(a: T.Attempt): void {
+    // An approval waits only while the work copy is "ready". In any other state no answer can come.
+    if (a.approval?.status === "waiting" && a.status !== "ready") this.closeApproval(a, closedBecause(a.status));
     a.updatedAt = Date.now();
     this.attempts.set(a.id, a);
     this.db.putAttempt(a);
@@ -890,7 +920,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   /* ════════════════════════════ agent protocol ════════════════════════════ */
 
-  async declare(input: T.DeclareInput & { attemptId?: string; projectId?: string; workdir?: string }): Promise<T.DeclareResult> {
+  async declare(input: T.DeclareInput & { attemptId?: string; projectId?: string; workdir?: string; by?: T.Actor }): Promise<T.DeclareResult> {
     await this.ensure(input.projectId);
     const p = this.requireProject();
     const main = await this.loadMain();
@@ -936,10 +966,12 @@ export class HarborMaster extends DurableObject<Env> {
         corrections: [],
         lineage: { generation: 1 },
         stats: { filesChanged: 0, additions: 0, deletions: 0, steps: 0 },
+        ...(personOf(input.by) ? { sender: personOf(input.by) } : {}),
         createdAt: now,
         updatedAt: now,
       };
     } else {
+      if (!attempt.sender && personOf(input.by)) attempt.sender = personOf(input.by);
       attempt.agentId = agent.id;
       attempt.course = course;
       attempt.mode = mode;
@@ -1600,6 +1632,12 @@ export class HarborMaster extends DurableObject<Env> {
     // only when the situation gets worse (closer range, more overlapping lines, a new interface).
     for (const id of target.corrections) {
       const old = this.corrections.get(id);
+      if (old && drafted.kind === "review" && old.kind === "review" && old.status !== "superseded") {
+        // A person sends the work back again: the new note replaces the old one, and it always goes to the agent.
+        old.status = "superseded";
+        this.putCorrection(old);
+        continue;
+      }
       if (!old || old.standOnAttemptId !== standOnAttemptId || old.kind !== drafted.kind || old.status === "superseded") continue;
       if (old.message === drafted.message) return undefined;
       if (old.status === "pending") {
@@ -1779,6 +1817,10 @@ export class HarborMaster extends DurableObject<Env> {
     }
     this.heard(a);
     await this.adoptForkTip(a);
+    if (a.status === "ready" && a.approval?.status === "waiting" && (!a.approval.digest || a.approval.digest === (await this.digestOf(a)))) {
+      // The agent asks again, and a person has not answered: the same work, the same question.
+      return { attemptId, status: a.status, checks: a.composedChecks ?? a.checks, next: "awaiting-approval", approval: a.approval, message: this.waitingMessage(a), clearance: this.clearanceFor(a.id) };
+    }
     a.summary = summary ? String(summary).slice(0, 600) : a.summary;
     a.status = "submitted";
     this.putAttempt(a);
@@ -1791,6 +1833,7 @@ export class HarborMaster extends DurableObject<Env> {
     const intent = this.intents.get(a.intentId)!;
     let next: T.SubmitResult["next"];
     let message: string;
+    let approvalAsked: T.Approval | undefined;
     if (!run.ok && !run.wait) {
       a.status = "underway";
       next = "fix-checks";
@@ -1802,20 +1845,21 @@ export class HarborMaster extends DurableObject<Env> {
       const lead = run.wait ? run.wait.message : "All tests pass.";
       if (run.wait) a.mergeWait = { until: run.wait.retryAt, message: run.wait.message };
       const siblings = [...this.attempts.values()].filter((x) => x.intentId === a.intentId && x.id !== a.id && ACTIVE.has(x.status));
-      // A re-derive of the attempt a human picked keeps that pick: it lands without a second question.
+      // A re-derive of the attempt a person picked keeps that pick: it lands without a second question about rivals or missing tests.
       const picked = this.pickedLineage(a);
       // No test ran (the gitring test harness): nothing is verified, so a person decides, unless the owner allows it.
       const untested = noTestRan(run) && !this.requireProject().settings.allowUntested;
-      const needPick = !picked && (untested || !this.requireProject().settings.autoLand || siblings.length > 0);
-      if (needPick) {
-        next = "awaiting-pick";
-        message = untested
-          ? `${NO_TEST_RAN}${siblings.length ? ` ${siblings.length + 1} work copies compete on this task.` : ""}`
-          : `${lead} ${siblings.length ? `${siblings.length + 1} work copies compete on this task.` : ""} A person chooses the one to merge.`;
+      const need = await this.approvalFor(a, { untested, competing: siblings.length, picked });
+      if (need) {
+        const approval = await this.askApproval(a, need);
+        next = "awaiting-approval";
+        const compete = siblings.length ? ` ${siblings.length + 1} work copies compete on this task.` : "";
+        message = `${untested ? "No test ran, so nothing is verified." : lead}${compete} ${this.approverWords(approval)} must say yes before this merges.`;
         if (siblings.every((x) => x.status === "ready")) {
           intent.status = "judging";
           this.putIntent(intent);
         }
+        approvalAsked = approval;
       } else {
         next = "landing-queue";
         message = run.wait ? `${lead} The work copy waits in the merge queue.` : "All tests pass. The work copy is in the merge queue.";
@@ -1830,7 +1874,8 @@ export class HarborMaster extends DurableObject<Env> {
       intentId: a.intentId,
       message: `${this.callsign(a.id)} submits "${intent.title}": ${message}`,
     });
-    return { attemptId, status: a.status, checks: run, next, message, clearance: this.clearanceFor(a.id) };
+    if (approvalAsked) this.webhook("approval", { attemptId: a.id, approval: approvalAsked, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
+    return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked } : {}), clearance: this.clearanceFor(a.id) };
   }
 
   /** API-mode work becomes a real commit in the attempt's Artifacts fork. */
@@ -1959,11 +2004,13 @@ export class HarborMaster extends DurableObject<Env> {
       this.db.dequeue(a.id);
       const intent = this.intents.get(a.intentId);
       a.status = "ready";
+      const approval = await this.askApproval(a, { reason: "merge-stopped", why: [`The merge did not finish after ${MAX_LANDING_STARTS} tries. A yes starts it again.`] });
       this.putAttempt(a);
       if (intent) {
         intent.status = "judging";
         this.putIntent(intent);
       }
+      this.webhook("approval", { attemptId: a.id, approval, task: intent?.title ?? "", agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
       this.stats.escalations += 1;
       this.persistStats();
       this.addLog({
@@ -2042,6 +2089,17 @@ export class HarborMaster extends DurableObject<Env> {
       await this.finishFromMain(a, held);
       return "done";
     }
+    // A question that a person has not answered: nothing merges. This is the rule, whatever put the work in the queue.
+    if (a.approval?.status === "waiting") return "done";
+    // A yes counts for the work that the person saw. If the work changed since, the yes does not count.
+    if (a.approval?.status === "approved" && a.approval.digest && a.approval.digest !== (await this.digestOf(a))) {
+      a.approval = { ...a.approval, status: "withdrawn", closed: "The agent changed the work after the yes." };
+      a.status = "underway";
+      this.putAttempt(a);
+      this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${this.callsign(a.id)} stops: the work changed after the yes. The agent must submit again.` });
+      this.refreshJudging(a.intentId);
+      return "done";
+    }
     const intentBefore = intent.status;
     a.status = "landing";
     intent.status = "landing";
@@ -2093,12 +2151,14 @@ export class HarborMaster extends DurableObject<Env> {
       return "done";
     }
     if (noTestRan(run) && !p.settings.allowUntested && !this.pickedLineage(a)) {
-      // No test ran on main plus this work: nothing is verified. The work copy goes to the decisions queue.
+      // No test ran on main plus this work: nothing is verified. A person must say yes first.
       a.status = "ready";
+      const approval = await this.askApproval(a, { reason: "no-test-ran", why: ["No test ran on main plus this work, so nothing is verified."] });
       intent.status = "judging";
       this.putAttempt(a);
       this.putIntent(intent);
       this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${this.callsign(a.id)} stops. ${NO_TEST_RAN}` });
+      this.webhook("approval", { attemptId: a.id, approval, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
       return "done";
     }
     const method: T.LandingMethod = a.lineage.generation > 1 ? "rederive" : result.method;
@@ -2589,6 +2649,7 @@ export class HarborMaster extends DurableObject<Env> {
         corrections: [],
         lineage: { generation: 1 },
         stats: { filesChanged: 0, additions: 0, deletions: 0, steps: 0 },
+        ...(personOf(by) ? { sender: personOf(by) } : {}),
         createdAt: now,
         updatedAt: now,
         waitsForBudget: i < budget.granted ? undefined : budget.retryAt,
@@ -2735,8 +2796,247 @@ export class HarborMaster extends DurableObject<Env> {
     return false;
   }
 
-  /** `waits`: the merge waits for the hourly test budget (not a failure). */
-  async land(attemptId: string, rationale: string, by: T.Actor = HUMAN): Promise<{ status: T.AttemptStatus; message: string; landing?: T.Landing; waits?: { until: number } }> {
+  /* ════════════════════════════ approvals ════════════════════════════ */
+
+  /**
+   * A hash of what a person approves: each changed file of the work copy and its new text. It does not
+   * hold the base. When main moves and the work does not change, the answer still counts.
+   */
+  private async digestOf(a: T.Attempt, view?: AttemptView): Promise<string> {
+    const v = view ?? (await this.attemptView(a));
+    const rows = await Promise.all(v.changed.map(async (c) => `${c.path}\0${c.head === null ? "-" : await sha256Hex(c.head)}`));
+    return sha256Hex(rows.sort().join("\n"));
+  }
+
+  /** Does this work need a person before it merges? The project setting, the signs of the change and the rivals decide. */
+  private async approvalFor(a: T.Attempt, f: { untested: boolean; competing: number; picked: boolean }): Promise<{ reason: T.ApprovalReason; why: string[] } | null> {
+    const need = approvalNeeded({ mode: this.requireProject().settings.landing, untested: f.untested && !f.picked, competing: f.picked ? 0 : f.competing, signs: riskSigns(a) });
+    if (!need) return null;
+    // The same work that a person said yes to: no second question.
+    if (a.approval?.status === "approved" && a.approval.digest && a.approval.digest === (await this.digestOf(a))) return null;
+    return need;
+  }
+
+  /** Ask a person to say yes. The work copy stays "ready" and does not merge until the answer comes. */
+  private async askApproval(a: T.Attempt, need: { reason: T.ApprovalReason; why: string[] }): Promise<T.Approval> {
+    const approval: T.Approval = {
+      id: newId("ap"),
+      status: "waiting",
+      reason: need.reason,
+      why: need.why,
+      digest: await this.digestOf(a),
+      ...(a.sender ? { approver: a.sender } : {}),
+      askedAt: Date.now(),
+    };
+    a.approval = approval;
+    a.status = "ready";
+    this.putAttempt(a);
+    this.addLog({
+      kind: "decision",
+      attemptId: a.id,
+      agentId: a.agentId,
+      intentId: a.intentId,
+      message: `gitring asks ${this.approverWords(approval)} to say yes to the work of ${this.callsign(a.id)}. ${need.why[0] ?? ""}`.trim(),
+    });
+    return approval;
+  }
+
+  private approverWords(ap: Pick<T.Approval, "approver">): string {
+    return ap.approver?.name ?? "A person of the project";
+  }
+
+  private waitingMessage(a: T.Attempt): string {
+    const ap = a.approval!;
+    return `${ap.why[0] ?? "A person must decide."} ${this.approverWords(ap)} must say yes before this merges.`;
+  }
+
+  /** The address where a person answers: in the gitring app. The Worker tells the object its own address when it can. */
+  private approvalLink(a: T.Attempt): string {
+    const path = approvalPath(this.requireProject().id, a.id);
+    const origin = this.db.getMeta<string>("origin");
+    return origin ? `${origin}${path}` : path;
+  }
+
+  /** The address of this deployment (from a request), for links in webhooks and answers. Only https (or local http) counts. */
+  rememberOrigin(origin?: string): void {
+    if (!origin || !/^(https:\/\/[^/\s]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(origin)) return;
+    if (this.db.getMeta<string>("origin") !== origin) this.db.setMeta("origin", origin);
+  }
+
+  /** A question that cannot be answered any more: the agent changed the work, or the work copy closed. */
+  private closeApproval(a: T.Attempt, why: string): void {
+    const ap = a.approval;
+    if (!ap || ap.status !== "waiting") return;
+    a.approval = { ...ap, status: "withdrawn", closed: why };
+    this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The question about the work of ${this.callsign(a.id)} closes. ${why}` });
+    this.refreshJudging(a.intentId);
+  }
+
+  /** A task that waits for a decision, but has no work left that waits: it is in work (or open) again. */
+  private refreshJudging(intentId: string): void {
+    const intent = this.intents.get(intentId);
+    if (!intent || intent.status !== "judging") return;
+    const mine = [...this.attempts.values()].filter((x) => x.intentId === intentId);
+    if (mine.some((x) => x.status === "ready")) return;
+    intent.status = mine.some((x) => ACTIVE.has(x.status)) ? "underway" : "open";
+    this.putIntent(intent);
+  }
+
+  /** The agent changed the work after a person was asked, or after the yes: that answer does not count for the new work. */
+  private async withdrawIfChanged(a: T.Attempt, view: AttemptView): Promise<void> {
+    const ap = a.approval;
+    if (!ap || !ap.digest || (ap.status !== "waiting" && ap.status !== "approved") || TERMINAL.has(a.status)) return;
+    if ((await this.digestOf(a, view)) === ap.digest) return;
+    if (ap.status === "approved") a.approval = { ...ap, status: "withdrawn", closed: "The agent changed the work after the yes." };
+    if (a.status === "ready") a.status = "underway";
+    // A question that waits closes in putAttempt, because the work copy is not "ready" any more.
+    this.putAttempt(a);
+  }
+
+  /**
+   * A person answers the approval of a work copy: "approve" sends the work to the merge queue, "send-back"
+   * gives the agent the note as a change request. The first valid answer counts. The same answer again
+   * changes nothing. `who` carries the role that the Worker checked; the rules of canDecide apply here too.
+   * `expect.approvalId` is the question that the person saw: an old question never takes a new answer.
+   */
+  async decide(
+    attemptId: string,
+    input: T.ApprovalAnswer,
+    who: { id: string; name: string; role: Role },
+    how: "app" | "chat" = "app",
+    expect: { approvalId?: string } = {},
+    origin?: string,
+  ): Promise<T.ApprovalResult> {
+    this.rememberOrigin(origin);
+    const p = this.requireProject();
+    const a = this.mustAttempt(attemptId);
+    const ap = a.approval;
+    if (!ap) throw new Error("This work copy has no question to answer.");
+    const out = (outcome: T.ApprovalResult["outcome"], message: string, extra: Partial<T.ApprovalResult> = {}): T.ApprovalResult => ({ attemptId, outcome, approval: a.approval ?? ap, status: a.status, message, ...extra });
+    if (!canDecide(ap, who, p.settings.approver)) {
+      const rule = p.settings.approver;
+      return out(
+        "refused",
+        !atLeast(who.role, "member")
+          ? "You need the member role to answer."
+          : rule === "owner" || !ap.approver
+            ? "Only an owner of the project can answer this."
+            : `Only ${ap.approver.name} (who sent the agent) or an owner of the project can answer this.`,
+      );
+    }
+    if (expect.approvalId && expect.approvalId !== ap.id) return out("withdrawn", "This question is old. The work changed, and gitring asked again. Open the new question.");
+    if (ap.status === "withdrawn") return out("withdrawn", `This question is closed. ${ap.closed ?? ""}`.trim());
+    if (ap.status !== "waiting") return out("already", `${ap.answer?.by.name ?? "A person"} ${ap.status === "approved" ? "said yes to" : "sent back"} this work already.`);
+    if (a.status !== "ready") return out("withdrawn", "This work is not waiting any more.");
+    // The work must be what the question showed.
+    if (ap.digest && (await this.digestOf(a)) !== ap.digest) {
+      if (a.approval === ap && ap.status === "waiting") {
+        a.status = "underway";
+        this.putAttempt(a);
+      }
+      return out("withdrawn", "The agent changed the work after the question. gitring asks again when the agent submits.");
+    }
+    // Another answer can come in while the work is read: the first one counts.
+    if (a.approval !== ap || ap.status !== "waiting") return this.decide(attemptId, input, who, how, expect, origin);
+    const intent = this.intents.get(a.intentId)!;
+    const by: T.Actor = { kind: "human", id: who.id, name: who.name };
+    const note = String(input.note ?? "").trim().slice(0, 1000);
+    const answer = { by: { id: who.id, name: who.name }, how, ...(note ? { note } : {}), at: Date.now() };
+    const where = how === "chat" ? " in the chat of the agent" : "";
+    const sign = { attemptId: a.id, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) };
+
+    if (input.answer === "approve") {
+      a.approval = { ...ap, status: "approved", answer };
+      this.putAttempt(a); // the answer is stored before the merge starts
+      this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} says yes to the work of ${this.callsign(a.id)} on "${intent.title}"${where}.` });
+      this.webhook("approval", { ...sign, approval: a.approval });
+      const res = await this.landWork(a.id, note || "Approved.", by);
+      return out("approved", res.message, { ...(res.landing ? { landing: res.landing } : {}), ...(res.waits ? { waits: res.waits } : {}) });
+    }
+
+    // Send back.
+    a.approval = { ...ap, status: "sent-back", answer };
+    const decision = this.recordDecision({ kind: "send-back", intentId: a.intentId, attemptIds: [a.id], by, rationale: note || "Sent back without a note." });
+    this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} sends the work of ${this.callsign(a.id)} on "${intent.title}" back${where}${note ? `: ${note}` : "."}` });
+    this.webhook("approval", { ...sign, approval: a.approval });
+    const agent = this.agents.get(a.agentId);
+    if (agent?.kind === "builtin") {
+      // A built-in agent is done with this work copy: another built-in agent does the task again, and the note is part of the task.
+      if (note) {
+        intent.constraints = [...intent.constraints, `A person sent the work back: ${note}`];
+        intent.version += 1;
+        intent.amendments = [...intent.amendments, { version: intent.version, at: Date.now(), by, reason: "A person sent the work back.", text: note }];
+        this.putIntent(intent);
+      }
+      this.putAttempt(a);
+      await this.rederive(a.id, note ? `A person sent the work back: ${note}` : "A person sent the work back.", by);
+      this.refreshJudging(a.intentId);
+      return out("sent-back", "The work went back. A built-in agent does the task again and reads your note.");
+    }
+    a.status = "underway";
+    this.putAttempt(a);
+    this.issueCorrection(
+      a.id,
+      undefined,
+      {
+        kind: "review",
+        message: `${who.name} sends your work back${note ? `: ${note}` : " without a note."} Change the work, run the tests, and submit again.`,
+        constraints: note ? { notes: [note] } : {},
+      },
+      "human",
+      decision.id,
+      90,
+    );
+    this.refreshJudging(a.intentId);
+    return out("sent-back", "The work went back to the agent with your note. The agent changes it and submits again.");
+  }
+
+  /** Where is this work copy? An agent that waits for a person calls this. The answer also brings new change requests. */
+  async status(attemptId: string, origin?: string): Promise<T.WorkStatus> {
+    this.rememberOrigin(origin);
+    const a = this.mustAttempt(attemptId);
+    this.heard(a);
+    const intent = this.intents.get(a.intentId)!;
+    const ap = a.approval;
+    const landing = this.landings.find((l) => l.attemptId === a.id);
+    let message: string;
+    if (a.status === "landed") message = `Merged${landing ? ` at ${landing.mainAfter.slice(0, 7)}` : ""}. The task is done.`;
+    else if (ap?.status === "waiting" && a.status === "ready") message = `${this.waitingMessage(a)} Wait. Do not change the work copy.`;
+    else if (ap?.status === "sent-back" && a.status === "underway") message = `${ap.answer?.by.name ?? "A person"} sent the work back${ap.answer?.note ? `: ${ap.answer.note}` : "."} Change the work, run the tests, and submit again.`;
+    else if (ap?.status === "approved" && (a.status === "ready" || a.status === "landing")) message = a.mergeWait ? `${a.mergeWait.message} The merge waits in the queue.` : "A person said yes. The merge is in the queue.";
+    else if (ap?.status === "withdrawn" && a.status === "underway") message = `${ap.closed ?? "The question closed."} Submit again to ask again.`;
+    else message = `The work copy is ${copyStatusWord(a.status)}.`;
+    return {
+      attemptId,
+      status: a.status,
+      task: { id: intent.id, title: intent.title, status: intent.status },
+      ...(ap ? { approval: ap } : {}),
+      line: approvalLine(a),
+      link: this.approvalLink(a),
+      mainSha: this.requireProject().mainSha,
+      ...(landing ? { landing: { sha: landing.mainAfter, method: landing.method, at: landing.at } } : {}),
+      ...(a.mergeWait ? { mergeWait: a.mergeWait } : {}),
+      message,
+      clearance: this.clearanceFor(attemptId),
+    };
+  }
+
+  /**
+   * A person merges a work copy ("pick"). When the work copy waits for an answer, this is the yes of that
+   * approval: the rules of canDecide apply (`role`: the role that the Worker checked; callers inside gitring
+   * are owners). `waits`: the merge waits for the hourly test budget (not a failure).
+   */
+  async land(attemptId: string, rationale: string, by: T.Actor = HUMAN, role: Role = "owner"): Promise<{ status: T.AttemptStatus; message: string; landing?: T.Landing; waits?: { until: number }; refused?: true }> {
+    const asked = this.mustAttempt(attemptId);
+    if (asked.approval?.status === "waiting") {
+      const res = await this.decide(attemptId, { answer: "approve", note: rationale }, { id: by.id, name: by.name, role }, "app");
+      return { status: res.status, message: res.message, ...(res.landing ? { landing: res.landing } : {}), ...(res.waits ? { waits: res.waits } : {}), ...(res.outcome === "refused" ? { refused: true as const } : {}) };
+    }
+    return this.landWork(attemptId, rationale, by);
+  }
+
+  /** The merge of a work copy that a person chose, or said yes to. */
+  private async landWork(attemptId: string, rationale: string, by: T.Actor): Promise<{ status: T.AttemptStatus; message: string; landing?: T.Landing; waits?: { until: number } }> {
     const a = this.mustAttempt(attemptId);
     if (a.status === "landed") return { status: a.status, message: "This work copy is already on main." };
     if (TERMINAL.has(a.status)) return { status: a.status, message: `The work copy is ${copyStatusWord(a.status)}. Redo it on the new main first.` };
@@ -2795,6 +3095,7 @@ export class HarborMaster extends DurableObject<Env> {
       corrections: [],
       lineage: { generation: old.lineage.generation + 1, rederivedFrom: old.id },
       stats: { filesChanged: 0, additions: 0, deletions: 0, steps: 0 },
+      ...((old.sender ?? personOf(by)) ? { sender: old.sender ?? personOf(by) } : {}),
       createdAt: now,
       updatedAt: now,
       waitsForBudget: budget.granted ? undefined : budget.retryAt,
@@ -3650,6 +3951,31 @@ function emptyStats(): T.HarborStats {
   };
 }
 
+/** The person behind an action, for `sender`. Absent for the system, a script with no person, and a name that is not an account. */
+function personOf(by: T.Actor | undefined): T.Person | undefined {
+  if (!by || by.kind !== "human" || !by.id || by.id === "human" || by.id === "anonymous") return undefined;
+  return { id: by.id, name: by.name };
+}
+
+/** Why a question closes, by the new state of the work copy. */
+function closedBecause(status: T.AttemptStatus): string {
+  switch (status) {
+    case "alternate":
+      return "Another work copy of this task merged first.";
+    case "landed":
+      return "The work is on main.";
+    case "abandoned":
+      return "The work copy stopped.";
+    case "stale":
+    case "failed":
+      return "The work cannot merge on the new main.";
+    case "rederiving":
+      return "The work is done again on the new main.";
+    default:
+      return "The agent changed the work.";
+  }
+}
+
 function emptyFootprint(): T.Footprint {
   return { files: {}, symbols: { defined: [], modified: [], removed: [], signatureChanged: [], referenced: [] }, computedAt: Date.now() };
 }
@@ -3709,7 +4035,10 @@ function decisiveness(as: T.CourseAssessment[]): number {
 function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) => boolean): Partial<T.ProjectSettings> {
   const out: Partial<T.ProjectSettings> = {};
   const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : undefined);
-  if (typeof raw.autoLand === "boolean") out.autoLand = raw.autoLand;
+  // `landing` decides. An old client sends autoLand only: true means "automatic", false means "ask".
+  if (isLandingMode(raw.landing)) out.landing = raw.landing;
+  else if (typeof raw.autoLand === "boolean") out.landing = raw.autoLand ? "automatic" : "ask";
+  if (raw.approver === "sender" || raw.approver === "owner") out.approver = raw.approver;
   if (typeof raw.intentsInRepo === "boolean") out.intentsInRepo = raw.intentsInRepo;
   if (typeof raw.allowUntested === "boolean") out.allowUntested = raw.allowUntested;
   const fanout = num(raw.fanout, 1, 4);
@@ -3926,6 +4255,13 @@ function slackText(event: string, p: Record<string, unknown>): string {
     const d = p.decision as T.Decision;
     return `:scales: ${d.by.name} decided (${DECISION_WORD[d.kind] ?? d.kind}): ${d.rationale}`;
   }
+  if (event === "approval") {
+    const ap = p.approval as T.Approval;
+    const who = ap.approver?.name ?? "A person of the project";
+    if (ap.status === "waiting") return `:raised_hand: ${who}, say yes or send back: *${p.task}* by ${p.agent}. ${p.line} ${ap.why[0] ?? ""} ${p.link}`.trim();
+    if (ap.status === "approved") return `:white_check_mark: ${ap.answer?.by.name ?? "A person"} said yes to *${p.task}* (${p.agent}).`;
+    return `:leftwards_arrow_with_hook: ${ap.answer?.by.name ?? "A person"} sent *${p.task}* back to ${p.agent}${ap.answer?.note ? `: ${ap.answer.note}` : "."}`;
+  }
   if (event === "intent") return `:memo: New task: *${(p.intent as { title: string }).title}*`;
   return `${event}: ${JSON.stringify(p).slice(0, 300)}`;
 }
@@ -3933,9 +4269,9 @@ function slackText(event: string, p: Record<string, unknown>): string {
 /* Plain words for people and agents (activity feed, tool results, Slack). */
 const METHOD_WORD: Record<T.LandingMethod, string> = { "fast-forward": "fast-forward", merge: "3-way merge", rederive: "redo" };
 const VERDICT_WORD: Record<T.Verdict, string> = { clear: "clear", correct: "change request", "merge-intents": "same task as other work", escalate: "a person decides" };
-const KIND_WORD: Record<T.CorrectionKind, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed" };
+const KIND_WORD: Record<T.CorrectionKind, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed", review: "a person sent it back" };
 const TRIGGER_WORD: Record<T.CourseCheck["trigger"], string> = { declare: "plan", log: "report", write: "write", push: "push", "main-advanced": "main moved", "intent-amended": "task changed" };
-const DECISION_WORD: Record<T.DecisionKind, string> = { pick: "chose a work copy", rederive: "redo", amend: "changed the goal", park: "paused the task", "approve-checks": "approved the tests", "resolve-escalation": "decided" };
+const DECISION_WORD: Record<T.DecisionKind, string> = { pick: "chose a work copy", "send-back": "sent work back", rederive: "redo", amend: "changed the goal", park: "paused the task", "approve-checks": "approved the tests", "resolve-escalation": "decided" };
 
 function taskStatusWord(s: T.IntentStatus): string {
   const words: Partial<Record<T.IntentStatus, string>> = { landed: "merged", parked: "paused", "merged-into": "joined to another task", judging: "waiting for a person", underway: "in work", landing: "merging", draft: "a draft" };

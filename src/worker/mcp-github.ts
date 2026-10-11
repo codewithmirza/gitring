@@ -657,7 +657,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const number = mine?.number;
         const words: Record<string, string> = {
           "landing-queue": "queued",
-          "awaiting-pick": "waits for a person",
+          "awaiting-approval": "waits for a person",
           landed: "merged",
           "fix-checks": "tests failed",
         };

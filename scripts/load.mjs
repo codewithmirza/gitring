@@ -113,7 +113,7 @@ async function runAgent(ctx, index) {
         await obey(attemptId, sent);
         const next = sent.json?.next;
         if (next === "landed") end = "landed";
-        else if (next === "awaiting-pick") end = "handed";
+        else if (next === "awaiting-approval") end = "handed";
         else if (next === "landing-queue") {
           // Wait for the merge. gitring_update answers with an error when the work is merged.
           const until = Date.now() + 120_000;

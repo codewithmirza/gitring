@@ -336,7 +336,7 @@ describe("the hourly test budget is used (container runner)", () => {
     const retryAt = Date.now() + 25 * 60_000;
     w.budget = { grants: 1, retryAt };
     const t = await w.submitTask("alpha");
-    expect(t.next).toBe("awaiting-pick");
+    expect(t.next).toBe("awaiting-approval");
     w.budget = { grants: 0, retryAt };
     const picked = await w.harbor.land(t.attemptId, "Robin picks this work copy.");
     expect(picked.status).toBe("ready");
@@ -363,8 +363,9 @@ describe("no test ran (gitring test runner)", () => {
     const w = new CrashWorld();
     await w.start({ files: NO_TEST_FILES });
     const t = await w.submitTask("alpha");
-    expect(t.next).toBe("awaiting-pick");
-    expect(t.message).toBe(NO_TEST_RAN);
+    expect(t.next).toBe("awaiting-approval");
+    expect(t.message).toBe("No test ran, so nothing is verified. A person of the project must say yes before this merges.");
+    expect(w.inner.attempts.get(t.attemptId)?.approval).toMatchObject({ status: "waiting", reason: "no-test-ran" });
     await w.settle();
     expect(w.status(t.attemptId)).toBe("ready");
     expect(w.inner.intents.get(t.intentId)?.status).toBe("judging");

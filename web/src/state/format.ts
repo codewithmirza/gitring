@@ -86,6 +86,7 @@ export const CORRECTION_KIND_TEXT: Record<CorrectionKind, string> = {
   duplicate: "Duplicate",
   upstream: "Main moved",
   "intent-amended": "Goal changed",
+  review: "Sent back",
 };
 
 /** Short words for the change-request markers on the map. */
@@ -95,6 +96,7 @@ export const CORRECTION_KIND_SHORT: Record<CorrectionKind, string> = {
   duplicate: "duplicate",
   upstream: "main",
   "intent-amended": "goal",
+  review: "sent back",
 };
 
 export const METHOD_TEXT: Record<LandingMethod, string> = {

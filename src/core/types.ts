@@ -45,7 +45,19 @@ export interface ProjectRepo {
 }
 
 export interface ProjectSettings {
-  /** Land automatically when checks pass and no human pick is needed. */
+  /**
+   * When a person must say yes before work merges (the tests pass first):
+   *   automatic  never; a person still decides when no test ran or when work copies compete
+   *   risky      when the change looks risky (see riskSigns in core/approvals.ts)
+   *   ask        every time
+   */
+  landing: LandingMode;
+  /** Who answers an approval: the person who sent the agent ("sender"; an owner can always answer), or only an owner. */
+  approver: ApproverRule;
+  /**
+   * Old name of `landing`: true means "automatic". gitring keeps it equal to `landing` (withDefaults), so
+   * that old settings and old clients keep working. Write `landing`.
+   */
   autoLand: boolean;
   /** Default number of parallel attempts per intent (best-of-N). */
   fanout: number;
@@ -179,6 +191,9 @@ export interface ConnectInfo {
   /** The GitHub App of this deployment (sign-in, issues, sync). */
   githubApp: { slug: string; installUrl: string } | null;
 }
+
+export type LandingMode = "automatic" | "risky" | "ask";
+export type ApproverRule = "sender" | "owner";
 
 /**
  * Redo when the work of an outside agent (MCP or git) cannot merge on the new main:
@@ -487,10 +502,66 @@ export interface Attempt {
    */
   mergeWait?: { until: Millis; message: string };
   summary?: string;
+  /**
+   * The person who sent the agent: the one who connected it, or who started the built-in agent. Absent on
+   * old work copies and on work that no person started. This person answers the approval of the work.
+   */
+  sender?: Person;
+  /**
+   * The latest approval of this work copy (see Approval). A new ask replaces it; the old answers stay in
+   * the decisions and the log.
+   */
+  approval?: Approval;
   stats: { filesChanged: number; additions: number; deletions: number; steps: number; tokens?: number };
   createdAt: Millis;
   updatedAt: Millis;
   landedAt?: Millis;
+}
+
+/** A person, as gitring shows them: the account id and the name. */
+export interface Person {
+  id: string;
+  name: string;
+}
+
+/**
+ * An approval is a merge that waits for a person. gitring asks for one when the work is ready, its tests
+ * pass, and a person must say yes (see approvalNeeded in core/approvals.ts).
+ *
+ *   waiting    asked; nobody answered yet. The work copy is "ready" and does not merge.
+ *   approved   a person said yes. The work copy goes to the merge queue.
+ *   sent-back  a person said "not yet" and gave a note. The note went to the agent as a change request.
+ *   withdrawn  the answer cannot come any more: the agent changed the work, or the work copy closed.
+ *
+ * Only one answer counts: the first valid one. The same answer twice has no second effect.
+ */
+export type ApprovalStatus = "waiting" | "approved" | "sent-back" | "withdrawn";
+
+export type ApprovalReason =
+  | "no-test-ran" // nothing is verified
+  | "competing" // other work copies compete on the same task
+  | "project-asks" // the project asks before every merge
+  | "looks-risky" // the project asks when a change looks risky, and this one does
+  | "merge-stopped"; // the merge did not finish after several tries
+
+export interface Approval {
+  id: string;
+  status: ApprovalStatus;
+  /** The main reason. `why` has all of them. */
+  reason: ApprovalReason;
+  /** Plain sentences for people: why a person must say yes. */
+  why: string[];
+  /**
+   * A hash of what the person sees: the base of the work copy and each changed file. An answer counts for
+   * this work only. If the agent changes the work, the approval is withdrawn and gitring asks again.
+   */
+  digest: string;
+  /** The person who answers: the sender of the work copy. Absent: any member. Owners can always answer. */
+  approver?: Person;
+  askedAt: Millis;
+  answer?: { by: Person; how: "app" | "chat"; note?: string; at: Millis };
+  /** Withdrawn: the plain reason. */
+  closed?: string;
 }
 
 /* ───────────────────────────── course check ───────────────────────────── */
@@ -572,7 +643,8 @@ export type CorrectionKind =
   | "region" // keep out of lines another vessel is changing
   | "duplicate" // another vessel does the same work; merge or narrow scope
   | "upstream" // main moved under you; adapt to the landed change
-  | "intent-amended"; // a human changed the intent
+  | "intent-amended" // a human changed the intent
+  | "review"; // a person sent the work back with a note
 
 export interface Correction {
   id: string;
@@ -654,7 +726,7 @@ export interface Landing {
   message: string;
 }
 
-export type DecisionKind = "pick" | "park" | "rederive" | "amend" | "approve-checks" | "resolve-escalation";
+export type DecisionKind = "pick" | "send-back" | "park" | "rederive" | "amend" | "approve-checks" | "resolve-escalation";
 
 export interface Decision {
   id: string;
@@ -755,7 +827,8 @@ export type GitringEventType =
   | "radar"
   | "main"
   | "stats"
-  | "github";
+  | "github"
+  | "approval";
 
 export type GitringEvent =
   | { type: "snapshot"; state: ProjectState }
@@ -770,7 +843,9 @@ export type GitringEvent =
   | { type: "radar"; pairs: RadarPair[] }
   | { type: "main"; sha: string; tree: string; files: FileNode[]; imports: [string, string][] }
   | { type: "stats"; stats: HarborStats }
-  | { type: "github"; github: GithubSyncStatus };
+  | { type: "github"; github: GithubSyncStatus }
+  /** Webhooks only: an approval was asked, answered or withdrawn. The UI reads `attempt.approval` from "attempt" events. */
+  | { type: "approval"; attemptId: string; approval: Approval };
 
 /* ───────────────────────────── agent protocol (MCP + built-in vessels) ───────────────────────────── */
 
@@ -867,10 +942,53 @@ export interface SubmitResult {
   attemptId: string;
   status: AttemptStatus;
   checks?: CheckRun;
-  /** Where the attempt goes next. */
-  next: "landing-queue" | "awaiting-pick" | "fix-checks" | "landed";
+  /** Where the attempt goes next. "awaiting-approval": a person must say yes (see `approval`). */
+  next: "landing-queue" | "awaiting-approval" | "fix-checks" | "landed";
+  message: string;
+  /** Set when next is "awaiting-approval": the approval that waits. */
+  approval?: Approval;
+  clearance: Clearance;
+}
+
+/** Answer of the status tool: where a work copy is, and what a person said about it. */
+export interface WorkStatus {
+  attemptId: string;
+  status: AttemptStatus;
+  task: { id: string; title: string; status: IntentStatus };
+  approval?: Approval;
+  /** The size of the change and the tests, in one line. */
+  line: string;
+  /** Where a person answers the approval: an address in the gitring app. */
+  link: string;
+  mainSha: string;
+  landing?: { sha: string; method: LandingMethod; at: Millis };
+  mergeWait?: { until: Millis; message: string };
+  /** One sentence for the agent: what to do now. */
   message: string;
   clearance: Clearance;
+}
+
+/** What the person who answers an approval sends. */
+export interface ApprovalAnswer {
+  answer: "approve" | "send-back";
+  /** For send-back: what the agent must change. Shown to the agent as a change request. */
+  note?: string;
+}
+
+/** The result of an answer. */
+export interface ApprovalResult {
+  attemptId: string;
+  /**
+   * What the answer did. "already": the approval had an answer before, nothing changed now. "withdrawn":
+   * the question is closed (the agent changed the work). "refused": this person may not answer it.
+   */
+  outcome: "approved" | "sent-back" | "already" | "withdrawn" | "refused";
+  approval: Approval;
+  status: AttemptStatus;
+  message: string;
+  landing?: Landing;
+  /** The merge waits for the hourly test budget. */
+  waits?: { until: Millis };
 }
 
 /* ───────────────────────────── constants ───────────────────────────── */
@@ -891,7 +1009,9 @@ export const DEFAULT_THRESHOLDS: PolicyThresholds = {
 };
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
-  autoLand: true,
+  landing: "risky",
+  approver: "sender",
+  autoLand: false,
   fanout: 1,
   decisionModel: "clef-flash",
   agentModels: ["@cf/moonshotai/kimi-k2.7-code", "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen3.8-27b"],
@@ -914,11 +1034,20 @@ export function noTestRan(run: Pick<CheckRun, "ok" | "ran" | "runner" | "passed"
   return (run.ran ?? run.passed + run.failed) === 0;
 }
 
+export function isLandingMode(v: unknown): v is LandingMode {
+  return v === "automatic" || v === "risky" || v === "ask";
+}
+
 /** Settings of a stored project, with defaults for fields added after the project was made. */
 export function withDefaults(s: Partial<ProjectSettings> | undefined): ProjectSettings {
   const base = { ...DEFAULT_SETTINGS, ...(s ?? {}) } as ProjectSettings;
+  // `landing` decides. A project from before it existed has only `autoLand`: false asks every time, true never asks.
+  const landing: LandingMode = isLandingMode(s?.landing) ? s!.landing : typeof s?.autoLand === "boolean" ? (s.autoLand ? "automatic" : "ask") : DEFAULT_SETTINGS.landing;
   return {
     ...base,
+    landing,
+    approver: s?.approver === "owner" ? "owner" : "sender",
+    autoLand: landing === "automatic",
     thresholds: { ...DEFAULT_THRESHOLDS, ...(s?.thresholds ?? {}) },
     webhooks: Array.isArray(s?.webhooks) ? s!.webhooks : [],
     github: { ...DEFAULT_SETTINGS.github, ...(s?.github ?? {}) },

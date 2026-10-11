@@ -321,7 +321,7 @@ export class ScriptedAgent {
       const s = await this.call("gitring_submit", { summary: `Done: ${spec.title}` });
       await this.ackAll();
       const next = s.json?.next as string | undefined;
-      if (next === "awaiting-pick") return done("handed", "A person chooses.", round);
+      if (next === "awaiting-approval") return done("handed", "A person chooses.", round);
       if (next === "landed") return done("landed", "", round);
       if (next === "landing-queue") {
         const end = await this.waitForMerge();
