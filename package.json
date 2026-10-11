@@ -9,6 +9,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
+    "bench": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./bench/register.mjs bench/coordination.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
