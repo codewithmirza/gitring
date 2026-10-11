@@ -15,8 +15,8 @@ gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dyna
 2. An agent sends its plan ............................... gitring_declare
 3. Conflict check: gitring measures the distance to each other active plan and judges the 20 nearest
       0 same lines · 1 shared function · 2 same file · 3 one import · 4 two imports · 5 no relation
-   ├── distance 4 or 5 ... clear, no AI call
-   ├── distance 3 ........ fixed rules decide, no AI call
+   ├── distance 4 or 5 ... clear, no AI call (a plan that comes closer is judged)
+   ├── distance 3 ........ fixed rules decide, no AI call (see the note below the list)
    └── distance 0 to 2 ... a small Workers AI model decides; an unclear answer goes to a larger model;
                            if the AI fails, fixed rules decide
    Result: clear, or a change request to ONE agent. The other agent continues.
@@ -27,6 +27,8 @@ gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dyna
    If the text conflicts or the combined tests fail, the work goes back to its agent (redo policy).
 7. gitring tells the agents near the changed files that main moved.
 ```
+
+The note on distance 3: gitring skips the model call only when the model cannot change the answer. A pair at distance 3 or more cannot reach a change request under the default thresholds. So the fixed rules decide when every compared plan is at distance 3 or more, no plan comes closer, no changed function is used by another plan, and the task texts share few words. In every other case the model is called.
 
 | Term | Meaning |
 |---|---|
@@ -73,9 +75,13 @@ MCP clients and your own scripts do not need sign-in: send the `GITRING_KEY` fro
 Tests:
 
 ```bash
-npm test               # unit tests (Vitest)
+npm test               # unit tests and end-to-end tests with 8 to 60 agents (Vitest)
 npm run typecheck
+npm run bench          # the coordination logic on many simulated plans: no network, no Artifacts, no AI
+npm run load -- --help # a load test for a deployed gitring: it costs money, so it asks for --yes
 ```
+
+The end-to-end tests run the real coordinator on a test version of Artifacts, so they do not prove how the real service behaves. `npm run load` does that on a deployed copy.
 
 ## Try it without a paid account
 
@@ -202,18 +208,37 @@ gitring speaks MCP (streamable HTTP) at `https://<your-worker>/mcp`. Add it as a
 
 | Client | How |
 |---|---|
-| Claude (claude.ai, desktop) | Settings → Connectors → Add custom connector → paste the URL → Connect → Allow. |
-| Claude Code | `claude mcp add --transport http --scope user gitring https://<your-worker>/mcp`, then `/mcp` to sign in. |
+| Claude (claude.ai, desktop, mobile) | Settings → Connectors → Add custom connector → paste the URL → Connect → Allow. |
+| Claude Code | `claude mcp add --transport http --scope user gitring https://<your-worker>/mcp`, then `/mcp` to sign in. The [plugin](#claude-code-plugin) adds a skill and a hook. |
 | Cursor | The "Add to Cursor" button on the Connect page, or `.cursor/mcp.json` → `{ "mcpServers": { "gitring": { "url": "https://<your-worker>/mcp" } } }` |
-| Codex | `codex mcp add gitring --url https://<your-worker>/mcp`, then `codex mcp login gitring`. |
+| Codex | `codex mcp add gitring --url https://<your-worker>/mcp`, then `codex mcp login gitring`. Or put `[mcp_servers.gitring]` with `url = "https://<your-worker>/mcp"` in `~/.codex/config.toml`. |
+| VS Code (Copilot agent mode) | Command Palette → MCP: Add Server → HTTP → the URL. Or `.vscode/mcp.json` → `{ "servers": { "gitring": { "type": "http", "url": "https://<your-worker>/mcp" } } }`. If VS Code does not start the sign-in, send a personal API key in `headers`. |
+| Gemini CLI | `gemini mcp add --transport http gitring https://<your-worker>/mcp`, then `/mcp auth gitring`. Sign-in needs a browser on the same computer. Without one, add `--header "Authorization: Bearer $GITRING_KEY"`. |
 
-OAuth 2.1 details: protected resource metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp`, server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, dynamic client registration (RFC 7591) and client ID metadata documents, authorization code with PKCE (S256 only), tokens bound to `<origin>/mcp` (RFC 8707), revocation (RFC 7009). Access tokens last one hour. Refresh tokens last 30 days and rotate at each use: each sign-in of an app is one token family, and a refresh token that comes back after its rotation ends that family. Only hashes of codes and tokens are stored. Account → Connected apps shows each app with its last use; Revoke ends its tokens.
+OAuth 2.1 details: protected resource metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and one for each endpoint below), server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, dynamic client registration (RFC 7591) and client ID metadata documents, authorization code with PKCE (S256 only), tokens bound to the endpoint that the client names in the `resource` parameter (RFC 8707), revocation (RFC 7009). A token for `<origin>/mcp` does not work at `<origin>/mcp/github`, and the other way round. A client that sends no `resource` gets a token for `/mcp` only. Access tokens last one hour. Refresh tokens last 30 days and rotate at each use: each sign-in of an app is one token family, and a refresh token that comes back after its rotation ends that family. Only hashes of codes and tokens are stored. Account → Connected apps shows each app with its last use; Revoke ends its tokens.
 
 Scripts and hooks send a personal API key instead (Account → API keys): `Authorization: Bearer gk_…`.
 
 ```bash
 claude mcp add --transport http gitring https://<your-worker>/mcp --header "Authorization: Bearer $GITRING_KEY"   # Claude Code with a key
 ```
+
+### Three endpoints
+
+| Endpoint | Tools |
+|---|---|
+| `/mcp` | The 11 gitring tools (the table below). |
+| `/mcp/github` | 20 tools with the names and the argument names of the GitHub MCP server: `get_file_contents`, `search_code`, `push_files`, `create_pull_request`, `list_issues` and others. `repo` is a gitring project id (`get_me` lists them). A branch other than `main` is your own work copy, and no tool writes to `main`. `create_pull_request` asks for a merge: gitring runs the tests first. `merge_pull_request` waits and reports, because gitring merges when the tests pass. |
+| `/mcp/readonly` | Only the gitring tools that read. The OAuth scope `mcp:read` limits a token to these tools. |
+
+To use gitring in place of the GitHub MCP server, remove the GitHub server and add `/mcp/github` under the same name:
+
+```bash
+claude mcp remove github
+claude mcp add --transport http --scope user github https://<your-worker>/mcp/github
+```
+
+Prompts and skills that name GitHub tools keep working for the code-change loop: read, search, branch, push, pull request and task. The GitHub server has more tools (Actions, code scanning, releases and others), and gitring has none of them. `issue_write` makes a task. A person changes or closes a task in gitring. The tools of `/mcp/github` are in `src/worker/mcp-github.ts`.
 
 | Tool | What it does |
 |---|---|
@@ -238,6 +263,30 @@ Two modes:
 ```json
 { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command",
   "command": "curl -s -X POST -H 'content-type: application/json' -H \"Authorization: Bearer $GITRING_KEY\" --data-binary @- 'https://<your-worker>/hooks/claude/<project-id>'" } ] } ] } }
+```
+
+### Claude Code plugin
+
+The plugin is in `plugins/gitring`, and `.claude-plugin/marketplace.json` lists it. It holds the connection to `/mcp`, a skill for the work loop (send a plan, apply change requests, test, ask for the merge) and the hook above. It asks for the address of your gitring, and for a project id and a personal API key for the hook.
+
+```
+/plugin marketplace add codewithmirza/gitring
+/plugin install gitring@gitring
+```
+
+### Make gitring the default in a repository
+
+Put the address in the files of the repository, so that a new clone connects with no setup:
+
+- `.mcp.json` for Claude Code: `{ "mcpServers": { "gitring": { "type": "http", "url": "https://<your-worker>/mcp" } } }`. Claude Code asks for approval before it uses a server from this file.
+- `.cursor/mcp.json` for Cursor and `.vscode/mcp.json` for VS Code: the forms are in the table above.
+- `AGENTS.md`, which many agents read. A block like this one tells an agent what to do:
+
+```md
+## Changing code in this repository
+Many agents work here at the same time. Use the gitring tools when they are in your tool list.
+Send a plan with `gitring_declare` before you edit, and apply every change request that comes back.
+Run `gitring_check`, then call `gitring_submit`. Do not open a pull request for work that gitring merges.
 ```
 
 ## Redo when work cannot merge
