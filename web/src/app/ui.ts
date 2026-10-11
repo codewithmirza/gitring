@@ -51,6 +51,10 @@ export interface UiState {
   palette: boolean;
   /** Text the palette starts with (">" lists the commands). */
   paletteQuery: string;
+  /** Counts the requests to open the decisions list from outside the top bar (the "+N more" chip). */
+  decisionsRequest: number;
+  /** The decisions list is open. The tray of chips waits: the list shows the same questions. */
+  decisionsOpen: boolean;
 }
 
 let state: UiState = {
@@ -66,6 +70,8 @@ let state: UiState = {
   shortcutsAnchor: null,
   palette: false,
   paletteQuery: "",
+  decisionsRequest: 0,
+  decisionsOpen: false,
 };
 const listeners = new Set<() => void>();
 
@@ -197,6 +203,11 @@ export function openPalette(query = "") {
 
 export function closePalette() {
   setUi({ palette: false });
+}
+
+/** Open the decisions list in the top bar (it listens for this request). */
+export function openDecisions() {
+  setUi({ decisionsRequest: state.decisionsRequest + 1 });
 }
 
 export function openShortcuts(anchor?: HTMLElement | null | unknown) {

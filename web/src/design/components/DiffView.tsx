@@ -107,12 +107,12 @@ function FileDiff({ file, large, defaultOpen = true }: { file: DiffFileLike; lar
 }
 
 /** DiffView: unified, mono, line numbers, +/− gutters, hunk headers, collapsed unchanged regions. */
-export function DiffView({ files, large, empty = "No changes." }: { files: DiffFileLike[]; large?: boolean; empty?: string }) {
+export function DiffView({ files, large, empty = "No changes.", onlyFirstOpen }: { files: DiffFileLike[]; large?: boolean; empty?: string; onlyFirstOpen?: boolean }) {
   if (!files.length) return <p className="b-diff__empty">{empty}</p>;
   return (
     <div className={["b-diff", large && "b-diff--lg"].filter(Boolean).join(" ")}>
-      {files.map((f) => (
-        <FileDiff key={f.path} file={f} large={large} />
+      {files.map((f, i) => (
+        <FileDiff key={f.path} file={f} large={large} defaultOpen={!onlyFirstOpen || i === 0} />
       ))}
     </div>
   );

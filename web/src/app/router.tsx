@@ -6,6 +6,7 @@ export type Route =
   | { name: "chart" }
   | { name: "intents"; id?: string }
   | { name: "logbook"; id?: string }
+  | { name: "approve"; id: string }
   | { name: "code"; ref?: string; path?: string }
   | { name: "connect" }
   | { name: "design" }
@@ -24,6 +25,7 @@ function decode(part: string): string {
 
 /**
  * Paths: "/" home, "/overview", "/tasks" and "/tasks/:id", "/history" and "/history/:id",
+ * "/approve/:id" (a person says yes to the merge of a work copy),
  * "/code", "/code/:ref" and "/code/:ref/<file path>" (ref: main, a work copy id or a commit), "/connect",
  * "/projects", "/settings", "/account". Old paths stay as aliases: "/chart", "/intents/:id", "/logbook/:id".
  * "/design" exists in development builds only.
@@ -41,6 +43,9 @@ export function parseRoute(pathname: string): Route {
     case "history":
     case "logbook":
       return { name: "logbook", id: parts[1] };
+    case "approve":
+      if (parts[1]) return { name: "approve", id: parts[1] };
+      break;
     case "code":
       return { name: "code", ref: parts[1], path: parts.length > 2 ? parts.slice(2).join("/") : undefined };
     case "connect":
@@ -72,6 +77,7 @@ export function isProjectRoute(route: Route): boolean {
     route.name === "chart" ||
     route.name === "intents" ||
     route.name === "logbook" ||
+    route.name === "approve" ||
     route.name === "code" ||
     route.name === "connect" ||
     route.name === "settings"

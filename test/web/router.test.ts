@@ -26,6 +26,21 @@ describe("routes", async () => {
     expect(isProjectRoute({ name: "code" })).toBe(true);
     expect(isProjectRoute({ name: "account" })).toBe(false);
     expect(isProjectRoute({ name: "home" })).toBe(false);
+    expect(isProjectRoute({ name: "approve", id: "at_1" })).toBe(true);
+  });
+
+  it("parses the approve page with the id of the work copy", () => {
+    expect(parseRoute("/approve/at_1")).toEqual({ name: "approve", id: "at_1" });
+    expect(parseRoute("/approve/at_1/")).toEqual({ name: "approve", id: "at_1" });
+    expect(parseRoute("/approve/at%201")).toEqual({ name: "approve", id: "at 1" });
+    // No id: there is nothing to approve.
+    expect(parseRoute("/approve").name).toBe("notfound");
+    expect(parseRoute("/approve/").name).toBe("notfound");
+  });
+
+  it("keeps ?project= in the link to the approve page", () => {
+    expect(href("/approve/at_1")).toBe("/approve/at_1?project=shop");
+    expect(href("/approve/at_1?project=other")).toBe("/approve/at_1?project=other");
   });
 
   it("builds code links with a diff and a line", () => {

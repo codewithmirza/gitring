@@ -1,0 +1,107 @@
+/*
+ * Approvals in the shell: the tray of chips (bottom right, centered on narrow screens) and the card that the
+ * chips and the decisions list both show. Type sizes: 11, 13, 15. Colors come from the theme tokens only.
+ */
+
+/* ───────────── the card ───────────── */
+.apcard { display: grid; gap: var(--s-2); min-width: 0; }
+.apcard__title {
+  font-size: var(--t-md);
+  line-height: 1.3;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.apcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.apcard__line { font-variant-numeric: tabular-nums; }
+.apcard__why { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.apcard__acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-2); }
+.apcard__review { margin-right: auto; display: inline-flex; align-items: center; min-height: 24px; font-size: var(--t-xs); font-weight: 500; }
+.apcard__waits { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.apcard__note { display: grid; gap: var(--s-2); }
+.apcard__notelabel { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-1); }
+.apcard__opt { font-weight: 400; color: var(--ink-3); }
+.apcard__note .b-textarea { min-height: 56px; }
+.apcard__noteacts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-2); }
+
+/* A chip floats above the page: a border, a shadow and a caution edge ("waits for you"). */
+.apcard--chip {
+  padding: var(--s-4);
+  border: 1px solid var(--overlay-border);
+  border-left: 2px solid var(--caution);
+  border-radius: var(--r-3);
+  background: var(--bg);
+  box-shadow: var(--shadow-overlay);
+}
+/* A row in the decisions list sits on the popover. */
+.queue__item--approval { display: block; }
+.apcard--row { padding: 0; }
+
+/* ───────────── the tray ───────────── */
+.aptray {
+  position: fixed;
+  right: var(--s-5);
+  bottom: var(--s-5);
+  z-index: 30; /* above the rails (20), under popovers (40) and toasts (50) */
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.aptray__list { display: flex; flex-direction: column; gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+.aptray__item,
+.aptray__more { pointer-events: auto; animation: aptray-in var(--dur-2) var(--ease-out); }
+.aptray__more { align-self: flex-end; }
+.aptray__morebtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--overlay-border);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: var(--shadow-overlay);
+  color: var(--ink-1);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+.aptray__morebtn:hover { background: var(--surface-2); }
+/* On the approve page the tray is one line in the corner. The answer of that page needs the room. */
+.aptray--line { width: auto; display: flex; justify-content: flex-end; }
+.aptray--line .aptray__morebtn { pointer-events: auto; animation: aptray-in var(--dur-2) var(--ease-out); }
+
+@keyframes aptray-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Toasts sit above the tray (the tray tells its height in --tray-h). */
+.app .b-toasts { bottom: calc(var(--s-5) + var(--tray-h, 0px)); }
+
+/* Narrow screens: the tray is centered at the bottom. */
+@media (max-width: 760px) {
+  .aptray { left: 50%; right: auto; width: min(420px, calc(100vw - 24px)); transform: translateX(-50%); }
+}
+/* The approve page has its own answer bar at the bottom of the screen (the page changes its layout at 900px). */
+@media (max-width: 900px) {
+  .aptray[data-route="approve"] { display: none; }
+}
+/* Phones: above the bottom bar of the views. */
+@media (max-width: 600px) {
+  .aptray { bottom: calc(52px + var(--s-3) + env(safe-area-inset-bottom)); }
+  .apcard--chip { padding: var(--s-3) var(--s-4); }
+  .app.app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom) + var(--tray-h, 0px)); }
+}
+
+/* A low window: the chips scroll inside the tray, so that none of them leaves the screen. */
+@media (max-height: 640px) {
+  .aptray__list { max-height: calc(100dvh - 150px); overflow-y: auto; padding: 4px 4px 14px; margin: -4px -4px -14px; }
+}
+
+/* Reduced motion: chips appear without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .aptray__item,
+  .aptray__more,
+  .aptray--line .aptray__morebtn { animation: none; }
+}

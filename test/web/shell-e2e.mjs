@@ -166,18 +166,19 @@ for (const [w, h] of [
   await page.keyboard.press("Escape");
   ok(!(await keys.count()), "Escape closes the shortcuts popover");
 
-  // Decisions: one suggested action, Enter runs it.
+  // Decisions: work that is ready and has no question for a yes. The person opens the task and merges there;
+  // the list does not merge by itself (merges that wait for a yes: approvals-e2e.mjs).
   const queue = page.locator(".topbar__queue");
+  ok((await queue.getAttribute("aria-label"))?.startsWith("1 decision needs you"), "the decisions button says that 1 decision needs you");
   await queue.click();
-  const merge = page.getByRole("button", { name: "Merge PETREL-2" });
-  await merge.waitFor();
-  ok(await merge.evaluate((el) => el === document.activeElement), "the suggested action has focus");
+  const openTask = page.getByRole("button", { name: "Open the task" });
+  await openTask.waitFor();
+  ok(await openTask.evaluate((el) => el === document.activeElement), "the first action has focus");
+  ok((await page.getByRole("button", { name: /^Merge/ }).count()) === 0, "the list has no merge button for work without a question");
   await page.keyboard.press("Enter");
-  await page.getByText(/Merged into main/).first().waitFor({ timeout: 4000 });
-  ok(await page.getByText(/Merged into main/).first().isVisible(), "Enter on the suggestion merges (toast)");
-  await page.waitForTimeout(300);
-  ok((await queue.getAttribute("aria-label"))?.startsWith("No decisions"), "the decision count clears");
-  await page.keyboard.press("Escape");
+  await page.waitForURL(/\/tasks\/i_search/);
+  ok(page.url().includes("/tasks/i_search"), "Enter on the action opens the task");
+  ok((await page.locator(".b-pop").count()) === 0, "the decisions list closes when the task opens");
 
   // Project switcher: type to filter, Escape returns focus.
   const sw = page.locator(".acct-switch");

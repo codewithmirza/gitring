@@ -1,18 +1,20 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { noTestRan, type Attempt } from "../../../src/core/types";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { Attempt } from "../../../src/core/types";
 import { Mark, Icon, type IconName } from "../design/icons";
 import { Button, IconButton, Popover, Segmented, Stat, rovingKeys, toast, usePopover } from "../design/components";
 import { harbor } from "../state/api";
 import { THEMES, setTheme, useTheme, type Theme } from "../design/theme";
 import { useStore } from "../state/store";
-import { indexes, selectJudgmentQueue, type JudgmentItem } from "../state/selectors";
+import { indexes, type JudgmentItem, type OtherJudgmentItem } from "../state/selectors";
+import { useJudgmentQueue } from "../state/approvals";
 import { int, shortSha } from "../state/format";
 import { isProjectRoute, Link, navigate, type Route } from "./router";
 import { ProjectSwitcher, UserMenu } from "./Account";
 import { useCanAct } from "../state/account";
 import { launchAllNow } from "./actions";
-import { closePalette, openPalette, openShortcuts, useUi } from "./ui";
+import { closePalette, openPalette, openShortcuts, setUi, useUi } from "./ui";
 import { PALETTE_KEY } from "./keys";
+import { ApprovalCard } from "./ApprovalCard";
 
 interface NavItem {
   to: string;
@@ -143,54 +145,25 @@ function Connection() {
   );
 }
 
-/** The work copy that gitring suggests for a "choose one" decision: tests first, then the smaller diff. */
-export function bestReady(attempts: Attempt[]): Attempt | null {
-  const ready = attempts.filter((a) => a.status === "ready");
-  if (!ready.length) return null;
-  const rate = (a: Attempt) => {
-    const run = a.composedChecks ?? a.checks;
-    return run ? run.passed / Math.max(1, run.passed + run.failed) : 0;
-  };
-  return [...ready].sort(
-    (a, b) =>
-      Number(Boolean(b.checks?.ok)) - Number(Boolean(a.checks?.ok)) ||
-      rate(b) - rate(a) ||
-      a.stats.additions + a.stats.deletions - (b.stats.additions + b.stats.deletions) ||
-      a.createdAt - b.createdAt,
-  )[0];
-}
-
-function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void }) {
+/** A decision that is not a question for a yes: work that could not merge, a course check that asks, or old work. */
+function OtherRow({ item, first, onDone }: { item: OtherJudgmentItem; first: boolean; onDone: () => void }) {
   const st = useStore((s) => s.state);
   const canAct = useCanAct();
   const [busy, setBusy] = useState(false);
   const idx = st ? indexes(st) : null;
-  const sync = st?.project.settings.github?.mode ?? "off";
   const callsign = (a: Attempt) => idx?.agentById.get(a.agentId)?.callsign ?? a.agentId;
 
   const attempts = item.attemptIds.map((id) => idx?.attemptById.get(id)).filter((a): a is Attempt => Boolean(a));
-  const pick = item.kind === "pick" ? bestReady(attempts) : null;
-  const redo = item.kind === "escalation" && item.key.startsWith("stuck:") ? attempts[0] : undefined;
-  const run = pick?.composedChecks ?? pick?.checks;
-  const testWords = run ? (noTestRan(run) ? "no test ran" : `${run.passed} of ${run.passed + run.failed} tests pass`) : "the tests pass";
+  const redo = item.key.startsWith("stuck:") ? attempts[0] : undefined;
 
   const act = async () => {
+    if (!redo) return;
     setBusy(true);
     try {
-      if (pick) {
-        const why = `Chosen from the decisions list: ${testWords}, +${pick.stats.additions} −${pick.stats.deletions}.`;
-        const res = await harbor().land(pick.id, why);
-        toast(
-          res.landing
-            ? { tone: "clear", title: `Merged into main ${shortSha(res.landing.mainAfter)}`, text: `“${item.title}”.`, action: { label: "Read the merge record", onClick: () => navigate(`/history/${res.landing!.id}`) } }
-            : { tone: "info", title: res.waits ? "The merge waits" : "Redo scheduled", text: res.message ?? "The work copy does not merge cleanly with main. gitring does it again on the new main." },
-        );
-      } else if (redo) {
-        await harbor().rederive(redo.id, "Redo on the new main (from the decisions list).");
-        toast({ tone: "info", title: "Redo started", text: `${callsign(redo)} does “${item.title}” again on the new main.` });
-      }
+      await harbor().rederive(redo.id, "Redo on the new main (from the decisions list).");
+      toast({ tone: "info", title: "Redo started", text: `${callsign(redo)} does “${item.title}” again on the new main.` });
     } catch (e) {
-      toast({ tone: "danger", title: pick ? "The merge did not start" : "The redo did not start", text: (e as Error).message });
+      toast({ tone: "danger", title: "The redo did not start", text: (e as Error).message });
     } finally {
       setBusy(false);
     }
@@ -200,36 +173,28 @@ function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void 
     onDone();
     navigate(`/tasks/${item.intentId}`);
   };
-  const label = pick ? `Merge ${callsign(pick)}` : redo ? "Redo on the new main" : "Open the task";
-  const result = pick
-    ? sync === "pull-request"
-      ? "Into main, then into the pull request on GitHub."
-      : sync === "main"
-        ? "Into main, then to main on GitHub."
-        : "Into main."
-    : redo
-      ? `${callsign(redo)} gets the task again on the current main.`
+  const result = redo
+    ? `${callsign(redo)} gets the task again on the current main.`
+    : item.kind === "pick"
+      ? "You merge a work copy on the task page."
       : "A person decides on this work.";
   return (
     <li className="queue__item">
       <div className="queue__text">
         <span className="voice-human queue__title">{item.title}</span>
-        <span className="queue__detail">
-          {item.detail}.
-          {pick && run ? ` Suggested: ${callsign(pick)}, ${testWords}, +${pick.stats.additions} −${pick.stats.deletions}.` : ""}
-        </span>
+        <span className="queue__detail">{item.detail}.</span>
       </div>
       <div className="queue__acts">
-        {canAct && (pick || redo) ? (
-          <Button size="sm" variant="primary" className="queue__primary" busy={busy} onClick={() => void act()} icon={pick ? "anchor" : "rederive"} aria-describedby={`${item.key}-result`}>
-            {label}
+        {canAct && redo ? (
+          <Button size="sm" variant="primary" className="queue__primary" data-row-first="" data-autofocus={first ? "" : undefined} busy={busy} onClick={() => void act()} icon="rederive" aria-describedby={`${item.key}-result`}>
+            Redo on the new main
           </Button>
         ) : (
-          <Button size="sm" variant="primary" className="queue__primary" onClick={open} icon="arrow-right">
+          <Button size="sm" variant="primary" className="queue__primary" data-row-first="" data-autofocus={first ? "" : undefined} onClick={open} icon="arrow-right">
             Open the task
           </Button>
         )}
-        {(pick || redo) && (
+        {redo && (
           <Link to={`/tasks/${item.intentId}`} className="queue__link" onClick={onDone}>
             Compare
           </Link>
@@ -243,25 +208,58 @@ function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void 
 }
 
 function Decisions() {
-  const queue = useStore((s) => (s.state ? selectJudgmentQueue(s.state) : EMPTY_Q));
+  const queue = useJudgmentQueue();
   const canAct = useCanAct();
   const pop = usePopover();
-  const n = queue.length;
+  const { setOpen } = pop;
+  // The "+N more" chip of the tray asks to open this list.
+  const request = useUi().decisionsRequest;
+  const seen = useRef(request);
+  useEffect(() => {
+    if (request === seen.current) return;
+    seen.current = request;
+    setOpen(true);
+  }, [request, setOpen]);
+  // While the list is open, the tray of chips waits: both show the same questions.
+  const listOpen = pop.open;
+  useEffect(() => {
+    setUi({ decisionsOpen: listOpen });
+    return () => setUi({ decisionsOpen: false });
+  }, [listOpen]);
+
+  // A member decides on the questions that wait for them and on the other items. A question that waits for
+  // somebody else is in the list too, but it is not theirs. People who only view see everything as "waits".
+  const mine = useMemo(() => (canAct ? queue.filter((q) => q.kind !== "approval" || q.mayAnswer) : EMPTY_Q), [queue, canAct]);
+  const rest = useMemo(() => (canAct ? queue.filter((q) => q.kind === "approval" && !q.mayAnswer) : queue), [queue, canAct]);
+  const rows = useMemo(() => [...mine, ...rest], [mine, rest]);
+  const n = canAct ? mine.length : queue.length;
+  const w = canAct ? rest.length : 0;
   // The color says "needs you": only for people who can decide (members and owners).
-  const needsYou = n > 0 && canAct;
+  const needsYou = mine.length > 0;
+  const merges = mine.every((q) => q.kind === "approval");
+  const lead = merges ? `${n} ${n === 1 ? "merge waits" : "merges wait"} for you.` : `${n} ${n === 1 ? "decision needs" : "decisions need"} you.`;
+  const others = w > 0 ? ` ${w} ${w === 1 ? "waits" : "wait"} for other people.` : "";
+  const label =
+    n === 0
+      ? `No merge waits for you.${others}${others ? " Show the decisions." : ""}`
+      : canAct
+        ? `${lead}${others} Show the decisions.`
+        : `${n} ${n === 1 ? "decision waits" : "decisions wait"} for a member. Show the decisions.`;
+  const help =
+    rows.length === 0
+      ? "No merge waits for you. gitring merges work when its tests pass."
+      : !canAct
+        ? "A member of this project says yes. gitring merges all other work by itself."
+        : n === 0
+          ? `No merge waits for you.${others}`
+          : `${lead}${merges ? " Yes merges the work into main. Send back tells the agent what to change." : ""}${rows.length > 1 ? " J and K move between the decisions." : ""}`;
   return (
     <>
       <button
         {...pop.triggerProps}
         type="button"
         className={["topbar__queue", needsYou && "has-items", !canAct && "topbar__queue--watch"].filter(Boolean).join(" ")}
-        aria-label={
-          n === 0
-            ? "No decisions need you."
-            : canAct
-              ? `${n} ${n === 1 ? "decision needs" : "decisions need"} you. Show the decisions.`
-              : `${n} ${n === 1 ? "decision waits" : "decisions wait"} for a member. Show the decisions.`
-        }
+        aria-label={label}
       >
         <Icon name={n ? "lighthouse" : "check"} />
         <span className="topbar__queuetext">{n ? `${n} ${n === 1 ? "decision" : "decisions"}` : "No decisions"}</span>
@@ -272,20 +270,27 @@ function Decisions() {
         )}
       </button>
       <Popover {...pop.popoverProps} label="Decisions" align="end" width={400}>
-        <div className="queue" onKeyDown={(e) => rovingKeys(e, ".queue__primary", { down: ["ArrowDown", "j"], up: ["ArrowUp", "k"] })}>
+        <div
+          className="queue"
+          onKeyDown={(e) => {
+            // Letters and arrows belong to a text field (the note for the agent).
+            if ((e.target as HTMLElement).closest("textarea, input")) return;
+            rovingKeys(e, "[data-row-first]", { down: ["ArrowDown", "j"], up: ["ArrowUp", "k"] });
+          }}
+        >
           <h2 className="pop-title">Decisions</h2>
-          <p className="pop-help">
-            {n === 0
-              ? "No decisions need you now. gitring merges work when its tests pass."
-              : canAct
-                ? "Each decision has one suggested action. Enter runs it; J and K move. gitring merges all other work by itself."
-                : "A member of this project makes these decisions. gitring merges all other work by itself."}
-          </p>
-          {n > 0 && (
+          <p className="pop-help">{help}</p>
+          {rows.length > 0 && (
             <ol className="queue__list">
-              {queue.map((q) => (
-                <DecisionRow key={q.key} item={q} onDone={pop.close} />
-              ))}
+              {rows.map((q: JudgmentItem, i) =>
+                q.kind === "approval" ? (
+                  <li key={q.key} className="queue__item queue__item--approval">
+                    <ApprovalCard item={q} variant="row" onOpen={pop.close} focusReview={i === 0} />
+                  </li>
+                ) : (
+                  <OtherRow key={q.key} item={q} first={i === 0} onDone={pop.close} />
+                ),
+              )}
             </ol>
           )}
         </div>
