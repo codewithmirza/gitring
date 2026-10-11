@@ -9,6 +9,7 @@
  *   after-commit   main has the commit; gitring has not written its record
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withDefaults } from "../../src/core/types";
 import { CrashWorld, type StopPoint } from "./crash-world";
 
 const LEASE = 5 * 60_000;
@@ -350,5 +351,91 @@ describe("the hourly test budget is used (container runner)", () => {
     await w.settle();
     expect(w.status(t.attemptId)).toBe("landed");
     expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+  });
+});
+
+/** A project with no test file: the gitring test runner has no test to run. */
+const NO_TEST_FILES = [{ path: "src/a.js", text: "export const a = 1;\n" }];
+const NO_TEST_RAN = "No test ran. A person must decide to merge.";
+
+describe("no test ran (gitring test runner)", () => {
+  it("sends the work copy to the decisions queue, and a person's pick merges it", async () => {
+    const w = new CrashWorld();
+    await w.start({ files: NO_TEST_FILES });
+    const t = await w.submitTask("alpha");
+    expect(t.next).toBe("awaiting-pick");
+    expect(t.message).toBe(NO_TEST_RAN);
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("ready");
+    expect(w.inner.intents.get(t.intentId)?.status).toBe("judging");
+    expect(w.inner.db.queue()).toEqual([]);
+    expect(w.mainCommits).toHaveLength(0);
+    expect(w.inner.attempts.get(t.attemptId)!.checks).toMatchObject({ ok: true, passed: 0, failed: 0, ran: 0 });
+
+    // A person decides to merge: it merges, once.
+    const picked = await w.harbor.land(t.attemptId, "Robin decides to merge this work copy.");
+    expect(picked.status).toBe("landed");
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+    expect(w.inner.intents.get(t.intentId)?.status).toBe("landed");
+  });
+
+  it("merges by itself when the owner allows it", async () => {
+    const w = new CrashWorld();
+    await w.start({ files: NO_TEST_FILES, settings: { allowUntested: true } });
+    const t = await w.submitTask("alpha");
+    expect(t.next).toBe("landing-queue");
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+  });
+
+  it("stops at the merge too: a queued work copy goes to the decisions queue when the setting turns off", async () => {
+    const w = new CrashWorld();
+    await w.start({ files: NO_TEST_FILES, settings: { allowUntested: true } });
+    const t = await w.submitTask("alpha", { stop: "queued" });
+    await w.harbor.updateSettings({ allowUntested: false });
+    w.restart();
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("ready");
+    expect(w.inner.intents.get(t.intentId)?.status).toBe("judging");
+    expect(w.inner.db.queue()).toEqual([]);
+    expect(w.inner.db.getMeta("landing")).toBeUndefined();
+    expect(w.mainCommits).toHaveLength(0);
+    const callsign = (await w.harbor.state()).agents[0].callsign;
+    expect(w.inner.logs.map((l) => l.message)).toContain(`The merge of the work of ${callsign} stops. ${NO_TEST_RAN}`);
+    // A person's pick still merges it.
+    expect((await w.harbor.land(t.attemptId, "Robin decides to merge this work copy.")).status).toBe("landed");
+  });
+
+  it("does not hold work that has a test", async () => {
+    const w = new CrashWorld();
+    await w.start();
+    const t = await w.submitTask("alpha");
+    expect(t.next).toBe("landing-queue");
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(w.inner.attempts.get(t.attemptId)!.composedChecks).toMatchObject({ ok: true, ran: 1 });
+  });
+
+  it("does not hold a container run: the exit code decides", async () => {
+    const w = new CrashWorld();
+    await w.start({ runner: "container", files: NO_TEST_FILES });
+    const t = await w.submitTask("alpha");
+    expect(t.next).toBe("landing-queue");
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+  });
+});
+
+describe("the setting allowUntested", () => {
+  it("is off by default, the owner can save it, and a value that is not true or false changes nothing", async () => {
+    const w = new CrashWorld();
+    await w.start();
+    expect((await w.harbor.settings()).allowUntested).toBe(false);
+    expect((await w.harbor.updateSettings({ allowUntested: true })).allowUntested).toBe(true);
+    expect((await w.harbor.updateSettings({ allowUntested: "yes" as never })).allowUntested).toBe(true);
+    expect((await w.harbor.updateSettings({ allowUntested: false })).allowUntested).toBe(false);
+    // A project that was saved before the setting existed reads as false.
+    expect(withDefaults({ autoLand: true } as never).allowUntested).toBe(false);
   });
 });

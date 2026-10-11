@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { Attempt } from "../../../src/core/types";
+import { noTestRan, type Attempt } from "../../../src/core/types";
 import { Mark, Icon, type IconName } from "../design/icons";
 import { Button, IconButton, Popover, Segmented, Stat, rovingKeys, toast, usePopover } from "../design/components";
 import { harbor } from "../state/api";
@@ -172,12 +172,13 @@ function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void 
   const pick = item.kind === "pick" ? bestReady(attempts) : null;
   const redo = item.kind === "escalation" && item.key.startsWith("stuck:") ? attempts[0] : undefined;
   const run = pick?.composedChecks ?? pick?.checks;
+  const testWords = run ? (noTestRan(run) ? "no test ran" : `${run.passed} of ${run.passed + run.failed} tests pass`) : "the tests pass";
 
   const act = async () => {
     setBusy(true);
     try {
       if (pick) {
-        const why = `Chosen from the decisions list: ${run ? `${run.passed} of ${run.passed + run.failed} tests pass` : "the tests pass"}, +${pick.stats.additions} −${pick.stats.deletions}.`;
+        const why = `Chosen from the decisions list: ${testWords}, +${pick.stats.additions} −${pick.stats.deletions}.`;
         const res = await harbor().land(pick.id, why);
         toast(
           res.landing
@@ -215,7 +216,7 @@ function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void 
         <span className="voice-human queue__title">{item.title}</span>
         <span className="queue__detail">
           {item.detail}.
-          {pick && run ? ` Suggested: ${callsign(pick)}, ${run.passed} of ${run.passed + run.failed} tests pass, +${pick.stats.additions} −${pick.stats.deletions}.` : ""}
+          {pick && run ? ` Suggested: ${callsign(pick)}, ${testWords}, +${pick.stats.additions} −${pick.stats.deletions}.` : ""}
         </span>
       </div>
       <div className="queue__acts">

@@ -488,6 +488,17 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
           ? "A Linux container with Node.js 24 runs the install command, then the test command. The container can reach package registries only."
           : "A Dynamic Worker runs tests/*.test.js with the gitring test runner. No dependencies and no network."}
       </p>
+      {!container && (
+        <>
+          <Checkbox
+            label="Merge when no test runs"
+            checked={Boolean(settings.allowUntested)}
+            disabled={!owner || busy}
+            onChange={(e) => owner && void save({ allowUntested: e.target.checked }, "Test settings saved")}
+          />
+          <p className="np__help">{settings.allowUntested ? "When no test runs, gitring merges the work copy by itself." : "When no test runs, a person must decide to merge."}</p>
+        </>
+      )}
       {container && (
         <>
           <div className="st-row">

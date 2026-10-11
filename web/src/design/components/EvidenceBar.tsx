@@ -1,4 +1,4 @@
-import type { CheckRun } from "../../../../src/core/types";
+import { noTestRan, type CheckRun } from "../../../../src/core/types";
 import { Icon } from "../icons";
 import { ProgressRule } from "./ProgressRule";
 
@@ -36,10 +36,13 @@ export function EvidenceBar({ run, pending = 0, label, showFailures = true, chec
   }
   const total = run.passed + run.failed;
   const fails = run.cases.filter((c) => !c.ok);
-  const alt =
-    `${label ? label + ": " : ""}${total} tests: ${run.passed} pass` +
-    (fails.length ? `, ${fails.length} fail: ${fails.map((f) => f.name).join("; ")}` : "") +
-    (run.error ? `. Test runner error: ${run.error}` : "");
+  // No test ran: nothing is verified. Say so, do not show "0/0 pass" with a check mark.
+  const untested = noTestRan(run);
+  const alt = untested
+    ? `${label ? label + ": " : ""}No test ran.`
+    : `${label ? label + ": " : ""}${total} tests: ${run.passed} pass` +
+      (fails.length ? `, ${fails.length} fail: ${fails.map((f) => f.name).join("; ")}` : "") +
+      (run.error ? `. Test runner error: ${run.error}` : "");
   const cases = run.cases.length ? run.cases : Array.from({ length: total }, (_, i) => ({ ok: i < run.passed, name: "", file: "", ms: 0 }));
   return (
     <div className="b-evidence">
@@ -53,9 +56,9 @@ export function EvidenceBar({ run, pending = 0, label, showFailures = true, chec
         ))}
       </div>
       <div className="b-evidence__label" aria-hidden="true">
-        <span className={["b-evidence__count", run.ok ? "is-ok" : "is-fail"].join(" ")}>
-          <Icon name={run.ok ? "check" : "cross"} size={12} />
-          {run.passed}/{total} pass
+        <span className={["b-evidence__count", untested ? "" : run.ok ? "is-ok" : "is-fail"].filter(Boolean).join(" ")}>
+          <Icon name={untested ? "info" : run.ok ? "check" : "cross"} size={12} />
+          {untested ? "No test ran" : `${run.passed}/${total} pass`}
         </span>
         {label && <span>{label}</span>}
         <span className="voice-agent ink-3">{run.ms} ms</span>

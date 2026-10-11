@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import type { AgentInfo, Attempt, Correction, CourseCheck, Intent, Landing } from "../../../src/core/types";
+import { noTestRan, type AgentInfo, type Attempt, type Correction, type CourseCheck, type Intent, type Landing } from "../../../src/core/types";
 import {
   AttemptBadge,
   Badge,
@@ -73,7 +73,7 @@ function useMergeResult(): string {
 /** A reason for the merge record from the facts: the tests, the size, and how it compares. */
 function suggestedReason(a: Attempt, all: Attempt[]): string {
   const run = a.composedChecks ?? a.checks;
-  const tests = run ? `${run.passed} of ${run.passed + run.failed} tests pass` : "The tests pass";
+  const tests = run ? (noTestRan(run) ? "No test ran" : `${run.passed} of ${run.passed + run.failed} tests pass`) : "The tests pass";
   const size = (x: Attempt) => x.stats.additions + x.stats.deletions;
   const others = all.filter((x) => x.id !== a.id && x.status === "ready");
   const smallest = others.length > 0 && others.every((o) => size(o) >= size(a));

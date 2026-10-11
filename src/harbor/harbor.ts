@@ -8,7 +8,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
-import { DEFAULT_SETTINGS, withDefaults } from "../core/types";
+import { DEFAULT_SETTINGS, noTestRan, withDefaults } from "../core/types";
 import { Db } from "./store";
 import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import { hmacSha256Hex } from "../directory/crypto";
@@ -85,6 +85,8 @@ const LLM_STARTS_PER_USER_HOUR = 12;
 const LANDING_LEASE_MS = 5 * 60_000;
 /** One merge starts at most this many times (crashes included). Then a person decides. */
 const MAX_LANDING_STARTS = 4;
+/** What people and agents read when the gitring test harness ran no test (nothing is verified). */
+const NO_TEST_RAN = "No test ran. A person must decide to merge.";
 
 /** The merge run in progress (meta "landing"): written before the landing work starts, cleared when it ends. */
 interface LandingRun {
@@ -1791,10 +1793,14 @@ export class HarborMaster extends DurableObject<Env> {
       const siblings = [...this.attempts.values()].filter((x) => x.intentId === a.intentId && x.id !== a.id && ACTIVE.has(x.status));
       // A re-derive of the attempt a human picked keeps that pick: it lands without a second question.
       const picked = this.pickedLineage(a);
-      const needPick = !picked && (!this.requireProject().settings.autoLand || siblings.length > 0);
+      // No test ran (the gitring test harness): nothing is verified, so a person decides, unless the owner allows it.
+      const untested = noTestRan(run) && !this.requireProject().settings.allowUntested;
+      const needPick = !picked && (untested || !this.requireProject().settings.autoLand || siblings.length > 0);
       if (needPick) {
         next = "awaiting-pick";
-        message = `${lead} ${siblings.length ? `${siblings.length + 1} work copies compete on this task.` : ""} A person chooses the one to merge.`;
+        message = untested
+          ? `${NO_TEST_RAN}${siblings.length ? ` ${siblings.length + 1} work copies compete on this task.` : ""}`
+          : `${lead} ${siblings.length ? `${siblings.length + 1} work copies compete on this task.` : ""} A person chooses the one to merge.`;
         if (siblings.every((x) => x.status === "ready")) {
           intent.status = "judging";
           this.putIntent(intent);
@@ -2073,6 +2079,15 @@ export class HarborMaster extends DurableObject<Env> {
     this.putAttempt(a);
     if (!run.ok) {
       await this.markStale(a, `Tests fail on main plus this work. ${failureSummary(run.cases, 3)}`);
+      return "done";
+    }
+    if (noTestRan(run) && !p.settings.allowUntested && !this.pickedLineage(a)) {
+      // No test ran on main plus this work: nothing is verified. The work copy goes to the decisions queue.
+      a.status = "ready";
+      intent.status = "judging";
+      this.putAttempt(a);
+      this.putIntent(intent);
+      this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${this.callsign(a.id)} stops. ${NO_TEST_RAN}` });
       return "done";
     }
     const method: T.LandingMethod = a.lineage.generation > 1 ? "rederive" : result.method;
@@ -3684,6 +3699,7 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
   const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : undefined);
   if (typeof raw.autoLand === "boolean") out.autoLand = raw.autoLand;
   if (typeof raw.intentsInRepo === "boolean") out.intentsInRepo = raw.intentsInRepo;
+  if (typeof raw.allowUntested === "boolean") out.allowUntested = raw.allowUntested;
   const fanout = num(raw.fanout, 1, 4);
   if (fanout !== undefined) out.fanout = Math.round(fanout);
   if (raw.decisionModel === "clef" || raw.decisionModel === "clef-flash" || raw.decisionModel === "rules") out.decisionModel = raw.decisionModel;
