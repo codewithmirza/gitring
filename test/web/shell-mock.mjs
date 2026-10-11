@@ -4,6 +4,17 @@
 // over /ws/:p, and a request log at GET /__mock/log (POST /__mock/reset clears it and the data).
 // Sign-in: /auth/:provider/start sets a session cookie and redirects back (no provider). ?fail=1 on a
 // task title ("fail") makes the create request fail, to test error recovery.
+//
+// Scenarios: POST /__mock/reset gives the base data (work that is ready and has no question). POST
+// /__mock/reset?scenario=approvals gives merges that wait for a yes: Robin is a member and sent most of the work,
+// Sam sent one work copy, two work copies compete on one task. More controls, all POST with a JSON body:
+//   /__mock/role      {role}               the role of the signed-in person ("owner", "member" or "viewer")
+//   /__mock/settings  {approver, ...}      change project settings
+//   /__mock/private   {on}                 a visitor who is not signed in cannot open the project (401)
+//   /__mock/land      {mode}               what a yes does: "merge" (default) or "wait" (the test budget is used)
+//   /__mock/attempt   {id, patch, quiet}   change a work copy as if somebody else did (an approval patch merges);
+//                                          quiet: no live event, so the page learns it only from its next answer
+// POST /api/projects/:p/attempts/:id/decide follows the Worker: the same outcomes and the same sentences.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,7 +32,7 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", "
 
 let data;
 let log = [];
-function reset() {
+function reset(scenario = "base") {
   log = [];
   const files = [
     "README.md",
@@ -217,8 +228,15 @@ function reset() {
       medianCheckLatencyMs: 46,
     },
   };
+  const diffs = {};
+  if (scenario === "approvals") withApprovals(state, diffs, { run, fp, course, intent, attempt });
   data = {
     signedIn: new Set(),
+    // What the signed-in person is on the project. A visitor who is not signed in is a viewer.
+    role: scenario === "approvals" ? "member" : "owner",
+    private: false,
+    landMode: "merge",
+    diffs,
     github: { connected: true, login: "robin" },
     keys: [
       { id: "k_1", name: "my laptop", prefix: "gk_ab12", createdAt: NOW - 9 * 24 * 60 * min, lastUsed: NOW - 2 * 60 * min },
@@ -229,7 +247,7 @@ function reset() {
       { id: "gr_2", clientId: "cursor", clientName: "Cursor", clientUri: "https://cursor.com", scope: "projects", createdAt: NOW - 24 * 60 * min },
     ],
     projects: [
-      { id: "shop", name: "Catalog", visibility: "private", source: { kind: "github", repo: "robin/shop" }, createdAt: NOW - 3 * 24 * 60 * min, role: "owner" },
+      { id: "shop", name: "Catalog", visibility: "private", source: { kind: "github", repo: "robin/shop" }, createdAt: NOW - 3 * 24 * 60 * min, role: scenario === "approvals" ? "member" : "owner" },
       { id: "docs", name: "Docs site", visibility: "public", source: { kind: "upload", files: 40 }, createdAt: NOW - 9 * 24 * 60 * min, role: "member" },
       { id: "infra", name: "Infra scripts", visibility: "private", source: { kind: "push" }, createdAt: NOW - 20 * 24 * 60 * min, role: "owner" },
     ],
@@ -238,6 +256,73 @@ function reset() {
   };
 }
 reset();
+
+/**
+ * The "approvals" scenario. Five work copies wait for a yes (the oldest first):
+ *   at_s1, at_s2   compete on one task ("Add a search to the shop"); Robin sent both
+ *   at_c1          "Round the price in the cart"; Robin sent it, the project asks before every merge
+ *   at_k1          "Show the stock count on each item"; Sam sent it, and it changes 7 files, among them package.json
+ *   at_b1          "Show a sale badge on cheap items"; Robin sent it, no test ran (an agent of the MCP kind)
+ * Robin is a member, so Robin may answer all but at_k1. The state is the base data with these changes.
+ */
+function withApprovals(state, diffs, { run, fp, course, intent, attempt }) {
+  const robin = { id: "u_1", name: "Robin" };
+  const sam = { id: "u_2", name: "Sam" };
+  const ask = (id, reason, why, approver, minutesAgo) => ({ id, status: "waiting", reason, why, digest: `dg_${id}`, approver, askedAt: NOW - minutesAgo * min });
+  const compete = ["2 work copies compete on this task. A person chooses one."];
+  state.project.settings = { ...state.project.settings, landing: "ask", approver: "sender" };
+
+  state.attempts = state.attempts.map((a) => {
+    if (a.id === "at_s1") return { ...a, sender: robin, approval: ask("ap_s1", "competing", compete, robin, 6) };
+    if (a.id === "at_s2") return { ...a, sender: robin, approval: ask("ap_s2", "competing", compete, robin, 5) };
+    return a;
+  });
+  state.intents = [
+    ...state.intents.map((i) => (i.id === "i_stock" ? { ...i, status: "judging" } : i)),
+    intent("i_cart", "Round the price in the cart", "judging"),
+    intent("i_sale", "Show a sale badge on cheap items", "judging"),
+  ];
+  state.attempts = [
+    ...state.attempts,
+    attempt("at_c1", "i_cart", "g2", "ready", {
+      sender: robin,
+      course: course(["Round the prices to two decimals", "Add the rounded prices for the total"], ["src/cart.js"]),
+      footprint: fp({ "src/cart.js": { status: "M", hunks: [[12, 20]], additions: 9, deletions: 3 } }),
+      stats: { filesChanged: 1, additions: 9, deletions: 3, steps: 5 },
+      checks: run(5),
+      composedChecks: run(5, 0, "composed"),
+      summary: "Prices show two decimals. The total is the sum of the rounded prices.",
+      approval: ask("ap_c1", "project-asks", ["This project asks a person before every merge."], robin, 4),
+    }),
+    attempt("at_k1", "i_stock", "g1", "ready", {
+      sender: sam,
+      course: course(["Count the stock of each item", "Show In stock or Sold out", "Add the count library"], ["package.json", "src/products.js"]),
+      footprint: fp({ "package.json": { status: "M", hunks: [[3, 6]], additions: 2, deletions: 1 } }),
+      stats: { filesChanged: 7, additions: 14, deletions: 7, steps: 6 },
+      checks: run(6),
+      composedChecks: run(6, 0, "composed"),
+      approval: ask("ap_k1", "looks-risky", ["Build or deploy files change: package.json."], sam, 3),
+    }),
+    attempt("at_b1", "i_sale", "g3", "ready", {
+      sender: robin,
+      course: course(["Mark the items that cost less than 10", "Show the badge in the list"], ["src/render/page.js"]),
+      footprint: fp({ "src/render/page.js": { status: "M", hunks: [[4, 9]], additions: 5, deletions: 0 } }),
+      stats: { filesChanged: 1, additions: 5, deletions: 0, steps: 3 },
+      checks: run(0),
+      composedChecks: run(0, 0, "composed"),
+      approval: ask("ap_b1", "no-test-ran", ["No test ran. The work is not verified."], robin, 2),
+    }),
+  ];
+
+  // The change of at_k1 is large: the page collapses all files but the first.
+  diffs.at_k1 = ["package.json", "src/index.js", "src/products.js", "src/cart.js", "src/render/page.js", "src/render/footer.js", "src/theme.css"].map((path, i) => ({
+    path,
+    status: "M",
+    additions: 2,
+    deletions: 1,
+    diff: `@@ -${i + 3},3 +${i + 3},4 @@\n keep\n-old line ${i}\n+new line ${i}\n+another line ${i}\n keep\n`,
+  }));
+}
 
 const user = { id: "u_1", name: "Robin Example", email: "robin@example.com", identities: [{ provider: "github", login: "robin" }], admin: true };
 
@@ -262,18 +347,26 @@ function json(res, status, body, headers = {}) {
   res.end(status === 204 ? undefined : JSON.stringify(body));
 }
 
+/** The JSON body of a request. A request has one body: later calls get the same answer (the log keeps it too). */
+const bodies = new WeakMap();
 function readBody(req) {
-  return new Promise((resolve) => {
-    let s = "";
-    req.on("data", (c) => (s += c));
-    req.on("end", () => {
-      try {
-        resolve(s ? JSON.parse(s) : {});
-      } catch {
-        resolve({});
-      }
-    });
-  });
+  if (!bodies.has(req)) {
+    bodies.set(
+      req,
+      new Promise((resolve) => {
+        let s = "";
+        req.on("data", (c) => (s += c));
+        req.on("end", () => {
+          try {
+            resolve(s ? JSON.parse(s) : {});
+          } catch {
+            resolve({});
+          }
+        });
+      }),
+    );
+  }
+  return bodies.get(req);
 }
 
 function session(req) {
@@ -297,15 +390,51 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const p = url.pathname;
   const method = req.method ?? "GET";
-  if (p.startsWith("/api/") || p.startsWith("/auth/")) log.push({ method, path: p + url.search, at: Date.now() });
+  const entry = { method, path: p + url.search, at: Date.now() };
+  if (p.startsWith("/api/") || p.startsWith("/auth/")) log.push(entry);
+  // The log keeps what a request sent (a body that is not empty), so that a test can read it.
+  if (p.startsWith("/api/") && method !== "GET" && method !== "HEAD") {
+    const sent = await readBody(req);
+    if (Object.keys(sent).length) entry.body = sent;
+  }
   const sid = session(req);
   const st = data.state;
 
   // test controls
   if (p === "/__mock/log") return json(res, 200, log);
   if (p === "/__mock/reset" && method === "POST") {
-    reset();
+    reset(url.searchParams.get("scenario") ?? "base");
     return json(res, 200, { ok: true });
+  }
+  if (p.startsWith("/__mock/") && method === "POST") {
+    const body = await readBody(req);
+    if (p === "/__mock/role") {
+      data.role = String(body.role);
+      data.projects[0].role = data.role;
+      return json(res, 200, { role: data.role });
+    }
+    if (p === "/__mock/settings") {
+      st.project.settings = { ...st.project.settings, ...body };
+      return json(res, 200, st.project.settings);
+    }
+    if (p === "/__mock/private") {
+      data.private = body.on !== false;
+      return json(res, 200, { private: data.private });
+    }
+    if (p === "/__mock/land") {
+      data.landMode = body.mode === "wait" ? "wait" : "merge";
+      return json(res, 200, { landMode: data.landMode });
+    }
+    if (p === "/__mock/attempt") {
+      const a = st.attempts.find((x) => x.id === body.id);
+      if (!a) return json(res, 404, { error: "No such work copy in the mock." });
+      const patch = body.patch ?? {};
+      const next = { ...a, ...patch, ...(patch.approval ? { approval: { ...a.approval, ...patch.approval } } : {}) };
+      st.attempts = st.attempts.map((x) => (x.id === a.id ? next : x));
+      if (!body.quiet) broadcast({ type: "attempt", attempt: next });
+      return json(res, 200, next);
+    }
+    return json(res, 404, { error: "No such control in the mock." });
   }
 
   // sign-in (no provider: the cookie is set at once)
@@ -366,9 +495,11 @@ const server = http.createServer(async (req, res) => {
   if (proj) {
     const rest = proj[2] ?? "";
     if (proj[1] !== "shop") return json(res, 404, { error: "This project does not exist, or you cannot see it." });
-    const access = sid ? "owner" : "viewer";
+    if (data.private && !sid) return json(res, 401, { error: "Sign in to open this project." });
+    const access = sid ? data.role : "viewer";
     if (rest === "/state") return json(res, 200, { ...st, access });
-    if (method !== "GET" && !sid) return json(res, 401, { error: "Sign in first." });
+    if (method !== "GET" && !sid) return json(res, 401, { error: "Sign in to do this." });
+    if (method !== "GET" && access === "viewer") return json(res, 403, { error: "You need the member role on this project. Ask an owner." });
     if (rest === "/connect") {
       const origin = `http://${req.headers.host}`;
       return json(res, 200, { projectId: "shop", mcpUrl: `${origin}/mcp`, hookUrl: `${origin}/hooks/claude/shop`, intentsUrl: `${origin}/hooks/intents`, artifacts: { namespace: "gitring", repo: "shop", backend: "artifacts" }, inputs: { slack: false, githubIssues: true }, githubApp: { slug: "git-ring", installUrl: "https://github.com/apps/git-ring/installations/new" } });
@@ -426,6 +557,87 @@ const server = http.createServer(async (req, res) => {
       broadcast({ type: "intent", intent: st.intents.find((x) => x.id === a.intentId) });
       return json(res, 200, { status: "landed", landing });
     }
+    // A person answers the question of a work copy. The outcomes and the sentences follow Harbor.decide in the Worker.
+    const decide = /^\/attempts\/([^/]+)\/decide$/.exec(rest);
+    if (decide && method === "POST") {
+      const body = await readBody(req);
+      if (body.answer !== "approve" && body.answer !== "send-back") return json(res, 400, { error: 'Give answer: "approve" or "send-back".' });
+      if (!body.approvalId || typeof body.approvalId !== "string") return json(res, 400, { error: "Give approvalId: the id of the question that you saw." });
+      const a = st.attempts.find((x) => x.id === decide[1]);
+      if (!a) return json(res, 404, { error: "This work copy does not exist." });
+      const ap = a.approval;
+      if (!ap) return json(res, 400, { error: "This work copy has no question to answer." });
+      const cur = () => st.attempts.find((x) => x.id === a.id) ?? a;
+      const out = (outcome, message, extra = {}) => ({ attemptId: a.id, outcome, approval: cur().approval ?? ap, status: cur().status, message, ...extra });
+      const rule = st.project.settings.approver === "owner" ? "owner" : "sender";
+      const may = access === "owner" || (access === "member" && rule !== "owner" && (!ap.approver || ap.approver.id === user.id));
+      if (!may) {
+        const message = rule === "owner" || !ap.approver ? "Only an owner of the project can answer this." : `Only ${ap.approver.name} (who sent the agent) or an owner of the project can answer this.`;
+        return json(res, 403, out("refused", message));
+      }
+      if (body.approvalId !== ap.id) return json(res, 200, out("withdrawn", "This question is old. The work changed, and gitring asked again. Open the new question."));
+      if (ap.status === "withdrawn") return json(res, 200, out("withdrawn", `This question is closed. ${ap.closed ?? ""}`.trim()));
+      if (ap.status !== "waiting") return json(res, 200, out("already", `${ap.answer?.by.name ?? "A person"} ${ap.status === "approved" ? "said yes to" : "sent back"} this work already.`));
+      if (a.status !== "ready") return json(res, 200, out("withdrawn", "This work is not waiting any more."));
+
+      const note = String(body.note ?? "").trim().slice(0, 1000);
+      const answer = { by: { id: user.id, name: "Robin" }, how: "app", ...(note ? { note } : {}), at: Date.now() };
+      const put = (next) => {
+        st.attempts = st.attempts.some((x) => x.id === next.id) ? st.attempts.map((x) => (x.id === next.id ? next : x)) : [...st.attempts, next];
+        broadcast({ type: "attempt", attempt: next });
+        return next;
+      };
+      const putIntent = (id, change) => {
+        st.intents = st.intents.map((x) => (x.id === id ? { ...x, ...change(x) } : x));
+        broadcast({ type: "intent", intent: st.intents.find((x) => x.id === id) });
+      };
+
+      if (body.answer === "approve") {
+        put({ ...a, approval: { ...ap, status: "approved", answer } });
+        if (data.landMode === "wait") {
+          // The hourly test budget is used: the work waits in the merge queue and keeps "ready".
+          const mergeWait = { until: Date.now() + 20 * min, message: "The test budget for this hour is used." };
+          put({ ...cur(), mergeWait });
+          return json(res, 200, out("approved", `${mergeWait.message} The work copy waits in the merge queue.`, { waits: { until: mergeWait.until } }));
+        }
+        // The order of the events follows the Worker: the task is "landing" while the work merges, then the work
+        // and the task are "landed", then the other work copies of the task become alternates.
+        putIntent(a.intentId, () => ({ status: "landing" }));
+        put({ ...cur(), status: "landing" });
+        const landing = { id: `l${data.seq++}`, attemptId: a.id, intentId: a.intentId, agentId: a.agentId, method: "fast-forward", mainBefore: st.project.mainSha, mainAfter: "beef5678cafe", checks: a.checks, correctionsApplied: 0, at: Date.now(), message: note || "Approved." };
+        st.landings = [...st.landings, landing];
+        put({ ...cur(), status: "landed", landedAt: landing.at });
+        putIntent(a.intentId, () => ({ status: "landed", landedSha: "beef5678" }));
+        for (const x of st.attempts.filter((x) => x.intentId === a.intentId && x.id !== a.id && x.status === "ready")) {
+          // The question of an alternate closes by itself.
+          put({ ...x, status: "alternate", ...(x.approval?.status === "waiting" ? { approval: { ...x.approval, status: "withdrawn", closed: "Another work copy of this task merged first." } } : {}) });
+        }
+        broadcast({ type: "landing", landing });
+        return json(res, 200, out("approved", `Merged by ${landing.method} at ${landing.mainAfter.slice(0, 7)}.`, { landing }));
+      }
+
+      // Send back. A built-in agent is done with this work copy and another one does the task again. An agent that
+      // works through MCP gets the work copy back with the note.
+      const builtin = st.agents.find((g) => g.id === a.agentId)?.kind === "builtin";
+      const refreshJudging = () => {
+        if (st.attempts.some((x) => x.intentId === a.intentId && x.status === "ready")) return;
+        putIntent(a.intentId, (i) => (i.status === "judging" ? { status: "underway" } : {}));
+      };
+      if (builtin) {
+        const { approval: _closed, ...copy } = a;
+        put({ ...a, approval: { ...ap, status: "sent-back", answer } });
+        // The work copy is stale for a moment, until the new one starts: the task has no work that is ready.
+        put({ ...cur(), status: "stale" });
+        await new Promise((r) => setTimeout(r, 250));
+        put({ ...copy, id: `at_${data.seq++}`, status: "rederiving", lineage: { generation: a.lineage.generation + 1, rederivedFrom: a.id }, createdAt: Date.now(), updatedAt: Date.now() });
+        if (note) putIntent(a.intentId, (i) => ({ constraints: [...i.constraints, `A person sent the work back: ${note}`], version: i.version + 1 }));
+        refreshJudging();
+        return json(res, 200, out("sent-back", "The work went back. A built-in agent does the task again and reads your note."));
+      }
+      put({ ...a, status: "underway", approval: { ...ap, status: "sent-back", answer } });
+      refreshJudging();
+      return json(res, 200, out("sent-back", "The work went back to the agent with your note. The agent changes it and submits again."));
+    }
     const redo = /^\/attempts\/([^/]+)\/rederive$/.exec(rest);
     if (redo && method === "POST") {
       const a = st.attempts.find((x) => x.id === redo[1]);
@@ -436,6 +648,7 @@ const server = http.createServer(async (req, res) => {
     }
     const diff = /^\/attempts\/([^/]+)\/diff$/.exec(rest);
     if (diff) {
+      if (data.diffs[diff[1]]) return json(res, 200, { files: data.diffs[diff[1]] });
       return json(res, 200, {
         files: [
           { path: "src/search.js", status: "A", additions: 3, deletions: 0, diff: "@@ -0,0 +1,3 @@\n+export function search(q) {\n+  return items.filter((i) => i.title.includes(q));\n+}\n" },
