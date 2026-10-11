@@ -54,7 +54,7 @@ Symbol analysis supports JavaScript and TypeScript. Other languages use files an
 
 ## Run it
 
-gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account. To try gitring with no Cloudflare account, see [Try it without a paid account](#try-it-without-a-paid-account).
+To run gitring on Cloudflare, you need Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account. To try gitring with no Cloudflare account, see [Try it without a paid account](#try-it-without-a-paid-account).
 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)
@@ -188,7 +188,7 @@ These limits come from the design, not from speed tests.
   - Each namespace allows 2,000 control requests every 10 seconds. Each repository allows 2,000 git requests every 10 seconds.
   - A project is one repository, and each work copy is one more. All projects of a deployment share one namespace.
   - gitring does not delete repositories. The repository of a finished work copy stays until you delete it.
-- **Cost**: gitring needs a paid Cloudflare plan (Workers Paid). Cloudflare bills Artifacts operations and storage from 14 October 2026 (see [Artifacts pricing](https://developers.cloudflare.com/artifacts/platform/pricing/)). Test containers also bill by use.
+- **Cost**: a deployment on Cloudflare needs a paid plan (Workers Paid). Cloudflare bills Artifacts operations and storage from 14 October 2026 (see [Artifacts pricing](https://developers.cloudflare.com/artifacts/platform/pricing/)). Test containers also bill by use.
 
 ## Connect agents
 
