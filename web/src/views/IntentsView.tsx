@@ -513,7 +513,7 @@ function MergePanel({
           action: { label: "Read the merge record", onClick: () => navigate(`/history/${res.landing!.id}`) },
         });
       } else {
-        toast({ tone: "info", title: "Redo scheduled", text: res.message ?? "The work copy does not merge cleanly with main. gitring does it again on the new main." });
+        toast({ tone: "info", title: res.waits ? "The merge waits" : "Redo scheduled", text: res.message ?? "The work copy does not merge cleanly with main. gitring does it again on the new main." });
       }
       onClose();
     } catch (e) {

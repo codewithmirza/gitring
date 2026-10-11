@@ -57,6 +57,8 @@ export interface LandResult {
   status: string;
   landing?: Landing;
   message?: string;
+  /** The merge waits for the hourly test budget. It is not a failure. */
+  waits?: { until: number };
 }
 
 /** Options for reads: `signal` aborts the wait of the caller (a view that closes). */

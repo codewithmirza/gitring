@@ -434,6 +434,11 @@ export interface CheckRun {
   runner?: "worker" | "container";
   /** Container runs: the end of the combined output (at most 8 KB). */
   log?: string;
+  /**
+   * The run did not happen: the hourly test budget is used. This is not a failure and not a pass.
+   * gitring tries again at `retryAt`. `message` is the plain sentence for people and agents.
+   */
+  wait?: { retryAt: Millis; message: string };
 }
 
 export interface Attempt {
@@ -466,6 +471,11 @@ export interface Attempt {
   returned?: { at: Millis; until: Millis; reason: string; policy: "agent-first" | "agent-only" };
   /** How many times the work came back to its agent. */
   returns?: number;
+  /**
+   * The merge waits: the hourly test budget is used. The work copy stays in the merge queue until `until`.
+   * This is not a failure and does not count as a return. `message` is the plain sentence for people.
+   */
+  mergeWait?: { until: Millis; message: string };
   summary?: string;
   stats: { filesChanged: number; additions: number; deletions: number; steps: number; tokens?: number };
   createdAt: Millis;

@@ -182,7 +182,7 @@ function DecisionRow({ item, onDone }: { item: JudgmentItem; onDone: () => void 
         toast(
           res.landing
             ? { tone: "clear", title: `Merged into main ${shortSha(res.landing.mainAfter)}`, text: `“${item.title}”.`, action: { label: "Read the merge record", onClick: () => navigate(`/history/${res.landing!.id}`) } }
-            : { tone: "info", title: "Redo scheduled", text: res.message ?? "The work copy does not merge cleanly with main. gitring does it again on the new main." },
+            : { tone: "info", title: res.waits ? "The merge waits" : "Redo scheduled", text: res.message ?? "The work copy does not merge cleanly with main. gitring does it again on the new main." },
         );
       } else if (redo) {
         await harbor().rederive(redo.id, "Redo on the new main (from the decisions list).");

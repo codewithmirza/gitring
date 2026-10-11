@@ -205,3 +205,150 @@ describe("a merge that fails with an error", () => {
     expect(w.inner.logs.some((l) => /stopped: Error: The repository is not available.*Try again\./.test(l.message))).toBe(true);
   });
 });
+
+/** The sentence for a used test budget, with the time of the next window (UTC). */
+const budgetSentence = (retryAt: number) => `The test budget for this hour is used. gitring tries again at ${new Date(retryAt).toISOString().slice(11, 16)} UTC.`;
+
+describe("the hourly test budget is used (container runner)", () => {
+  it("keeps the work copy queued at the merge: no failure, no return, an alarm at the next window", async () => {
+    const w = new CrashWorld();
+    await w.start({ runner: "container" });
+    const retryAt = Date.now() + 25 * 60_000;
+    // The test run before the submit gets a slot. The tests of main plus the work (at the merge) do not.
+    w.budget = { grants: 1, retryAt };
+    const t = await w.submitTask("alpha");
+    expect(t.next).toBe("landing-queue");
+    await w.settle();
+
+    const a = w.inner.attempts.get(t.attemptId)!;
+    expect(a.status).toBe("ready");
+    expect(a.mergeWait).toEqual({ until: retryAt, message: budgetSentence(retryAt) });
+    expect(a.returns ?? 0).toBe(0);
+    expect(a.returned).toBeUndefined();
+    // No failed run is stored: the run did not happen.
+    expect(a.composedChecks).toBeUndefined();
+    expect(a.checks?.ok).toBe(true);
+    expect(w.inner.intents.get(t.intentId)?.status).not.toBe("landing");
+    expect(w.inner.db.queue()).toEqual([t.attemptId]);
+    expect(w.inner.db.getMeta("landing")).toBeUndefined();
+    expect(w.alarm).toBe(retryAt);
+    expect(w.mainCommits).toHaveLength(0);
+    expect(w.inner.logs.map((l) => l.message)).toContain(`The merge of the work of ${(await w.harbor.state()).agents[0].callsign} waits. ${budgetSentence(retryAt)}`);
+
+    // The window opens but the budget is still used: the work copy stays queued, with the new time.
+    const retry2 = retryAt + 30 * 60_000;
+    w.budget = { grants: 0, retryAt: retry2 };
+    vi.setSystemTime(retryAt + 1000);
+    await w.harbor.alarm();
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("ready");
+    expect(w.inner.attempts.get(t.attemptId)!.mergeWait?.until).toBe(retry2);
+    expect(w.inner.attempts.get(t.attemptId)!.returns ?? 0).toBe(0);
+    expect(w.alarm).toBe(retry2);
+    expect(w.mainCommits).toHaveLength(0);
+
+    // Before the new time, an alarm does not start a run.
+    const runs = w.containerRuns;
+    vi.setSystemTime(retry2 - 60_000);
+    await w.harbor.alarm();
+    expect(w.containerRuns).toBe(runs);
+
+    // The budget has room: the alarm merges the work copy, once.
+    w.budget = { grants: Number.POSITIVE_INFINITY, retryAt: 0 };
+    vi.setSystemTime(retry2 + 1000);
+    await w.harbor.alarm();
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(w.inner.attempts.get(t.attemptId)!.mergeWait).toBeUndefined();
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+    expect(w.inner.db.queue()).toEqual([]);
+    expect(w.inner.attempts.get(t.attemptId)!.composedChecks?.ok).toBe(true);
+  });
+
+  it("does not treat the used budget as a failed test when the tests of the work fail later", async () => {
+    // A real failure after the wait still goes through the old path: the work copy is stale.
+    const w = new CrashWorld();
+    await w.start({ runner: "container" });
+    const retryAt = Date.now() + 10 * 60_000;
+    w.budget = { grants: 1, retryAt };
+    const t = await w.submitTask("alpha");
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("ready");
+    w.budget = { grants: Number.POSITIVE_INFINITY, retryAt: 0 };
+    w.containerResult = { ok: false, stage: "test" };
+    vi.setSystemTime(retryAt + 1000);
+    await w.harbor.alarm();
+    await w.settle();
+    expect(["stale", "underway"]).toContain(w.status(t.attemptId));
+    expect(w.mainCommits).toHaveLength(0);
+    expect(w.inner.attempts.get(t.attemptId)!.mergeWait).toBeUndefined();
+  });
+
+  it("answers the check before the submit with a clear message, not a failure", async () => {
+    const w = new CrashWorld();
+    await w.start({ runner: "container" });
+    const retryAt = Date.now() + 25 * 60_000;
+    w.budget = { grants: 0, retryAt };
+    const t = await w.startTask("alpha");
+    const run = await w.harbor.check(t.attemptId);
+    expect(run.wait).toEqual({ retryAt, message: budgetSentence(retryAt) });
+    expect(run.ok).toBe(false);
+    expect(run.failed).toBe(0);
+    expect(run.passed).toBe(0);
+    expect(run.cases).toEqual([]);
+    // The tools that print the runner error show the same sentence.
+    expect(run.error).toBe(budgetSentence(retryAt));
+    // The work copy is untouched: no stored result, same status.
+    const a = w.inner.attempts.get(t.attemptId)!;
+    expect(a.checks).toBeUndefined();
+    expect(a.status).toBe("underway");
+    expect(w.containerRuns).toBe(0);
+    expect(w.inner.logs.map((l) => l.message)).toContain(`${(await w.harbor.state()).agents[0].callsign} tests: not run. ${budgetSentence(retryAt)}`);
+  });
+
+  it("does not send the agent back to fix its code when the submit finds the budget used", async () => {
+    const w = new CrashWorld();
+    await w.start({ runner: "container" });
+    const retryAt = Date.now() + 25 * 60_000;
+    w.budget = { grants: 0, retryAt };
+    const t = await w.submitTask("alpha");
+    // "landing-queue", never "fix-checks": the agent has nothing to fix.
+    expect(t.next).toBe("landing-queue");
+    expect(t.message).toBe(`${budgetSentence(retryAt)} The work copy waits in the merge queue.`);
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("ready");
+    expect(w.inner.attempts.get(t.attemptId)!.checks).toBeUndefined();
+    expect(w.inner.db.queue()).toEqual([t.attemptId]);
+    expect(w.alarm).toBe(retryAt);
+    // At the next window the tests of main plus the work decide, and the work copy lands.
+    w.budget = { grants: Number.POSITIVE_INFINITY, retryAt: 0 };
+    vi.setSystemTime(retryAt + 1000);
+    await w.harbor.alarm();
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+  });
+
+  it("tells a person who picks the work copy that it waits, and merges it at the next window", async () => {
+    const w = new CrashWorld();
+    await w.start({ runner: "container", settings: { autoLand: false } });
+    const retryAt = Date.now() + 25 * 60_000;
+    w.budget = { grants: 1, retryAt };
+    const t = await w.submitTask("alpha");
+    expect(t.next).toBe("awaiting-pick");
+    w.budget = { grants: 0, retryAt };
+    const picked = await w.harbor.land(t.attemptId, "Robin picks this work copy.");
+    expect(picked.status).toBe("ready");
+    expect(picked.landing).toBeUndefined();
+    expect(picked.waits).toEqual({ until: retryAt });
+    expect(picked.message).toBe(`${budgetSentence(retryAt)} The work copy waits in the merge queue.`);
+    expect(w.inner.db.queue()).toEqual([t.attemptId]);
+    expect(w.alarm).toBe(retryAt);
+    w.budget = { grants: Number.POSITIVE_INFINITY, retryAt: 0 };
+    vi.setSystemTime(retryAt + 1000);
+    await w.harbor.alarm();
+    await w.settle();
+    expect(w.status(t.attemptId)).toBe("landed");
+    expect(await w.mergesOf(t.attemptId)).toHaveLength(1);
+  });
+});

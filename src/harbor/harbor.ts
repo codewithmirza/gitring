@@ -1717,10 +1717,7 @@ export class HarborMaster extends DurableObject<Env> {
     const budget = await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"))
       .budgetTake(p.ownerId ?? null, 1, perOwner, global, "checks")
       .catch(() => ({ granted: 1, retryAt: 0 }));
-    if (!budget.granted) {
-      const res: DrydockResult = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The hourly budget for test runs is used. Run the tests again after ${clock(budget.retryAt)} UTC.` };
-      return containerRun(res, { key, scope, cs, ms: 0 });
-    }
+    if (!budget.granted) return budgetWait(key, scope, budget.retryAt);
     const dock = this.env.DRYDOCK.get(this.env.DRYDOCK.idFromName(`${p.id}:${attemptId}`));
     let res: DrydockResult;
     try {
@@ -1737,7 +1734,21 @@ export class HarborMaster extends DurableObject<Env> {
     await this.adoptForkTip(a);
     const view = await this.attemptView(a);
     const run = await this.runTreeChecks(view.files, "attempt", a.id);
+    if (run.wait) {
+      // The test budget is used: no test ran. This is not a failure. Keep the last result and say when gitring tries again.
+      this.addLog({
+        kind: "check",
+        attemptId: a.id,
+        agentId: a.agentId,
+        intentId: a.intentId,
+        message: `${this.callsign(a.id)} tests: not run. ${run.wait.message}`,
+        data: { checkRunId: run.id, ok: false, retryAt: run.wait.retryAt },
+      });
+      return run;
+    }
     a.checks = run;
+    // A real run means the budget has room: the merge does not wait any more.
+    a.mergeWait = undefined;
     this.putAttempt(a);
     this.addLog({
       kind: "check",
@@ -1767,26 +1778,30 @@ export class HarborMaster extends DurableObject<Env> {
     const intent = this.intents.get(a.intentId)!;
     let next: T.SubmitResult["next"];
     let message: string;
-    if (!run.ok) {
+    if (!run.ok && !run.wait) {
       a.status = "underway";
       next = "fix-checks";
       message = `${failureSummary(run.cases)} Fix the code, then submit again.`;
     } else {
       a.status = "ready";
+      // The test budget is used: the tests did not run, and that is not a failure. The work copy goes on,
+      // and the tests of main plus this work run at the merge, when the budget has room.
+      const lead = run.wait ? run.wait.message : "All tests pass.";
+      if (run.wait) a.mergeWait = { until: run.wait.retryAt, message: run.wait.message };
       const siblings = [...this.attempts.values()].filter((x) => x.intentId === a.intentId && x.id !== a.id && ACTIVE.has(x.status));
       // A re-derive of the attempt a human picked keeps that pick: it lands without a second question.
       const picked = this.pickedLineage(a);
       const needPick = !picked && (!this.requireProject().settings.autoLand || siblings.length > 0);
       if (needPick) {
         next = "awaiting-pick";
-        message = `All tests pass. ${siblings.length ? `${siblings.length + 1} work copies compete on this task.` : ""} A person chooses the one to merge.`;
+        message = `${lead} ${siblings.length ? `${siblings.length + 1} work copies compete on this task.` : ""} A person chooses the one to merge.`;
         if (siblings.every((x) => x.status === "ready")) {
           intent.status = "judging";
           this.putIntent(intent);
         }
       } else {
         next = "landing-queue";
-        message = "All tests pass. The work copy is in the merge queue.";
+        message = run.wait ? `${lead} The work copy waits in the merge queue.` : "All tests pass. The work copy is in the merge queue.";
         this.enqueueLanding(a);
       }
     }
@@ -1868,8 +1883,20 @@ export class HarborMaster extends DurableObject<Env> {
       if (!next) break;
       await this.runLanding(next.attempt, next.tries);
     }
-    const wakeAt = this.queueWakeAt();
-    if (wakeAt !== undefined) await this.scheduleBudgetRetry(wakeAt);
+    // The lease alarm of a merge that ended is not needed any more: the alarm goes to the next real wake time.
+    const wakeAt = this.nextWake();
+    if (wakeAt !== undefined) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, wakeAt));
+  }
+
+  /** The earliest time that gitring must wake by itself: agents that wait for the AI budget, work given back, the merge queue. */
+  private nextWake(): number | undefined {
+    const times = [
+      ...[...this.attempts.values()].filter((a) => a.waitsForBudget && !TERMINAL.has(a.status)).map((a) => a.waitsForBudget!),
+      ...[...this.attempts.values()].filter((a) => a.returned && !TERMINAL.has(a.status)).map((a) => a.returned!.until),
+    ];
+    const queueAt = this.queueWakeAt();
+    if (queueAt !== undefined) times.push(queueAt);
+    return times.length ? Math.min(...times) : undefined;
   }
 
   /** The next queued merge that may start now, with the number of times it starts. */
@@ -1883,6 +1910,8 @@ export class HarborMaster extends DurableObject<Env> {
         if (marker?.id === id) this.db.setMeta("landing", undefined);
         continue;
       }
+      // The test budget is used: this merge waits for the time that gitring gave. The alarm wakes the queue then.
+      if (a.mergeWait && a.mergeWait.until > now) continue;
       const held = marker?.id === id ? marker : undefined;
       // Another object began this merge: it may still run until the lease ends.
       if (held && held.boot !== this.bootId && held.startedAt + LANDING_LEASE_MS > now) continue;
@@ -1891,12 +1920,17 @@ export class HarborMaster extends DurableObject<Env> {
     return undefined;
   }
 
-  /** The next time a queued merge may start later than now (the end of a lease). */
+  /** The next time a queued merge may start later than now: the end of a lease or of a wait for the test budget. */
   private queueWakeAt(): number | undefined {
     const now = Date.now();
     const marker = this.db.getMeta<LandingRun>("landing");
+    const queue = this.db.queue();
     const times: number[] = [];
-    if (marker && this.db.queue().includes(marker.id)) times.push(marker.startedAt + LANDING_LEASE_MS);
+    if (marker && queue.includes(marker.id)) times.push(marker.startedAt + LANDING_LEASE_MS);
+    for (const id of queue) {
+      const wait = this.attempts.get(id)?.mergeWait;
+      if (wait) times.push(wait.until);
+    }
     const later = times.filter((t) => t > now);
     return later.length ? Math.min(...later) : undefined;
   }
@@ -1927,8 +1961,9 @@ export class HarborMaster extends DurableObject<Env> {
     this.db.setMeta("landing", { id: a.id, startedAt, boot: this.bootId, tries } satisfies LandingRun);
     // If this object stops, the alarm starts the merge again when the lease ends.
     await this.scheduleBudgetRetry(startedAt + LANDING_LEASE_MS);
+    let outcome: "done" | "wait" = "done";
     try {
-      await this.landOne(a);
+      outcome = await this.landOne(a);
     } catch (err) {
       console.error("landOne", a.id, err);
       a.status = "ready";
@@ -1936,7 +1971,8 @@ export class HarborMaster extends DurableObject<Env> {
       this.addLog({ kind: "system", attemptId: a.id, message: `The merge of the work of ${this.callsign(a.id)} stopped: ${String(err).slice(0, 200)}. Try again.` });
     }
     this.db.setMeta("landing", undefined);
-    this.db.dequeue(a.id);
+    // A merge that waits for the test budget stays in the queue.
+    if (outcome !== "wait") this.db.dequeue(a.id);
   }
 
   /**
@@ -1978,13 +2014,18 @@ export class HarborMaster extends DurableObject<Env> {
     });
   }
 
-  private async landOne(a: T.Attempt, attempt = 0): Promise<void> {
+  /** "wait": the test budget is used. The work copy stays queued and gitring tries again later. */
+  private async landOne(a: T.Attempt, attempt = 0): Promise<"done" | "wait"> {
     const p = this.requireProject();
     const intent = this.intents.get(a.intentId)!;
     const agent = this.agents.get(a.agentId)!;
     // A run that stopped after its commit: main has the merge. Finish the record, do not commit twice.
     const held = await this.mainHolds(a);
-    if (held) return this.finishFromMain(a, held);
+    if (held) {
+      await this.finishFromMain(a, held);
+      return "done";
+    }
+    const intentBefore = intent.status;
     a.status = "landing";
     intent.status = "landing";
     this.putAttempt(a);
@@ -2007,7 +2048,7 @@ export class HarborMaster extends DurableObject<Env> {
     });
     if (!result.clean) {
       await this.markStale(a, `${result.conflicts.length} conflict${result.conflicts.length > 1 ? "s" : ""} on the new main: ${result.conflicts.map((c) => `${c.path} (${c.reason})`).join(", ")}`);
-      return;
+      return "done";
     }
     // Composed tree = main + changes (+ the intent file).
     const composed = new Map(main.text);
@@ -2016,11 +2057,23 @@ export class HarborMaster extends DurableObject<Env> {
       else composed.set(ch.path, typeof ch.content === "string" ? ch.content : utf8.decode(ch.content));
     }
     const run = await this.runTreeChecks(composed, "composed", a.id);
+    if (run.wait) {
+      // The test budget is used: no test ran. This is not a failure. The work copy stays queued,
+      // it does not go back to its agent, and the alarm starts the merge again at the next window.
+      a.status = "ready";
+      a.mergeWait = { until: run.wait.retryAt, message: run.wait.message };
+      intent.status = intentBefore === "landing" ? "underway" : intentBefore;
+      this.putAttempt(a);
+      this.putIntent(intent);
+      this.addLog({ kind: "system", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${this.callsign(a.id)} waits. ${run.wait.message}` });
+      return "wait";
+    }
+    a.mergeWait = undefined;
     a.composedChecks = run;
     this.putAttempt(a);
     if (!run.ok) {
       await this.markStale(a, `Tests fail on main plus this work. ${failureSummary(run.cases, 3)}`);
-      return;
+      return "done";
     }
     const method: T.LandingMethod = a.lineage.generation > 1 ? "rederive" : result.method;
     const applied = a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status !== "superseded");
@@ -2043,6 +2096,7 @@ export class HarborMaster extends DurableObject<Env> {
       throw err;
     }
     await this.recordLanding(a, { committed, before: main.sha, method, applied, run, message, note, touched: result.touched });
+    return "done";
   }
 
   /**
@@ -2085,6 +2139,7 @@ export class HarborMaster extends DurableObject<Env> {
       this.db.putLanding(landing, note);
     }
     a.status = "landed";
+    a.mergeWait = undefined;
     a.landedAt = Date.now();
     intent.status = "landed";
     intent.landedSha = committed.sha;
@@ -2602,13 +2657,8 @@ export class HarborMaster extends DurableObject<Env> {
     }
     // The merge queue: queued work copies run, and a merge that a stopped object began starts again.
     await this.driveQueue();
-    const queueAt = this.queueWakeAt();
-    const next = [
-      ...waiting().map((a) => a.waitsForBudget!),
-      ...[...this.attempts.values()].filter((a) => a.returned && !TERMINAL.has(a.status)).map((a) => a.returned!.until),
-      ...(queueAt === undefined ? [] : [queueAt]),
-    ];
-    if (next.length) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(...next)));
+    const next = this.nextWake();
+    if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, next));
   }
 
   private async startVessel(a: T.Attempt, agent: T.AgentInfo, rederiveOf?: string): Promise<void> {
@@ -2658,16 +2708,21 @@ export class HarborMaster extends DurableObject<Env> {
     return false;
   }
 
-  async land(attemptId: string, rationale: string, by: T.Actor = HUMAN): Promise<{ status: T.AttemptStatus; message: string; landing?: T.Landing }> {
+  /** `waits`: the merge waits for the hourly test budget (not a failure). */
+  async land(attemptId: string, rationale: string, by: T.Actor = HUMAN): Promise<{ status: T.AttemptStatus; message: string; landing?: T.Landing; waits?: { until: number } }> {
     const a = this.mustAttempt(attemptId);
     if (a.status === "landed") return { status: a.status, message: "This work copy is already on main." };
     if (TERMINAL.has(a.status)) return { status: a.status, message: `The work copy is ${copyStatusWord(a.status)}. Redo it on the new main first.` };
+    let deferred: T.CheckRun["wait"];
     if (!a.checks?.ok) {
       const run = await this.check(a.id);
-      if (!run.ok) return { status: a.status, message: `${failureSummary(run.cases)} gitring does not merge work whose tests fail.` };
+      // The test budget is used: no test ran, and that is not a failure. The tests of main plus this work decide at the merge.
+      if (run.wait) deferred = run.wait;
+      else if (!run.ok) return { status: a.status, message: `${failureSummary(run.cases)} gitring does not merge work whose tests fail.` };
     }
     this.recordDecision({ kind: "pick", intentId: a.intentId, attemptIds: [a.id], by, rationale });
     a.status = "ready";
+    if (deferred) a.mergeWait = { until: deferred.retryAt, message: deferred.message };
     this.putAttempt(a);
     this.enqueueLanding(a);
     await this.landingChain;
@@ -2676,7 +2731,12 @@ export class HarborMaster extends DurableObject<Env> {
     return {
       status: now.status,
       landing,
-      message: landing ? `Merged by ${METHOD_WORD[landing.method]} at ${landing.mainAfter.slice(0, 7)}.` : `The work did not merge (${copyStatusWord(now.status)}). gitring does the task again on the new main.`,
+      ...(!landing && now.mergeWait ? { waits: { until: now.mergeWait.until } } : {}),
+      message: landing
+        ? `Merged by ${METHOD_WORD[landing.method]} at ${landing.mainAfter.slice(0, 7)}.`
+        : now.mergeWait
+          ? `${now.mergeWait.message} The work copy waits in the merge queue.`
+          : `The work did not merge (${copyStatusWord(now.status)}). gitring does the task again on the new main.`,
     };
   }
 
@@ -3758,6 +3818,15 @@ export function rankForBrief(files: Map<string, string>, intent: T.Intent, wante
 const STOP_WORDS = new Set(["the", "and", "for", "with", "that", "this", "from", "into", "when", "add", "make", "show", "use", "can", "are", "not", "all", "one", "each", "new", "has", "have", "who", "its", "their", "them", "then", "than", "page"]);
 
 /** A check container's result as a CheckRun: one case for the install, one for the tests. */
+/**
+ * The result when the hourly test budget is used: the tests did not run. It is not a failure (no case
+ * failed) and not a pass (`ok` is false). `error` has the same sentence for tools that print only the error.
+ */
+export function budgetWait(key: string, scope: T.CheckRun["scope"], retryAt: number): T.CheckRun {
+  const message = `The test budget for this hour is used. gitring tries again at ${clock(retryAt)} UTC.`;
+  return { id: newId("cr"), subject: key, scope, ok: false, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now(), runner: "container", error: message, wait: { retryAt, message } };
+}
+
 export function containerRun(res: DrydockResult, o: { key: string; scope: T.CheckRun["scope"]; cs: T.CheckSettings; ms: number }): T.CheckRun {
   const installCmd = o.cs.install || "npm ci (or npm install)";
   const testCmd = o.cs.test || "npm test";

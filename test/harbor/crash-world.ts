@@ -11,6 +11,7 @@
  *   await world.reached();          // the object stopped at the point
  *   world.restart();                // a new object, same storage
  */
+import type { Attempt } from "../../src/core/types";
 import { HarborMaster } from "../../src/harbor/harbor";
 import type { CommitInput, CommitMeta, CommitResult, RepoBackend } from "../../src/platform/repo/backend";
 import { backendOf } from "../github/fake";
@@ -47,7 +48,7 @@ const LOADER = {
 };
 
 type Internals = {
-  attempts: Map<string, { status: string }>;
+  attempts: Map<string, Attempt>;
   intents: Map<string, { status: string }>;
   landings: { attemptId: string; mainAfter: string }[];
   logs: { message: string }[];
@@ -75,16 +76,48 @@ export class CrashWorld {
   mainRepo = "";
   readonly env: Record<string, unknown>;
   private readonly waits = new Map<number, Promise<unknown>[]>();
+  /**
+   * The hourly test budget of the Directory (container runner): the next `grants` runs get a slot, then
+   * the budget is used and the Directory says to try again at `retryAt`.
+   */
+  budget = { grants: Number.POSITIVE_INFINITY, retryAt: 0 };
+  /** Container runs that started. */
+  containerRuns = 0;
+  /** What the container prints: a passing run, or the test results of the next runs. */
+  containerResult: { ok: boolean; stage: "done" | "test" | "no-test" } = { ok: true, stage: "done" };
 
   constructor(extraEnv: Record<string, unknown> = {}) {
-    this.env = { ARTIFACTS_NAMESPACE: "gitring", LOADER, ...extraEnv };
+    const directory = {
+      idFromName: (n: string) => n,
+      get: () => ({
+        budgetTake: async () => {
+          if (this.budget.grants > 0) {
+            this.budget.grants -= 1;
+            return { granted: 1, retryAt: 0 };
+          }
+          return { granted: 0, retryAt: this.budget.retryAt };
+        },
+      }),
+    };
+    const drydock = {
+      idFromName: (n: string) => n,
+      get: () => ({
+        run: async () => {
+          this.containerRuns += 1;
+          const r = this.containerResult;
+          return { ok: r.ok, stage: r.stage, exitCode: r.ok ? 0 : 1, installMs: 1, testMs: 1, reused: false, log: r.ok ? "all tests pass" : "1 test failed" };
+        },
+      }),
+    };
+    this.env = { ARTIFACTS_NAMESPACE: "gitring", LOADER, DIRECTORY: directory, DRYDOCK: drydock, ...extraEnv };
   }
 
-  /** Make the project (one commit on main) with the worker test runner. */
-  async start(): Promise<void> {
+  /** Make the project (one commit on main). The worker runner runs the tests unless `runner` is "container". */
+  async start(opts: { runner?: "worker" | "container"; files?: { path: string; text: string }[]; settings?: Record<string, unknown> } = {}): Promise<void> {
+    const files = opts.files ?? SEED;
     this.harbor = this.boot();
-    await this.harbor.init({ projectId: "p_crash", name: "Shop", source: { kind: "upload", files: SEED.length }, files: SEED });
-    await this.harbor.updateSettings({ checks: { runner: "worker" } });
+    await this.harbor.init({ projectId: "p_crash", name: "Shop", source: { kind: "upload", files: files.length }, files });
+    await this.harbor.updateSettings({ checks: { runner: opts.runner ?? "worker" }, ...(opts.settings ?? {}) });
     this.mainRepo = (await this.harbor.state()).project.repo.name;
   }
 
@@ -156,23 +189,29 @@ export class CrashWorld {
     });
   }
 
-  /** An agent sends a plan, writes one file and submits. `stop` arms a stop point first. */
-  async submitTask(name: string, opts: { stop?: StopPoint } = {}): Promise<{ attemptId: string; intentId: string; next: string }> {
+  /** An agent sends a plan and writes files (default: src/NAME.js). It does not submit. */
+  async startTask(name: string, files: Record<string, string> = { [`src/${name}.js`]: `export const ${name} = 1;\n` }): Promise<{ attemptId: string; intentId: string }> {
     const h = this.harbor;
     const d = await h.declare({
       agent: { client: "test" },
       newIntent: { title: `Add ${name}`, goal: `Add the file src/${name}.js.` },
       plan: [`Write src/${name}.js`],
-      files: [`src/${name}.js`],
+      files: Object.keys(files),
       symbols: [],
       approach: `Write src/${name}.js.`,
     });
-    await h.write({ attemptId: d.attemptId, files: [{ path: `src/${name}.js`, content: `export const ${name} = 1;\n` }] });
+    await h.write({ attemptId: d.attemptId, files: Object.entries(files).map(([path, content]) => ({ path, content })) });
+    return { attemptId: d.attemptId, intentId: d.intent.id };
+  }
+
+  /** An agent sends a plan, writes one file and submits. `stop` arms a stop point first. */
+  async submitTask(name: string, opts: { stop?: StopPoint; files?: Record<string, string> } = {}): Promise<{ attemptId: string; intentId: string; next: string; message: string }> {
+    const t = await this.startTask(name, opts.files);
     // "queued": the chain that runs the queue never starts, as if the object stopped right after the queue write.
     if (opts.stop === "queued") this.inner.landingChain = NEVER();
     else if (opts.stop) this.armed = opts.stop;
-    const res = await h.submit(d.attemptId, `Add ${name}`);
-    return { attemptId: d.attemptId, intentId: d.intent.id, next: res.next };
+    const res = await this.harbor.submit(t.attemptId, `Add ${name}`);
+    return { ...t, next: res.next, message: res.message };
   }
 
   /** Wait until the running object reaches the armed stop point. */
