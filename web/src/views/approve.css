@@ -1,0 +1,147 @@
+/*
+ * The approve page: the facts of one work copy, and the answer. Wide screens: the facts on the left, the
+ * answer on the right (it stays in view). Narrow screens: one column, and the answer is a bar at the bottom.
+ * Type sizes: 11, 13, 15, 28 (20 on phones). Colors come from the theme tokens only.
+ */
+
+.approve { max-width: 1180px; min-width: 0; margin: 0 auto; padding: var(--s-7) var(--s-8) var(--s-11); }
+.approve--missing { display: grid; gap: var(--s-5); max-width: 560px; }
+
+/* ───────────── header ───────────── */
+.approve__head { display: grid; gap: var(--s-3); max-width: 920px; margin-bottom: var(--s-6); }
+.approve__crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); font-size: var(--t-xs); }
+.approve__title { font-size: var(--t-xl); line-height: var(--lh-xl); letter-spacing: -.005em; color: var(--ink-1); overflow-wrap: anywhere; }
+.approve__title:focus { outline: none; }
+.approve__ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-1); }
+.approve__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+/* The skip control shows when it has focus: the answer is the last block in the page order. */
+.approve__skip:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.approve__skip:focus {
+  justify-self: start;
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-2);
+  background: var(--bg);
+  color: var(--accent);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+
+/* ───────────── the facts ───────────── */
+.approve__grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-8); align-items: start; }
+.approve__main { display: grid; gap: var(--s-6); min-width: 0; }
+.approve__sec { display: grid; gap: var(--s-3); align-content: start; min-width: 0; padding-top: var(--s-5); border-top: 1px solid var(--line); }
+.approve__main > .approve__sec:first-child { padding-top: 0; border-top: 0; }
+.approve__h { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); font-size: var(--t-md); line-height: var(--lh-md); font-weight: 500; color: var(--ink-1); }
+.approve__h3 { margin-top: var(--s-2); font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-2); }
+.approve__count { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 400; color: var(--ink-3); }
+.approve__opt { font-weight: 400; color: var(--ink-3); }
+.approve__why { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.approve__why li { position: relative; padding-left: var(--s-5); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
+.approve__why li::before { content: ""; position: absolute; left: 0; top: 7px; width: 6px; height: 6px; background: var(--caution); }
+.approve__line { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); font-variant-numeric: tabular-nums; }
+.approve__tools { font-size: var(--t-xs); line-height: var(--lh-xs); }
+.approve__goal { max-width: 68ch; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); overflow-wrap: anywhere; }
+.approve__approach { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-1); overflow-wrap: anywhere; }
+.approve__plan { display: grid; gap: 2px; margin: 0; padding-left: 18px; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+.approve__summary { font-size: var(--t-xs); line-height: var(--lh-xs); overflow-wrap: anywhere; }
+.approve__rivals { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.approve__rival {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+}
+.approve__rivalline { min-width: 0; color: var(--ink-2); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.approve__hint { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.approve__error { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--danger); overflow-wrap: anywhere; }
+.approve__error .b-icon { display: inline; vertical-align: -2px; }
+.approve__retry { color: var(--accent); font-size: inherit; text-decoration: underline; }
+
+/* ───────────── the answer ───────────── */
+.approve__panel {
+  position: sticky;
+  top: var(--s-5);
+  display: grid;
+  gap: var(--s-3);
+  min-width: 0;
+  padding: var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-3);
+  background: var(--surface-1);
+}
+.approve__panel.is-waiting { border-left: 2px solid var(--caution); }
+.approve__panel:focus { outline: none; }
+.approve__panelh { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 500; color: var(--ink-1); }
+.approve__form { display: grid; gap: var(--s-3); min-width: 0; }
+.approve__note { display: grid; gap: var(--s-2); min-width: 0; }
+.approve__label { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-1); }
+.approve__noteacts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.approve__noteacts .b-btn--block { flex: 1 1 100%; }
+.approve__reason { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.approve__notice { display: flex; align-items: flex-start; gap: var(--s-2); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-1); }
+.approve__notice .b-icon { flex: none; margin-top: 1px; color: var(--accent); }
+.approve__outcome {
+  --tone: var(--ink-3);
+  display: grid;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: var(--s-3) var(--s-4);
+  border-left: 2px solid var(--tone);
+  border-radius: var(--r-2);
+  background: color-mix(in oklch, var(--tone) 9%, transparent);
+}
+.approve__outcome.is-clear { --tone: var(--clear); }
+.approve__outcome.is-caution { --tone: var(--caution); }
+.approve__outcome.is-correction { --tone: var(--magenta); }
+.approve__outcomeh { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 500; color: var(--ink-1); overflow-wrap: anywhere; }
+.approve__outcomep { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.approve__outcomenote { font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-1); overflow-wrap: anywhere; }
+.approve__outcomelink { justify-self: start; font-size: var(--t-xs); font-weight: 500; }
+
+/* ───────────── narrow screens ───────────── */
+@media (max-width: 900px) {
+  .approve { padding: var(--s-5) var(--s-5) 0; }
+  .approve__title { font-size: var(--t-lg); line-height: var(--lh-lg); }
+  .approve__grid { grid-template-columns: minmax(0, 1fr); gap: var(--s-6); }
+  .approve__main { padding-bottom: var(--s-2); }
+  /* The answer is a bar at the bottom of the page: it stays in view while the person reads the change. */
+  .approve__panel {
+    position: sticky;
+    top: auto;
+    bottom: 0;
+    z-index: 5;
+    gap: var(--s-2);
+    margin: 0 calc(-1 * var(--s-5));
+    padding: var(--s-3) var(--s-5) calc(var(--s-3) + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
+    border-radius: 0;
+    background: var(--bg);
+  }
+  .approve__panel.is-waiting { border-left-width: 0; border-top: 2px solid var(--caution); }
+  .approve__panelh { font-size: var(--t-sm); line-height: var(--lh-sm); }
+  .approve__form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .approve__form > :not(.b-btn) { grid-column: 1 / -1; }
+  .approve__noteacts .b-btn { flex: 1 1 0; }
+  .approve__outcome { max-height: 38vh; overflow: auto; }
+}
+@media (max-width: 480px) {
+  .approve__rival { grid-template-columns: minmax(0, 1fr) auto; }
+  .approve__rival .b-callsign { justify-self: start; }
+  .approve__rivalline { grid-column: 1 / -1; order: 3; }
+}

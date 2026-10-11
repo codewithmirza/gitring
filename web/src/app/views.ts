@@ -9,6 +9,7 @@ const loaders = {
   chart: () => import("../views/ChartView"),
   intents: () => import("../views/IntentsView"),
   logbook: () => import("../views/LogbookView"),
+  approve: () => import("../views/ApproveView"),
   code: () => import("../views/CodeView"),
   connect: () => import("../views/ConnectView"),
   projects: () => import("../views/ProjectsView"),
@@ -19,6 +20,7 @@ const loaders = {
 export const ChartView = lazy(() => loaders.chart().then((m) => ({ default: m.ChartView })));
 export const IntentsView = lazy(() => loaders.intents().then((m) => ({ default: m.IntentsView })));
 export const LogbookView = lazy(() => loaders.logbook().then((m) => ({ default: m.LogbookView })));
+export const ApproveView = lazy(() => loaders.approve().then((m) => ({ default: m.ApproveView })));
 export const CodeView = lazy(() => loaders.code().then((m) => ({ default: m.CodeView })));
 export const ConnectView = lazy(() => loaders.connect().then((m) => ({ default: m.ConnectView })));
 export const ProjectsView = lazy(() => loaders.projects().then((m) => ({ default: m.ProjectsView })));

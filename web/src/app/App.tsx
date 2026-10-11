@@ -3,8 +3,10 @@ import { Button, EmptyState, SkeletonPage, SkeletonSplit, ToastHost, toast } fro
 import { store, useStore } from "../state/store";
 import { atLeast } from "../../../src/core/accounts";
 import { syncProject } from "../state/api";
-import { selectJudgmentQueue } from "../state/selectors";
+import { selectJudgmentQueue, type OtherJudgmentItem } from "../state/selectors";
+import { tabTitle, useMyQuestions } from "../state/approvals";
 import { TopBar, ViewNav } from "./TopBar";
+import { ApprovalTray } from "./ApprovalTray";
 import { SignInPopover, WatchBanner } from "./Account";
 import { CommandPalette } from "./CommandPalette";
 import { ShortcutsPopover } from "./Shortcuts";
@@ -22,6 +24,7 @@ const TITLES: Record<Route["name"], string> = {
   chart: "Overview",
   intents: "Tasks",
   logbook: "History",
+  approve: "Approve a merge",
   code: "Code",
   connect: "Connect",
   design: "Design",
@@ -96,17 +99,23 @@ function useShortcuts() {
   }, []);
 }
 
-/** Announce new decisions once: they are the person's inbox. */
+/**
+ * Announce new decisions once. A merge that waits for a yes has its own chip in the tray, so it gets no toast:
+ * this is for the other items (work that could not merge, a conflict check that asks for a person).
+ */
 function useQueueToasts() {
   useEffect(() => {
     let seen: Set<string> | null = null;
     let lastState: unknown = null;
     return store.subscribe(() => {
-      const st = store.get().state;
+      const s = store.get();
+      const st = s.state;
       if (!st || st === lastState) return;
       lastState = st;
       // Only people who can decide get the toast.
-      const q = atLeast(store.get().access, "member") ? selectJudgmentQueue(st) : [];
+      const q: OtherJudgmentItem[] = atLeast(s.access, "member")
+        ? selectJudgmentQueue(st, { id: s.me?.user?.id, role: s.access }).filter((x): x is OtherJudgmentItem => x.kind !== "approval")
+        : [];
       if (!seen) {
         seen = new Set(q.map((x) => x.key));
         return;
@@ -116,9 +125,9 @@ function useQueueToasts() {
         seen.add(item.key);
         toast({
           tone: "info",
-          title: item.kind === "pick" ? "Choose a work copy" : "A decision needs you",
+          title: item.kind === "pick" ? "Work is ready to merge" : "A decision needs you",
           text: `“${item.title}”. ${item.detail}.`,
-          action: { label: "Compare work copies", onClick: () => navigate(`/tasks/${item.intentId}`) },
+          action: { label: item.kind === "pick" ? "Compare work copies" : "Open the task", onClick: () => navigate(`/tasks/${item.intentId}`) },
         });
       }
       for (const k of [...seen]) if (!q.some((x) => x.key === k)) seen.delete(k);
@@ -195,6 +204,8 @@ function View({ route }: { route: Route }) {
       return <V.IntentsView id={route.id} />;
     case "logbook":
       return <V.LogbookView id={route.id} />;
+    case "approve":
+      return <V.ApproveView id={route.id} />;
     case "code":
       return <V.CodeView />;
     case "connect":
@@ -215,7 +226,7 @@ function View({ route }: { route: Route }) {
 /** Skeletons in the shape of the view that loads. */
 function ViewSkeleton({ route }: { route: Route }) {
   if (route.name === "intents" || route.name === "chart" || route.name === "code") return <SkeletonSplit label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
-  return <SkeletonPage label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
+  return <SkeletonPage label={route.name === "approve" ? "Loading the merge question" : `Loading ${TITLES[route.name].toLowerCase()}`} />;
 }
 
 /** Before the first project state: load it, or say why there is no project to show. */
@@ -232,7 +243,7 @@ function Booting({ route }: { route: Route }) {
             <div className="c-empty__actions">
               <Link to="/projects">Open the projects</Link>
               {!signedIn && (
-                <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: "Sign in to open your projects." })}>
+                <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: route.name === "approve" ? "Sign in to answer." : "Sign in to open your projects." })}>
                   Sign in
                 </Button>
               )}
@@ -274,9 +285,12 @@ export function App() {
   }, [ready]);
 
   const key = route.name + ("id" in route ? `:${route.id ?? ""}` : "");
+  // Merges that wait for a yes from this person: the tab title shows the count.
+  const waiting = useMyQuestions().length;
   useEffect(() => {
-    document.title = route.name === "home" ? `gitring · ${TITLES.home}` : `${TITLES[route.name]}${project && needsProject ? ` · ${project}` : ""} · gitring`;
-  }, [route.name, project, needsProject]);
+    const usual = route.name === "home" ? `gitring · ${TITLES.home}` : `${TITLES[route.name]}${project && needsProject ? ` · ${project}` : ""} · gitring`;
+    document.title = tabTitle(needsProject ? waiting : 0, usual);
+  }, [route.name, project, needsProject, waiting]);
   useEffect(() => {
     if (first.current) {
       first.current = false;
@@ -285,7 +299,7 @@ export function App() {
     // Move focus to the new view's heading so screen readers announce the change.
     requestAnimationFrame(() => document.querySelector<HTMLElement>("#main h1")?.focus({ preventScroll: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.name]);
+  }, [route.name, route.name === "approve" ? route.id : ""]);
 
   const showNav = needsProject;
   return (
@@ -308,6 +322,7 @@ export function App() {
       <SignInPopover />
       <CommandPalette />
       <ShortcutsPopover />
+      <ApprovalTray route={route} />
       <ToastHost />
     </div>
   );

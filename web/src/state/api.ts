@@ -10,14 +10,14 @@
  * Requests go through ./http: identical GETs share one fetch, views can abort their requests, and
  * answers that do not change (merge records, files of a commit) stay in small LRU caches.
  */
-import type { Attempt, ConnectInfo, Intent, Landing, ProjectState, TreeResponse } from "../../../src/core/types";
+import type { ApprovalAnswer, ApprovalResult, Attempt, ConnectInfo, Intent, Landing, ProjectState, TreeResponse } from "../../../src/core/types";
 import type { ProjectInfo, Role } from "../../../src/core/accounts";
 import { store } from "./store";
 import { loadMe, loadProjects, rememberedProject } from "./account";
 import { isProjectRoute, navigate, parseRoute, setSearchParam } from "../app/router";
 import { getJson, getText, HttpError, isAbort, Lru, send } from "./http";
 
-export type { ConnectInfo, TreeResponse };
+export type { ApprovalResult, ConnectInfo, TreeResponse };
 export { HttpError as ApiError, isAbort };
 
 export interface DiffFile {
@@ -61,6 +61,11 @@ export interface LandResult {
   waits?: { until: number };
 }
 
+/** A person's answer to the question that a work copy asks. `approvalId` is the question the person saw. */
+export interface DecideInput extends ApprovalAnswer {
+  approvalId: string;
+}
+
 /** Options for reads: `signal` aborts the wait of the caller (a view that closes). */
 export interface ReadOptions {
   signal?: AbortSignal;
@@ -83,6 +88,11 @@ export interface HarborClient {
   launch(id: string, fanout: number, models?: string[]): Promise<{ attempts: Attempt[] }>;
   park(id: string, reason: string): Promise<void>;
   land(attemptId: string, rationale: string): Promise<LandResult>;
+  /**
+   * Say yes ("approve") or "not yet" ("send-back") to the merge that a work copy asks for. A person who
+   * may not answer gets a result with outcome "refused" and the reason in `message`: no exception.
+   */
+  decide(attemptId: string, input: DecideInput): Promise<ApprovalResult>;
   rederive(attemptId: string, reason: string): Promise<{ attempt: Attempt }>;
   /** The work copy against its base. With `version` (the work copy's updatedAt) the answer is reused until the work copy changes. */
   attemptDiff(attemptId: string, opts?: VersionedRead): Promise<DiffResult>;
@@ -118,7 +128,8 @@ function looksLikeState(x: unknown): x is ProjectState {
   return Boolean(s && typeof s === "object" && s.project && Array.isArray(s.intents) && Array.isArray(s.attempts));
 }
 
-class LiveHarbor implements HarborClient {
+/** The client of one project. The app gets it from harbor(); it is exported so that tests can build one. */
+export class LiveHarbor implements HarborClient {
   /** Merge records (they never change). */
   private landings = new Lru<string, LandingDetail>(60);
   /** Diffs of work copies by id and version. */
@@ -148,6 +159,15 @@ class LiveHarbor implements HarborClient {
   }
   land(attemptId: string, rationale: string) {
     return send<LandResult>("POST", this.p(`/attempts/${encodeURIComponent(attemptId)}/land`), { rationale });
+  }
+  async decide(attemptId: string, input: DecideInput) {
+    try {
+      return await send<ApprovalResult>("POST", this.p(`/attempts/${encodeURIComponent(attemptId)}/decide`), input);
+    } catch (e) {
+      // gitring refuses a person with status 403 and the whole result. That is an answer, not a failure.
+      if (e instanceof HttpError && e.status === 403 && e.data.outcome === "refused" && typeof e.data.message === "string") return e.data as unknown as ApprovalResult;
+      throw e;
+    }
   }
   rederive(attemptId: string, reason: string) {
     return send<{ attempt: Attempt }>("POST", this.p(`/attempts/${encodeURIComponent(attemptId)}/rederive`), { reason });

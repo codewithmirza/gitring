@@ -1,5 +1,5 @@
 /** Formatting helpers. Numbers are always shown in the agent voice (mono) by callers. */
-import type { AttemptStatus, CorrectionKind, CourseCheck, IntentStatus, LandingMethod, Range, RuleOfTheRoad, Verdict } from "../../../src/core/types";
+import type { ApprovalStatus, AttemptStatus, CorrectionKind, CourseCheck, IntentStatus, LandingMethod, Range, RuleOfTheRoad, Verdict } from "../../../src/core/types";
 
 export function shortSha(sha: string | undefined | null, n = 7): string {
   return sha ? sha.slice(0, n) : "———————";
@@ -157,11 +157,19 @@ export const ATTEMPT_STATUS_TEXT: Record<AttemptStatus, string> = {
   failed: "Failed",
 };
 
+/** The state of a question that asks a person to say yes to a merge. */
+export const APPROVAL_STATUS_TEXT: Record<ApprovalStatus, string> = {
+  waiting: "Waits for a yes",
+  approved: "Approved",
+  "sent-back": "Sent back",
+  withdrawn: "Closed",
+};
+
 export const INTENT_STATUS_TEXT: Record<IntentStatus, string> = {
   draft: "Draft",
   open: "Open",
   underway: "Working",
-  judging: "Needs a choice",
+  judging: "Needs a yes",
   landing: "Merging",
   landed: "Merged",
   parked: "Paused",
