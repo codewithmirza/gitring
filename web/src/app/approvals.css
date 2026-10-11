@@ -82,7 +82,9 @@
 /* Narrow screens: the tray is centered at the bottom. */
 @media (max-width: 760px) {
   .aptray { left: 50%; right: auto; width: min(420px, calc(100vw - 24px)); transform: translateX(-50%); }
-  /* The approve page has its own answer bar at the bottom. */
+}
+/* The approve page has its own answer bar at the bottom of the screen (the page changes its layout at 900px). */
+@media (max-width: 900px) {
   .aptray[data-route="approve"] { display: none; }
 }
 /* Phones: above the bottom bar of the views. */

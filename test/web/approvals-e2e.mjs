@@ -5,8 +5,8 @@
 // Checks: the tray of chips on every project page (text, order, "+N more", the tab title), a yes and a send-back
 // from a chip (the request, the toast, the live update), the people who may not answer, the decisions list, the
 // approve page (facts, diff, other work copies, answers, results in place, live changes), a visitor who is not
-// signed in, an address that does not exist, the keyboard, reduced motion, and no horizontal overflow at 1280
-// and 375 px.
+// signed in, an address that does not exist, the keyboard, windows of other sizes (a tablet, a low window, a phone
+// on its side), reduced motion, and no horizontal overflow at 1280 and 375 px.
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:8811";
@@ -621,6 +621,60 @@ const toastTitles = (page) => page.locator(".b-toast__title").allTextContents();
   await page.goto(`${BASE}/approve/at_k1?project=shop`, { waitUntil: "networkidle" });
   await page.locator(".b-diff__file").first().waitFor();
   await noOverflow(page, "approve page of Sam's work at 375");
+  ok(errors.length === 0, `no page errors ${errors.slice(0, 2).join(" | ")}`);
+  await ctx.close();
+}
+
+/* ───────────── windows of other sizes ───────────── */
+{
+  // A tablet: the approve page has one column and a bar for the answer, so the tray steps aside there.
+  await reset();
+  let { ctx, page, errors } = await open(800, 700);
+  await page.goto(`${BASE}/approve/at_s1?project=shop`, { waitUntil: "networkidle" });
+  await page.locator(".b-diff__file").first().waitFor();
+  ok(!(await trayOf(page).isVisible().catch(() => false)), "800 px: the tray steps aside on the approve page");
+  const bar = await page.locator(".approve__panel").boundingBox();
+  ok(bar && bar.y + bar.height <= 701 && bar.y > 400, "800 px: the answer is a bar at the bottom of the screen");
+  ok(await page.locator(".approve__panel").getByRole("button", { name: "Yes, merge it" }).isVisible(), "800 px: the yes is in view without scrolling");
+  ok((await page.locator(".topbar__queue").textContent())?.includes("4"), "800 px: the decisions button keeps the count");
+  await noOverflow(page, "approve page at 800");
+  await page.goto(`${BASE}/overview?project=shop`, { waitUntil: "networkidle" });
+  await trayOf(page).waitFor();
+  ok((await trayOf(page).locator(".apcard").count()) === 3, "800 px: the overview shows 3 chips");
+  await ctx.close();
+
+  // A small laptop: the one-line tray stays in the corner and does not cover the answer.
+  ({ ctx, page } = await open(1000, 700));
+  await page.goto(`${BASE}/approve/at_s1?project=shop`, { waitUntil: "networkidle" });
+  await page.locator(".b-diff__file").first().waitFor();
+  const line = trayOf(page);
+  ok(await line.isVisible(), "1000 px: the one-line tray shows on the approve page");
+  const side = await page.locator(".approve__panel").boundingBox();
+  const lineBox = await line.boundingBox();
+  ok(side && lineBox && (side.y + side.height <= lineBox.y || side.x + side.width <= lineBox.x), "1000 px: the tray does not cover the answer");
+  await noOverflow(page, "approve page at 1000");
+  await ctx.close();
+
+  // A wide window that is low: fewer chips, so that none of them leaves the screen.
+  ({ ctx, page } = await open(1280, 500));
+  await page.goto(`${BASE}/overview?project=shop`, { waitUntil: "networkidle" });
+  await trayOf(page).waitFor();
+  ok((await trayOf(page).locator(".apcard").count()) === 2 && (await trayOf(page).getByRole("button", { name: /\+2 more/ }).count()) === 1, "1280x500: 2 chips and +2 more");
+  const low = await trayOf(page).boundingBox();
+  ok(low && low.y >= 0 && low.y + low.height <= 500, "1280x500: the tray is inside the screen");
+  await ctx.close();
+
+  // A phone on its side: one chip. A note that opens in the chip stays inside the screen.
+  ({ ctx, page, errors } = await open(667, 375));
+  await page.goto(`${BASE}/overview?project=shop`, { waitUntil: "networkidle" });
+  await trayOf(page).waitFor();
+  ok((await trayOf(page).locator(".apcard").count()) === 1 && (await trayOf(page).getByRole("button", { name: /\+3 more/ }).count()) === 1, "667x375: 1 chip and +3 more");
+  const flat = await trayOf(page).boundingBox();
+  ok(flat && flat.y >= 0 && flat.y + flat.height <= 375 && flat.x >= 0 && flat.x + flat.width <= 667, "667x375: the tray is inside the screen");
+  await trayOf(page).locator(".apcard").getByRole("button", { name: "Send back…" }).click();
+  const open375 = await trayOf(page).boundingBox();
+  ok(open375 && open375.y >= 0 && open375.y + open375.height <= 375, "667x375: with the note open the tray is still inside the screen");
+  await noOverflow(page, "overview at 667x375");
   ok(errors.length === 0, `no page errors ${errors.slice(0, 2).join(" | ")}`);
   await ctx.close();
 }
