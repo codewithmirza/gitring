@@ -3,7 +3,7 @@
  * report. No network and no clock here, so the tests can run them anywhere.
  */
 
-export const LIMITS = { agents: 500, tasks: 100 };
+export const LIMITS = { agents: 500, tasks: 100, rounds: 20 };
 
 /** A small seeded random number generator. The same seed gives the same numbers. */
 export function mulberry32(seed) {
@@ -56,7 +56,7 @@ export function summarize(values) {
 export class Metrics {
   constructor() {
     this.calls = [];
-    this.counts = { landed: 0, handed: 0, failed: 0, changeRequests: 0, toolErrors: 0, protocolErrors: 0, rateLimited: 0 };
+    this.counts = { landed: 0, handed: 0, redone: 0, failed: 0, changeRequests: 0, gaveWay: 0, toolErrors: 0, protocolErrors: 0, rateLimited: 0 };
     this.notes = [];
   }
   record(tool, ms) {
@@ -87,8 +87,9 @@ export function formatReport(metrics, info) {
   const lines = [
     `Load test finished in ${(info.totalMs / 1000).toFixed(1)} s.`,
     `Project ${info.project}. ${info.agents} agents, ${info.tasks} tasks for each agent (${info.agents * info.tasks} tasks). Seed ${info.seed}.`,
-    `Tasks: ${c.landed} landed, ${c.handed} handed to a person, ${c.failed} failed.`,
-    `Change requests: ${c.changeRequests}.`,
+    `${info.shared ?? 30}% of the tasks also add a line to one file that all agents edit. A task has at most ${info.rounds ?? 4} tries.`,
+    `Tasks: ${c.landed} landed, ${c.handed} handed to a person${c.redone ? `, ${c.redone} given to a built-in agent after the tries of the agent were used` : ""}, ${c.failed} failed.`,
+    `Change requests: ${c.changeRequests}.${info.giveWay === undefined ? "" : info.giveWay ? ` Agents gave way ${c.gaveWay} times: they waited for the agent that continues.` : " The agents did not give way: they confirmed the change requests and went on."}`,
     `Tool errors: ${c.toolErrors}. Protocol errors: ${c.protocolErrors}. Answers with status 429: ${c.rateLimited}.`,
     "",
     `${"tool".padEnd(18)} ${"calls".padStart(6)} ${"p50 ms".padStart(8)} ${"p95 ms".padStart(8)} ${"max ms".padStart(8)}`,
@@ -111,16 +112,24 @@ export function costWarning(options) {
 }
 
 export const USAGE = [
-  "Usage: GITRING_URL=https://your-gitring.example.com GITRING_KEY=<key> npm run load -- --project <id> [--agents N] [--tasks M] [--seed S] --yes",
+  "Usage: GITRING_URL=https://your-gitring.example.com GITRING_KEY=<key> npm run load -- --project <id> [--agents N] [--tasks M] [--shared P] [--rounds R] [--ignore-requests] [--seed S] --yes",
   "  --project <id>  the project to load. The script does not create projects.",
   `  --agents N      agents that work at the same time (default 10, at most ${LIMITS.agents})`,
   `  --tasks M       tasks for each agent (default 2, at most ${LIMITS.tasks})`,
+  "  --shared P      percent of the tasks that also add a line to one file that all agents edit (default 30, from 0 to 100)",
+  `  --rounds R      tries for one task before the agent gives up (default 4, at most ${LIMITS.rounds})`,
+  "  --ignore-requests  the agents confirm the change requests but do not wait for the agent that continues (default: they wait)",
   "  --seed S        seed of the scheduling (default 1)",
   "  --yes           confirm the cost. Without it, the script prints a warning and stops.",
-  "GITRING_URL must start with https://. GITRING_KEY is read from the environment only. The script never prints it.",
+  "GITRING_URL must start with https://. For a copy on your own computer, http://localhost works too. GITRING_KEY is read from the environment only. The script never prints it.",
 ];
 
-/** The MCP address for GITRING_URL: https only. An address that ends in /mcp stays as it is. */
+/** Hosts where http is safe: the key does not leave this computer. */
+function isLoopback(host) {
+  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "[::1]";
+}
+
+/** The MCP address for GITRING_URL: https only (http for localhost). An address that ends in /mcp stays as it is. */
 export function endpointOf(raw) {
   let url;
   try {
@@ -128,7 +137,7 @@ export function endpointOf(raw) {
   } catch {
     throw new Error("GITRING_URL is not a web address. Use https://your-gitring.example.com");
   }
-  if (url.protocol !== "https:") throw new Error("GITRING_URL must start with https://. The script does not send a key over http.");
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback(url.hostname))) throw new Error("GITRING_URL must start with https://. The script sends a key over http only to localhost.");
   url.hash = "";
   url.search = "";
   if (!/\/mcp\/?$/.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, "")}/mcp`;
@@ -148,6 +157,7 @@ function whole(name, raw, min, max) {
 export function prepare(argv, env) {
   const raw = {};
   let yes = false;
+  let giveWay = true;
   try {
     for (let i = 0; i < argv.length; i++) {
       const a = argv[i];
@@ -156,7 +166,11 @@ export function prepare(argv, env) {
         yes = true;
         continue;
       }
-      const m = /^--(project|agents|tasks|seed)(?:=(.*))?$/.exec(a);
+      if (a === "--ignore-requests") {
+        giveWay = false;
+        continue;
+      }
+      const m = /^--(project|agents|tasks|shared|rounds|seed)(?:=(.*))?$/.exec(a);
       if (!m) throw new Error(`Unknown option ${a}.`);
       raw[m[1]] = m[2] ?? argv[++i];
     }
@@ -166,6 +180,9 @@ export function prepare(argv, env) {
       project: raw.project,
       agents: raw.agents === undefined ? 10 : whole("agents", raw.agents, 1, LIMITS.agents),
       tasks: raw.tasks === undefined ? 2 : whole("tasks", raw.tasks, 1, LIMITS.tasks),
+      shared: raw.shared === undefined ? 30 : whole("shared", raw.shared, 0, 100),
+      rounds: raw.rounds === undefined ? 4 : whole("rounds", raw.rounds, 1, LIMITS.rounds),
+      giveWay,
       seed: raw.seed === undefined ? 1 : whole("seed", raw.seed, 0, 2 ** 31 - 1),
     };
     const endpoint = endpointOf(env.GITRING_URL);

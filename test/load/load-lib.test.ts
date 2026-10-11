@@ -57,6 +57,22 @@ describe("options", () => {
     expect(prepare(["--project", "shop-1"], { GITRING_URL: ENV.GITRING_URL }).lines.join("\n")).toMatch(/GITRING_KEY/);
   });
 
+  it("reads the share of tasks on the shared file and the tries of a task", () => {
+    const res = prepare(["--project", "p", "--shared", "0", "--rounds", "8", "--yes"], ENV);
+    expect(res.options).toMatchObject({ shared: 0, rounds: 8, agents: 10, tasks: 2 });
+    expect(prepare(["--project", "p", "--yes"], ENV).options).toMatchObject({ shared: 30, rounds: 4 });
+    expect(prepare(["--project", "p", "--shared", "101", "--yes"], ENV).code).toBe(2);
+    expect(prepare(["--project", "p", "--rounds", "0", "--yes"], ENV).code).toBe(2);
+    expect(prepare(["--project", "p", "--rounds", "21", "--yes"], ENV).code).toBe(2);
+  });
+
+  it("lets the agents give way, unless --ignore-requests", () => {
+    expect(prepare(["--project", "p", "--yes"], ENV).options?.giveWay).toBe(true);
+    expect(prepare(["--project", "p", "--ignore-requests", "--yes"], ENV).options?.giveWay).toBe(false);
+    expect(prepare(["--project", "p", "--yes", "--ignore-requests"], ENV).options?.giveWay).toBe(false);
+    expect(prepare(["--help"], ENV).lines.join("\n")).toMatch(/--ignore-requests/);
+  });
+
   it("prints a cost warning and does not run without --yes", () => {
     const res = prepare(["--project", "shop-1", "--agents", "20", "--tasks", "3"], ENV);
     expect(res.code).toBe(2);
@@ -80,10 +96,10 @@ describe("options", () => {
   it("runs with --yes and reads the options", () => {
     const res = prepare(["--project", "shop-1", "--agents=20", "--tasks", "3", "--seed", "7", "--yes"], ENV);
     expect(res.code).toBe(0);
-    expect(res.options).toEqual({ project: "shop-1", agents: 20, tasks: 3, seed: 7 });
+    expect(res.options).toEqual({ project: "shop-1", agents: 20, tasks: 3, shared: 30, rounds: 4, giveWay: true, seed: 7 });
     expect(res.key).toBe(ENV.GITRING_KEY);
     expect(res.endpoint?.href).toBe("https://gitring.example.com/mcp");
-    expect(prepare(["--project", "shop-1", "--yes"], ENV).options).toEqual({ project: "shop-1", agents: 10, tasks: 2, seed: 1 });
+    expect(prepare(["--project", "shop-1", "--yes"], ENV).options).toEqual({ project: "shop-1", agents: 10, tasks: 2, shared: 30, rounds: 4, giveWay: true, seed: 1 });
   });
 
   it("refuses numbers that are too large or not whole", () => {
@@ -100,6 +116,15 @@ describe("options", () => {
     expect(endpointOf("https://a.example.com/base/?x=1#y").href).toBe("https://a.example.com/base/mcp");
     expect(() => endpointOf("http://a.example.com")).toThrow(/https/);
     expect(() => endpointOf(undefined)).toThrow(/GITRING_URL/);
+  });
+
+  it("allows http only for a copy on this computer", () => {
+    expect(endpointOf("http://localhost:8787").href).toBe("http://localhost:8787/mcp");
+    expect(endpointOf("http://127.0.0.1:8787/").href).toBe("http://127.0.0.1:8787/mcp");
+    expect(endpointOf("http://[::1]:8787").href).toBe("http://[::1]:8787/mcp");
+    expect(endpointOf("http://gitring.localhost:8787").href).toBe("http://gitring.localhost:8787/mcp");
+    expect(() => endpointOf("http://localhost.example.com")).toThrow(/https/);
+    expect(() => endpointOf("http://127.0.0.1.example.com")).toThrow(/https/);
   });
 });
 
@@ -132,10 +157,29 @@ describe("report", () => {
     expect(text).toContain("Load test finished in 12.3 s.");
     expect(text).toContain("Tasks: 8 landed, 1 handed to a person, 1 failed.");
     expect(text).toContain("Change requests: 4.");
+    expect(text, "no word about giving way when the run did not say").not.toMatch(/gave way|give way/);
     expect(text).toContain("Tool errors: 3. Protocol errors: 0. Answers with status 429: 2.");
     expect(lines.find((l) => l.startsWith("gitring_declare"))!.trim().split(/\s+/)).toEqual(["gitring_declare", "10", "50", "100", "100"]);
     expect(lines.find((l) => l.startsWith("gitring_submit"))!.trim().split(/\s+/)).toEqual(["gitring_submit", "1", "500", "500", "500"]);
     expect(text).not.toContain("protocol errors. The exit code");
+  });
+
+  it("tells the tasks that a built-in agent took over", () => {
+    const m = new Metrics();
+    m.count("landed", 5);
+    m.count("redone", 2);
+    m.count("failed", 1);
+    const text = formatReport(m, { totalMs: 1000, project: "p", agents: 2, tasks: 4, seed: 1 }).join("\n");
+    expect(text).toContain("Tasks: 5 landed, 0 handed to a person, 2 given to a built-in agent after the tries of the agent were used, 1 failed.");
+  });
+
+  it("says whether the agents gave way", () => {
+    const m = new Metrics();
+    m.count("changeRequests", 9);
+    m.count("gaveWay", 3);
+    const info = { totalMs: 1000, project: "p", agents: 2, tasks: 1, seed: 1 };
+    expect(formatReport(m, { ...info, giveWay: true }).join("\n")).toContain("Change requests: 9. Agents gave way 3 times: they waited for the agent that continues.");
+    expect(formatReport(m, { ...info, giveWay: false }).join("\n")).toContain("The agents did not give way: they confirmed the change requests and went on.");
   });
 
   it("exits with 1 after any protocol error, and with 0 otherwise", () => {

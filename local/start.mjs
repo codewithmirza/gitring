@@ -1,6 +1,6 @@
 // Runs gitring on your computer. You do not need a Cloudflare account.
 //   1. It builds the test version of Artifacts (real git, in tmp/local) and starts it.
-//   2. It starts `wrangler dev` with wrangler.local.jsonc and new random keys.
+//   2. It starts `wrangler dev` with wrangler.local.jsonc (or the file in LOCAL_CONFIG) and new random keys.
 // Each start deletes the data of the earlier run.
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -65,7 +65,7 @@ const wrangler = spawn(
     wranglerBin,
     "dev",
     "--config",
-    "wrangler.local.jsonc",
+    process.env.LOCAL_CONFIG || "wrangler.local.jsonc",
     "--persist-to",
     join(work, "state"),
     "--var",

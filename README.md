@@ -85,6 +85,20 @@ npm run load -- --help # a load test for a deployed gitring: it costs money, so 
 
 The end-to-end tests run the real coordinator on a test version of Artifacts, so they do not prove how the real service behaves. `npm run load` does that on a deployed copy.
 
+`npm run load` runs many agents at the same time through the real MCP door. It never makes a project: give it one with `--project`. It reads the address from `GITRING_URL` and the key from `GITRING_KEY`, and it never prints the key. The options:
+
+| Option | What it does |
+|---|---|
+| `--agents N` | Agents that work at the same time (default 10, at most 500). |
+| `--tasks M` | Tasks for each agent (default 2, at most 100). |
+| `--shared P` | Of 100 tasks, how many also add a line to one shared file, so that plans meet (default 30). `0` gives tasks on separate files. |
+| `--rounds R` | Tries for one task before the agent gives up (default 4). |
+| `--ignore-requests` | The agents confirm change requests but do not wait for the agent that continues. Without it, they wait. |
+| `--seed N` | The same seed gives the same plan of the run. |
+| `--yes` | Needed to start. The run costs money (Artifacts operations, Workers AI, test containers). |
+
+`GITRING_LOAD_TRACE=1` prints the first line of each answer of each agent, to find out why a task did not merge.
+
 ## Try it without a paid account
 
 You can run gitring on your computer. You do not need a Cloudflare account for this.
@@ -219,7 +233,7 @@ A project can send an `approval` event to a webhook (Settings → Webhooks) when
 
 ## Limits
 
-These limits come from the design, not from speed tests.
+Most of these limits come from the design. The **Load** bullet gives numbers from load runs on a local copy.
 
 - **Conflict check**: gitring judges the 20 nearest plans. A collision with any other plan appears later, at the merge, as a text conflict or a failed test.
 - **Merge**: one change merges at a time in each project. Other work waits in the merge queue.
@@ -227,6 +241,13 @@ These limits come from the design, not from speed tests.
 - **Redo**: gitring gives work back to the same agent at most 3 times. With the policy "Same agent only", a person decides after that. With the other policies, a built-in agent does the task again, at most 2 times. When the redos fail, a person decides.
 - **Project size**: one coordinator for each project (a Durable Object) keeps the tasks and work copies of the project in memory. Plan for hundreds of active work copies in one project, up to about 2,000. Use several projects beyond that.
 - **Symbol analysis**: it covers JavaScript and TypeScript only. Other languages use files and line ranges.
+- **Load**: `scripts/load.mjs` ran 8, 24 and 60 agents with 3 tasks each on a local copy, through the real MCP door, with no tool error. The local copy has a test version of Artifacts, no Workers AI and no rate limits.
+  - Tasks on separate files merged at about 2 to 2.4 a second, one merge at a time: 24 of 24, 72 of 72 and 180 of 180 tasks merged, in 10, 30 and 89 seconds.
+  - With one hot file (30 tasks in 100 also add a line to the same file) the rate fell to 0.5 to 0.6 a second at 24 and 60 agents. The agents that give way wait for each other. With 24 agents, 70 of 72 tasks merged in 114 seconds, and 2 waited for a person (two work copies of one task). With 60 agents, 174 of 180 merged in 341 seconds.
+  - Agents that ignore the change requests (`--ignore-requests`) finish the 72 tasks of 24 agents in 36 seconds, but only 63 merge. The others go back to the agent, to a built-in agent or to a person. Giving way costs time and saves work.
+  - A hot spot is the worst case: many agents that add a line at the same place of one file.
+  - These runs say nothing about the real Artifacts service (network time, limits, prices). Run `npm run load` on a deployed copy to measure that. One check is still open: that Artifacts refuses a push that starts from an old commit (`ARTIFACTS_TODO` in `src/platform/repo/artifacts.ts`).
+- **Rate limits**: the MCP door allows 3,000 calls a minute for one person at one Cloudflare location. The load runs made 500 to 1,650 calls a minute with one key. The limit was 600 before these runs, which was too low for scripted agents.
 - **Artifacts**: Cloudflare sets these limits. Artifacts is in open beta, so they can change. See the [Artifacts limits page](https://developers.cloudflare.com/artifacts/platform/limits/) (numbers from 1 October 2026).
   - A repository holds at most 1 GB. A file holds at most 32 MB.
   - An account holds at most 1 TB. Cloudflare can raise this on request.
@@ -367,9 +388,9 @@ Rights: linking a repository needs read rights on GitHub; turning sync on needs 
 
 - Sessions, API keys, OAuth codes and tokens: only SHA-256 hashes are stored. Provider credentials and GitHub tokens are sealed with AES-GCM (key from `GITRING_SECRET`).
 - Sign-ins are bound to the browser that started them (a cookie with the OAuth state); an OAuth consent is bound the same way. Browser sessions cannot make cross-site writes.
-- Rate limits per Cloudflare location (Workers Rate Limiting): sign-in starts and client registration 20 a minute per address, OAuth token calls 120, MCP 600 a minute per person, the API 1200, and 3000 credential lookups a minute per address (keys and cookies that are not valid stop at the edge). New OAuth clients: 30 an hour per address.
+- Rate limits per Cloudflare location (Workers Rate Limiting): sign-in starts and client registration 20 a minute per address, OAuth token calls 120, MCP 3000 a minute per person, the API 1200, and 6000 credential lookups a minute per address (keys and cookies that are not valid stop at the edge). New OAuth clients: 30 an hour per address.
 - The OAuth consent page names the address that gets the app's code (a registered app can call itself anything); the Allow button works after one second. A request that cannot go on shows a page, not a redirect.
-- A key or an OAuth token (what an agent holds) cannot say yes to a merge, merge work, or change the approval settings. Only a browser session can. See [Approvals](#approvals-a-person-says-yes).
+- A key or an OAuth token (what an agent holds) cannot call the routes that say yes to a merge, merge work, or change the approval settings. Only a browser session can. A yes in the chat form travels in a signed request that is tied to the person and expires after one hour. See [Approvals](#approvals-a-person-says-yes).
 - A change of access closes the live connections that it concerns (a removed member, a project that turns private, a sign-out): each one connects again and gets its role checked.
 - Imports, outbound webhooks and client metadata documents go to public hosts only (no IP addresses, no local names).
 - The web app has a strict Content Security Policy (inline scripts allowed by hash only); server pages allow no scripts except one by nonce. Live previews of agent code run sandboxed and can set no cookies or other headers on the gitring origin.

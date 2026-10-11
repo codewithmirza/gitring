@@ -1,4 +1,4 @@
-export const LIMITS: { agents: number; tasks: number };
+export const LIMITS: { agents: number; tasks: number; rounds: number };
 export const USAGE: string[];
 export function mulberry32(seed: number): () => number;
 export function streamFor(seed: number, name: string): () => number;
@@ -10,8 +10,12 @@ export function summarize(values: readonly number[]): { count: number; p50: numb
 export interface Counts {
   landed: number;
   handed: number;
+  /** The tries of the agent were used, and gitring gave the task to a built-in agent. */
+  redone: number;
   failed: number;
   changeRequests: number;
+  /** Times that an agent waited for the agent that continues. */
+  gaveWay: number;
   toolErrors: number;
   protocolErrors: number;
   rateLimited: number;
@@ -28,7 +32,7 @@ export class Metrics {
 }
 
 export function exitCode(counts: Counts): number;
-export function formatReport(metrics: Metrics, info: { totalMs: number; project: string; agents: number; tasks: number; seed: number }): string[];
+export function formatReport(metrics: Metrics, info: { totalMs: number; project: string; agents: number; tasks: number; seed: number; shared?: number; rounds?: number; giveWay?: boolean }): string[];
 export function costWarning(options: { agents: number; tasks: number; project: string }): string[];
 export function endpointOf(raw: string | undefined): URL;
 
@@ -36,6 +40,12 @@ export interface Options {
   project: string;
   agents: number;
   tasks: number;
+  /** Percent of the tasks that also add a line to the shared file. */
+  shared: number;
+  /** Tries for one task. */
+  rounds: number;
+  /** The agent waits for the agent that continues (default). False: it confirms the change request and goes on. */
+  giveWay: boolean;
   seed: number;
 }
 

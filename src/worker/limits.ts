@@ -4,9 +4,9 @@
  *
  *   RL_AUTH   sign-in starts and client registrations, per address      (20 per minute)
  *   RL_TOKEN  OAuth token and revocation calls, per address             (120 per minute)
- *   RL_MCP    MCP calls, per person (or address before sign-in)         (600 per minute)
+ *   RL_MCP    MCP calls, per person (or address before sign-in)         (3000 per minute: 24 scripted agents of one person make about 1200 calls a minute)
  *   RL_API    other API calls, per person (or address)                  (1200 per minute)
- *   RL_CRED   credential lookups, per address, before gitring looks the credential up (3000 per minute):
+ *   RL_CRED   credential lookups, per address, before gitring looks the credential up (6000 per minute):
  *             a flood of keys or cookies that are not valid stops at the edge, not at the account store
  */
 import type { Env } from "./env";
