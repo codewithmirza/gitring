@@ -1743,6 +1743,10 @@ export class HarborMaster extends DurableObject<Env> {
     this.putAttempt(a);
     await this.flushToFork(a).catch((e) => console.warn("flush to fork failed", String(e)));
     const run = await this.check(a.id);
+    if (a.status !== "submitted") {
+      // Another submit of this work copy was faster: it already queued or merged the work while these tests ran.
+      return { attemptId, status: a.status, checks: run, next: a.status === "landed" ? "landed" : a.status === "underway" ? "fix-checks" : "landing-queue", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
+    }
     const intent = this.intents.get(a.intentId)!;
     let next: T.SubmitResult["next"];
     let message: string;

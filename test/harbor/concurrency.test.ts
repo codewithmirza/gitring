@@ -16,7 +16,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseTrailers, LOGBOOK_SCHEMA } from "../../src/core/logbook";
 import { audit, runAll, ScriptedAgent, shop, shopFor, type AgentResult, type Audit, type Shop } from "./shop";
-import { mulberry32, Scheduler, shuffled, World, type WorldOptions } from "./world";
+import { mulberry32, Scheduler, shuffled, sleep, World, type WorldOptions } from "./world";
 
 interface Run {
   world: World;
@@ -345,6 +345,44 @@ async function filePair(seed: number, opts: WorldOptions = {}) {
 }
 
 describe("bugs that the runs found", () => {
+  it("lands the work once when a second submit finishes its tests after the merge (fixed)", async () => {
+    // An agent sends gitring_submit again (a retry after a time-out, for example). The tests of the second
+    // call take longer than the first merge. Before the fix, the second call put the work copy back to
+    // "ready" after it had merged, and gitring merged the same work a second time (an empty 3-way merge
+    // commit on main, and a second landing record for one work copy).
+    const { world, key } = await newWorld();
+    const full = shop(1, 0);
+    const task = full.tasks[0];
+    const s: Shop = { files: full.files, tasks: [task] };
+    const project = await openProject(world, key, s);
+    const agent = new ScriptedAgent(world, key, project.id, new Scheduler(1), task, 1);
+    expect(await agent.start()).toBeUndefined();
+    const path = task.files[0];
+    const r = await agent.call("gitring_read", { path });
+    await agent.call("gitring_write", { files: [{ path, content: task.edits[0].apply(r.text) }], message: task.title });
+    expect((await agent.call("gitring_check")).ok).toBe(true);
+    // The second call of the tests ends 400 ms later than it would.
+    const h = world.harbor(project.id) as unknown as { check(id: string): Promise<unknown> };
+    const check = h.check.bind(h);
+    let calls = 0;
+    h.check = async (id: string) => {
+      const mine = ++calls;
+      const run = await check(id);
+      if (mine === 2) await sleep(400);
+      return run;
+    };
+    const first = await agent.call("gitring_submit", { summary: "Done" });
+    expect(first.json.next).toBe("landing-queue");
+    const second = await agent.call("gitring_submit", { summary: "Done again" });
+    expect(second.ok).toBe(true);
+    expect(second.json.next, "the second answer says that the work is merged").toBe("landed");
+    await world.settle();
+    const run = await world.harbor(project.id).state();
+    expect(run.landings, "one landing for one work copy").toHaveLength(1);
+    expect(world.mainCommits, "one commit to main").toHaveLength(1);
+    expect(run.attempts[0].status).toBe("landed");
+  });
+
   it("keeps the work of an agent that answers while gitring gives the work back (fixed)", async () => {
     // Both agents write at the same place and submit together. The first merge goes in. The second work
     // copy cannot merge, and gitring gives it back to its agent. When the agent calls gitring while this
