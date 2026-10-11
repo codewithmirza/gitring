@@ -26,7 +26,7 @@ const STEPS: { title: string; text: string }[] = [
   },
   {
     title: "gitring merges the work.",
-    text: "When the tests pass, gitring merges the work into main: fast-forward, 3-way merge, or a redo on the new main. Each merge keeps a record of why.",
+    text: "When the tests pass, gitring merges the work into main: fast-forward, 3-way merge, or a redo on the new main. A person says yes first when the project asks. Each merge keeps a record of why.",
   },
 ];
 

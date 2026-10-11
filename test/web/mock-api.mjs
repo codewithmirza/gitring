@@ -8,7 +8,13 @@
 // no GitHub connection), norepos (GitHub connected, no repositories), fresh (signed in, no projects),
 // signedout, noprov (signed out, no sign-in providers).
 // Test aids: GET /__mock/log (requests), POST /__mock/reset, POST /__mock/grant (an OAuth app signs in),
-// POST /__mock/github-event (a live "github" event on the sockets).
+// POST /__mock/github-event (a live "github" event on the sockets), POST /__mock/settings ({ project,
+// settings }: replace the settings of a project as they are, for example the settings of a server from
+// before `landing` and `approver`).
+//
+// Settings behave like the Worker: `landing` ("automatic", "risky" or "ask") decides when a person says yes,
+// `approver` ("sender" or "owner") decides who answers, and `autoLand` stays equal to `landing ===
+// "automatic"`. A PUT merges a partial object, and only an owner may send it.
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -44,9 +50,23 @@ const USERS = {
   google: { id: "u_ada", name: "Ada Example", email: "ada@example.com", avatar: "", identities: [{ provider: "google", email: "ada@example.com" }], admin: false },
 };
 
+const LANDINGS = ["automatic", "risky", "ask"];
+
+/**
+ * The approval fields as the Worker keeps them (withDefaults in src/core/types.ts): `landing` decides; a
+ * settings object with only the old `autoLand` gets "automatic" (true) or "ask" (false); with neither, a
+ * new project's default ("risky"). `autoLand` always follows `landing`.
+ */
+function withApproval(s) {
+  const landing = LANDINGS.includes(s.landing) ? s.landing : typeof s.autoLand === "boolean" ? (s.autoLand ? "automatic" : "ask") : "risky";
+  return { ...s, landing, approver: s.approver === "owner" ? "owner" : "sender", autoLand: landing === "automatic" };
+}
+
 function settingsDefaults(extra = {}) {
-  return {
-    autoLand: true,
+  const s = {
+    landing: "risky",
+    approver: "sender",
+    autoLand: false,
     fanout: 1,
     decisionModel: "clef-flash",
     agentModels: ["@cf/moonshotai/kimi-k2.7-code", "@cf/openai/gpt-oss-120b"],
@@ -60,6 +80,25 @@ function settingsDefaults(extra = {}) {
     checks: { runner: "container", install: "npm ci", test: "npm test" },
     ...extra,
   };
+  // Only the old `autoLand` in `extra`: it decides, as in the Worker.
+  if (extra.landing === undefined && typeof extra.autoLand === "boolean") delete s.landing;
+  return withApproval(s);
+}
+
+/** A settings PUT: merge a partial object into the settings, like the Worker. */
+function patchSettings(cur, b) {
+  const { landing, autoLand, approver, ...rest } = b;
+  const next = {
+    ...cur,
+    ...rest,
+    github: { ...cur.github, ...(b.github ?? {}) },
+    checks: b.checks ? { ...b.checks } : cur.checks,
+    thresholds: { ...cur.thresholds, ...(b.thresholds ?? {}) },
+  };
+  // `landing` decides. An old client sends `autoLand` only: true means "automatic", false means "ask".
+  next.landing = LANDINGS.includes(landing) ? landing : typeof autoLand === "boolean" ? (autoLand ? "automatic" : "ask") : cur.landing;
+  if (approver === "sender" || approver === "owner") next.approver = approver;
+  return withApproval(next);
 }
 
 let db;
@@ -304,9 +343,10 @@ async function api(req, res, url) {
       return json(res, 200, proj.settings);
     }
     if (rest === "/settings" && req.method === "PUT") {
+      if (role !== "owner") return json(res, 403, { error: "Only an owner can change the settings." });
       const b = await body(req);
       if (b.github?.repo === "acme/payments") return json(res, 403, { error: "You cannot push to acme/payments. A person who can push must link it.", installUrl: INSTALL_URL });
-      proj.settings = { ...proj.settings, ...b, github: { ...proj.settings.github, ...(b.github ?? {}) }, checks: b.checks ? { ...b.checks } : proj.settings.checks };
+      proj.settings = patchSettings(proj.settings, b);
       return json(res, 200, proj.settings);
     }
     if (rest === "/github" && req.method === "GET") {
@@ -343,6 +383,13 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === "/__mock/grant") {
       db.grants.push({ id: `g_${db.grants.length + 1}`, clientId: "c_claude_code", clientName: "Claude Code", clientUri: "https://claude.ai", scope: "gitring", createdAt: now(), lastUsedAt: now() });
+      return json(res, 200, { ok: true });
+    }
+    if (url.pathname === "/__mock/settings" && req.method === "POST") {
+      const b = await body(req);
+      const proj = db.projects.get(b.project);
+      if (!proj) return json(res, 404, { error: "Unknown project." });
+      proj.settings = b.settings;
       return json(res, 200, { ok: true });
     }
     if (url.pathname === "/__mock/github-event") {

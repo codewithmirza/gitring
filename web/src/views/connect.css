@@ -70,6 +70,14 @@
 }
 @keyframes cx-breathe { 50% { opacity: .35; } }
 
+/* Under the connector: what a merge question is, and two other addresses (closed at first). */
+.cx-after { display: grid; gap: var(--s-2); min-width: 0; padding-top: var(--s-4); border-top: 1px solid var(--line); }
+.cx-after__title { margin: 0 0 var(--s-1); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--ink-1); }
+.cx-lines { display: grid; gap: var(--s-2); margin: 0; padding-left: 20px; max-width: 70ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.cx-lines li::marker { color: var(--ink-3); }
+.cx-lines + .cx-more { margin-top: var(--s-2); }
+.cx-more__body { display: grid; gap: var(--s-3); min-width: 0; padding-bottom: var(--s-3); }
+
 /* ───────────── sections ───────────── */
 .flowfig { margin: 0; padding: var(--s-6); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); min-width: 0; }
 .flow { display: block; width: 100%; height: auto; overflow: visible; }

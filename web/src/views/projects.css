@@ -72,6 +72,31 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 .st-error .b-icon { flex: none; transform: translateY(1px); }
 .st-warn { color: var(--caution); }
 .st-checks { display: grid; gap: var(--s-2); justify-items: start; }
+/* A radio group with a help text under each choice (when does a person say yes, who says yes). */
+.st-choice { display: grid; gap: var(--s-2); max-width: 640px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.st-sec > .st-choice + .st-choice, .st-sec > .st-choice + .st-checks { margin-top: var(--s-3); }
+.st-choice__legend { margin: 0 0 var(--s-1); padding: 0; }
+/* One label holds the radio, the name and the help: the whole card is the click target. */
+.st-choice__opt {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s-1) var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+}
+.st-choice__opt:hover { border-color: var(--line-strong); }
+.st-choice__opt:has(input:checked) { border-color: var(--accent); background: var(--accent-tint); }
+.st-choice__opt input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.st-choice__name { min-width: 0; font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
+.st-choice__badge { margin-left: var(--s-1); vertical-align: 1px; }
+.st-choice__help { grid-column: 2; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.st-choice:disabled .st-choice__opt { cursor: default; }
+.st-choice:disabled .st-choice__opt:hover { border-color: var(--line); }
+.st-choice:disabled .st-choice__opt:has(input:checked):hover { border-color: var(--accent); }
 .st-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
 .st-sync { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); }
 .st-sync__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }

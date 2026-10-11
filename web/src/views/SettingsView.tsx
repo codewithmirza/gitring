@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, InlineConfirm, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
-import type { CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, GitringEventType, ProjectSettings, RedoPolicy, WebhookTarget } from "../../../src/core/types";
+import type { ApproverRule, CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, ProjectSettings, RedoPolicy, WebhookTarget } from "../../../src/core/types";
 import { githubRepoName } from "../../../src/core/repo-rules";
 import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess, useMe, type MeWithInstall } from "../state/account";
 import { isAbort, pullFromGithub, sendToGithub, syncStatus } from "../state/github";
@@ -15,6 +15,8 @@ import { useStore } from "../state/store";
 import { ago, shortSha } from "../state/format";
 import { Link } from "../app/router";
 import { RepoSelect } from "./newproject/RepoSelect";
+import { APPROVAL_EVENT_NOTE, APPROVER_CHOICES, APPROVER_LEGEND, LANDING_CHOICES, LANDING_LEGEND, WEBHOOK_EVENTS, approverOf, landingOf, untestedHelp } from "./approval-copy";
+import { ChoiceList } from "./ChoiceList";
 import "./projects.css";
 
 /** Save a part of the settings. The server merges it and answers the full settings (or an error to show inline). */
@@ -376,7 +378,11 @@ const REDO_HELP: Record<RedoPolicy, string> = {
 };
 
 function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
-  const [autoLand, setAutoLand] = useState(settings.autoLand);
+  // A server from before `landing` sends only `autoLand`; a server from before `approver` sends neither.
+  const savedLanding = landingOf(settings);
+  const savedApprover = approverOf(settings);
+  const [landing, setLanding] = useState<LandingMode>(savedLanding);
+  const [approver, setApprover] = useState<ApproverRule>(savedApprover);
   const [intentsInRepo, setIntentsInRepo] = useState(settings.intentsInRepo);
   const [redo, setRedo] = useState<RedoPolicy>(settings.redo ?? "agent-first");
   const [wait, setWait] = useState(String(settings.redoWaitMinutes ?? 15));
@@ -384,20 +390,27 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
 
   // Reset the form only when these values change on the server (a save in another section keeps this draft).
   useEffect(() => {
-    setAutoLand(settings.autoLand);
+    setLanding(savedLanding);
+    setApprover(savedApprover);
     setIntentsInRepo(settings.intentsInRepo);
     setRedo(settings.redo ?? "agent-first");
     setWait(String(settings.redoWaitMinutes ?? 15));
-  }, [settings.autoLand, settings.intentsInRepo, settings.redo, settings.redoWaitMinutes]);
+  }, [savedLanding, savedApprover, settings.intentsInRepo, settings.redo, settings.redoWaitMinutes]);
 
-  const dirty = autoLand !== settings.autoLand || intentsInRepo !== settings.intentsInRepo || redo !== (settings.redo ?? "agent-first") || (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15));
+  const dirty =
+    landing !== savedLanding ||
+    approver !== savedApprover ||
+    intentsInRepo !== settings.intentsInRepo ||
+    redo !== (settings.redo ?? "agent-first") ||
+    (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15));
   const submit = () => {
     const minutes = Number(wait);
     if (redo === "agent-first" && (!Number.isInteger(minutes) || minutes < 5 || minutes > 120)) {
       setError("Give a wait time from 5 to 120 minutes.");
       return;
     }
-    void save({ autoLand, intentsInRepo, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
+    // `landing` replaces the old `autoLand`: the server keeps `autoLand` equal to it, so the form never writes `autoLand`.
+    void save({ landing, approver, intentsInRepo, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
   };
 
   return (
@@ -405,9 +418,9 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
       <h2 className="page__h2" id="st-merging">
         Merging
       </h2>
+      <ChoiceList legend={LANDING_LEGEND} choices={LANDING_CHOICES} value={landing} onChange={setLanding} disabled={!owner} />
+      <ChoiceList legend={APPROVER_LEGEND} choices={APPROVER_CHOICES} value={approver} onChange={setApprover} disabled={!owner} />
       <div className="st-checks">
-        <Checkbox label="Merge by itself when the tests pass" checked={autoLand} disabled={!owner} onChange={(e) => setAutoLand(e.target.checked)} />
-        <p className="np__help">{autoLand ? "A person chooses only when two or more work copies compete for one task." : "A person chooses each work copy to merge."}</p>
         <Checkbox
           label={
             <>
@@ -496,7 +509,7 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
             disabled={!owner || busy}
             onChange={(e) => owner && void save({ allowUntested: e.target.checked }, "Test settings saved")}
           />
-          <p className="np__help">{settings.allowUntested ? "When no test runs, gitring merges the work copy by itself." : "When no test runs, a person must decide to merge."}</p>
+          <p className="np__help">{untestedHelp(Boolean(settings.allowUntested))}</p>
         </>
       )}
       {container && (
@@ -816,13 +829,6 @@ function GithubSection({ projectId, owner, settings, onSaved, imported, me }: Se
 
 /* ───────────── webhooks ───────────── */
 
-const EVENTS: { value: GitringEventType; label: string }[] = [
-  { value: "landing", label: "A merge" },
-  { value: "correction", label: "A change request" },
-  { value: "decision", label: "A person decided" },
-  { value: "intent", label: "A new task" },
-];
-
 const MAX_WEBHOOKS = 5;
 /** The server keeps only https URLs with a host name (others are dropped without a word). */
 const URL_OK = /^https:\/\/[^\s/]+\.[^\s]+$/;
@@ -833,6 +839,7 @@ function newWebhook(): WebhookTarget {
 }
 
 function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) {
+  const approvalHelpId = `${useId().replace(/:/g, "")}-approval-help`;
   const [list, setList] = useState<WebhookTarget[]>(settings.webhooks ?? []);
   const [tried, setTried] = useState(false);
   const { busy, error, setError, save } = useSave(projectId, onSaved);
@@ -863,6 +870,9 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
         Webhooks
       </h2>
       <p className="np__help">gitring sends a POST request to each webhook when an event happens: JSON, or a Slack message. At most {MAX_WEBHOOKS} webhooks.</p>
+      <p className="np__help" id={approvalHelpId}>
+        {APPROVAL_EVENT_NOTE}
+      </p>
       {list.length === 0 && <p className="np__help">No webhooks yet.</p>}
       <ul className="st-hooks">
         {list.map((w, i) => (
@@ -889,11 +899,12 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
             </div>
             <fieldset className="st-hook__events" disabled={!owner}>
               <legend className="b-field__label">Events</legend>
-              {EVENTS.map((ev) => (
+              {WEBHOOK_EVENTS.map((ev) => (
                 <Checkbox
                   key={ev.value}
                   label={ev.label}
                   checked={w.events.includes(ev.value)}
+                  aria-describedby={ev.value === "approval" ? approvalHelpId : undefined}
                   onChange={(e) => change(w.id, { events: e.target.checked ? [...w.events, ev.value] : w.events.filter((x) => x !== ev.value) })}
                 />
               ))}

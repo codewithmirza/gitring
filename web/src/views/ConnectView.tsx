@@ -5,8 +5,8 @@
  * Requests: the connect info once per project; the OAuth apps every 5 s only while this tab is visible
  * and no app is connected yet (agents that work on the project arrive over the live socket).
  */
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Button, CodeBlock, Field, Input, Tabs, TabPanel } from "../design/components";
+import { Fragment, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Button, CodeBlock, Field, Input, Tabs, TabPanel, type ButtonVariant } from "../design/components";
 import type { AgentInfo } from "../../../src/core/types";
 import type { OAuthGrantInfo } from "../../../src/core/accounts";
 import { createKey, useMe } from "../state/account";
@@ -18,6 +18,8 @@ import { Icon, Mark, type IconName } from "../design/icons";
 import { harborOrNull, onHarbor, defaultConnectInfo, type ConnectInfo } from "../state/api";
 import { ago } from "../state/format";
 import { useStore } from "../state/store";
+import { APPROVAL_EVENT_HELP, WEBHOOK_EVENTS, lowerFirst } from "./approval-copy";
+import { FLOW_STAGES, GITHUB_SWAP, MERGE_QUESTION, READ_ONLY, TOOLS, approvalExample, flowText, mcpEndpoints } from "./connect-text";
 import "./connect.css";
 import "./projects.css";
 
@@ -48,13 +50,7 @@ function flowParts(info: ConnectInfo, githubOn: boolean) {
     ...(info.inputs.githubIssues ? [{ label: "GitHub issues", via: "label gitring", icon: "plug", group: "app" } satisfies FlowNode] : []),
     ...(info.inputs.slack ? [{ label: "Slack", via: "the /gitring command", icon: "plug", group: "app" } satisfies FlowNode] : []),
   ];
-  const stages: Stage[] = [
-    { label: "Conflict check", icon: "range", note: "each plan and each change" },
-    { label: "Change requests", icon: "buoy", note: "back to the agents" },
-    { label: "Rebase", icon: "compass", note: "onto each new main" },
-    { label: "Merge", icon: "anchor", note: "fast-forward · 3-way merge · redo" },
-    { label: "History", icon: "logbook", note: "a git note on each merge commit" },
-  ];
+  const stages: Stage[] = FLOW_STAGES;
   const outputs: { label: string; via: string; icon: IconName }[] = [
     { label: "main in Cloudflare Artifacts", via: "only gitring writes main", icon: "anchor" },
     ...(githubOn ? [{ label: "GitHub", via: "pull request or main", icon: "fork" as IconName }] : []),
@@ -227,18 +223,6 @@ function GitringBox({ x, y, w, h, stages }: { x: number; y: number; w: number; h
   );
 }
 
-function flowText(info: ConnectInfo, githubOn: boolean): string {
-  const apps = ["any app sends HTTP requests with an API key", info.inputs.githubIssues && "GitHub issues with the label gitring open tasks", info.inputs.slack && "the Slack command /gitring opens tasks"]
-    .filter(Boolean)
-    .join("; ");
-  return (
-    `In: Claude connects as a connector, and Claude Code, Codex and Cursor connect through MCP; any git client pushes into a work copy; ${apps}. ` +
-    "gitring runs a conflict check on each plan and each change, sends change requests back to the agents, rebases active work onto each new main, " +
-    "merges the work (fast-forward, 3-way merge or redo) and writes the history as a git note on each merge commit. " +
-    `Out: main in Cloudflare Artifacts${githubOn ? ", GitHub (a pull request or main)" : ""}, webhooks (JSON or Slack messages) and live updates for the web pages.`
-  );
-}
-
 function useNarrow(q = "(max-width: 760px)") {
   const [m, setM] = useState(() => window.matchMedia(q).matches);
   useEffect(() => {
@@ -287,8 +271,25 @@ function Section({ id, title, children, aside }: { id: string; title: string; ch
   );
 }
 
-/** One line to copy: a read-only field (focus selects it) and a button. */
-function CopyField({ value, label, button = "Copy URL" }: { value: string; label: string; button?: string }) {
+/** A text with `code` words: each word between backticks shows as inline code. */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("`").map((part, i) =>
+        i % 2 ? (
+          <span key={i} className="code-inline">
+            {part}
+          </span>
+        ) : (
+          <Fragment key={i}>{part}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+/** One line to copy: a read-only field (focus selects it) and a button. The main URL has the primary button; others are quieter. */
+function CopyField({ value, label, button = "Copy URL", variant = "primary" }: { value: string; label: string; button?: string; variant?: ButtonVariant }) {
   const id = useId();
   const [copied, setCopied] = useState<"idle" | "ok" | "fail">("idle");
   const copy = async () => {
@@ -306,7 +307,7 @@ function CopyField({ value, label, button = "Copy URL" }: { value: string; label
         {label}
       </label>
       <input id={id} className="cx-url__input voice-agent" readOnly value={value} onFocus={(e) => e.currentTarget.select()} spellCheck={false} />
-      <Button variant="primary" icon={copied === "ok" ? "check" : "copy"} onClick={() => void copy()}>
+      <Button variant={variant} icon={copied === "ok" ? "check" : "copy"} onClick={() => void copy()}>
         {copied === "ok" ? "Copied" : button}
       </Button>
       <span className="vh" aria-live="polite">
@@ -457,9 +458,74 @@ function Step({ children }: { children: ReactNode }) {
   return <li>{children}</li>;
 }
 
+/** Scroll to a section of this page and put the focus on its heading. */
+function jumpTo(id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  el.setAttribute("tabindex", "-1");
+  el.focus({ preventScroll: true });
+}
+
+/**
+ * Under the connector: what happens when an agent asks for a merge, and two other addresses. Both
+ * addresses are closed at first: the main path stays one URL and the agent tabs.
+ */
+function AfterConnect({ endpoints }: { endpoints: ReturnType<typeof mcpEndpoints> }) {
+  return (
+    <div className="cx-after">
+      <h3 className="cx-after__title" id="cx-ask">
+        {MERGE_QUESTION.title}
+      </h3>
+      <ul className="cx-lines" aria-labelledby="cx-ask">
+        <li>
+          {MERGE_QUESTION.lines[0]} {MERGE_QUESTION.settings} <Link to="/settings?section=merging">{MERGE_QUESTION.settingsLink}</Link>.
+        </li>
+        <li>{MERGE_QUESTION.lines[1]}</li>
+        <li>
+          {MERGE_QUESTION.lines[2]} {MERGE_QUESTION.slack}{" "}
+          <a
+            href="#cx-out"
+            onClick={(e) => {
+              e.preventDefault();
+              jumpTo("cx-out");
+            }}
+          >
+            {MERGE_QUESTION.slackLink}
+          </a>
+          .
+        </li>
+      </ul>
+      <details className="cx-more" id="cx-github-swap">
+        <summary>{GITHUB_SWAP.summary}</summary>
+        <div className="cx-more__body">
+          <CopyField value={endpoints.github} label={GITHUB_SWAP.label} variant="secondary" />
+          <ul className="cx-lines">
+            {GITHUB_SWAP.lines.map((line) => (
+              <li key={line}>
+                <Inline text={line} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
+      <details className="cx-more" id="cx-readonly">
+        <summary>{READ_ONLY.summary}</summary>
+        <div className="cx-more__body">
+          <CopyField value={endpoints.readonly} label={READ_ONLY.label} variant="secondary" />
+          <p className="cx__step">
+            <Inline text={READ_ONLY.text} />
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function ConnectorSection({ mcpUrl }: { mcpUrl: string }) {
   const [client, setClient] = useRemembered<Client>("gitring.connect.client", "claude", CLIENT_IDS);
   const cursorJson = JSON.stringify({ mcpServers: { gitring: { url: mcpUrl } } }, null, 2);
+  const endpoints = mcpEndpoints(mcpUrl);
   return (
     <section className="cx-hero" aria-labelledby="cx-connector">
       <div className="cx-hero__text">
@@ -550,10 +616,7 @@ function ConnectorSection({ mcpUrl }: { mcpUrl: string }) {
             href="#cx-keys"
             onClick={(e) => {
               e.preventDefault();
-              const el = document.getElementById("cx-keys");
-              el?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
-              el?.setAttribute("tabindex", "-1");
-              el?.focus({ preventScroll: true });
+              jumpTo("cx-keys");
             }}
           >
             Use an API key instead
@@ -570,6 +633,7 @@ function ConnectorSection({ mcpUrl }: { mcpUrl: string }) {
         </ul>
       </TabPanel>
       <LiveStatus client={client} />
+      <AfterConnect endpoints={endpoints} />
     </section>
   );
 }
@@ -670,19 +734,6 @@ function KeySection({ info }: { info: ConnectInfo }) {
   );
 }
 
-const TOOLS: [string, string][] = [
-  ["gitring_intents", "List the open tasks of a project. Without a project: list your projects."],
-  ["gitring_declare", "Send your plan: steps, files and functions. The answer has the result of the conflict check."],
-  ["gitring_log", "Report a step. Other agents see it. In git mode, give headSha after each push."],
-  ["gitring_traffic", "Read the active work near your plan, and the tasks that merged after your base."],
-  ["gitring_read · gitring_list", "Read the files of your work copy."],
-  ["gitring_write", "Write files into your work copy. gitring checks your plan again."],
-  ["gitring_check", "Run the tests of your work copy."],
-  ["gitring_submit", "Submit your work. gitring merges it when the tests pass, or asks a person to choose."],
-  ["gitring_ack", "Confirm that you applied a change request."],
-  ["gitring_update", "Bring the new main into your work copy. In git mode, you get a read-only remote for main."],
-];
-
 export function ConnectView() {
   const projectId = useStore((s) => s.projectId);
   const branch = useStore((s) => s.state?.project.repo.defaultBranch ?? "main");
@@ -723,6 +774,7 @@ export function ConnectView() {
     2,
   );
   const project = info.projectId || projectId;
+  const endpoints = mcpEndpoints(info.mcpUrl);
   const payload = JSON.stringify(
     {
       event: "landing",
@@ -747,7 +799,7 @@ export function ConnectView() {
       </h1>
       <p className="page__lede">
         Agents work on this project through MCP or git. gitring checks each plan, sends change requests back to the agents, and merges the work into main when the
-        tests pass.
+        tests pass. A person says yes first when the project asks.
       </p>
 
       <ConnectorSection mcpUrl={info.mcpUrl} />
@@ -878,23 +930,20 @@ git push gitring HEAD:${branch}
               Add a webhook in <Link to="/settings?section=webhooks">Settings → Webhooks</Link>. gitring sends these events as JSON, or as Slack messages:
             </p>
             <ul className="cx__events">
-              <li>
-                <span className="code-inline">landing</span> a merge
-              </li>
-              <li>
-                <span className="code-inline">correction</span> a change request
-              </li>
-              <li>
-                <span className="code-inline">decision</span> a person decided
-              </li>
-              <li>
-                <span className="code-inline">intent</span> a new task
-              </li>
+              {WEBHOOK_EVENTS.map((ev) => (
+                <li key={ev.value}>
+                  <span className="code-inline">{ev.value}</span> {lowerFirst(ev.label)}
+                </li>
+              ))}
             </ul>
+            <p>
+              For <span className="code-inline">approval</span>, {lowerFirst(APPROVAL_EVENT_HELP)}
+            </p>
           </>
         }
       >
         <CodeBlock label="POST to your webhook (JSON)" copyLabel="Copy example" code={payload} />
+        <CodeBlock label="POST when a person must say yes (JSON)" copyLabel="Copy example" code={approvalExample(project, endpoints.origin)} />
       </Section>
 
       <Section
