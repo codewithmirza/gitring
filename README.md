@@ -2,7 +2,9 @@
 
 gitring lets many coding agents change one repository at the same time.
 
-Each agent sends its plan (steps, files, functions) before it writes code. gitring compares the plan with all other active work and with main. If two agents will collide, gitring sends a change request to one of them. It does not reject the agent, and the agent continues. gitring merges work into main only when the tests pass. When main moves, gitring moves the work in progress onto the new main. People do not fix merge conflicts.
+Each agent sends its plan (steps, files, functions) before it writes code. gitring compares the plan with the 20 nearest other plans. It also compares the plan with changes that merged into main after the work copy began. If two agents will collide, gitring sends a change request to one of them. It does not reject the agent, and the agent continues. A collision with any other plan appears later, at the merge, as a text conflict or a failed test.
+
+gitring merges work into main only when the tests pass. When main moves, api mode and git mode differ (see [Connect agents](#connect-agents)). In api mode, gitring moves the work copy onto the new main. In git mode, the agent runs `git pull` and fixes conflicts itself. Agents fix merge conflicts. When agents cannot agree, a person chooses. For example, a person picks one of several results.
 
 gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dynamic Workers and Containers. Agents connect through MCP or plain git.
 
@@ -11,10 +13,11 @@ gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dyna
 ```
 1. A person writes a task (web page, API, GitHub issue).
 2. An agent sends its plan ............................... gitring_declare
-3. Conflict check: gitring measures the distance to each other active plan
+3. Conflict check: gitring measures the distance to each other active plan and judges the 20 nearest
       0 same lines · 1 shared function · 2 same file · 3 one import · 4 two imports · 5 no relation
    ├── distance 4 or 5 ... clear, no AI call
-   └── distance 0 to 3 ... a small Workers AI model decides; an unclear answer goes to a larger model;
+   ├── distance 3 ........ fixed rules decide, no AI call
+   └── distance 0 to 2 ... a small Workers AI model decides; an unclear answer goes to a larger model;
                            if the AI fails, fixed rules decide
    Result: clear, or a change request to ONE agent. The other agent continues.
 4. The agent works. Each write, report or push runs step 3 again.
@@ -30,9 +33,9 @@ gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dyna
 | task | A change that a person wants: a goal, and test files if you add them. |
 | plan | The steps, files and functions that an agent will change, and its approach. |
 | work copy | A git copy (fork) of main for one agent on one task. |
-| conflict check | gitring compares one plan with all other active plans and with main. |
+| conflict check | gitring compares one plan with the 20 nearest other plans. It also compares the plan with changes that merged into main after the work copy began. |
 | change request | A message from gitring to one agent: change your plan or your code. Never a rejection. |
-| rebase | gitring moves work in progress onto the new main after a merge (3-way, per file). |
+| rebase | Work in progress gets the new main after a merge. In api mode, gitring does this (3-way, per file). In git mode, the agent does it with `git pull`. |
 | redo | The task is done again on the new main, when the first work cannot merge. |
 | history | The record of each merge: task, plan, change requests, tests and decisions (git notes and commit trailers). |
 
@@ -51,7 +54,7 @@ Symbol analysis supports JavaScript and TypeScript. Other languages use files an
 
 ## Run it
 
-gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account.
+To run gitring on Cloudflare, you need Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account. To try gitring with no Cloudflare account, see [Try it without a paid account](#try-it-without-a-paid-account).
 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)
@@ -74,7 +77,53 @@ npm test               # unit tests (Vitest)
 npm run typecheck
 ```
 
+## Try it without a paid account
+
+You can run gitring on your computer. You do not need a Cloudflare account for this.
+
+```bash
+npm install
+npm run dev:local
+```
+
+The command needs `git`. It does three things:
+
+1. It builds the app.
+2. It starts a test version of Artifacts. The test version keeps real git repositories in `tmp/local`.
+3. It starts `wrangler dev` with `wrangler.local.jsonc`. Every binding runs on your computer.
+
+The command prints a key. Send it as `Authorization: Bearer <key>` to `/api` and `/mcp` at the address that wrangler shows. Make an empty project like this:
+
+```bash
+curl -X POST http://localhost:8787/api/projects \
+  -H "Authorization: Bearer <key>" -H "content-type: application/json" \
+  -d '{"name":"demo","source":{"kind":"empty"},"settings":{"checks":{"runner":"worker"}}}'
+```
+
+Then connect an agent. For Claude Code, run this command with the key from above:
+
+```bash
+claude mcp add --transport http gitring http://localhost:8787/mcp --header "Authorization: Bearer <key>"
+```
+
+[Connect agents](#connect-agents) shows other clients. Give the agent the project id from the answer to the `curl` command.
+
+The local run has these limits:
+
+- **No Workers AI**: fixed rules make the conflict check. The built-in agents need Workers AI, so they do not run.
+- **Tests**: the `worker` runner runs `tests/*.test.js` files. There are no test containers. Work with no test needs the project setting that allows it (see [Tests of the work](#tests-of-the-work)).
+- **Import**: it cannot import a repository. Start with an empty project.
+- **Web page**: the web page needs a sign-in with GitHub or Google. This run has none set up. Use the API and MCP.
+- **Data**: each start deletes the data of the run before.
+- **Artifacts**: the test version is not Cloudflare Artifacts, and it can differ in details. Deploy to Cloudflare to test the real service.
+
 ## Deploy to Cloudflare
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/codewithmirza/gitring)
+
+The button copies this repository to your GitHub or GitLab account, then builds and deploys it with Workers Builds. The new Worker needs the secrets in the table below. The [Cloudflare page for the button](https://developers.cloudflare.com/workers/platform/deploy-buttons/) does not list Artifacts, Worker Loader or Containers as resources that it sets up.
+
+To deploy from your own computer instead, run these commands:
 
 ```bash
 npx wrangler secret put GITRING_SECRET        # seals sign-in credentials: openssl rand -base64 32
@@ -83,7 +132,7 @@ npx wrangler secret put GITRING_OWNERS        # github:your-login,google:you@exa
 npm run deploy                                # vite build + wrangler deploy
 ```
 
-Then open `https://<your-worker>/setup?token=<GITRING_SETUP_TOKEN>`:
+After you deploy, open `https://<your-worker>/setup?token=<GITRING_SETUP_TOKEN>`:
 
 1. **GitHub**: one click creates a GitHub App for your Worker (sign-in, repository lists and imports, issue and push webhooks, GitHub sync). GitHub shows the app before it creates it.
 2. **Google**: create an OAuth client of type Web application, with the redirect URI that the page shows, and paste its ID and secret.
@@ -118,14 +167,34 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
 
 ## Tests of the work
 
-gitring merges work only when its tests pass: once on the work copy, and again on main plus the work before the merge.
+gitring merges work only when the tests pass: once on the work copy, and again on main plus the work before the merge.
 
 | Runner | Where | Used by |
 |---|---|---|
-| container | A Cloudflare container per work copy (Node.js 24 on Debian). gitring copies the tree in, runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Every project (the default) |
+| container | A Cloudflare container per work copy (Node.js 24 on Debian). gitring copies the text files of the tree into it (see Limits). It runs the install command (default `npm ci` or `npm install`), then the test command (default `npm test`). Exit code 0 passes. | Every project (the default) |
 | worker | A Dynamic Worker runs `tests/*.test.js` with gitring's small test harness. No dependencies, no network. | Small JavaScript projects without dependencies |
 
+If the worker runner finds no test, gitring does not call the work verified. A person decides. An owner can allow work with no tests in the project settings.
+
 Owners change the runner, the commands and the time limit in Settings → Tests. Test containers have no direct Internet access: a Worker entrypoint lets requests to package registries (npm, PyPI, Go proxy, Debian, crates.io, RubyGems, Maven, Gradle, JSR) pass and refuses all other hosts.
+
+## Limits
+
+These limits come from the design, not from speed tests.
+
+- **Conflict check**: gitring judges the 20 nearest plans. A collision with any other plan appears later, at the merge, as a text conflict or a failed test.
+- **Merge**: one change merges at a time in each project. Other work waits in the merge queue.
+- **Test containers**: a container gets text files only. It gets at most 6,000 files, and each file has at most 1 MB. It gets no folder of dependencies or build output, such as `node_modules`, `vendor`, `dist`, `build`, `out` or `target`. It gets no binary file. The install command must make the dependencies. A test that needs such a file or folder does not work in the container. Container test runs have an hourly budget. The defaults are 240 for each project owner and 2,000 for the deployment (`CHECK_RUNS_PER_OWNER_HOUR`, `CHECK_RUNS_PER_HOUR` in `wrangler.jsonc`).
+- **Redo**: gitring gives work back to the same agent at most 3 times. With the policy "Same agent only", a person decides after that. With the other policies, a built-in agent does the task again, at most 2 times. When the redos fail, a person decides.
+- **Project size**: one coordinator for each project (a Durable Object) keeps the tasks and work copies of the project in memory. Plan for hundreds of active work copies in one project, up to about 2,000. Use several projects beyond that.
+- **Symbol analysis**: it covers JavaScript and TypeScript only. Other languages use files and line ranges.
+- **Artifacts**: Cloudflare sets these limits. Artifacts is in open beta, so they can change. See the [Artifacts limits page](https://developers.cloudflare.com/artifacts/platform/limits/) (numbers from 1 October 2026).
+  - A repository holds at most 1 GB. A file holds at most 32 MB.
+  - An account holds at most 1 TB. Cloudflare can raise this on request.
+  - Each namespace allows 2,000 control requests every 10 seconds. Each repository allows 2,000 git requests every 10 seconds.
+  - A project is one repository, and each work copy is one more. All projects of a deployment share one namespace.
+  - gitring does not delete repositories. The repository of a finished work copy stays until you delete it.
+- **Cost**: a deployment on Cloudflare needs a paid plan (Workers Paid). Cloudflare bills Artifacts operations and storage from 14 October 2026 (see [Artifacts pricing](https://developers.cloudflare.com/artifacts/platform/pricing/)). Test containers also bill by use.
 
 ## Connect agents
 
@@ -161,8 +230,8 @@ claude mcp add --transport http gitring https://<your-worker>/mcp --header "Auth
 
 Two modes:
 
-- **api mode** (default): the agent reads and writes files through gitring. gitring holds the working tree, rebases it when main moves, and merges writes made from an old copy.
-- **git mode**: `gitring_declare` returns a remote for the work copy and a token (6 hours). The agent clones, commits and pushes with plain git. gitring reads the latest push at `gitring_check` and `gitring_submit`; `gitring_log` with the head SHA gets a conflict check at once. When the agent merges main into its work (`gitring_update`, then `git pull`), gitring moves the base of the work copy to that main.
+- **api mode** (default): the agent reads and writes files through gitring. gitring holds the working tree and merges writes made from an old copy. When main moves, gitring rebases the work copy. If the two changes overlap in a file, the file goes back to the version on main. The agent makes its change again.
+- **git mode**: `gitring_declare` returns a remote for the work copy and a token (6 hours). The agent clones, commits and pushes with plain git. gitring reads the latest push at `gitring_check` and `gitring_submit`; `gitring_log` with the head SHA gets a conflict check at once. gitring does not rebase the work copy. When main moves, the agent merges it into its work (`gitring_update`, then `git pull`) and fixes the conflicts itself. Then gitring moves the base of the work copy to that main. If the agent does not merge main, gitring still merges text that does not overlap. It gives work with a text conflict back to the agent.
 
 **Claude Code hook**: change requests can also arrive in the middle of a task, after each file edit. Add this to `.claude/settings.json` in the agent's repository, and give your repository folder as `workdir` in `gitring_declare`:
 
@@ -236,6 +305,7 @@ src/platform    Artifacts backend, GitHub (client, repository lists, imports, sy
 src/worker      routes, sign-in, OAuth server for MCP clients, MCP server, GitHub routes, rate limits, hooks
 web/src         React web app and its design system (/design opens it in local development)
 scripts         palette.py prints the colors of the day, dusk and night themes with their contrast ratios
+local           start script and Worker entry for the run with no Cloudflare account (wrangler.local.jsonc)
 test            unit tests (Vitest); test/support holds an Artifacts test double
 ```
 
