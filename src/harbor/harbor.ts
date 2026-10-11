@@ -32,6 +32,11 @@ import {
   draftReplotCorrection,
   draftDuplicateCorrection,
   draftIntentAmendedCorrection,
+  DUPLICATE_MIN_SIMILARITY,
+  DUPLICATE_UNSHARED_CAP,
+  SOFT_PAIR_CAP,
+  isSoftPair,
+  modelCannotChangeVerdict,
   type VesselView,
 } from "../core/coord";
 import { computeRange, shapeFromFootprint } from "../core/analysis/range";
@@ -1446,7 +1451,9 @@ export class HarborMaster extends DurableObject<Env> {
     if (cands.length) {
       const rules = assessWithRules(incoming, cands);
       const model = p.settings.decisionModel;
-      if (model !== "rules") {
+      // Soft pairs (one import apart or more) cannot reach a correction, so the model cannot change the verdict.
+      // The fixed rules decide then, and no model call is made.
+      if (model !== "rules" && !modelCannotChangeVerdict(cands.map((c) => c.facts), p.settings.thresholds)) {
         const first = await callClef(this.env.AI as never, buildBriefClefRequest("clef-flash", incoming, cands));
         if (first) {
           let parsed = parseClefResponse(first.res, incoming, cands);
@@ -1478,7 +1485,7 @@ export class HarborMaster extends DurableObject<Env> {
             return hardFacts(c.facts) ? 0.9 : Math.max(0.3, Math.abs(as.collision - 0.5) * 2);
           }));
           const maxSim = Math.max(0, ...cands.map((c) => c.facts.intentSimilarity));
-          const clefDup = parsed.duplicate >= 0.7 && maxSim >= 0.2 ? parsed.duplicate : Math.min(parsed.duplicate, 0.5);
+          const clefDup = parsed.duplicate >= 0.7 && maxSim >= DUPLICATE_MIN_SIMILARITY ? parsed.duplicate : Math.min(parsed.duplicate, DUPLICATE_UNSHARED_CAP);
           duplicate = Math.max(clefDup, rules.duplicate >= 0.8 ? rules.duplicate : 0);
           if (duplicate < p.settings.thresholds.duplicate) {
             for (const as of assessments) as.duplicate = Math.min(as.duplicate, duplicate);
@@ -3670,7 +3677,7 @@ function sortPair(a: string, b: string): [string, string] {
 /** Clef judges; facts anchor. Hard evidence sets a floor; no evidence sets a ceiling. */
 function anchor(model: T.CourseAssessment, rules: T.CourseAssessment, facts: T.PairFacts): T.CourseAssessment {
   const hard = facts.range === 0 || facts.interfaceHits.length > 0;
-  const soft = facts.range >= 3 && !facts.closing && facts.interfaceHits.length === 0;
+  const soft = isSoftPair(facts);
   let collision = model.collision;
   let interference = model.interference;
   if (hard) {
@@ -3678,8 +3685,8 @@ function anchor(model: T.CourseAssessment, rules: T.CourseAssessment, facts: T.P
     interference = Math.max(interference, rules.interference * 0.95);
   }
   if (soft) {
-    collision = Math.min(collision, 0.45);
-    interference = Math.min(interference, 1.4);
+    collision = Math.min(collision, SOFT_PAIR_CAP.collision);
+    interference = Math.min(interference, SOFT_PAIR_CAP.interference);
   }
   const giveWayConfidence = model.giveWay === rules.giveWay ? Math.max(rules.giveWayConfidence, model.giveWayConfidence) : model.giveWayConfidence;
   return { ...model, collision: round(collision), interference: round(interference), giveWayConfidence: round(giveWayConfidence) };

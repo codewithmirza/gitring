@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { decide, needsCorrection } from "../../src/core/coord/policy";
+import {
+  DUPLICATE_MIN_SIMILARITY,
+  DUPLICATE_UNSHARED_CAP,
+  SOFT_PAIR_CAP,
+  decide,
+  isSoftPair,
+  modelCannotChangeVerdict,
+  needsCorrection,
+} from "../../src/core/coord/policy";
 import { DEFAULT_THRESHOLDS, type CourseAssessment, type PairFacts, type PolicyThresholds } from "../../src/core/types";
 
 // The policy tests pin their own thresholds (the product default for interference is 1.7).
@@ -111,5 +119,76 @@ describe("decide", () => {
     const out = decide([a("ghost", { collision: 0.9 })], [], T);
     expect(out.verdict).toBe("correct");
     expect(out.corrections[0].facts.otherAttemptId).toBe("ghost");
+  });
+});
+
+describe("modelCannotChangeVerdict", () => {
+  // A soft pair: one import apart, not closing, no interface hit, and intents with no words in common.
+  const soft = (id: string, over: Partial<PairFacts> = {}) => f(id, { range: 3, intentSimilarity: 0.05, ...over });
+  const hit = { changedBy: "other" as const, symbol: "src/a.js#a", usedAt: ["src/b.js"] };
+
+  it("a soft pair has no evidence of a clash", () => {
+    expect(isSoftPair(soft("x"))).toBe(true);
+    expect(isSoftPair(soft("x", { range: 4 }))).toBe(true);
+    expect(isSoftPair(soft("x", { range: 2 }))).toBe(false);
+    expect(isSoftPair(soft("x", { closing: true, previousRange: 4 }))).toBe(false);
+    expect(isSoftPair(soft("x", { interfaceHits: [hit] }))).toBe(false);
+  });
+
+  it("is true when every pair is soft, the intents share no words and the thresholds lie above the caps", () => {
+    expect(modelCannotChangeVerdict([soft("x")], DEFAULT_THRESHOLDS)).toBe(true);
+    expect(modelCannotChangeVerdict([soft("x"), soft("y", { otherState: "landed" })], DEFAULT_THRESHOLDS)).toBe(true);
+    // No pair: there is nothing to ask.
+    expect(modelCannotChangeVerdict([], DEFAULT_THRESHOLDS)).toBe(true);
+  });
+
+  it("is false when one pair is not soft", () => {
+    for (const over of [{ range: 2 }, { range: 1 }, { range: 0 }, { closing: true, previousRange: 4 }, { interfaceHits: [hit] }] as Partial<PairFacts>[]) {
+      expect(modelCannotChangeVerdict([soft("x"), soft("y", over)], DEFAULT_THRESHOLDS)).toBe(false);
+    }
+  });
+
+  it("is false when the intents share words: the model may call two tasks one task", () => {
+    expect(modelCannotChangeVerdict([soft("x", { intentSimilarity: DUPLICATE_MIN_SIMILARITY - 0.001 })], DEFAULT_THRESHOLDS)).toBe(true);
+    expect(modelCannotChangeVerdict([soft("x", { intentSimilarity: DUPLICATE_MIN_SIMILARITY })], DEFAULT_THRESHOLDS)).toBe(false);
+    expect(modelCannotChangeVerdict([soft("x"), soft("y", { intentSimilarity: 0.6 })], DEFAULT_THRESHOLDS)).toBe(false);
+  });
+
+  it("is false when a threshold lies at or below its cap, or is not a number", () => {
+    const at = (over: Partial<PolicyThresholds>): PolicyThresholds => ({ ...DEFAULT_THRESHOLDS, ...over });
+    const pair = [soft("x")];
+    expect(modelCannotChangeVerdict(pair, at({ collision: SOFT_PAIR_CAP.collision }))).toBe(false);
+    expect(modelCannotChangeVerdict(pair, at({ collision: SOFT_PAIR_CAP.collision + 0.01 }))).toBe(true);
+    expect(modelCannotChangeVerdict(pair, at({ interference: SOFT_PAIR_CAP.interference }))).toBe(false);
+    expect(modelCannotChangeVerdict(pair, at({ interference: SOFT_PAIR_CAP.interference + 0.01 }))).toBe(true);
+    expect(modelCannotChangeVerdict(pair, at({ duplicate: DUPLICATE_UNSHARED_CAP }))).toBe(false);
+    expect(modelCannotChangeVerdict(pair, at({ duplicate: DUPLICATE_UNSHARED_CAP + 0.01 }))).toBe(true);
+    expect(modelCannotChangeVerdict(pair, at({ collision: Number.NaN }))).toBe(false);
+    expect(modelCannotChangeVerdict(pair, at({ duplicate: Number.NaN }))).toBe(false);
+  });
+
+  it("keeps every verdict: the worst answer that the caps allow gives what the fixed rules give", () => {
+    const facts = [soft("x"), soft("y", { intentSimilarity: DUPLICATE_MIN_SIMILARITY - 0.01, range: 4 })];
+    // The model at its ceiling, with the largest duplicate score that it may give for tasks that share no words.
+    const worst = facts.map((x) => a(x.otherAttemptId, { collision: SOFT_PAIR_CAP.collision, interference: SOFT_PAIR_CAP.interference, duplicate: DUPLICATE_UNSHARED_CAP }));
+    const rules = facts.map((x) => a(x.otherAttemptId, { collision: 0.2, interference: 0.9, duplicate: 0.05 }));
+    const sets: PolicyThresholds[] = [
+      DEFAULT_THRESHOLDS,
+      { ...DEFAULT_THRESHOLDS, collision: 0.46 },
+      { collision: 1, interference: 4, duplicate: 1, minConfidence: 1 },
+      { collision: 0.46, interference: 1.41, duplicate: 0.51, minConfidence: 0.1 },
+    ];
+    for (const t of sets) {
+      expect(modelCannotChangeVerdict(facts, t)).toBe(true);
+      expect(decide(worst, facts, t, DUPLICATE_UNSHARED_CAP).verdict).toBe("clear");
+      expect(decide(rules, facts, t, 0.05).verdict).toBe("clear");
+    }
+    // A threshold at a cap lets the model change the verdict, so the model stays in the loop.
+    for (const low of [{ collision: SOFT_PAIR_CAP.collision }, { interference: SOFT_PAIR_CAP.interference }, { duplicate: DUPLICATE_UNSHARED_CAP }]) {
+      const t = { ...DEFAULT_THRESHOLDS, ...low };
+      expect(modelCannotChangeVerdict(facts, t)).toBe(false);
+      expect(decide(worst, facts, t, DUPLICATE_UNSHARED_CAP).verdict).not.toBe("clear");
+      expect(decide(rules, facts, t, 0.05).verdict).toBe("clear");
+    }
   });
 });

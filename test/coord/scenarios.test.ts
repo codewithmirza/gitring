@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { buildClefRequest, parseClefResponse, type ClefRequest, type ClefResponse } from "../../src/core/coord/clef";
 import { draftCorrection, draftDuplicateCorrection } from "../../src/core/coord/corrections";
 import { buildPairFacts, selectCandidates, type VesselView } from "../../src/core/coord/facts";
-import { decide } from "../../src/core/coord/policy";
+import { decide, modelCannotChangeVerdict } from "../../src/core/coord/policy";
 import { assessWithRules, rulesAssessment } from "../../src/core/coord/rules";
 import { DEFAULT_THRESHOLDS, type Range } from "../../src/core/types";
 import {
@@ -29,14 +29,16 @@ function courseCheck(incoming: VesselView, traffic: VesselView[], opts: { clef?:
   const cands = selectCandidates(incoming, traffic, graph, 3, opts.previous);
   const pairs = cands.map((c) => ({ view: c.view, facts: buildPairFacts(incoming, c.view, graph, opts.previous?.get(c.view.attempt.id)) }));
   if (!pairs.length) return { verdict: "clear" as const, pairs, outcome: undefined, corrections: [], modelCalls: 0 };
-  const parsed = opts.clef ? parseClefResponse(opts.clef(buildClefRequest("clef-flash", incoming, pairs)), incoming, pairs) : assessWithRules(incoming, pairs);
+  // Like the HarborMaster: no model call when the model cannot change the verdict (soft pairs only).
+  const useModel = Boolean(opts.clef) && !modelCannotChangeVerdict(pairs.map((p) => p.facts), DEFAULT_THRESHOLDS);
+  const parsed = useModel ? parseClefResponse(opts.clef!(buildClefRequest("clef-flash", incoming, pairs)), incoming, pairs) : assessWithRules(incoming, pairs);
   const outcome = decide(parsed.assessments, pairs.map((p) => p.facts), DEFAULT_THRESHOLDS, parsed.duplicate, parsed.confidence);
   const corrections = outcome.corrections.map((c) => {
     const other = pairs.find((p) => p.view.attempt.id === c.otherAttemptId)!.view;
     const [giveWay, standOn] = c.giveWay === "incoming" ? [incoming, other] : [other, incoming];
     return { to: giveWay.agent.callsign, from: standOn.agent.callsign, rule: c.rule, ...draftCorrection(giveWay, standOn, c.facts, c.rule, c.giveWay) };
   });
-  return { verdict: outcome.verdict, pairs, outcome, corrections, modelCalls: opts.clef ? 1 : 0 };
+  return { verdict: outcome.verdict, pairs, outcome, corrections, modelCalls: useModel ? 1 : 0 };
 }
 
 /** A fake Clef that answers only the collision questions (0.5); every other field falls back to the rules. */
@@ -177,5 +179,42 @@ describe("course check scenarios (Clef path)", () => {
     expect(check.pairs).toHaveLength(20);
     expect(questions).toBe(62);
     expect(check.verdict).toBe("correct");
+  });
+
+  it("(c) a pair at range 3 needs no model call: the fixed rules give the same verdict", () => {
+    const clef: Clef = () => {
+      throw new Error("no call expected");
+    };
+    const check = courseCheck(apiItemVessel(), [darkModeVessel()], { clef });
+    expect(check.pairs.map((p) => p.facts.range)).toEqual([3]);
+    expect(check).toMatchObject({ verdict: "clear", modelCalls: 0 });
+    expect(check.verdict).toBe(courseCheck(apiItemVessel(), [darkModeVessel()]).verdict);
+  });
+
+  it("(c) a pair at range 3 whose intents share words still goes to the model: it may call a duplicate", () => {
+    const clef: Clef = () => ({ model: "clef-flash", answers: { duplicate: { type: "noul", noul: 0.95 } } });
+    const incoming = darkThemeVessel({ course: { files: ["src/index.js"], symbols: [] } });
+    const check = courseCheck(incoming, [darkModeVessel()], { clef });
+    expect(check.pairs.map((p) => p.facts.range)).toEqual([3]);
+    expect(check.pairs[0].facts.intentSimilarity).toBeGreaterThanOrEqual(0.2);
+    expect(check).toMatchObject({ verdict: "merge-intents", modelCalls: 1 });
+  });
+
+  it("a set with one near pair goes to the model as a whole, the pair at range 3 included", () => {
+    const log = vessel({
+      attemptId: "att_log",
+      intent: makeIntent("int_log", "Log each request", "Write one log line for each request."),
+      agent: makeAgent("agt_tern2", "TERN-2"),
+      files: { "src/index.js": { hunks: [[2, 4]] } },
+    });
+    let asked = 0;
+    const clef: Clef = (req) => {
+      asked = Object.keys(req.questions).filter((id) => id.startsWith("collide.")).length;
+      return partialClef(req);
+    };
+    const check = courseCheck(apiItemVessel(), [darkModeVessel(), log], { clef });
+    expect(check.pairs.map((p) => p.facts.range)).toEqual([2, 3]);
+    expect(check.modelCalls).toBe(1);
+    expect(asked).toBe(2);
   });
 });
