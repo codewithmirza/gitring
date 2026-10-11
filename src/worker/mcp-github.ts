@@ -565,7 +565,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     title: "Write many files",
     description:
       "GitHub-compatible: write many files to one branch in one call. gitring writes to your work copy, never to main. " +
-      "A new branch name makes a new work copy. gitring checks your work against all active work after each write. " +
+      "A new branch name makes a new work copy. gitring checks your work against the 20 nearest active plans after each write. " +
       "The answer can hold change requests. Apply them in your next edits.",
     inputSchema: { owner, repo, branch: z.string(), files: z.array(z.object({ path: z.string(), content: z.string() })), message: z.string() },
     // A write replaces the whole text of a file in the work copy.
@@ -584,7 +584,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     title: "Write one file",
     description:
       "GitHub-compatible: write one whole file to a branch. gitring writes to your work copy, never to main. " +
-      "gitring ignores sha and owner. It checks the change against all active work instead. " +
+      "gitring ignores sha and owner. It checks the change against the 20 nearest active plans instead. " +
       "The answer can hold change requests. Apply them in your next edits.",
     inputSchema: { owner, repo, path: z.string(), content: z.string(), message: z.string(), branch: z.string(), sha: z.string().optional() },
     annotations: CHANGES,
@@ -602,7 +602,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     title: "Delete a file",
     description:
       "GitHub-compatible: delete one file from a branch. gitring deletes it in your work copy, never on main. " +
-      "gitring checks the change against all active work. The answer can hold change requests. Apply them in your next edits.",
+      "gitring checks the change against the 20 nearest active plans. The answer can hold change requests. Apply them in your next edits.",
     inputSchema: { owner, repo, path: z.string(), message: z.string(), branch: z.string() },
     annotations: CHANGES,
     async run(ctx, a) {

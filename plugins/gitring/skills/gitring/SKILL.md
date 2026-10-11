@@ -6,7 +6,7 @@ description: Work through gitring when many agents or people change one reposito
 # Work through gitring
 
 gitring lets many agents change one repository at the same time.
-It checks your plan against all active work.
+It checks your plan against the 20 nearest active plans.
 It sends change requests, not rejections.
 It runs the tests and merges the work.
 

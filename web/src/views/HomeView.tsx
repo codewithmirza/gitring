@@ -22,7 +22,7 @@ const STEPS: { title: string; text: string }[] = [
   },
   {
     title: "gitring checks the plan.",
-    text: "gitring compares the plan with all other active work and with main. If two agents will collide, one agent gets a change request. The other agent continues.",
+    text: "gitring compares the plan with the 20 nearest active plans and with main. If two agents will collide, one agent gets a change request. The other agent continues.",
   },
   {
     title: "gitring merges the work.",

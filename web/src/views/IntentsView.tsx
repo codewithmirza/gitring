@@ -744,7 +744,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
                   : "gitring merged the work copy that passed its tests. Alternatives stay below."
                 : n === 0
                   ? "No work copies yet. Start 1 to 4 agents, or let your own agent take the task through MCP."
-                  : "Each agent works in its own work copy. gitring checks each plan against all other active work."}
+                  : "Each agent works in its own work copy. gitring checks each plan against the 20 nearest active plans."}
           </p>
           {n > 0 && !preview && <p className="compare__note">Preview works for Cloudflare Workers apps (src/index.js).</p>}
         </div>

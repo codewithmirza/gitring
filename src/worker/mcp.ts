@@ -14,6 +14,7 @@ import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import type { Env } from "./env";
 import { atLeast } from "../core/accounts";
+import { noTestRan } from "../core/types";
 import { directory, type Principal } from "./auth";
 import { MCP_PATH, type McpSet } from "../directory/oauth";
 import { ADDS, CHANGES, READS, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, writeAnswer, type ToolDef } from "./mcp-kit";
@@ -56,7 +57,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     title: "Send a plan",
     description:
       "Send your plan BEFORE you write code. Give the steps, the files, the functions and the approach. " +
-      "gitring checks the plan against all active work. It answers clear, or sends change requests. gitring never blocks you. " +
+      "gitring checks the plan against the 20 nearest active plans and against main. It answers clear, or sends change requests. gitring never blocks you. " +
       "Mode 'api' (default) uses gitring_read and gitring_write. Mode 'git' gives a git remote and a token for your work copy. " +
       "Use git mode on a computer: clone, commit, push. " +
       "Give workdir (your repository folder). Then the Claude Code hook can send change requests while you work.",
@@ -201,7 +202,12 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     async run(ctx, args) {
       try {
         const run = await (await ctx.access(args.project)).stub.check(args.attemptId);
-        return text(run, `${run.passed}/${run.passed + run.failed} tests pass.${run.error ? ` Test runner error: ${run.error}` : ""}`);
+        const headline = run.wait
+          ? run.wait.message
+          : noTestRan(run)
+            ? "No test ran. A person must decide to merge this work."
+            : `${run.passed}/${run.passed + run.failed} tests pass.${run.error ? ` Test runner error: ${run.error}` : ""}`;
+        return text(run, headline);
       } catch (e) {
         return fail(e);
       }

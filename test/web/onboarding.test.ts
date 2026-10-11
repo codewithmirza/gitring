@@ -141,17 +141,17 @@ describe("URLs", () => {
   it("encodes the query and the repository", () => {
     expect(reposUrl("")).toBe("/api/github/repos");
     expect(reposUrl("  git ring ")).toBe("/api/github/repos?q=git%20ring");
-    expect(guessUrl("mirza/gitring")).toBe("/api/github/guess?repo=mirza%2Fgitring");
-    expect(guessUrl("mirza/gitring", "dev/x")).toBe("/api/github/guess?repo=mirza%2Fgitring&branch=dev%2Fx");
+    expect(guessUrl("robin/gitring")).toBe("/api/github/guess?repo=robin%2Fgitring");
+    expect(guessUrl("robin/gitring", "dev/x")).toBe("/api/github/guess?repo=robin%2Fgitring&branch=dev%2Fx");
   });
 });
 
 describe("readPasted", () => {
   it("reads GitHub URLs and owner/name", () => {
-    expect(readPasted("https://github.com/mirza/gitring")).toEqual({ kind: "github", repo: "mirza/gitring", url: "https://github.com/mirza/gitring" });
-    expect(readPasted("github.com/mirza/gitring.git")).toMatchObject({ kind: "github", repo: "mirza/gitring" });
-    expect(readPasted("git@github.com:mirza/gitring.git")).toMatchObject({ kind: "github", repo: "mirza/gitring" });
-    expect(readPasted("mirza/gitring")).toMatchObject({ kind: "github", repo: "mirza/gitring" });
+    expect(readPasted("https://github.com/robin/gitring")).toEqual({ kind: "github", repo: "robin/gitring", url: "https://github.com/robin/gitring" });
+    expect(readPasted("github.com/robin/gitring.git")).toMatchObject({ kind: "github", repo: "robin/gitring" });
+    expect(readPasted("git@github.com:robin/gitring.git")).toMatchObject({ kind: "github", repo: "robin/gitring" });
+    expect(readPasted("robin/gitring")).toMatchObject({ kind: "github", repo: "robin/gitring" });
   });
   it("reads other https git URLs", () => {
     expect(readPasted("https://gitlab.com/acme/tool/")).toEqual({ kind: "git", url: "https://gitlab.com/acme/tool" });
@@ -171,11 +171,11 @@ describe("readPasted", () => {
 });
 
 describe("rankRepos", () => {
-  const list = [repo("acme/website", { description: "Marketing site" }), repo("mirza/gitring-web"), repo("mirza/gitring"), repo("mirza/dotfiles", { language: "Shell" }), repo("acme/payments")];
+  const list = [repo("acme/website", { description: "Marketing site" }), repo("robin/gitring-web"), repo("robin/gitring"), repo("robin/dotfiles", { language: "Shell" }), repo("acme/payments")];
   it("puts exact and prefix matches first", () => {
-    expect(rankRepos(list, "gitring").map((r) => r.fullName)).toEqual(["mirza/gitring", "mirza/gitring-web"]);
+    expect(rankRepos(list, "gitring").map((r) => r.fullName)).toEqual(["robin/gitring", "robin/gitring-web"]);
     // A name that starts with the word beats a later word of a name.
-    expect(rankRepos(list, "web").map((r) => r.fullName)).toEqual(["acme/website", "mirza/gitring-web"]);
+    expect(rankRepos(list, "web").map((r) => r.fullName)).toEqual(["acme/website", "robin/gitring-web"]);
   });
   it("needs every word to match", () => {
     expect(rankRepos(list, "acme pay").map((r) => r.fullName)).toEqual(["acme/payments"]);
@@ -184,7 +184,7 @@ describe("rankRepos", () => {
   it("matches the owner, the description and the language", () => {
     expect(rankRepos(list, "acme").map((r) => r.fullName)).toEqual(["acme/website", "acme/payments"]);
     expect(rankRepos(list, "marketing").map((r) => r.fullName)).toEqual(["acme/website"]);
-    expect(rankRepos(list, "shell").map((r) => r.fullName)).toEqual(["mirza/dotfiles"]);
+    expect(rankRepos(list, "shell").map((r) => r.fullName)).toEqual(["robin/dotfiles"]);
   });
   it("keeps the server order without a query", () => {
     expect(rankRepos(list, "  ")).toBe(list);
@@ -197,7 +197,7 @@ describe("rankRepos", () => {
 
 describe("small helpers", () => {
   it("names", () => {
-    expect(nameOfRepo("mirza/gitring")).toBe("gitring");
+    expect(nameOfRepo("robin/gitring")).toBe("gitring");
     expect(nameOfUrl("https://gitlab.com/acme/tool.git")).toBe("tool");
     expect(nameOfUrl("https://gitlab.com/acme/tool/")).toBe("tool");
   });
@@ -237,7 +237,7 @@ describe("draftFromLink", () => {
     expect(draftFromLink(params("new=empty"), EMPTY_DRAFT).step).toEqual({ kind: "empty" });
     expect(draftFromLink(params("new=folder"), EMPTY_DRAFT).step).toEqual({ kind: "upload" });
     expect(draftFromLink(params("new=git&url=https%3A%2F%2Fgitlab.com%2Fa%2Fb"), EMPTY_DRAFT).step).toEqual({ kind: "git", url: "https://gitlab.com/a/b" });
-    expect(draftFromLink(params("new=1&repo=mirza%2Fgitring"), EMPTY_DRAFT).step).toEqual({ kind: "github", repo: "mirza/gitring" });
+    expect(draftFromLink(params("new=1&repo=robin%2Fgitring"), EMPTY_DRAFT).step).toEqual({ kind: "github", repo: "robin/gitring" });
   });
   it("treats the old sample link as the list", () => {
     expect(draftFromLink(params("new=sample"), EMPTY_DRAFT)).toBe(EMPTY_DRAFT);

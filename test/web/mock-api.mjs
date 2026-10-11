@@ -23,24 +23,24 @@ const iso = (msAgo) => new Date(Date.now() - msAgo).toISOString();
 const DAY = 86_400_000;
 
 const REPOS = [
-  { fullName: "mirza/gitring", private: true, defaultBranch: "main", description: "Many coding agents, one codebase.", language: "TypeScript", pushedAt: iso(2 * 3600_000), htmlUrl: "https://github.com/mirza/gitring", canPush: true, sizeKb: 4200 },
-  { fullName: "mirza/gitring-web", private: false, defaultBranch: "main", description: "The web app of gitring.", language: "TypeScript", pushedAt: iso(DAY), htmlUrl: "https://github.com/mirza/gitring-web", canPush: true, sizeKb: 900 },
-  { fullName: "mirza/greeter", private: false, defaultBranch: "main", description: "A small greeting app on Cloudflare Workers.", language: "JavaScript", pushedAt: iso(3 * DAY), htmlUrl: "https://github.com/mirza/greeter", canPush: true, sizeKb: 120 },
-  { fullName: "mirza/ml-notes", private: true, defaultBranch: "trunk", description: "Python notebooks and tests.", language: "Python", pushedAt: iso(9 * DAY), htmlUrl: "https://github.com/mirza/ml-notes", canPush: true, sizeKb: 3100 },
-  { fullName: "mirza/dotfiles", private: false, defaultBranch: "master", description: "Shell configuration.", language: "Shell", pushedAt: iso(40 * DAY), htmlUrl: "https://github.com/mirza/dotfiles", canPush: true, sizeKb: 60 },
+  { fullName: "robin/gitring", private: true, defaultBranch: "main", description: "Many coding agents, one codebase.", language: "TypeScript", pushedAt: iso(2 * 3600_000), htmlUrl: "https://github.com/robin/gitring", canPush: true, sizeKb: 4200 },
+  { fullName: "robin/gitring-web", private: false, defaultBranch: "main", description: "The web app of gitring.", language: "TypeScript", pushedAt: iso(DAY), htmlUrl: "https://github.com/robin/gitring-web", canPush: true, sizeKb: 900 },
+  { fullName: "robin/greeter", private: false, defaultBranch: "main", description: "A small greeting app on Cloudflare Workers.", language: "JavaScript", pushedAt: iso(3 * DAY), htmlUrl: "https://github.com/robin/greeter", canPush: true, sizeKb: 120 },
+  { fullName: "robin/ml-notes", private: true, defaultBranch: "trunk", description: "Python notebooks and tests.", language: "Python", pushedAt: iso(9 * DAY), htmlUrl: "https://github.com/robin/ml-notes", canPush: true, sizeKb: 3100 },
+  { fullName: "robin/dotfiles", private: false, defaultBranch: "master", description: "Shell configuration.", language: "Shell", pushedAt: iso(40 * DAY), htmlUrl: "https://github.com/robin/dotfiles", canPush: true, sizeKb: 60 },
   { fullName: "acme/payments", private: true, defaultBranch: "main", description: "Payment service.", language: "Go", pushedAt: iso(5 * 3600_000), htmlUrl: "https://github.com/acme/payments", canPush: false, sizeKb: 8800 },
   { fullName: "acme/website", private: false, defaultBranch: "main", description: "Marketing site.", language: "TypeScript", pushedAt: iso(6 * DAY), htmlUrl: "https://github.com/acme/website", canPush: true, sizeKb: 2400 },
   { fullName: "acme/locked", private: true, defaultBranch: "main", description: "An owner must approve the app.", language: "Rust", pushedAt: iso(12 * DAY), htmlUrl: "https://github.com/acme/locked", canPush: true, sizeKb: 500 },
-  { fullName: "mirza/broken", private: false, defaultBranch: "main", description: "The guess fails for this one.", language: "JavaScript", pushedAt: iso(20 * DAY), htmlUrl: "https://github.com/mirza/broken", canPush: true, sizeKb: 10 },
+  { fullName: "robin/broken", private: false, defaultBranch: "main", description: "The guess fails for this one.", language: "JavaScript", pushedAt: iso(20 * DAY), htmlUrl: "https://github.com/robin/broken", canPush: true, sizeKb: 10 },
 ];
 for (let i = 1; i <= 14; i++) {
-  REPOS.push({ fullName: `mirza/experiment-${String(i).padStart(2, "0")}`, private: i % 3 === 0, defaultBranch: "main", description: `Experiment number ${i}.`, language: i % 2 ? "TypeScript" : "Go", pushedAt: iso((30 + i) * DAY), htmlUrl: `https://github.com/mirza/experiment-${i}`, canPush: true, sizeKb: 40 + i });
+  REPOS.push({ fullName: `robin/experiment-${String(i).padStart(2, "0")}`, private: i % 3 === 0, defaultBranch: "main", description: `Experiment number ${i}.`, language: i % 2 ? "TypeScript" : "Go", pushedAt: iso((30 + i) * DAY), htmlUrl: `https://github.com/robin/experiment-${i}`, canPush: true, sizeKb: 40 + i });
 }
 // Found only by a server search (the full list leaves it out).
 const HIDDEN = { fullName: "acme/hidden-gem", private: false, defaultBranch: "main", description: "Only a search finds it.", language: "TypeScript", pushedAt: iso(80 * DAY), htmlUrl: "https://github.com/acme/hidden-gem", canPush: true, sizeKb: 70 };
 
 const USERS = {
-  github: { id: "u_mirza", name: "Mirza Example", email: "mirza@example.com", avatar: "", identities: [{ provider: "github", login: "mirza" }], admin: false },
+  github: { id: "u_robin", name: "Robin Example", email: "robin@example.com", avatar: "", identities: [{ provider: "github", login: "robin" }], admin: false },
   google: { id: "u_ada", name: "Ada Example", email: "ada@example.com", avatar: "", identities: [{ provider: "google", email: "ada@example.com" }], admin: false },
 };
 
@@ -71,8 +71,8 @@ function reset() {
     projects: new Map(),
     sockets: new Set(),
   };
-  addProject({ id: "gitring-web-ab12", name: "gitring web", visibility: "private", source: { kind: "github", repo: "mirza/gitring-web", branch: "main" }, ownerName: "Mirza Example", owner: "u_mirza", files: 3, settings: settingsDefaults({ github: { repo: "mirza/gitring-web", mode: "pull-request", branch: "gitring" } }), github: { state: "ok", message: "GitHub has main. The pull request is open.", repo: "mirza/gitring-web", mode: "pull-request", branch: "gitring", syncedSha: "9f2c1e0a7b", prUrl: "https://github.com/mirza/gitring-web/pull/7", prNumber: 7, at: now() - 120_000 } });
-  addProject({ id: "notes-cd34", name: "Notes", visibility: "private", source: { kind: "upload", files: 12 }, ownerName: "Mirza Example", owner: "u_mirza", files: 2, role: "member" });
+  addProject({ id: "gitring-web-ab12", name: "gitring web", visibility: "private", source: { kind: "github", repo: "robin/gitring-web", branch: "main" }, ownerName: "Robin Example", owner: "u_robin", files: 3, settings: settingsDefaults({ github: { repo: "robin/gitring-web", mode: "pull-request", branch: "gitring" } }), github: { state: "ok", message: "GitHub has main. The pull request is open.", repo: "robin/gitring-web", mode: "pull-request", branch: "gitring", syncedSha: "9f2c1e0a7b", prUrl: "https://github.com/robin/gitring-web/pull/7", prNumber: 7, at: now() - 120_000 } });
+  addProject({ id: "notes-cd34", name: "Notes", visibility: "private", source: { kind: "upload", files: 12 }, ownerName: "Robin Example", owner: "u_robin", files: 2, role: "member" });
   addProject({ id: "react-ef56", name: "react", visibility: "public", source: { kind: "git", url: "https://github.com/facebook/react" }, ownerName: "Grace Example", owner: "u_grace", files: 4, role: null });
 }
 
@@ -82,7 +82,7 @@ function addProject(p) {
     role: "owner",
     settings: settingsDefaults(),
     members: [
-      { userId: "u_mirza", name: "Mirza Example", handle: "mirza", role: "owner", pending: false },
+      { userId: "u_robin", name: "Robin Example", handle: "robin", role: "owner", pending: false },
       { userId: "u_lin", name: "Lin Example", handle: "lin@example.com", role: "member", pending: false },
       { name: "octocat", handle: "octocat", role: "viewer", pending: true },
     ],
@@ -144,9 +144,9 @@ function guessFor(repo) {
   }
   if (!r) return { status: 404, body: { error: "gitring cannot see this repository." } };
   if (r.fullName === "acme/locked") return { status: 403, body: { error: "An owner of acme must approve the GitHub app.", installUrl: INSTALL_URL } };
-  if (r.fullName === "mirza/broken") return { status: 502, body: { error: "GitHub did not answer. Try again." } };
+  if (r.fullName === "robin/broken") return { status: 502, body: { error: "GitHub did not answer. Try again." } };
   const python = r.language === "Python";
-  const worker = r.fullName === "mirza/greeter";
+  const worker = r.fullName === "robin/greeter";
   return {
     status: 200,
     body: {
@@ -216,7 +216,7 @@ async function api(req, res, url) {
 
   if (p === "/api/me" && req.method === "GET") {
     const providers = s === "noprov" ? { github: false, google: false } : { github: true, google: true };
-    const github = !signedIn ? undefined : s === "google" ? { connected: false, reason: "Connect GitHub to see your repositories." } : { connected: true, login: "mirza" };
+    const github = !signedIn ? undefined : s === "google" ? { connected: false, reason: "Connect GitHub to see your repositories." } : { connected: true, login: "robin" };
     return json(res, 200, { user: signedIn ? user : null, providers, setupNeeded: s === "noprov", ...(github ? { github } : {}), githubInstallUrl: INSTALL_URL });
   }
   if (p === "/auth/logout") return json(res, 204);
@@ -247,7 +247,7 @@ async function api(req, res, url) {
     const pool = s === "partial" && q ? [...REPOS, HIDDEN] : REPOS;
     const all = q ? pool.filter((r) => r.fullName.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q)) : REPOS;
     const installations = [
-      { id: 1, account: "mirza", type: "User", selection: "all", repos: REPOS.filter((r) => r.fullName.startsWith("mirza/")).length },
+      { id: 1, account: "robin", type: "User", selection: "all", repos: REPOS.filter((r) => r.fullName.startsWith("robin/")).length },
       { id: 2, account: "acme", type: "Organization", selection: "selected", repos: REPOS.filter((r) => r.fullName.startsWith("acme/")).length },
     ];
     return json(res, 200, { connected: true, repos: all, installUrl: INSTALL_URL, installations, complete: s !== "partial" }, { "cache-control": "private, max-age=30" });
@@ -346,7 +346,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
     if (url.pathname === "/__mock/github-event") {
-      const ev = { type: "github", github: { state: "ok", message: "Live: GitHub has main now.", repo: "mirza/gitring-web", mode: "pull-request", at: now() } };
+      const ev = { type: "github", github: { state: "ok", message: "Live: GitHub has main now.", repo: "robin/gitring-web", mode: "pull-request", at: now() } };
       for (const s of db.sockets) frame(s, JSON.stringify(ev));
       return json(res, 200, { sent: db.sockets.size });
     }

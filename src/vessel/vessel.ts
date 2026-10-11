@@ -306,7 +306,7 @@ function systemPrompt(callsign: string, runner?: T.CheckSettings): string {
   const container = runner?.runner === "container";
   return [
     `You are ${callsign}, a coding agent inside gitring. Many agents change this repository at the same time.`,
-    "gitring checks your plan against all other active work. It never blocks you. It sends change requests.",
+    "gitring checks your plan against the 20 nearest active plans. It never blocks you. It sends change requests.",
     "Rules:",
     "1. Read every GITRING CHANGE REQUEST. Apply it in your next edits. Continue your work.",
     "2. Write complete file contents with write_file. Keep unrelated code unchanged.",

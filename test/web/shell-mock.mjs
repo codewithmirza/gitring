@@ -51,7 +51,7 @@ function reset() {
   });
   const fp = (files) => ({ files, symbols: { defined: [], modified: [], removed: [], signatureChanged: [], referenced: [] }, computedAt: NOW - 4 * min });
   const course = (plan, files) => ({ plan, files, symbols: [], approach: plan[0], declaredAt: NOW - 30 * min });
-  const actor = { kind: "human", id: "u_1", name: "Mirza" };
+  const actor = { kind: "human", id: "u_1", name: "Robin" };
   const intent = (id, title, status, extra = {}) => ({
     id,
     title,
@@ -108,12 +108,12 @@ function reset() {
         allowUntested: false,
         thresholds: { collision: 0.5, interference: 1.7, duplicate: 0.7, minConfidence: 0.55 },
         webhooks: [],
-        github: { repo: "mirza/shop", mode: "pull-request", branch: "gitring" },
+        github: { repo: "robin/shop", mode: "pull-request", branch: "gitring" },
         redo: "agent-first",
         redoWaitMinutes: 15,
       },
-      source: { kind: "github", repo: "mirza/shop", branch: "main" },
-      github: { state: "ok", message: "GitHub has main.", repo: "mirza/shop", mode: "pull-request", branch: "gitring", prUrl: "https://github.com/mirza/shop/pull/7", prNumber: 7 },
+      source: { kind: "github", repo: "robin/shop", branch: "main" },
+      github: { state: "ok", message: "GitHub has main.", repo: "robin/shop", mode: "pull-request", branch: "gitring", prUrl: "https://github.com/robin/shop/pull/7", prNumber: 7 },
     },
     intents: [
       intent("i_search", "Add a search to the shop", "judging"),
@@ -219,7 +219,7 @@ function reset() {
   };
   data = {
     signedIn: new Set(),
-    github: { connected: true, login: "mirza" },
+    github: { connected: true, login: "robin" },
     keys: [
       { id: "k_1", name: "my laptop", prefix: "gk_ab12", createdAt: NOW - 9 * 24 * 60 * min, lastUsed: NOW - 2 * 60 * min },
       { id: "k_2", name: "CI", prefix: "gk_cd34", createdAt: NOW - 30 * 24 * 60 * min },
@@ -229,7 +229,7 @@ function reset() {
       { id: "gr_2", clientId: "cursor", clientName: "Cursor", clientUri: "https://cursor.com", scope: "projects", createdAt: NOW - 24 * 60 * min },
     ],
     projects: [
-      { id: "shop", name: "Catalog", visibility: "private", source: { kind: "github", repo: "mirza/shop" }, createdAt: NOW - 3 * 24 * 60 * min, role: "owner" },
+      { id: "shop", name: "Catalog", visibility: "private", source: { kind: "github", repo: "robin/shop" }, createdAt: NOW - 3 * 24 * 60 * min, role: "owner" },
       { id: "docs", name: "Docs site", visibility: "public", source: { kind: "upload", files: 40 }, createdAt: NOW - 9 * 24 * 60 * min, role: "member" },
       { id: "infra", name: "Infra scripts", visibility: "private", source: { kind: "push" }, createdAt: NOW - 20 * 24 * 60 * min, role: "owner" },
     ],
@@ -239,7 +239,7 @@ function reset() {
 }
 reset();
 
-const user = { id: "u_1", name: "Mirza Example", email: "mirza@example.com", identities: [{ provider: "github", login: "mirza" }], admin: true };
+const user = { id: "u_1", name: "Robin Example", email: "robin@example.com", identities: [{ provider: "github", login: "robin" }], admin: true };
 
 /* ───────────── server ───────────── */
 
@@ -400,7 +400,7 @@ const server = http.createServer(async (req, res) => {
     if (amend && method === "PATCH") {
       const body = await readBody(req);
       const it = st.intents.find((x) => x.id === amend[1]);
-      const next = { ...it, goal: body.goal ?? it.goal, constraints: [...it.constraints, ...(body.constraints ?? [])], version: it.version + 1, amendments: [...it.amendments, { version: it.version + 1, at: Date.now(), by: { kind: "human", id: "u_1", name: "Mirza" }, reason: body.reason, text: body.goal ?? "" }] };
+      const next = { ...it, goal: body.goal ?? it.goal, constraints: [...it.constraints, ...(body.constraints ?? [])], version: it.version + 1, amendments: [...it.amendments, { version: it.version + 1, at: Date.now(), by: { kind: "human", id: "u_1", name: "Robin" }, reason: body.reason, text: body.goal ?? "" }] };
       st.intents = st.intents.map((x) => (x.id === next.id ? next : x));
       broadcast({ type: "intent", intent: next });
       return json(res, 200, next);

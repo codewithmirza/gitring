@@ -153,15 +153,15 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   check(Math.abs(geo.bx - geo.tx) <= 2, "the tail points at the button", geo);
   check(geo.tTop < geo.pTop && geo.pTop > geo.bBottom, "the tail sits between the button and the panel", geo);
 
-  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   const anim = await page.evaluate(() => getComputedStyle(document.querySelector(".np-pop")).animationName);
   check(anim === "np-grow", "the panel grows from its tail", anim);
-  check((await page.locator(".np-chip").count()) === 3, "account chips: All accounts, mirza, acme");
+  check((await page.locator(".np-chip").count()) === 3, "account chips: All accounts, robin, acme");
 
   await page.keyboard.type("gitr", { delay: 40 });
   await page.waitForTimeout(700);
   const first = page.locator('[role="option"]').first();
-  check((await first.innerText()).includes("mirza/gitring"), "typing filters in memory: mirza/gitring is first");
+  check((await first.innerText()).includes("robin/gitring"), "typing filters in memory: robin/gitring is first");
   const ad = await page.getByRole("combobox").getAttribute("aria-activedescendant");
   check(ad === (await first.getAttribute("id")), "aria-activedescendant names the active row");
   l = await log();
@@ -169,7 +169,7 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   check(count(l, "GET", /^\/api\/github\/repos\?q=/) === 0, "no request per keystroke (the list is complete)");
 
   await page.keyboard.press("ArrowDown");
-  check((await page.locator('[role="option"][aria-selected="true"]').innerText()).includes("mirza/gitring-web"), "ArrowDown moves to the next row");
+  check((await page.locator('[role="option"][aria-selected="true"]').innerText()).includes("robin/gitring-web"), "ArrowDown moves to the next row");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(150);
@@ -194,7 +194,7 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
 
   // Pick, check the guesses, create with Enter.
   await page.keyboard.press("Enter");
-  await page.getByRole("heading", { name: /mirza\/gitring/ }).waitFor();
+  await page.getByRole("heading", { name: /robin\/gitring/ }).waitFor();
   a = await active(page);
   check(a?.tag === "input" && a.value === "gitring", "the name field has focus with the guessed name", a);
   await page.waitForSelector('input[value="npm ci"]');
@@ -208,11 +208,11 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   await page.waitForURL(/\/overview\?project=gitring-/, { timeout: 8000 });
   const id = new URL(page.url()).searchParams.get("project");
   const body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
-  check(body?.source?.kind === "github" && body.source.repo === "mirza/gitring" && body.source.branch === "main", "POST /api/projects sends the GitHub source", body?.source);
-  check(body?.settings?.github?.mode === "pull-request" && body.settings.github.repo === "mirza/gitring" && body.settings.github.branch === "gitring", "…and the GitHub sync settings", body?.settings?.github);
+  check(body?.source?.kind === "github" && body.source.repo === "robin/gitring" && body.source.branch === "main", "POST /api/projects sends the GitHub source", body?.source);
+  check(body?.settings?.github?.mode === "pull-request" && body.settings.github.repo === "robin/gitring" && body.settings.github.branch === "gitring", "…and the GitHub sync settings", body?.settings?.github);
   check(body?.settings?.checks?.runner === "container" && body.settings.checks.install === "npm ci" && body.settings.checks.test === "npm test", "…and the test commands", body?.settings?.checks);
   check(body?.visibility === "private", "…and the visibility");
-  await page.getByText("gitring imports mirza/gitring from GitHub").waitFor({ timeout: 8000 });
+  await page.getByText("gitring imports robin/gitring from GitHub").waitFor({ timeout: 8000 });
   check(true, "the overview shows the import panel");
   l = await log();
   check(count(l, "GET", /^\/api\/projects$/) === 2, "creating sends no extra list request (the new page loads the list once)", count(l, "GET", /^\/api\/projects$/));
@@ -264,7 +264,7 @@ step("B2. A link to one repository (?new=1&repo=owner/name)");
 {
   await reset();
   const { ctx, page } = await open("github");
-  await page.goto(`${BASE}/projects?new=1&repo=mirza%2Fml-notes`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/projects?new=1&repo=robin%2Fml-notes`, { waitUntil: "networkidle" });
   await page.waitForSelector('input[value="pytest"]');
   const a = await active(page);
   check(a?.tag === "input" && a.value === "ml-notes", "the name field has focus when the panel opens at a step", a);
@@ -300,7 +300,7 @@ step("B3. Upload a folder, push with git, empty project");
   await reset();
   const { ctx, page } = await open("github");
   await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
-  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("option", { name: /Upload a folder/ }).click();
   await (await chooser).setFiles(dir);
@@ -317,7 +317,7 @@ step("B3. Upload a folder, push with git, empty project");
   check(body?.visibility === "private", "an upload is private by default");
 
   await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
-  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   await page.getByRole("option", { name: /Push with git/ }).click();
   await page.getByRole("heading", { name: "Push with git" }).waitFor();
   await page.keyboard.type("Shop");
@@ -430,7 +430,7 @@ step("F. A person without projects");
   await page.keyboard.press("Shift+N");
   a = await active(page);
   check(a?.role === "combobox", "Shift+N focuses the picker", a);
-  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   check(true, "the repositories show at once");
   await ctx.close();
 }
@@ -472,7 +472,7 @@ step("H. Settings");
   check(await page.getByText("GitHub has main. The pull request is open.").isVisible(), "the status shows");
   check((await page.locator("body").innerText()).toLowerCase().includes("sample") === false, "no sample text");
   const repo = page.getByRole("combobox", { name: "Repository" });
-  check((await repo.inputValue()) === "mirza/gitring-web", "the repository field shows the linked repository");
+  check((await repo.inputValue()) === "robin/gitring-web", "the repository field shows the linked repository");
   await repo.click();
   await repo.fill("pay");
   await page.waitForSelector('[role="option"]:has-text("acme/payments")');
@@ -484,7 +484,7 @@ step("H. Settings");
   await page.getByRole("button", { name: "Save GitHub settings" }).click();
   await page.getByRole("alert").filter({ hasText: "A person who can push must link it." }).waitFor();
   check(true, "the refused save shows the server reason");
-  await repo.fill("mirza/gitring-web");
+  await repo.fill("robin/gitring-web");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Tab");
 
@@ -588,7 +588,7 @@ for (const theme of ["day", "dusk", "night"]) {
   const { ctx, page } = await open("github", { theme, reduced: theme === "night" });
   await page.goto(`${BASE}/projects`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "New project" }).click();
-  await page.waitForSelector('[role="option"]:has-text("mirza/gitring")');
+  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   for (const [sel, min] of [
     [".np-opt.is-active .np-opt__text", 4.5],
     [".np-opt:not(.is-active) .np-opt__text", 4.5],
