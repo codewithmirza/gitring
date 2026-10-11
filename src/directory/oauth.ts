@@ -32,7 +32,24 @@ const MAX_CLIENTS_PER_HOUR = 3000;
 /** A client that nobody ever allowed is removed after a day; one whose grants are all revoked, after 30 days. */
 const NEVER_ALLOWED_CLIENT_MS = 24 * 3600_000;
 const UNUSED_CLIENT_MS = 30 * 24 * 3600_000;
+/** The full scope: read and change. A token with no scope on record (made before mcp:read) has it. */
 export const SCOPE = "mcp";
+/** Read only: the tools that only read (their read-only hint says so). */
+export const SCOPE_READ = "mcp:read";
+
+/**
+ * The access that a request asks for. mcp (or no gitring scope at all: older clients) is the full scope;
+ * mcp:read alone is read only. The other scopes (offline_access, openid, ...) do not change the access.
+ */
+export function accessScope(scopes: string[]): string {
+  return scopes.includes(SCOPE) || !scopes.includes(SCOPE_READ) ? SCOPE : SCOPE_READ;
+}
+
+/** Does a grant (or token) with scope `granted` cover a request for `asked`? The full scope covers read only. */
+export function scopeCovers(granted: string | null | undefined, asked: string): boolean {
+  const have = granted || SCOPE;
+  return have === SCOPE || have === asked;
+}
 
 export const OAUTH_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS oauth_clients (client_id TEXT PRIMARY KEY, secret_hash TEXT, name TEXT NOT NULL, uri TEXT, redirect_uris TEXT NOT NULL, auth_method TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL, fetched_at INTEGER)`,
@@ -143,15 +160,55 @@ export function redirectMatches(registered: string[], asked: string): boolean {
   });
 }
 
-/** The resource (RFC 8707) that tokens of this server are for: the MCP endpoint. */
-export function resourceOf(origin: string): string {
-  return `${origin}/mcp`;
+/**
+ * The tool sets of this server. Each one has its own MCP endpoint, and each endpoint is its own OAuth
+ * resource (RFC 8707): "gitring" is the full set, "github" has the names and arguments of the GitHub
+ * MCP server, "readonly" has the gitring tools that only read.
+ */
+export type McpSet = "gitring" | "github" | "readonly";
+export const MCP_PATH: Record<McpSet, string> = { gitring: "/mcp", github: "/mcp/github", readonly: "/mcp/readonly" };
+
+/** The tool set that an endpoint path serves, or null. */
+export function mcpSetOf(pathname: string): McpSet | null {
+  const hit = (Object.entries(MCP_PATH) as [McpSet, string][]).find(([, p]) => p === pathname);
+  return hit ? hit[0] : null;
+}
+
+/** The resource (RFC 8707) that tokens are for: an MCP endpoint of this server. The default is the full set. */
+export function resourceOf(origin: string, path: string = MCP_PATH.gitring): string {
+  return `${origin}${path}`;
+}
+
+/**
+ * The resource that a request names, in one form: no trailing slash, and the bare origin means the
+ * default endpoint. Null when the value is not a resource of this server.
+ */
+export function canonicalResource(asked: string, origin: string): string | null {
+  const norm = asked.replace(/\/+$/, "");
+  if (norm === origin) return resourceOf(origin);
+  return Object.values(MCP_PATH).some((p) => norm === resourceOf(origin, p)) ? norm : null;
 }
 
 function resourceOk(asked: string | undefined | null, origin: string): boolean {
-  if (!asked) return true;
-  const norm = (s: string) => s.replace(/\/+$/, "");
-  return norm(asked) === norm(resourceOf(origin)) || norm(asked) === norm(origin);
+  return !asked || canonicalResource(asked, origin) !== null;
+}
+
+/** The text of an invalid_target answer: the resources of this server. */
+function resourceHint(origin: string): string {
+  return `This server serves these resources: ${Object.values(MCP_PATH).map((p) => resourceOf(origin, p)).join(", ")}.`;
+}
+
+/**
+ * May a token be used at the endpoint `called`? `bound` is the resource that the token was issued for
+ * (null: the app named none). A token works only at the exact resource it was issued for (RFC 8707):
+ * a token for /mcp does not work at /mcp/github, and the other way round. A token with no resource
+ * works only at the default endpoint, as before the other endpoints existed.
+ */
+export function audienceOk(bound: string | null | undefined, origin: string, called: string): boolean {
+  const at = canonicalResource(called, origin);
+  if (!at) return false;
+  if (!bound) return at === resourceOf(origin);
+  return canonicalResource(bound, origin) === at;
 }
 
 /**
@@ -191,6 +248,8 @@ export class OAuthStore {
     // Token families (one per code exchange) came after the first tables: add the column once.
     const cols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_tokens)").toArray().map((c) => c.name);
     if (!cols.includes("family")) this.sql.exec("ALTER TABLE oauth_tokens ADD COLUMN family TEXT");
+    // The scope of each token (mcp or mcp:read). A token with none is an older one: it has the full scope.
+    if (!cols.includes("scope")) this.sql.exec("ALTER TABLE oauth_tokens ADD COLUMN scope TEXT");
     this.sql.exec("CREATE INDEX IF NOT EXISTS oauth_tokens_family ON oauth_tokens (family)");
     const codeCols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_codes)").toArray().map((c) => c.name);
     if (!codeCols.includes("family")) this.sql.exec("ALTER TABLE oauth_codes ADD COLUMN family TEXT");
@@ -357,10 +416,10 @@ export class OAuthStore {
     if (q.response_type !== "code") return back(err("unsupported_response_type", "gitring supports response_type=code."));
     if (!q.code_challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(q.code_challenge)) return back(err("invalid_request", "Send a PKCE code_challenge (S256)."));
     if ((q.code_challenge_method ?? "") !== "S256") return back(err("invalid_request", "code_challenge_method must be S256."));
-    if (!resourceOk(q.resource, origin)) return back(err("invalid_target", `This server serves the resource ${resourceOf(origin)}.`));
+    if (!resourceOk(q.resource, origin)) return back(err("invalid_target", resourceHint(origin)));
     const scopes = (q.scope ?? SCOPE).split(/\s+/).filter(Boolean);
-    const known = new Set([SCOPE, "offline_access", "openid", "profile", "email"]);
-    if (scopes.some((s) => !known.has(s))) return back(err("invalid_scope", `gitring knows the scope "${SCOPE}".`));
+    const known = new Set([SCOPE, SCOPE_READ, "offline_access", "openid", "profile", "email"]);
+    if (scopes.some((s) => !known.has(s))) return back(err("invalid_scope", `gitring knows the scopes "${SCOPE}" (read and change) and "${SCOPE_READ}" (read only).`));
     const request: PendingRequest = {
       id: `req_${rand(24)}`,
       clientId: client.clientId,
@@ -369,8 +428,9 @@ export class OAuthStore {
       redirectUri,
       state: q.state ? q.state.slice(0, 1000) : undefined,
       challenge: q.code_challenge,
-      scope: SCOPE,
-      resource: q.resource ? q.resource.replace(/\/+$/, "") : undefined,
+      scope: accessScope(scopes),
+      // The token is bound to this endpoint (the bare origin means the default endpoint).
+      resource: q.resource ? (canonicalResource(q.resource, origin) ?? undefined) : undefined,
       forceConsent: (q.prompt ?? "").split(/\s+/).includes("consent"),
     };
     this.cleanup();
@@ -384,9 +444,13 @@ export class OAuthStore {
     return JSON.parse(row.data) as PendingRequest;
   }
 
-  /** The person has an active grant for this client (consent can be skipped). */
-  hasGrant(userId: string, clientId: string): boolean {
-    return Boolean(this.sql.exec("SELECT id FROM oauth_grants WHERE user_id = ? AND client_id = ? AND revoked = 0", userId, clientId).toArray()[0]);
+  /**
+   * The person has an active grant for this client that covers `scope` (consent can be skipped). A grant
+   * for read only does not cover a request to read and change: the person must say yes to that.
+   */
+  hasGrant(userId: string, clientId: string, scope: string = SCOPE): boolean {
+    const row = this.sql.exec<{ scope: string }>("SELECT scope FROM oauth_grants WHERE user_id = ? AND client_id = ? AND revoked = 0", userId, clientId).toArray()[0];
+    return Boolean(row) && scopeCovers(row.scope, scope);
   }
 
   /** The person allows the request: a grant (new or the existing one) and a single-use code. Answers the redirect URL. */
@@ -395,10 +459,14 @@ export class OAuthStore {
     if (!r) return null;
     this.sql.exec("DELETE FROM oauth_requests WHERE id = ?", r.id);
     const now = this.now();
-    let grant = this.sql.exec<{ id: string }>("SELECT id FROM oauth_grants WHERE user_id = ? AND client_id = ? AND revoked = 0", userId, r.clientId).toArray()[0]?.id;
+    const had = this.sql.exec<{ id: string; scope: string }>("SELECT id, scope FROM oauth_grants WHERE user_id = ? AND client_id = ? AND revoked = 0", userId, r.clientId).toArray()[0];
+    let grant = had?.id;
     if (!grant) {
       grant = `grant_${rand(18)}`;
       this.sql.exec("INSERT INTO oauth_grants (id, user_id, client_id, scope, created_at) VALUES (?, ?, ?, ?, ?)", grant, userId, r.clientId, r.scope, now);
+    } else if (!scopeCovers(had.scope, r.scope)) {
+      // The person allowed read only before, and allows read and change now.
+      this.sql.exec("UPDATE oauth_grants SET scope = ? WHERE id = ?", r.scope, grant);
     }
     const code = `goc_${randomToken(32)}`;
     this.sql.exec(
@@ -436,7 +504,7 @@ export class OAuthStore {
     const auth = await this.authenticateClient(form, basic, address);
     if (!auth.ok) return fail(401, auth.error, basic ? { "www-authenticate": 'Basic realm="gitring"' } : {});
     const client = auth.client;
-    if (!resourceOk(form.resource, origin)) return fail(400, err("invalid_target", `This server serves the resource ${resourceOf(origin)}.`));
+    if (!resourceOk(form.resource, origin)) return fail(400, err("invalid_target", resourceHint(origin)));
 
     if (form.grant_type === "authorization_code") {
       // Hash first: the checks and the "used" mark below run with no await between them, so two
@@ -463,19 +531,22 @@ export class OAuthStore {
       if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !sameString(verifierHash, row.challenge)) {
         return fail(400, err("invalid_grant", "The PKCE code_verifier does not match."));
       }
-      if (form.resource && row.resource && form.resource.replace(/\/+$/, "") !== row.resource) return fail(400, err("invalid_target", "The resource does not match the authorization request."));
+      if (form.resource && row.resource && canonicalResource(form.resource, origin) !== canonicalResource(row.resource, origin)) {
+        return fail(400, err("invalid_target", "The resource does not match the authorization request."));
+      }
       // Each code exchange starts a token family (one sign-in of one app on one device).
       const family = `fam_${rand(18)}`;
       this.sql.exec("UPDATE oauth_codes SET used = 1, family = ? WHERE hash = ?", family, row.hash);
       if (!this.grantActive(row.grant_id)) return fail(400, err("invalid_grant", "The person removed this app."));
-      return { status: 200, body: await this.issue(row.grant_id, row.scope, row.resource ?? form.resource?.replace(/\/+$/, "") ?? null, family), headers: noStore };
+      const resource = row.resource ? canonicalResource(row.resource, origin) : form.resource ? canonicalResource(form.resource, origin) : null;
+      return { status: 200, body: await this.issue(row.grant_id, row.scope, resource, family), headers: noStore };
     }
 
     if (form.grant_type === "refresh_token") {
       const hash = await sha256B64url(form.refresh_token ?? "");
       // No await from here to the "used" mark (see above).
       const row = this.sql
-        .exec<{ hash: string; grant_id: string; kind: string; resource: string | null; expires_at: number; used_at: number | null; family: string | null }>("SELECT * FROM oauth_tokens WHERE hash = ?", hash)
+        .exec<{ hash: string; grant_id: string; kind: string; resource: string | null; scope: string | null; expires_at: number; used_at: number | null; family: string | null }>("SELECT * FROM oauth_tokens WHERE hash = ?", hash)
         .toArray()[0];
       if (!row || row.kind !== "refresh") return fail(400, err("invalid_grant", "The refresh token is not valid."));
       const grant = this.sql.exec<{ client_id: string; scope: string; revoked: number }>("SELECT client_id, scope, revoked FROM oauth_grants WHERE id = ?", row.grant_id).toArray()[0];
@@ -493,7 +564,9 @@ export class OAuthStore {
       } else {
         this.sql.exec("UPDATE oauth_tokens SET used_at = ? WHERE hash = ?", this.now(), row.hash);
       }
-      return { status: 200, body: await this.issue(row.grant_id, grant.scope, row.resource, family), headers: noStore };
+      // The new tokens have the scope of the refresh token, never more: the grant can be wider (the
+      // person allowed the app to read and change in another sign-in), but this sign-in is not.
+      return { status: 200, body: await this.issue(row.grant_id, row.scope || SCOPE, row.resource, family), headers: noStore };
     }
 
     return fail(400, err("unsupported_grant_type", "gitring supports authorization_code and refresh_token."));
@@ -532,8 +605,8 @@ export class OAuthStore {
     // or a second use within the grace time) now counts as used long ago: if it comes back, gitring
     // ends the family, so two chains of one family cannot live side by side.
     this.sql.exec("UPDATE oauth_tokens SET used_at = ? WHERE family = ? AND kind = 'refresh' AND used_at IS NULL", now - REUSE_GRACE_MS - 1, family);
-    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, created_at, expires_at, family) VALUES (?, ?, 'access', ?, ?, ?, ?)", accessHash, grantId, resource, now, now + ACCESS_TTL_S * 1000, family);
-    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, created_at, expires_at, family) VALUES (?, ?, 'refresh', ?, ?, ?, ?)", refreshHash, grantId, resource, now, now + REFRESH_TTL_S * 1000, family);
+    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, scope, created_at, expires_at, family) VALUES (?, ?, 'access', ?, ?, ?, ?, ?)", accessHash, grantId, resource, scope, now, now + ACCESS_TTL_S * 1000, family);
+    this.sql.exec("INSERT INTO oauth_tokens (hash, grant_id, kind, resource, scope, created_at, expires_at, family) VALUES (?, ?, 'refresh', ?, ?, ?, ?, ?)", refreshHash, grantId, resource, scope, now, now + REFRESH_TTL_S * 1000, family);
     this.sql.exec("UPDATE oauth_grants SET last_used = ? WHERE id = ?", now, grantId);
     this.cleanup();
     return { access_token: access, token_type: "Bearer", expires_in: ACCESS_TTL_S, refresh_token: refresh, scope };
@@ -569,20 +642,20 @@ export class OAuthStore {
   }
 
   /**
-   * The person behind an access token, when it is valid for this resource. Answers the user id,
-   * client id and grant id, or null.
+   * The person behind an access token, when it is valid at this endpoint (`resource`: the MCP endpoint
+   * that gets the call; the default is /mcp). Answers the user id, client id and grant id, or null.
    */
-  async accessUser(token: string, origin: string): Promise<{ userId: string; clientId: string; grantId: string; expiresAt: number } | null> {
+  async accessUser(token: string, origin: string, resource: string = resourceOf(origin)): Promise<{ userId: string; clientId: string; grantId: string; scope: string; expiresAt: number } | null> {
     if (!token.startsWith("goa_")) return null;
     const row = this.sql
-      .exec<{ grant_id: string; resource: string | null; expires_at: number }>("SELECT grant_id, resource, expires_at FROM oauth_tokens WHERE hash = ? AND kind = 'access'", await sha256B64url(token))
+      .exec<{ grant_id: string; resource: string | null; scope: string | null; expires_at: number }>("SELECT grant_id, resource, scope, expires_at FROM oauth_tokens WHERE hash = ? AND kind = 'access'", await sha256B64url(token))
       .toArray()[0];
     if (!row || row.expires_at < this.now()) return null;
-    if (row.resource && !resourceOk(row.resource, origin)) return null;
+    if (!audienceOk(row.resource, origin, resource)) return null;
     const grant = this.sql.exec<{ user_id: string; client_id: string; revoked: number; last_used: number | null }>("SELECT user_id, client_id, revoked, last_used FROM oauth_grants WHERE id = ?", row.grant_id).toArray()[0];
     if (!grant || grant.revoked) return null;
     if (!grant.last_used || this.now() - grant.last_used > 60_000) this.sql.exec("UPDATE oauth_grants SET last_used = ? WHERE id = ?", this.now(), row.grant_id);
-    return { userId: grant.user_id, clientId: grant.client_id, grantId: row.grant_id, expiresAt: row.expires_at };
+    return { userId: grant.user_id, clientId: grant.client_id, grantId: row.grant_id, scope: row.scope || SCOPE, expiresAt: row.expires_at };
   }
 
   /* ───────────── grants of a person ───────────── */

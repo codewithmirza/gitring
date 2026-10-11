@@ -1,0 +1,16 @@
+{
+  "name": "gitring",
+  "description": "Claude Code plugins for gitring: many coding agents change one repository at the same time.",
+  "owner": {
+    "name": "gitring"
+  },
+  "plugins": [
+    {
+      "name": "gitring",
+      "source": "./plugins/gitring",
+      "description": "Connects Claude Code to your gitring: the tools, a skill for the work loop, and a hook that brings change requests after each file edit.",
+      "category": "development",
+      "tags": ["mcp", "agents", "merge", "coordination"]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gitring": {
+      "type": "http",
+      "url": "${user_config.gitring_url}/mcp"
+    }
+  }
+}

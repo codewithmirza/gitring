@@ -1,0 +1,29 @@
+{
+  "name": "gitring",
+  "version": "0.1.0",
+  "description": "Connects Claude Code to your gitring: the tools, a skill for the work loop, and a hook that brings change requests after each file edit.",
+  "author": {
+    "name": "gitring"
+  },
+  "license": "MIT",
+  "keywords": ["gitring", "mcp", "agents", "merge", "coordination"],
+  "userConfig": {
+    "gitring_url": {
+      "type": "string",
+      "title": "gitring address",
+      "description": "The address of your gitring, for example https://<your-worker>.workers.dev. Do not add /mcp or a slash at the end.",
+      "required": true
+    },
+    "project": {
+      "type": "string",
+      "title": "Project id (for the hook)",
+      "description": "The gitring project that this computer works on. The hook needs it. The environment variable GITRING_PROJECT takes precedence."
+    },
+    "api_key": {
+      "type": "string",
+      "title": "Personal API key (for the hook)",
+      "description": "A gitring API key (gk_...) with the member role. The hook needs it. The environment variable GITRING_KEY takes precedence.",
+      "sensitive": true
+    }
+  }
+}

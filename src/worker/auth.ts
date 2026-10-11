@@ -18,6 +18,8 @@ export interface Principal {
   via: "session" | "key" | "operator" | "oauth" | null;
   /** OAuth only: the MCP client that acts for the person. */
   clientId?: string;
+  /** OAuth only: what the token may do. "mcp:read": only the tools that read. Anything else: all tools. */
+  scope?: string;
   /** The session token (cookie), for logout. */
   session?: string;
   /** A Bearer token was sent but it is not valid. */
@@ -90,10 +92,11 @@ export function forgetPrincipal(opts: { session?: string; userId?: string; all?:
 }
 
 /**
- * Who sends this request. `oauth: true` (the MCP endpoint only) also accepts OAuth access tokens: they
- * are for the resource <origin>/mcp (RFC 8707), not for the rest of the API.
+ * Who sends this request. `oauth: true` (the MCP endpoints only) also accepts OAuth access tokens: they
+ * are for one MCP endpoint (RFC 8707), not for the rest of the API. `resource` is the endpoint that gets
+ * this request (default <origin>/mcp): a token works only at the resource it was issued for.
  */
-export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: boolean } = {}): Promise<Principal> {
+export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: boolean; resource?: string } = {}): Promise<Principal> {
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "");
   if (m) {
     const token = m[1].trim();
@@ -106,11 +109,13 @@ export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: b
     }
     if (opts.oauth && token.startsWith("goa_")) {
       const origin = new URL(req.url).origin;
-      const hit = cached(`o:${origin}:${token}`);
+      // The lookup depends on the endpoint: the same token can be valid at one and not at another.
+      const resource = opts.resource ?? `${origin}/mcp`;
+      const hit = cached(`o:${resource}:${token}`);
       if (hit) return hit;
-      const found = await directory(env).oauthUser(token, origin);
+      const found = await directory(env).oauthUser(token, origin, resource);
       // OAuth tokens are cached for at most 15 seconds: a revoked token stops working soon everywhere.
-      if (found) return remember(`o:${origin}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId }, Math.min(found.expiresAt, Date.now() + 15_000));
+      if (found) return remember(`o:${resource}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId, scope: found.scope }, Math.min(found.expiresAt, Date.now() + 15_000));
     }
     return { user: null, via: null, badKey: true };
   }

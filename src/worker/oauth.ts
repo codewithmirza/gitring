@@ -1,7 +1,8 @@
 /**
  * OAuth 2.1 routes for MCP clients (Claude, Claude Code, Cursor, Codex and other agents):
  *
- *   GET  /.well-known/oauth-protected-resource[/mcp]   RFC 9728: the MCP endpoint and its server
+ *   GET  /.well-known/oauth-protected-resource[/mcp[/github|/readonly]]
+ *                                                      RFC 9728: an MCP endpoint and its server (one resource each)
  *   GET  /.well-known/oauth-authorization-server       RFC 8414: endpoints and abilities
  *   POST /oauth/register                               RFC 7591: dynamic client registration
  *   GET  /oauth/authorize                              sign in, then allow the app (consent)
@@ -16,7 +17,7 @@
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
 import { directory, esc, forgetPrincipal, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
-import { basicAuth, isCimdId } from "../directory/oauth";
+import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
 import { sameString } from "../directory/crypto";
 import { clientAddress } from "./limits";
 
@@ -53,27 +54,46 @@ export function authorizationServerMetadata(o: string) {
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
     revocation_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
-    scopes_supported: ["mcp"],
+    // mcp: read and change. mcp:read: only the tools that read. gitring always issues a refresh token
+    // (30 days, rotating), so offline_access is supported.
+    scopes_supported: ["mcp", "mcp:read", "offline_access"],
     client_id_metadata_document_supported: true,
     authorization_response_iss_parameter_supported: true,
     service_documentation: `${o}/connect`,
   };
 }
 
-export function protectedResourceMetadata(o: string) {
+const RESOURCE_NAME: Record<string, string> = {
+  [MCP_PATH.gitring]: "gitring",
+  [MCP_PATH.github]: "gitring (GitHub-compatible tools)",
+  [MCP_PATH.readonly]: "gitring (read only)",
+};
+
+/** RFC 9728 metadata of one MCP endpoint (each endpoint is its own resource: tokens work only where they were issued for). */
+export function protectedResourceMetadata(o: string, path: string = MCP_PATH.gitring) {
   return {
-    resource: `${o}/mcp`,
+    resource: resourceOf(o, path),
     authorization_servers: [o],
-    scopes_supported: ["mcp"],
+    scopes_supported: ["mcp", "mcp:read"],
     bearer_methods_supported: ["header"],
-    resource_name: "gitring",
+    resource_name: RESOURCE_NAME[path] ?? "gitring",
     resource_documentation: `${o}/connect`,
   };
 }
 
-/** The WWW-Authenticate header of a 401 from /mcp (MCP authorization spec, RFC 9728 §5.1). */
-export function mcpChallenge(o: string, invalidToken: boolean): string {
-  return `Bearer realm="gitring", resource_metadata="${o}/.well-known/oauth-protected-resource/mcp", scope="mcp"${invalidToken ? ', error="invalid_token", error_description="The access token is not valid or expired."' : ""}`;
+/** The WWW-Authenticate header of a 401 from an MCP endpoint (MCP authorization spec, RFC 9728 §5.1). */
+export function mcpChallenge(o: string, invalidToken: boolean, path: string = MCP_PATH.gitring): string {
+  // The read-only endpoint needs the read-only scope at least. The other endpoints ask for the full scope.
+  const scope = path === MCP_PATH.readonly ? "mcp:read" : "mcp";
+  return `Bearer realm="gitring", resource_metadata="${o}/.well-known/oauth-protected-resource${path}", scope="${scope}"${invalidToken ? ', error="invalid_token", error_description="The access token is not valid or expired."' : ""}`;
+}
+
+/**
+ * The WWW-Authenticate header of a 403: the token is good, but its scope is too small for the tool
+ * (RFC 6750 §3.1, MCP scope challenge). `scope` is the scope that the call needs.
+ */
+export function mcpScopeChallenge(o: string, path: string = MCP_PATH.gitring, scope = "mcp"): string {
+  return `Bearer realm="gitring", error="insufficient_scope", scope="${scope}", resource_metadata="${o}/.well-known/oauth-protected-resource${path}", error_description="This tool changes data. The access token has the scope mcp:read. It needs the scope ${scope}."`;
 }
 
 async function formOf(c: C): Promise<Record<string, string | undefined>> {
@@ -137,7 +157,15 @@ async function signInPage(c: C, clientName: string, reqId: string): Promise<Resp
   );
 }
 
-function consentPage(user: NonNullable<Principal["user"]>, r: { id: string; clientId: string; clientName: string; clientUri?: string; redirectUri: string }): Response {
+/** What the app can do, in the words of the consent page. The scope mcp:read is read only. */
+export function consentAccess(scope: string): { label: string; can: string } {
+  return scope === SCOPE_READ
+    ? { label: "Read only", can: "Read your projects, their tasks and their files. This works in projects where you are a member or a viewer. It cannot send plans, write code, run tests or ask gitring to merge." }
+    : { label: "Read and change", can: "Read your projects and their tasks. Send plans and write code to work copies. Run tests and ask gitring to merge the work. This works in projects where you are a member." };
+}
+
+function consentPage(user: NonNullable<Principal["user"]>, r: { id: string; clientId: string; clientName: string; clientUri?: string; redirectUri: string; scope?: string }): Response {
+  const access = consentAccess(r.scope ?? SCOPE);
   const who = user.identities.find((i) => i.login)?.login ?? user.email ?? user.name;
   // Anyone can register an app with any name: the heading names what gitring checked. A metadata
   // document client is known by the host of its document; a registered one only by where its code goes.
@@ -153,8 +181,9 @@ button[value=allow]{animation:arm 1s step-end forwards;pointer-events:none}
 <h1>Allow the app at ${known} to use gitring as ${esc(user.name)}?</h1>
 <p class="muted">You are signed in as ${esc(who)}. ${cimd ? `The app's details come from its own site.` : `The app ${says || "gave no name"}; gitring did not check this. Only allow it when you added gitring to this app yourself.`}</p>
 <div class="card">
+<h2>Access: ${access.label}</h2>
 <h2>It can</h2>
-<p>Read your projects and their tasks, send plans, write code to work copies, run tests and ask gitring to merge the work (in projects where you are a member).</p>
+<p>${access.can}</p>
 <h2>It cannot</h2>
 <p>Change project settings or members, see your API keys, or act after you remove it (Account → Connected apps).</p>
 </div>
@@ -208,11 +237,14 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
   }
 
   const asMeta = (c: C) => json(authorizationServerMetadata(originOf(c)), 200, { ...CORS, "cache-control": "public, max-age=3600" });
-  const prMeta = (c: C) => json(protectedResourceMetadata(originOf(c)), 200, { ...CORS, "cache-control": "public, max-age=3600" });
+  const prMeta = (path: string) => (c: C) => json(protectedResourceMetadata(originOf(c), path), 200, { ...CORS, "cache-control": "public, max-age=3600" });
   app.get("/.well-known/oauth-authorization-server", asMeta);
-  app.get("/.well-known/oauth-authorization-server/mcp", asMeta);
-  app.get("/.well-known/oauth-protected-resource", prMeta);
-  app.get("/.well-known/oauth-protected-resource/mcp", prMeta);
+  app.get("/.well-known/oauth-protected-resource", prMeta(MCP_PATH.gitring));
+  // One resource per MCP endpoint (RFC 9728 §3.1: the endpoint's path follows the well-known name).
+  for (const path of Object.values(MCP_PATH)) {
+    app.get(`/.well-known/oauth-authorization-server${path}`, asMeta);
+    app.get(`/.well-known/oauth-protected-resource${path}`, prMeta(path));
+  }
 
   app.post("/oauth/register", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -225,7 +257,7 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
     const o = originOf(c);
     // A plain object: Hono's query object has no prototype, and RPC cannot send that.
     const q: Record<string, string> = { ...Object.fromEntries(Object.entries(c.req.query())) };
-    let request: { id: string; clientId: string; clientName: string; clientUri?: string; redirectUri: string; forceConsent: boolean } | null;
+    let request: { id: string; clientId: string; clientName: string; clientUri?: string; redirectUri: string; scope: string; forceConsent: boolean } | null;
     if (q.req) {
       request = await dir.oauthRequest(q.req);
       if (!request) return expiredPage();
@@ -246,8 +278,8 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
     }
     const p = c.get("principal");
     if (p.via !== "session" || !p.user) return signInPage(c, request.clientName, request.id);
-    if (!request.forceConsent && (await dir.oauthHasGrant(p.user.id, request.clientId))) {
-      // The person allowed this app before: no second question.
+    if (!request.forceConsent && (await dir.oauthHasGrant(p.user.id, request.clientId, request.scope))) {
+      // The person allowed this app before, for this scope or a wider one: no second question.
       const url = await dir.oauthApprove(request.id, p.user.id, o);
       return url ? redirect(url, CLEAR_REQUEST_COOKIE) : expiredPage();
     }

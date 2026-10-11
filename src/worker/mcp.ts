@@ -1,79 +1,47 @@
 /**
  * MCP server for external agents (Claude Code, Codex, Cursor, …).
  * Stateless (MCP 2026-07-28 via createMcpHandler); all state lives in the project's HarborMaster.
- * Every call carries a personal API key; each tool checks the caller's role on the project.
+ * Every call carries a personal API key or an OAuth token; each tool checks the caller's role on the project.
  *
  * Every tool result starts with a one-line status. When gitring has new change requests for the agent,
  * the result starts with "GITRING CHANGE REQUEST" so the model cannot miss it.
+ *
+ * Every tool has a title and all four hints (read-only, destructive, idempotent, open-world): MCP
+ * directories need them, and the Worker uses the read-only hint for the read-only path and scope.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import type { Env } from "./env";
-import type * as T from "../core/types";
-import type * as A from "../core/accounts";
-import { atLeast, PROJECT_ID } from "../core/accounts";
-import type { HarborMaster } from "../harbor/harbor";
+import { atLeast } from "../core/accounts";
 import { directory, type Principal } from "./auth";
-
-type HarborApi = Pick<HarborMaster, "ensure" | "openIntents" | "declare" | "log" | "traffic" | "read" | "list" | "write" | "check" | "submit" | "ack" | "update">;
-
-function text(obj: unknown, headline: string, clr?: T.Clearance) {
-  const lines: string[] = [];
-  if (clr?.corrections?.length) {
-    lines.push("GITRING CHANGE REQUEST — apply it in your next edits, then call gitring_ack. Do not stop.");
-    for (const c of clr.corrections) lines.push(`- [${c.id}] (${KIND_WORD[c.kind] ?? c.kind}${c.from ? `; ${c.from} continues` : ""}) ${c.message}`);
-    lines.push("");
-  }
-  lines.push(headline);
-  lines.push("");
-  lines.push(JSON.stringify(obj, null, 2));
-  return { content: [{ type: "text" as const, text: lines.join("\n") }] };
-}
-
-function fail(err: unknown) {
-  return { content: [{ type: "text" as const, text: `Error: ${String((err as Error)?.message ?? err)}` }], isError: true };
-}
-
-const KIND_WORD: Record<string, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed" };
-const VERDICT_WORD: Record<string, string> = { clear: "clear", correct: "change request", "merge-intents": "same task as other work", escalate: "a person decides" };
+import { MCP_PATH, type McpSet } from "../directory/oauth";
+import { ADDS, CHANGES, READS, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, writeAnswer, type ToolDef } from "./mcp-kit";
+import { GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
 
 const project = z.string().describe("Project id (gitring_intents without a project lists your projects).");
 const attemptId = z.string().describe("Your work copy id (attemptId) from gitring_declare.");
 
-function createServer(env: Env, who: Principal) {
-  const server = new McpServer({ name: "gitring", version: "0.6.0" });
-
-  /** The project's HarborMaster, after a role check (member to act, viewer to read). */
-  async function harbor(raw: string | undefined, need: A.Role = "member"): Promise<{ id: string; stub: HarborApi }> {
-    const id = String(raw ?? "").trim();
-    if (!PROJECT_ID.test(id)) throw new Error("Give the project id (lowercase letters, digits and dashes). Call gitring_intents without a project to list your projects.");
-    if (who.via !== "operator") {
-      const role = await directory(env).role(id, who.user?.id ?? null);
-      if (!role) throw new Error(`Unknown project "${id}", or your key has no access to it.`);
-      if (!atLeast(role, need)) throw new Error(`Your key needs the ${need} role on "${id}". Ask an owner of the project.`);
-    }
-    const stub = env.HARBOR.get(env.HARBOR.idFromName(id)) as unknown as HarborApi;
-    return { id, stub };
-  }
-
-  server.registerTool(
-    "gitring_intents",
-    {
-      description:
-        "List the open tasks of a project (goal and test files) and how much work is active. Call this first. Then call gitring_declare for one task, or bring a new task.",
-      inputSchema: { project: z.string().optional().describe("Project id. Leave it out to list the projects your key can use.") },
-    },
-    async ({ project: p }) => {
+/** The tools of the gitring set (/mcp). */
+export const GITRING_TOOLS: readonly ToolDef[] = [
+  defineTool({
+    name: "gitring_intents",
+    title: "List tasks",
+    description:
+      "List the open tasks of a project, with the goal and the test files of each task. Show how many work copies are active. " +
+      "Call this first. Leave out the project to list your projects. Then call gitring_declare for one task, or send a new task.",
+    inputSchema: { project: z.string().optional().describe("Project id. Leave it out to list the projects your key can use.") },
+    annotations: READS,
+    async run(ctx, { project: p }) {
       try {
         if (!p) {
-          const list = (await directory(env).listProjects(who.user?.id ?? null)).filter((x) => atLeast(x.role, "member"));
+          const list = (await directory(ctx.env).listProjects(ctx.who.user?.id ?? null)).filter((x) => atLeast(x.role, "member"));
           return text(
             list.map((x) => ({ project: x.id, name: x.name, role: x.role })),
             list.length ? `${list.length} projects. Call gitring_intents with one project id.` : "Your key has no project where it can act. Create one in gitring, or ask an owner to add you.",
           );
         }
-        const h = await harbor(p, "viewer");
+        const h = await ctx.access(p, "viewer");
         await h.stub.ensure(h.id);
         const res = await h.stub.openIntents();
         return text(res, `${res.intents.length} open tasks. ${res.traffic} work copies are active.`);
@@ -81,34 +49,36 @@ function createServer(env: Env, who: Principal) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_declare",
-    {
-      description:
-        "Send your plan BEFORE you write code: steps, files, functions and approach. gitring checks the plan against all active work and answers clear, or with change requests. " +
-        "gitring never blocks you. mode 'git' (best for an agent on a computer) gives a git remote and a token for your work copy: clone it, commit, push. mode 'api' (default) uses gitring_read and gitring_write. " +
-        "Give workdir (your repository folder) so that the Claude Code hook can bring change requests during the task.",
-      inputSchema: {
-        project,
-        intentId: z.string().optional().describe("A task id (intentId) from gitring_intents."),
-        newIntent: z.object({ title: z.string(), goal: z.string() }).optional().describe("Bring a new task instead. gitring checks that no other task is the same."),
-        plan: z.array(z.string()).describe("Short steps, in order."),
-        files: z.array(z.string()).describe("Repo-relative paths you will change."),
-        symbols: z.array(z.string()).optional().describe("path#name of the functions you will add or change. Add (params) if you change a signature."),
-        approach: z.string().describe("One sentence."),
-        mode: z.enum(["api", "git"]).optional(),
-        agent: z
-          .object({ id: z.string().optional(), name: z.string().optional(), client: z.string().optional(), model: z.string().optional() })
-          .optional()
-          .describe('Who you are, e.g. {"client":"claude-code","model":"claude-sonnet-5"}. Reuse the agentId you got before.'),
-        workdir: z.string().optional().describe("Absolute path of your working copy (for the Claude Code hook)."),
-      },
+  defineTool({
+    name: "gitring_declare",
+    title: "Send a plan",
+    description:
+      "Send your plan BEFORE you write code. Give the steps, the files, the functions and the approach. " +
+      "gitring checks the plan against all active work. It answers clear, or sends change requests. gitring never blocks you. " +
+      "Mode 'api' (default) uses gitring_read and gitring_write. Mode 'git' gives a git remote and a token for your work copy. " +
+      "Use git mode on a computer: clone, commit, push. " +
+      "Give workdir (your repository folder). Then the Claude Code hook can send change requests while you work.",
+    inputSchema: {
+      project,
+      intentId: z.string().optional().describe("A task id (intentId) from gitring_intents."),
+      newIntent: z.object({ title: z.string(), goal: z.string() }).optional().describe("Send a new task instead. gitring checks that no other task is the same."),
+      plan: z.array(z.string()).describe("Short steps, in order."),
+      files: z.array(z.string()).describe("Repo-relative paths you will change."),
+      symbols: z.array(z.string()).optional().describe("path#name of the functions you will add or change. Add (params) if you change a signature."),
+      approach: z.string().describe("One sentence."),
+      mode: z.enum(["api", "git"]).optional(),
+      agent: z
+        .object({ id: z.string().optional(), name: z.string().optional(), client: z.string().optional(), model: z.string().optional() })
+        .optional()
+        .describe('Who you are, e.g. {"client":"claude-code","model":"claude-sonnet-5"}. Reuse the agentId you got before.'),
+      workdir: z.string().optional().describe("Absolute path of your repository folder (for the Claude Code hook)."),
     },
-    async (args) => {
+    annotations: ADDS,
+    async run(ctx, args) {
       try {
-        const h = await harbor(args.project);
+        const h = await ctx.access(args.project);
         const res = await h.stub.declare({
           projectId: h.id,
           intentId: args.intentId,
@@ -130,159 +100,199 @@ function createServer(env: Env, who: Principal) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_log",
-    {
-      description:
-        "Report progress like a commit message: what you did and which files you touched. Other agents see it. In git mode, give headSha after a push to get a conflict check at once. The answer can hold change requests.",
-      inputSchema: { project, attemptId, message: z.string(), files: z.array(z.string()).optional(), symbols: z.array(z.string()).optional(), headSha: z.string().optional() },
-    },
-    async (args) => {
+  defineTool({
+    name: "gitring_log",
+    title: "Report progress",
+    description:
+      "Report progress like a commit message. Say what you did and which files you touched. Other agents see it. " +
+      "In git mode, give headSha after a push to get a conflict check at once. The answer can hold change requests.",
+    inputSchema: { project, attemptId, message: z.string(), files: z.array(z.string()).optional(), symbols: z.array(z.string()).optional(), headSha: z.string().optional() },
+    annotations: ADDS,
+    async run(ctx, args) {
       try {
-        const clr = await (await harbor(args.project)).stub.log({ attemptId: args.attemptId, message: args.message, files: args.files, symbols: args.symbols, headSha: args.headSha });
+        const clr = await (await ctx.access(args.project)).stub.log({ attemptId: args.attemptId, message: args.message, files: args.files, symbols: args.symbols, headSha: args.headSha });
         return text(clr, `Conflict check: ${VERDICT_WORD[clr.verdict] ?? clr.verdict}. ${clr.advice}`, clr);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_traffic",
-    {
-      description: "See the active work near yours: the tasks, plans, files and latest reports of other agents, and the tasks that merged after your work copy started.",
-      inputSchema: { project, attemptId },
-    },
-    async (args) => {
+  defineTool({
+    name: "gitring_traffic",
+    title: "See nearby work",
+    description: "See the active work near yours. Each item shows the task, the plan, the files and the latest reports of one other agent. Also see the tasks that merged after your work copy started.",
+    inputSchema: { project, attemptId },
+    annotations: READS,
+    async run(ctx, args) {
       try {
-        const res = await (await harbor(args.project)).stub.traffic(args.attemptId);
+        const res = await (await ctx.access(args.project)).stub.traffic(args.attemptId);
         return text(res, `${res.vessels.length} work copies near you. ${res.landedSinceBase.length} tasks merged after your work copy started.`);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_read",
-    { description: "Read one file of your work copy (api mode).", inputSchema: { project, attemptId, path: z.string() } },
-    async (args) => {
+  defineTool({
+    name: "gitring_read",
+    title: "Read a file",
+    description: "Read one file of your work copy (api mode). The answer is the whole file.",
+    inputSchema: { project, attemptId, path: z.string() },
+    annotations: READS,
+    async run(ctx, args) {
       try {
-        const r = await (await harbor(args.project)).stub.read(args.attemptId, args.path);
-        return { content: [{ type: "text" as const, text: r.content ?? `The file ${r.path} does not exist.` }] };
+        const r = await (await ctx.access(args.project)).stub.read(args.attemptId, args.path);
+        return plain(r.content ?? `The file ${r.path} does not exist.`);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_list",
-    { description: "List the files of your work copy (api mode).", inputSchema: { project, attemptId, dir: z.string().optional() } },
-    async (args) => {
+  defineTool({
+    name: "gitring_list",
+    title: "List files",
+    description: "List the files of your work copy (api mode). Give dir to list one folder.",
+    inputSchema: { project, attemptId, dir: z.string().optional() },
+    annotations: READS,
+    async run(ctx, args) {
       try {
-        const r = await (await harbor(args.project)).stub.list(args.attemptId, args.dir);
-        return { content: [{ type: "text" as const, text: r.join("\n") }] };
+        const r = await (await ctx.access(args.project)).stub.list(args.attemptId, args.dir);
+        return plain(r.join("\n"));
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_write",
-    {
-      description: "Write whole files into your work copy (api mode). gitring checks your plan again after each write. The answer can hold change requests.",
-      inputSchema: {
-        project,
-        attemptId,
-        files: z.array(z.object({ path: z.string(), content: z.string().optional(), delete: z.boolean().optional() })),
-        message: z.string().optional(),
-      },
+  defineTool({
+    name: "gitring_write",
+    title: "Write files",
+    description:
+      "Write whole files into your work copy (api mode). Set delete to true to remove a file. " +
+      "gitring checks your plan again after each write. The answer can hold change requests. Apply them, then call gitring_ack.",
+    inputSchema: {
+      project,
+      attemptId,
+      files: z.array(z.object({ path: z.string(), content: z.string().optional(), delete: z.boolean().optional() })),
+      message: z.string().optional(),
     },
-    async (args) => {
+    // A write replaces the text of a file in the work copy, and a delete removes it: it can destroy earlier work.
+    annotations: CHANGES,
+    async run(ctx, args) {
       try {
-        const res = await (await harbor(args.project)).stub.write({ attemptId: args.attemptId, files: args.files, message: args.message });
-        const extra = [
-          res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read these files again.` : "",
-          ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
-        ].filter(Boolean);
-        return text(res, `Written: ${res.written.join(", ") || "nothing"}. ${extra.length ? `${extra.join(" ")} ` : ""}Conflict check: ${VERDICT_WORD[res.clearance.verdict] ?? res.clearance.verdict}. ${res.clearance.advice}`, res.clearance);
+        const res = await (await ctx.access(args.project)).stub.write({ attemptId: args.attemptId, files: args.files, message: args.message });
+        return writeAnswer(res);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_check",
-    { description: "Run the tests of your work copy and get each failure. In git mode, gitring tests your latest push.", inputSchema: { project, attemptId } },
-    async (args) => {
+  defineTool({
+    name: "gitring_check",
+    title: "Run tests",
+    description: "Run the tests of your work copy and get each failure. In git mode, gitring tests your latest push.",
+    inputSchema: { project, attemptId },
+    annotations: ADDS,
+    async run(ctx, args) {
       try {
-        const run = await (await harbor(args.project)).stub.check(args.attemptId);
+        const run = await (await ctx.access(args.project)).stub.check(args.attemptId);
         return text(run, `${run.passed}/${run.passed + run.failed} tests pass.${run.error ? ` Test runner error: ${run.error}` : ""}`);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_submit",
-    {
-      description: "Ask for a merge when your tests pass. gitring tests again, then merges the work (fast-forward, 3-way merge, or a redo on the new main), or asks a person to choose between work copies.",
-      inputSchema: { project, attemptId, summary: z.string() },
-    },
-    async (args) => {
+  defineTool({
+    name: "gitring_submit",
+    title: "Ask for a merge",
+    description:
+      "Ask for a merge when your tests pass. gitring tests again. " +
+      "Then it merges the work (fast-forward, 3-way merge, or a redo on the new main). Or it asks a person to choose between work copies. " +
+      "When the project sends merges to GitHub, the merge goes there too.",
+    inputSchema: { project, attemptId, summary: z.string() },
+    // A merge adds a commit to main and keeps the history: it destroys nothing. It can also send the merge to GitHub.
+    annotations: { ...ADDS, openWorldHint: true },
+    async run(ctx, args) {
       try {
-        const res = await (await harbor(args.project)).stub.submit(args.attemptId, args.summary);
+        const res = await (await ctx.access(args.project)).stub.submit(args.attemptId, args.summary);
         return text(res, `${res.message} Next: ${res.next}.`, res.clearance);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_ack",
-    { description: "Confirm that you applied a change request (correctionId). Say in one line what you changed.", inputSchema: { project, attemptId, correctionId: z.string(), note: z.string().optional() } },
-    async (args) => {
+  defineTool({
+    name: "gitring_ack",
+    title: "Confirm a change request",
+    description: "Confirm that you applied a change request (correctionId). Say in one line what you changed.",
+    inputSchema: { project, attemptId, correctionId: z.string(), note: z.string().optional() },
+    annotations: ADDS,
+    async run(ctx, args) {
       try {
-        const clr = await (await harbor(args.project)).stub.ack(args.attemptId, args.correctionId, args.note);
+        const clr = await (await ctx.access(args.project)).stub.ack(args.attemptId, args.correctionId, args.note);
         return text(clr, `Confirmed. ${clr.advice}`, clr);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
 
-  server.registerTool(
-    "gitring_update",
-    {
-      description:
-        "Bring the new main into your work copy. api mode: gitring moves your work copy onto main and names the files to read again. " +
-        "git mode: you get a read-only remote and token for main, and the git commands to merge it. Use it after a change request that says main moved.",
-      inputSchema: { project, attemptId },
-    },
-    async (args) => {
+  defineTool({
+    name: "gitring_update",
+    title: "Update from main",
+    description:
+      "Move your work copy onto the new main. In api mode, gitring does it and names the files to read again. " +
+      "In git mode, you get a read-only remote and a token for main, and the git commands to merge it. " +
+      "Use it after a change request that says main moved.",
+    inputSchema: { project, attemptId },
+    // Where your change and main touch the same lines, gitring keeps the main version. You write your change again.
+    annotations: CHANGES,
+    async run(ctx, args) {
       try {
-        const res = await (await harbor(args.project)).stub.update(args.attemptId);
+        const res = await (await ctx.access(args.project)).stub.update(args.attemptId);
         return text(res, res.message);
       } catch (e) {
         return fail(e);
       }
     },
-  );
+  }),
+];
 
+const INSTRUCTIONS =
+  "gitring lets many agents change one repository at the same time. " +
+  "Call gitring_intents first. Then call gitring_declare with a real plan. " +
+  "Write your work. Apply each change request and call gitring_ack. " +
+  "Then call gitring_check and gitring_submit.";
+
+const READONLY_INSTRUCTIONS =
+  "This is the read-only endpoint of gitring. You can list tasks, see the work near yours and read files. " +
+  "You cannot send a plan, write, run tests or merge here. Use the full endpoint for that.";
+
+/** The tools, and the server instructions, of each endpoint: the full set, the GitHub-compatible set and the read-only set. */
+export function toolSet(set: McpSet): { tools: readonly ToolDef[]; instructions: string } {
+  if (set === "github") return { tools: GITHUB_TOOLS, instructions: GITHUB_INSTRUCTIONS };
+  if (set === "readonly") return { tools: readOnlyTools(GITRING_TOOLS), instructions: READONLY_INSTRUCTIONS };
+  return { tools: GITRING_TOOLS, instructions: INSTRUCTIONS };
+}
+
+function createServer(env: Env, who: Principal, set: McpSet) {
+  const { tools, instructions } = toolSet(set);
+  const server = new McpServer({ name: "gitring", version: "0.7.0" }, { instructions });
+  registerTools(server, makeContext(env, who, set === "github" ? GITHUB_LIST_HOW : undefined), tools);
   return server;
 }
 
-/** An MCP handler bound to the caller (one per request: the tools check this caller's roles). */
-export function createMcp(env: Env, who: Principal) {
-  return createMcpHandler(() => createServer(env, who), {
-    route: "/mcp",
+/** An MCP handler bound to the caller and to one endpoint (one per request: the tools check this caller's roles). */
+export function createMcp(env: Env, who: Principal, set: McpSet = "gitring") {
+  return createMcpHandler(() => createServer(env, who, set), {
+    route: MCP_PATH[set],
     allowedOriginHostnames: "*",
     corsOptions: { exposeHeaders: "mcp-session-id, WWW-Authenticate" },
   });

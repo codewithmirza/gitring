@@ -182,8 +182,9 @@ export class Directory extends DurableObject<Env> {
     return this.oauth.request(id);
   }
 
-  async oauthHasGrant(userId: string, clientId: string): Promise<boolean> {
-    return this.oauth.hasGrant(userId, clientId);
+  /** The person allowed this app before, for this scope (mcp or mcp:read) or a wider one. */
+  async oauthHasGrant(userId: string, clientId: string, scope?: string): Promise<boolean> {
+    return this.oauth.hasGrant(userId, clientId, scope);
   }
 
   async oauthApprove(requestId: string, userId: string, origin: string): Promise<string | null> {
@@ -203,12 +204,12 @@ export class Directory extends DurableObject<Env> {
     return this.oauth.revoke(form, basic);
   }
 
-  /** The person behind an OAuth access token (MCP), or null. */
-  async oauthUser(token: string, origin: string): Promise<{ user: A.UserInfo; clientId: string; expiresAt: number } | null> {
-    const hit = await this.oauth.accessUser(token, origin);
+  /** The person behind an OAuth access token (MCP) at this endpoint (`resource`; default /mcp), or null. */
+  async oauthUser(token: string, origin: string, resource?: string): Promise<{ user: A.UserInfo; clientId: string; scope: string; expiresAt: number } | null> {
+    const hit = await this.oauth.accessUser(token, origin, resource);
     if (!hit) return null;
     const user = this.userInfo(hit.userId);
-    return user ? { user, clientId: hit.clientId, expiresAt: hit.expiresAt } : null;
+    return user ? { user, clientId: hit.clientId, scope: hit.scope, expiresAt: hit.expiresAt } : null;
   }
 
   async oauthGrants(userId: string): Promise<A.OAuthGrantInfo[]> {
