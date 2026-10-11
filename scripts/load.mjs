@@ -148,7 +148,7 @@ async function runAgent(ctx, index) {
         else if (next === "awaiting-approval") end = "handed";
         else if (next === "landing-queue") {
           // Wait for the merge. gitring_status tells the state of the work copy. The agent does not change a work copy that waits.
-          const until = Date.now() + 120_000;
+          const until = Date.now() + (options.wait ?? 120) * 1000;
           for (let poll = 0; Date.now() < until; poll++) {
             // An agent does not ask every second for long: the wait grows from 1 s to 4 s.
             await sleep(pollMs * Math.min(4, 1 + Math.floor(poll / 3)) + Math.floor(rng() * (pollMs / 2)));

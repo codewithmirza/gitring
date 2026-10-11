@@ -1,4 +1,4 @@
-export const LIMITS: { agents: number; tasks: number; rounds: number };
+export const LIMITS: { agents: number; tasks: number; rounds: number; wait: number };
 export const USAGE: string[];
 export function mulberry32(seed: number): () => number;
 export function streamFor(seed: number, name: string): () => number;
@@ -32,7 +32,7 @@ export class Metrics {
 }
 
 export function exitCode(counts: Counts): number;
-export function formatReport(metrics: Metrics, info: { totalMs: number; project: string; agents: number; tasks: number; seed: number; shared?: number; rounds?: number; giveWay?: boolean }): string[];
+export function formatReport(metrics: Metrics, info: { totalMs: number; project: string; agents: number; tasks: number; seed: number; shared?: number; rounds?: number; wait?: number; giveWay?: boolean }): string[];
 export function costWarning(options: { agents: number; tasks: number; project: string }): string[];
 export function endpointOf(raw: string | undefined): URL;
 
@@ -44,6 +44,8 @@ export interface Options {
   shared: number;
   /** Tries for one task. */
   rounds: number;
+  /** Seconds that an agent waits for the merge of one task (default 120). */
+  wait?: number;
   /** The agent waits for the agent that continues (default). False: it confirms the change request and goes on. */
   giveWay: boolean;
   seed: number;

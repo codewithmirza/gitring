@@ -3,7 +3,7 @@
  * report. No network and no clock here, so the tests can run them anywhere.
  */
 
-export const LIMITS = { agents: 500, tasks: 100, rounds: 20 };
+export const LIMITS = { agents: 500, tasks: 100, rounds: 20, wait: 3600 };
 
 /** A small seeded random number generator. The same seed gives the same numbers. */
 export function mulberry32(seed) {
@@ -87,7 +87,7 @@ export function formatReport(metrics, info) {
   const lines = [
     `Load test finished in ${(info.totalMs / 1000).toFixed(1)} s.`,
     `Project ${info.project}. ${info.agents} agents, ${info.tasks} tasks for each agent (${info.agents * info.tasks} tasks). Seed ${info.seed}.`,
-    `${info.shared ?? 30}% of the tasks also add a line to one file that all agents edit. A task has at most ${info.rounds ?? 4} tries.`,
+    `${info.shared ?? 30}% of the tasks also add a line to one file that all agents edit. A task has at most ${info.rounds ?? 4} tries. An agent waits at most ${info.wait ?? 120} s for a merge.`,
     `Tasks: ${c.landed} landed, ${c.handed} handed to a person${c.redone ? `, ${c.redone} given to a built-in agent after the tries of the agent were used` : ""}, ${c.failed} failed.`,
     `Change requests: ${c.changeRequests}.${info.giveWay === undefined ? "" : info.giveWay ? ` Agents gave way ${c.gaveWay} times: they waited for the agent that continues.` : " The agents did not give way: they confirmed the change requests and went on."}`,
     `Tool errors: ${c.toolErrors}. Protocol errors: ${c.protocolErrors}. Answers with status 429: ${c.rateLimited}.`,
@@ -112,12 +112,13 @@ export function costWarning(options) {
 }
 
 export const USAGE = [
-  "Usage: GITRING_URL=https://your-gitring.example.com GITRING_KEY=<key> npm run load -- --project <id> [--agents N] [--tasks M] [--shared P] [--rounds R] [--ignore-requests] [--seed S] --yes",
+  "Usage: GITRING_URL=https://your-gitring.example.com GITRING_KEY=<key> npm run load -- --project <id> [--agents N] [--tasks M] [--shared P] [--rounds R] [--wait S] [--ignore-requests] [--seed S] --yes",
   "  --project <id>  the project to load. The script does not create projects.",
   `  --agents N      agents that work at the same time (default 10, at most ${LIMITS.agents})`,
   `  --tasks M       tasks for each agent (default 2, at most ${LIMITS.tasks})`,
   "  --shared P      percent of the tasks that also add a line to one file that all agents edit (default 30, from 0 to 100)",
   `  --rounds R      tries for one task before the agent gives up (default 4, at most ${LIMITS.rounds})`,
+  `  --wait S        seconds that an agent waits for the merge of one task (default 120, from 10 to ${LIMITS.wait}). A project merges one change at a time: use more seconds for many agents.`,
   "  --ignore-requests  the agents confirm the change requests but do not wait for the agent that continues (default: they wait)",
   "  --seed S        seed of the scheduling (default 1)",
   "  --yes           confirm the cost. Without it, the script prints a warning and stops.",
@@ -170,7 +171,7 @@ export function prepare(argv, env) {
         giveWay = false;
         continue;
       }
-      const m = /^--(project|agents|tasks|shared|rounds|seed)(?:=(.*))?$/.exec(a);
+      const m = /^--(project|agents|tasks|shared|rounds|wait|seed)(?:=(.*))?$/.exec(a);
       if (!m) throw new Error(`Unknown option ${a}.`);
       raw[m[1]] = m[2] ?? argv[++i];
     }
@@ -182,6 +183,7 @@ export function prepare(argv, env) {
       tasks: raw.tasks === undefined ? 2 : whole("tasks", raw.tasks, 1, LIMITS.tasks),
       shared: raw.shared === undefined ? 30 : whole("shared", raw.shared, 0, 100),
       rounds: raw.rounds === undefined ? 4 : whole("rounds", raw.rounds, 1, LIMITS.rounds),
+      wait: raw.wait === undefined ? 120 : whole("wait", raw.wait, 10, LIMITS.wait),
       giveWay,
       seed: raw.seed === undefined ? 1 : whole("seed", raw.seed, 0, 2 ** 31 - 1),
     };

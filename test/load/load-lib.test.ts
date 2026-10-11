@@ -66,6 +66,14 @@ describe("options", () => {
     expect(prepare(["--project", "p", "--rounds", "21", "--yes"], ENV).code).toBe(2);
   });
 
+  it("reads how long an agent waits for a merge (a project merges one change at a time)", () => {
+    expect(prepare(["--project", "p", "--yes"], ENV).options?.wait).toBe(120);
+    expect(prepare(["--project", "p", "--wait", "600", "--yes"], ENV).options?.wait).toBe(600);
+    expect(prepare(["--project", "p", "--wait", "9", "--yes"], ENV).code).toBe(2);
+    expect(prepare(["--project", "p", "--wait", String(LIMITS.wait + 1), "--yes"], ENV).code).toBe(2);
+    expect(prepare(["--help"], ENV).lines.join("\n")).toMatch(/--wait S/);
+  });
+
   it("lets the agents give way, unless --ignore-requests", () => {
     expect(prepare(["--project", "p", "--yes"], ENV).options?.giveWay).toBe(true);
     expect(prepare(["--project", "p", "--ignore-requests", "--yes"], ENV).options?.giveWay).toBe(false);
@@ -96,10 +104,10 @@ describe("options", () => {
   it("runs with --yes and reads the options", () => {
     const res = prepare(["--project", "shop-1", "--agents=20", "--tasks", "3", "--seed", "7", "--yes"], ENV);
     expect(res.code).toBe(0);
-    expect(res.options).toEqual({ project: "shop-1", agents: 20, tasks: 3, shared: 30, rounds: 4, giveWay: true, seed: 7 });
+    expect(res.options).toEqual({ project: "shop-1", agents: 20, tasks: 3, shared: 30, rounds: 4, wait: 120, giveWay: true, seed: 7 });
     expect(res.key).toBe(ENV.GITRING_KEY);
     expect(res.endpoint?.href).toBe("https://gitring.example.com/mcp");
-    expect(prepare(["--project", "shop-1", "--yes"], ENV).options).toEqual({ project: "shop-1", agents: 10, tasks: 2, shared: 30, rounds: 4, giveWay: true, seed: 1 });
+    expect(prepare(["--project", "shop-1", "--yes"], ENV).options).toEqual({ project: "shop-1", agents: 10, tasks: 2, shared: 30, rounds: 4, wait: 120, giveWay: true, seed: 1 });
   });
 
   it("refuses numbers that are too large or not whole", () => {
@@ -157,6 +165,7 @@ describe("report", () => {
     expect(text).toContain("Load test finished in 12.3 s.");
     expect(text).toContain("Tasks: 8 landed, 1 handed to a person, 1 failed.");
     expect(text).toContain("Change requests: 4.");
+    expect(text).toContain("An agent waits at most 120 s for a merge.");
     expect(text, "no word about giving way when the run did not say").not.toMatch(/gave way|give way/);
     expect(text).toContain("Tool errors: 3. Protocol errors: 0. Answers with status 429: 2.");
     expect(lines.find((l) => l.startsWith("gitring_declare"))!.trim().split(/\s+/)).toEqual(["gitring_declare", "10", "50", "100", "100"]);

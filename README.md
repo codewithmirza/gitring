@@ -94,6 +94,7 @@ The end-to-end tests run the real coordinator on a test version of Artifacts, so
 | `--tasks M` | Tasks for each agent (default 2, at most 100). |
 | `--shared P` | Of 100 tasks, how many also add a line to one shared file, so that plans meet (default 30). `0` gives tasks on separate files. |
 | `--rounds R` | Tries for one task before the agent gives up (default 4). |
+| `--wait S` | Seconds that an agent waits for the merge of one task (default 120, at most 3600). A project merges one change at a time, so use more seconds for many agents. |
 | `--ignore-requests` | The agents confirm change requests but do not wait for the agent that continues. Without it, they wait. |
 | `--seed N` | The same seed gives the same plan of the run. |
 | `--yes` | Needed to start. The run costs money (Artifacts operations, Workers AI, test containers). |
@@ -136,6 +137,8 @@ To read what the coordination says before you connect a real agent, run three sc
 ```bash
 GITRING_URL=http://localhost:8787 GITRING_KEY=<key> npm run meet -- --approval --wait 0
 ```
+
+To measure the real Cloudflare services without a risk for your live deployment, run a second copy. Copy `wrangler.jsonc` to `wrangler.loadtest.jsonc`. In the copy, change `name`, the `artifacts` namespace and `ARTIFACTS_NAMESPACE` (a new name makes a new namespace), and the `namespace_id` of each rate limit (all Workers of an account share these ids). Delete the `containers` entry. Deploy with `wrangler deploy --config wrangler.loadtest.jsonc`, and set the secrets `GITRING_SECRET` and `GITRING_KEY` with `wrangler secret put <name> --config wrangler.loadtest.jsonc`. Make a project with the settings `{"checks":{"runner":"worker"}}` (this runner has no test container and no hourly budget), put the files of `examples/shop` in it, and run `npm run load` against it with `GITRING_KEY` as the key. When you finish, delete the Worker (`wrangler delete --config wrangler.loadtest.jsonc`) and the repositories of the namespace (the Cloudflare API lists them 50 at a time: `GET /accounts/<id>/artifacts/namespaces/<name>/repos`, then `cursor`).
 
 Agent A and Agent B change the same function. Agent B gets a change request and applies it. Both changes merge. Agent C changes the parameters of two functions, and a person must say yes. The script makes one private project and archives it at the end (`--keep` keeps it). The agents are scripts: the run shows the answers of gitring, not the behavior of a model. It also works on a deployed gitring, with a personal API key (Account → API keys).
 
@@ -244,20 +247,28 @@ A project can send an `approval` event to a webhook (Settings → Webhooks) when
 
 ## Limits
 
-Most of these limits come from the design. The **Load** bullet gives numbers from load runs on a local copy.
+Most of these limits come from the design. The **Load** bullet gives numbers from load runs on the real Cloudflare services and on a local copy.
 
 - **Conflict check**: gitring judges the 20 nearest plans. A collision with any other plan appears later, at the merge, as a text conflict or a failed test.
-- **Merge**: one change merges at a time in each project. Other work waits in the merge queue.
+- **Merge**: one change merges at a time in each project. Other work waits in the merge queue. On the real services a merge took 1 to 4 seconds (see **Load**), so one project merges 0.25 to 1 change a second. When all agents of a project send work in the same minute, the last agent waits for all the others.
 - **Test containers**: a container gets text files only. It gets at most 6,000 files, and each file has at most 1 MB. It gets no folder of dependencies or build output, such as `node_modules`, `vendor`, `dist`, `build`, `out` or `target`. It gets no binary file. The install command must make the dependencies. A test that needs such a file or folder does not work in the container. Container test runs have an hourly budget. The defaults are 240 for each project owner and 2,000 for the deployment (`CHECK_RUNS_PER_OWNER_HOUR`, `CHECK_RUNS_PER_HOUR` in `wrangler.jsonc`).
 - **Redo**: gitring gives work back to the same agent at most 3 times. With the policy "Same agent only", a person decides after that. With the other policies, a built-in agent does the task again, at most 2 times. When the redos fail, a person decides.
 - **Project size**: one coordinator for each project (a Durable Object) keeps the tasks and work copies of the project in memory. Plan for hundreds of active work copies in one project, up to about 2,000. Use several projects beyond that.
 - **Symbol analysis**: it covers JavaScript and TypeScript only. Other languages use files and line ranges.
-- **Load**: `scripts/load.mjs` ran 8, 24 and 60 agents with 3 tasks each on a local copy, through the real MCP door, with no tool error. The local copy has a test version of Artifacts, no Workers AI and no rate limits.
-  - Tasks on separate files merged at about 2 to 2.4 a second, one merge at a time: 24 of 24, 72 of 72 and 180 of 180 tasks merged, in 10, 30 and 89 seconds.
-  - With one hot file (30 tasks in 100 also add a line to the same file) the rate fell to 0.5 to 0.6 a second at 24 and 60 agents. The agents that give way wait for each other. With 24 agents, 70 of 72 tasks merged in 114 seconds, and 2 waited for a person (two work copies of one task). With 60 agents, 174 of 180 merged in 341 seconds.
-  - Agents that ignore the change requests (`--ignore-requests`) finish the 72 tasks of 24 agents in 36 seconds, but only 63 merge. The others go back to the agent, to a built-in agent or to a person. Giving way costs time and saves work.
+- **Load**: `scripts/load.mjs` makes many agents work at the same time through the real MCP door. It ran on a second copy of gitring in a Cloudflare account, and on a local copy. No run had a tool error or a protocol error.
+  - **Real Cloudflare services** (11 October 2026, build 0.9.2): a copy with its own Artifacts namespace and Workers AI, and the `worker` test runner. Each agent did 3 tasks. All agents started within 3 seconds. The script ran in a cloud sandbox behind a proxy, so the times of its calls include that network path (the cheapest call, `gitring_status`, took 60 ms at the median). No answer had the status 429.
+    - Tasks on separate files: 8 agents merged 24 of 24 tasks in 92 seconds (two runs, 92 and 93). 24 agents merged 72 of 72 in 280 seconds. 60 agents merged 180 of 180 in 750 seconds.
+    - With one hot file (30 tasks in 100 also add a line to the same file): 24 agents merged 70 of 72 tasks in 358 seconds, and a built-in agent took the other 2. 60 agents merged 174 of 180 in 839 seconds. Of the other 6, 4 were with a built-in agent and 2 waited for a person. The agents received 198 and 1,538 change requests, and gave way 72 and 462 times. No task failed.
+    - One project merges one change at a time, so more agents do not make the merges faster. The speed of Artifacts sets the rate. At the start of the test day a merge took about 1 second (24 tasks in 28 and 31 seconds, with the build before 0.9.2). Later it took 3.6 to 4.2 seconds, about 0.25 merges a second. The same test commit took 1.1 seconds, and then 3.1 seconds ten minutes later, so the service changed speed and the number of agents did not. When all agents send work at the same moment, the last agent waits for the others: 21 seconds with 8 agents, 83 with 24, and 236 with 60. Agents that work for minutes between two merges make a much shorter queue.
+    - `gitring_submit` takes 3 to 6 seconds at the median: gitring makes a copy of the project in Artifacts (2 to 4 seconds) and writes the work into it.
+    - One Artifacts answer had the status 500 in 7,248 git requests. gitring sent the request again and the merge went on. In an earlier run, the same error dropped a merge from the queue and the agent waited 120 seconds for nothing. That bug is fixed (build 0.9.2).
+    - A big repository costs time at each merge, because gitring fetches the whole latest tree. These numbers come from a fast hour. In a repository of 6,000 files (47 MB) a merge took 9 seconds and the first commit 17 seconds; at 3,000 files (23 MB) 7 and 10 seconds; at 1,500 files (12 MB) 4 and 5 seconds. No memory limit or CPU limit stopped these runs.
+  - **Local copy** (a test version of Artifacts, no Workers AI, no rate limits): 8, 24 and 60 agents with 3 tasks each.
+    - Tasks on separate files merged at about 2 to 2.4 a second, one merge at a time: 24 of 24, 72 of 72 and 180 of 180 tasks merged, in 10, 30 and 89 seconds.
+    - With one hot file the rate fell to 0.5 to 0.6 a second at 24 and 60 agents. The agents that give way wait for each other. With 24 agents, 70 of 72 tasks merged in 114 seconds, and 2 waited for a person (two work copies of one task). With 60 agents, 174 of 180 merged in 341 seconds.
+    - Agents that ignore the change requests (`--ignore-requests`) finish the 72 tasks of 24 agents in 36 seconds, but only 63 merge. The others go back to the agent, to a built-in agent or to a person. Giving way costs time and saves work.
   - A hot spot is the worst case: many agents that add a line at the same place of one file.
-  - These runs say nothing about the real Artifacts service (network time, limits, prices). Run `npm run load` on a deployed copy to measure that. One check is still open: that Artifacts refuses a push that starts from an old commit (`ARTIFACTS_TODO` in `src/platform/repo/artifacts.ts`).
+  - The 11 questions about the real Artifacts service that were open now have answers (see `ARTIFACTS_CHECKS` in `src/platform/repo/artifacts.ts`). One of them: a push that starts from an old commit is refused. Two answers differ from the first guess: the binding cannot read the notes ref (gitring fetches it over git), and a fork is ready when the call returns.
 - **Rate limits**: the MCP door allows 3,000 calls a minute for one person at one Cloudflare location. The load runs made 500 to 1,650 calls a minute with one key. The limit was 600 before these runs, which was too low for scripted agents.
 - **Artifacts**: Cloudflare sets these limits. Artifacts is in open beta, so they can change. See the [Artifacts limits page](https://developers.cloudflare.com/artifacts/platform/limits/) (numbers from 1 October 2026).
   - A repository holds at most 1 GB. A file holds at most 32 MB.
@@ -265,7 +276,7 @@ Most of these limits come from the design. The **Load** bullet gives numbers fro
   - Each namespace allows 2,000 control requests every 10 seconds. Each repository allows 2,000 git requests every 10 seconds.
   - A project is one repository, and each work copy is one more. All projects of a deployment share one namespace.
   - gitring does not delete repositories. The repository of a finished work copy stays until you delete it.
-- **Cost**: a deployment on Cloudflare needs a paid plan (Workers Paid). Cloudflare bills Artifacts operations and storage from 14 October 2026 (see [Artifacts pricing](https://developers.cloudflare.com/artifacts/platform/pricing/)). Test containers also bill by use.
+- **Cost**: a deployment on Cloudflare needs a paid plan (Workers Paid). Cloudflare bills Artifacts operations and storage from 14 October 2026 (see [Artifacts pricing](https://developers.cloudflare.com/artifacts/platform/pricing/)). Test containers also bill by use. A merged task made 31 calls to Artifacts on separate files (12 git requests and 19 other calls), and 38 to 43 with a hot file. Cloudflare does not say which calls count as one operation. If every call counts, a task costs about $0.005 to $0.0065 at $0.15 for 1,000 operations. If only git requests count, it costs about $0.002.
 
 ## Connect agents
 
