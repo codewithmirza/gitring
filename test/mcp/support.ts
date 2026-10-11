@@ -56,13 +56,16 @@ export interface Rpc {
 }
 
 /** One call in the 2026-07-28 era: no session, the envelope in params._meta, the method and name in headers. */
-export async function modernCall(world: World, opts: { path?: string; token?: string; method: string; params?: Record<string, unknown>; headers?: Record<string, string> }): Promise<Rpc> {
+export async function modernCall(
+  world: World,
+  opts: { path?: string; token?: string; method: string; params?: Record<string, unknown>; headers?: Record<string, string>; /** What the client says it can do. Default: nothing. */ capabilities?: Record<string, unknown> },
+): Promise<Rpc> {
   const params = {
     ...(opts.params ?? {}),
     _meta: {
       "io.modelcontextprotocol/protocolVersion": MODERN,
       "io.modelcontextprotocol/clientInfo": { name: "gitring-test", version: "1.0.0" },
-      "io.modelcontextprotocol/clientCapabilities": {},
+      "io.modelcontextprotocol/clientCapabilities": opts.capabilities ?? {},
     },
   };
   const headers: Record<string, string> = {

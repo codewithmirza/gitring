@@ -11,11 +11,11 @@ import { steViolations } from "../coord/ste";
 import { World } from "../github/harness";
 import { callTool, legacyClient, makeProject, metadataProblems, modernCall, MODERN } from "./support";
 
-const NAMES = ["gitring_intents", "gitring_declare", "gitring_log", "gitring_traffic", "gitring_read", "gitring_list", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update"];
-const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_traffic"];
+const NAMES = ["gitring_intents", "gitring_declare", "gitring_log", "gitring_traffic", "gitring_read", "gitring_list", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update", "gitring_status"];
+const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_traffic"];
 
 describe("tool definitions", () => {
-  it("has the eleven tools, each name once", () => {
+  it("has the twelve tools, each name once", () => {
     expect(GITRING_TOOLS.map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 

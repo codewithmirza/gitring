@@ -19,6 +19,8 @@ const BROKEN_TEST = 'import { test, expect } from "../harness/test.js";\nimport 
 let world: World;
 let loader: NodeLoader;
 let key: string;
+/** The browser session of alice: a person changes the settings and answers questions in the gitring app. */
+let session: string;
 let project: string;
 
 const gh = (name: string, args: Record<string, unknown> = {}, as = key) => callTool(world, as, name, { repo: project, ...args }, "/mcp/github");
@@ -31,7 +33,7 @@ beforeEach(async () => {
   vi.stubGlobal("fetch", world.fetch);
   await world.init({ LOADER: loader });
   world.person("alice", 1);
-  ({ key } = await world.signIn("alice"));
+  ({ key, session } = await world.signIn("alice"));
   project = await makeProject(world, key, "shop", { checks: { runner: "worker" } });
   await world.land(project, "src/greet.js", GREET);
   await world.land(project, "tests/greet.test.js", GREET_TEST);
@@ -251,11 +253,16 @@ describe("a pull request", () => {
   });
 
   it("waits for a person when the project does not merge by itself, and merge_pull_request does not merge either", async () => {
-    const set = await world.call("PUT", `/api/projects/${project}/settings`, { key, body: { autoLand: false } });
+    // A key cannot change when a person says yes. The person does it in the app.
+    const refused = await world.call("PUT", `/api/projects/${project}/settings`, { key, body: { autoLand: false } });
+    expect(refused.status).toBe(403);
+    const set = await world.call("PUT", `/api/projects/${project}/settings`, { headers: { cookie: `__Host-gitring=${session}` }, body: { autoLand: false } });
     expect(set.status, set.text).toBe(200);
     await shoutBranch();
     const pr = await gh("create_pull_request", { title: "Shout", head: "feature/shout", base: "main" });
-    expect(pr.text).toMatch(/^Pull request 1: waits for a person\. All tests pass\./);
+    expect(pr.text).toMatch(/^Pull request 1: waits for a person\. The work is not merged yet\./);
+    expect(pr.text).toMatch(/must say yes to this work/);
+    expect(pr.text).toMatch(/Link: \S+\/approve\//);
     await world.settle();
     // The tool does not wait for a person (it would wait for ever): it answers at once, and says what is true.
     MERGE_WAIT.ms = 60_000;
@@ -263,7 +270,7 @@ describe("a pull request", () => {
     const state = await gh("merge_pull_request", { pullNumber: 1, merge_method: "merge" });
     expect(Date.now() - t0).toBeLessThan(3000);
     expect(state.isError).toBe(false);
-    expect(state.text).toMatch(/^Pull request 1: waits for a person\. All tests pass\. A person chooses between the work copies of this task\. gitring does not merge before that\./);
+    expect(state.text).toMatch(/^Pull request 1: waits for a person\. .*must say yes\. gitring does not merge before that\. The person answers here: \S+\/approve\//);
     expect(JSON.parse(state.text.slice(state.text.indexOf("{")))).toMatchObject({ merged: false, state: "open" });
     // Main did not change.
     expect((await gh("get_file_contents", { path: "src/shout.js" })).isError).toBe(true);

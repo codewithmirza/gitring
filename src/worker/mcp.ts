@@ -15,10 +15,14 @@ import { z } from "zod";
 import type { Env } from "./env";
 import { atLeast } from "../core/accounts";
 import { noTestRan } from "../core/types";
-import { directory, type Principal } from "./auth";
+import { actorOf, directory, type Principal } from "./auth";
 import { MCP_PATH, type McpSet } from "../directory/oauth";
 import { ADDS, CHANGES, READS, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, writeAnswer, type ToolDef } from "./mcp-kit";
 import { GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
+import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
+
+/** The version that the server tells to clients. */
+export const MCP_VERSION = "0.9.0";
 
 const project = z.string().describe("Project id (gitring_intents without a project lists your projects).");
 const attemptId = z.string().describe("Your work copy id (attemptId) from gitring_declare.");
@@ -91,6 +95,8 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
           mode: args.mode,
           agent: { ...(args.agent ?? {}), kind: args.mode === "git" ? "git" : "mcp", client: args.agent?.client ?? "mcp" },
           workdir: args.workdir,
+          // The person behind the key or the sign-in sent this agent. That person answers the approval.
+          by: actorOf(ctx.who),
         });
         return text(
           res,
@@ -219,15 +225,46 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     title: "Ask for a merge",
     description:
       "Ask for a merge when your tests pass. gitring tests again. " +
-      "Then it merges the work (fast-forward, 3-way merge, or a redo on the new main). Or it asks a person to choose between work copies. " +
+      "Then it merges the work (fast-forward, 3-way merge, or a redo on the new main). " +
+      "Sometimes a person must say yes first. The project can ask for it. It is also needed when the change looks risky, when no test ran, or when work copies compete. " +
+      "gitring then asks the person. It asks in this chat if the client can show a question. If not, the answer has a link to the gitring app. " +
+      "Wait for the person. Do not change the work copy. Call gitring_status to see the answer. " +
       "When the project sends merges to GitHub, the merge goes there too.",
     inputSchema: { project, attemptId, summary: z.string() },
     // A merge adds a commit to main and keeps the history: it destroys nothing. It can also send the merge to GitHub.
     annotations: { ...ADDS, openWorldHint: true },
+    async run(ctx, args, req) {
+      try {
+        const h = await ctx.access(args.project);
+        const viewer = { id: ctx.who.user?.id ?? "", role: h.role };
+        // The second call of a question in chat: the person answered, so pass the answer on.
+        const taken = await takeAnswer(ctx, req, h, args.attemptId);
+        if (taken) return statusReply(taken.status, { asked: !taken.result, before: answerNote(taken.result) });
+        const res = await h.stub.submit(args.attemptId, args.summary, { origin: ctx.origin, viewer: viewer.id ? viewer : undefined });
+        if (res.next !== "awaiting-approval") return text(res, `${res.message} Next: ${res.next}.`, res.clearance);
+        // A person must say yes. Ask in this chat when the client can show a question. Else the answer holds the link.
+        const st = await h.stub.status(args.attemptId, { origin: ctx.origin, viewer: viewer.id ? viewer : undefined });
+        return (await askInChat(ctx, req, h, st)) ?? statusReply(st, { extra: { next: res.next, checks: res.checks } });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "gitring_status",
+    title: "See the merge state",
+    description:
+      "See where your work copy is: with a person, sent back, in the merge queue, or merged. " +
+      "Call it after gitring_submit says that a person must say yes. It changes no file. " +
+      "When a person sent the work back, the answer has a change request. Apply it, call gitring_ack, and submit again.",
+    inputSchema: { project, attemptId },
+    annotations: READS,
     async run(ctx, args) {
       try {
-        const res = await (await ctx.access(args.project)).stub.submit(args.attemptId, args.summary);
-        return text(res, `${res.message} Next: ${res.next}.`, res.clearance);
+        const h = await ctx.access(args.project);
+        const st = await h.stub.status(args.attemptId, { origin: ctx.origin, viewer: ctx.who.user ? { id: ctx.who.user.id, role: h.role } : undefined });
+        return statusReply(st);
       } catch (e) {
         return fail(e);
       }
@@ -275,7 +312,9 @@ const INSTRUCTIONS =
   "gitring lets many agents change one repository at the same time. " +
   "Call gitring_intents first. Then call gitring_declare with a real plan. " +
   "Write your work. Apply each change request and call gitring_ack. " +
-  "Then call gitring_check and gitring_submit.";
+  "Then call gitring_check and gitring_submit. " +
+  "gitring_submit can answer that a person must say yes. Tell the person that the work waits. Do not change the work copy. " +
+  "Call gitring_status to see the answer.";
 
 const READONLY_INSTRUCTIONS =
   "This is the read-only endpoint of gitring. You can list tasks, see the work near yours and read files. " +
@@ -288,16 +327,21 @@ export function toolSet(set: McpSet): { tools: readonly ToolDef[]; instructions:
   return { tools: GITRING_TOOLS, instructions: INSTRUCTIONS };
 }
 
-function createServer(env: Env, who: Principal, set: McpSet) {
+async function createServer(env: Env, who: Principal, set: McpSet, origin: string) {
   const { tools, instructions } = toolSet(set);
-  const server = new McpServer({ name: "gitring", version: "0.8.0" }, { instructions });
-  registerTools(server, makeContext(env, who, set === "github" ? GITHUB_LIST_HOW : undefined), tools);
+  // The key of the questions in chat comes from GITRING_SECRET: every instance of the Worker has the same key.
+  const ask = await askCodec(env, who);
+  const server = new McpServer({ name: "gitring", version: MCP_VERSION }, { instructions, ...(ask ? { requestState: { verify: ask.verify } } : {}) });
+  registerTools(server, makeContext(env, who, { listHow: set === "github" ? GITHUB_LIST_HOW : undefined, origin, ask }), tools);
   return server;
 }
 
-/** An MCP handler bound to the caller and to one endpoint (one per request: the tools check this caller's roles). */
-export function createMcp(env: Env, who: Principal, set: McpSet = "gitring") {
-  return createMcpHandler(() => createServer(env, who, set), {
+/**
+ * An MCP handler bound to the caller and to one endpoint (one per request: the tools check this caller's roles).
+ * `origin` is the address of this deployment (https://host), for the links that answers give.
+ */
+export function createMcp(env: Env, who: Principal, set: McpSet = "gitring", origin = "") {
+  return createMcpHandler(() => createServer(env, who, set, origin), {
     route: MCP_PATH[set],
     allowedOriginHostnames: "*",
     corsOptions: { exposeHeaders: "mcp-session-id, WWW-Authenticate" },

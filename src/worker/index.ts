@@ -478,6 +478,8 @@ app.post("/api/projects/:p/intents/:id/park", async (c) => {
 app.post("/api/projects/:p/attempts/:id/land", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "member");
+    // A person merges work. A key or an agent token cannot do it for a person: an agent could say yes to its own work.
+    if (c.get("principal").via !== "session") throw new HTTPError(403, "A person must merge in the gitring app. A key or an agent token cannot do it for a person.");
     const body = await c.req.json<{ rationale?: string }>().catch(() => ({ rationale: "" }));
     // A work copy that waits for a yes is answered by that person (or an owner): the rules of the approval apply here too.
     const res = await h.land(c.req.param("id"), body.rationale ?? "", actorOf(c.get("principal")), h.role);
@@ -684,10 +686,19 @@ app.get("/api/projects/:p/settings", async (c) => {
   }
 });
 
+/** The settings that decide when a person must say yes before a merge. */
+const APPROVAL_SETTINGS = ["landing", "approver", "autoLand", "allowUntested"] as const;
+
 app.put("/api/projects/:p/settings", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "owner");
     const body = await c.req.json<Partial<T.ProjectSettings>>().catch(() => ({}) as Partial<T.ProjectSettings>);
+    // These settings decide when a person must say yes before a merge. A person changes them in the gitring app:
+    // an agent with a key must not switch the question off.
+    const caller = c.get("principal");
+    if (caller.via !== "session" && caller.via !== "operator" && APPROVAL_SETTINGS.some((k) => body && typeof body === "object" && k in body)) {
+      throw new HTTPError(403, "A person must change this setting in the gitring app. A key or an agent token cannot change when a person says yes to a merge.");
+    }
     const raw = body?.github && typeof body.github === "object" ? (body.github as unknown as Record<string, unknown>) : undefined;
     if (raw) {
       // The GitHub settings after this change (a field that the patch leaves out keeps its value).
@@ -983,7 +994,7 @@ export default {
       // Three endpoints, each with its own tools and its own OAuth resource: /mcp, /mcp/github, /mcp/readonly.
       // Any other path below /mcp keeps the rules of /mcp (the handler answers 404 after the sign-in check).
       const set = mcpSetOf(url.pathname) ?? "gitring";
-      if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null }, set)(request, env, ctx);
+      if (request.method === "OPTIONS") return createMcp(env, { user: null, via: null }, set, url.origin)(request, env, ctx);
       if (hasCredential(request) && (await overLimit(env, "cred", clientAddress(request)))) return tooMany(60, true);
       const p = await resolvePrincipal(env, request, { oauth: true, resource: resourceOf(url.origin, MCP_PATH[set]) });
       if (await overLimit(env, "mcp", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(request)))) return tooMany(60, true);
@@ -1024,7 +1035,7 @@ export default {
           },
         );
       }
-      return createMcp(env, p, set)(request, env, ctx);
+      return createMcp(env, p, set, url.origin)(request, env, ctx);
     }
     const path = url.pathname;
     if (

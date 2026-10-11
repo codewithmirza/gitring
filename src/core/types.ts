@@ -947,6 +947,8 @@ export interface SubmitResult {
   message: string;
   /** Set when next is "awaiting-approval": the approval that waits. */
   approval?: Approval;
+  /** Set with `approval`, when the caller said who it is: may this person answer? */
+  mayAnswer?: boolean;
   clearance: Clearance;
 }
 
@@ -956,6 +958,8 @@ export interface WorkStatus {
   status: AttemptStatus;
   task: { id: string; title: string; status: IntentStatus };
   approval?: Approval;
+  /** Set with a question that waits, when the caller said who it is: may this person answer? */
+  mayAnswer?: boolean;
   /** The size of the change and the tests, in one line. */
   line: string;
   /** Where a person answers the approval: an address in the gitring app. */

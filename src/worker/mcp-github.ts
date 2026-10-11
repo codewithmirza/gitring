@@ -11,9 +11,12 @@
  *   push_files, create_or_update_file, delete_file
  *                               the write of gitring_write. The conflict check runs, and a change request
  *                               comes back in the answer. Nothing writes to main.
- *   create_pull_request         the submit of gitring_submit: the tests run first, then the merge queue
+ *   create_pull_request         the submit of gitring_submit: the tests run first, then the merge queue. When
+ *                               a person must say yes, gitring asks that person (in the chat when the client
+ *                               can show a question) and the answer says "waits for a person".
  *   merge_pull_request          reports the state of the merge and waits a short time. It never merges by
- *                               itself and never skips the tests: gitring merges when the tests pass.
+ *                               itself and never skips the tests: gitring merges when the tests pass and
+ *                               the person said yes (when a person must say it).
  *   update_pull_request_branch  the update of gitring_update
  *   issues                      gitring tasks
  *
@@ -23,8 +26,11 @@
  */
 import { z } from "zod";
 import type * as T from "../core/types";
-import { directory, type Principal } from "./auth";
+import type { Role } from "../core/accounts";
+import { approvalPath } from "../core/approvals";
+import { actorOf, directory, type Principal } from "./auth";
 import { ADDS, CHANGES, READS, defineTool, fail, joinClearance, plain, text, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
+import { answerNote, approvalView, askInChat, statusHeadline, takeAnswer } from "./mcp-approval";
 
 /** Said in the error of a bad project id (the gitring tool for it is not in this set). */
 export const GITHUB_LIST_HOW = "Call get_me to list your projects.";
@@ -33,12 +39,14 @@ export const GITHUB_INSTRUCTIONS =
   "These tools work like the GitHub tools, but they work on gitring. A repo is a gitring project. " +
   "A branch other than main is your own work copy. No tool writes to main. " +
   "Call create_pull_request when your work is ready: gitring runs the tests, then it merges. " +
+  "Sometimes a person must say yes first. Then the answer says that the pull request waits for a person. " +
+  "Tell the person. Do not change the branch. Call merge_pull_request to see the answer. " +
   'When a result starts with "GITRING CHANGE REQUEST", apply it in your next edits.';
 
 /** How long merge_pull_request waits for a merge to finish, in milliseconds. The tests can change it. */
 export const MERGE_WAIT = { ms: 8000, stepMs: 400 };
 
-type Project = { id: string; stub: HarborApi };
+type Project = { id: string; stub: HarborApi; role: Role };
 
 const MAIN = "main";
 const MARK = "GitHub branch ";
@@ -187,6 +195,8 @@ async function branchCopy(ctx: ToolContext, h: Project, branch: string, seed: { 
     symbols: [],
     approach: approachOf(branch),
     mode: "api",
+    // The person behind the sign-in sent this agent. That person answers the approval.
+    by: actorOf(ctx.who),
   });
   return { attemptId: declared.attemptId, existed: false, declared };
 }
@@ -214,9 +224,16 @@ interface PullInfo {
   message: string;
   /** The state does not change while you wait. */
   final: boolean;
+  /** A question waits for a person: the address in the gitring app where the person answers. */
+  approvalUrl?: string;
 }
 
-function pullInfo(p: Pull, state: T.ProjectState): PullInfo {
+/** The address of the question of a pull request in the gitring app (`origin` is empty: the path only). */
+function approvalUrlOf(p: Pull, state: T.ProjectState, origin: string): string {
+  return `${origin}${approvalPath(state.project.id, p.attempt.id)}`;
+}
+
+function pullInfo(p: Pull, state: T.ProjectState, origin = ""): PullInfo {
   const a = p.attempt;
   const intent = state.intents.find((i) => i.id === a.intentId);
   const landing = state.landings.find((l) => l.attemptId === a.id);
@@ -230,10 +247,24 @@ function pullInfo(p: Pull, state: T.ProjectState): PullInfo {
       return { state: "open", merged: false, status: "tests run", message: "gitring runs the tests.", final: false };
     case "rederiving":
       return { state: "open", merged: false, status: "redo", message: "gitring does the work again on the new main.", final: false };
-    case "ready":
+    case "ready": {
+      const ap = a.approval;
+      if (ap?.status === "waiting") {
+        const who = ap.approver?.name ?? "A person of the project";
+        const link = approvalUrlOf(p, state, origin);
+        return {
+          state: "open",
+          merged: false,
+          status: "waits for a person",
+          message: `${ap.why[0] ?? "A person must decide."} ${who} must say yes. gitring does not merge before that. The person answers here: ${link}`,
+          final: true,
+          approvalUrl: link,
+        };
+      }
       return intent?.status === "judging"
         ? { state: "open", merged: false, status: "waits for a person", message: "All tests pass. A person chooses between the work copies of this task. gitring does not merge before that.", final: true }
         : { state: "open", merged: false, status: "in the merge queue", message: "All tests pass. The work copy is in the merge queue.", final: false };
+    }
     case "stale":
       return { state: "closed", merged: false, status: "not merged", message: "gitring could not merge the work on the new main. A person or gitring does the task again.", final: true };
     case "alternate":
@@ -243,16 +274,20 @@ function pullInfo(p: Pull, state: T.ProjectState): PullInfo {
     case "failed":
       return { state: "closed", merged: false, status: "failed", message: "This work copy failed.", final: true };
     default:
+      if (a.approval?.status === "sent-back") {
+        const note = a.approval.answer?.note;
+        return { state: "open", merged: false, status: "sent back", message: `${a.approval.answer?.by.name ?? "A person"} sent the work back${note ? `: ${note}` : "."} Change the files. Then call create_pull_request again.`, final: true };
+      }
       return a.checks && !a.checks.ok
         ? { state: "open", merged: false, status: "tests fail", message: "The last test run failed. Fix the files. Then call create_pull_request again.", final: true }
         : { state: "open", merged: false, status: "not submitted", message: "Call create_pull_request to ask for a merge.", final: true };
   }
 }
 
-function pullJson(p: Pull, state: T.ProjectState) {
+function pullJson(p: Pull, state: T.ProjectState, origin = "") {
   const a = p.attempt;
   const intent = state.intents.find((i) => i.id === a.intentId);
-  const info = pullInfo(p, state);
+  const info = pullInfo(p, state, origin);
   return {
     number: p.number,
     title: (a.summary ?? "").split("\n")[0] || intent?.title || p.branch,
@@ -265,11 +300,32 @@ function pullJson(p: Pull, state: T.ProjectState) {
     changed_files: a.stats.filesChanged,
     additions: a.stats.additions,
     deletions: a.stats.deletions,
-    gitring: { status: info.status, message: info.message, attemptId: a.id, task: intent?.id },
+    gitring: { status: info.status, message: info.message, attemptId: a.id, task: intent?.id, ...(a.approval ? { approval: approvalView(a.approval) } : {}), ...(info.approvalUrl ? { approvalUrl: info.approvalUrl } : {}) },
   };
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * The answer about a pull request after a question to a person: what the work copy is now (waits for a person, sent
+ * back, queued, merged). The change request of a send-back comes first, as in every answer of gitring.
+ */
+async function pullReply(ctx: ToolContext, h: Project, attemptId: string, st: T.WorkStatus, opts: { asked?: boolean; before?: string; extra?: Record<string, unknown> } = {}): Promise<ToolResult> {
+  const state = await h.stub.state();
+  const p = myPulls(state, ctx.who).find((x) => x.attempt.id === attemptId);
+  if (!p) throw new Error("This pull request is not yours.");
+  const info = pullInfo(p, state, ctx.origin);
+  const waiting = st.approval?.status === "waiting" && st.status === "ready";
+  const headline = waiting
+    ? statusHeadline(st, { check: `To see the answer, call merge_pull_request for pull request ${p.number}.`, asked: opts.asked, before: opts.before, header: `Pull request ${p.number}: ${info.status}. The work is not merged yet.` })
+    : `${opts.before ? `${opts.before} ` : ""}Pull request ${p.number}: ${info.status}. ${info.message}`;
+  return data(
+    { number: p.number, state: info.state, merged: info.merged, status: info.status, message: info.message, ...(st.approval ? { approval: approvalView(st.approval) } : {}), ...(info.approvalUrl ? { approvalUrl: info.approvalUrl } : {}), ...(opts.extra ?? {}) },
+    headline,
+    st.clearance,
+  );
+}
+
 
 /* ───────────────────────── commits and code search ───────────────────────── */
 
@@ -620,6 +676,8 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     description:
       "GitHub-compatible: ask for a merge of your branch into main. base must be main. gitring runs the tests first. " +
       "The answer says: queued, merged, waits for a person, or the tests failed. " +
+      "Sometimes a person must say yes first. Then gitring asks the person. It asks in this chat if the client can show a question. If not, the answer has a link to the gitring app. " +
+      "Wait for the person. Do not change the branch. Call merge_pull_request to see the answer. " +
       "After a failure, fix the files and call this tool again. gitring has no draft pull requests and no reviewers.",
     inputSchema: {
       owner,
@@ -634,14 +692,18 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     },
     // A merge adds a commit to main and keeps the history. It can also send the merge to GitHub.
     annotations: { ...ADDS, openWorldHint: true },
-    async run(ctx, a) {
+    async run(ctx, a, req) {
       try {
         if (cleanBranch(a.base) !== MAIN) throw new Error("gitring merges into main only. Set base to main.");
         // GitHub can name the head as owner:branch. gitring has no owners.
         const head = workBranch(String(a.head ?? "").replace(/^[^:/]+:/, ""));
         const h = await open(ctx, a.repo, "member");
+        const viewer = ctx.who.user ? { id: ctx.who.user.id, role: h.role } : undefined;
         const at = myBranches(await h.stub.state(), ctx.who).get(head);
         if (!at) throw new Error(`The branch "${head}" does not exist. Write to it with push_files first.`);
+        // The second call of a question in chat: the person answered, so pass the answer on.
+        const taken = await takeAnswer(ctx, req, h, at.id);
+        if (taken) return pullReply(ctx, h, at.id, taken.status, { asked: !taken.result, before: answerNote(taken.result) });
         if (a.draft) return plain(`gitring has no draft pull requests. The branch "${head}" stays a work copy. Call create_pull_request again without draft when it is ready.`);
         if (DONE.has(at.status)) {
           throw new Error(
@@ -651,13 +713,17 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
           );
         }
         if (!(await h.stub.attemptDiff(at.id)).files.length) throw new Error(`The branch "${head}" has no changes. Write files to it first.`);
-        const res = await h.stub.submit(at.id, [a.title, a.body].filter(Boolean).join("\n\n"));
+        const res = await h.stub.submit(at.id, [a.title, a.body].filter(Boolean).join("\n\n"), { origin: ctx.origin, viewer });
+        if (res.next === "awaiting-approval") {
+          // A person must say yes. Ask in this chat when the client can show a question. Else the answer holds the link.
+          const st = await h.stub.status(at.id, { origin: ctx.origin, viewer });
+          return (await askInChat(ctx, req, h, st)) ?? (await pullReply(ctx, h, at.id, st, { extra: { checks: res.checks ? { passed: res.checks.passed, failed: res.checks.failed } : undefined } }));
+        }
         const state = await h.stub.state();
         const mine = myPulls(state, ctx.who).find((x) => x.attempt.id === at.id);
         const number = mine?.number;
         const words: Record<string, string> = {
           "landing-queue": "queued",
-          "awaiting-approval": "waits for a person",
           landed: "merged",
           "fix-checks": "tests failed",
         };
@@ -685,10 +751,10 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const h = await open(ctx, a.repo, "member");
         const state = await h.stub.state();
         const p = pullAt(state, ctx.who, a.pullNumber);
-        const info = pullInfo(p, state);
+        const info = pullInfo(p, state, ctx.origin);
         switch (a.method) {
           case "get":
-            return data(pullJson(p, state), `Pull request ${p.number}: ${info.status}. ${info.message}`);
+            return data(pullJson(p, state, ctx.origin), `Pull request ${p.number}: ${info.status}. ${info.message}`);
           case "get_status": {
             const runs = [
               { context: "tests of the branch", run: p.attempt.checks },
@@ -729,9 +795,9 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const h = await open(ctx, a.repo, "member");
         const state = await h.stub.state();
         const want = a.state ?? "open";
-        const all = myPulls(state, ctx.who).filter((p) => want === "all" || pullInfo(p, state).state === want);
+        const all = myPulls(state, ctx.who).filter((p) => want === "all" || pullInfo(p, state, ctx.origin).state === want);
         const items = page_(all, a.page, a.perPage).map((p) => {
-          const j = pullJson(p, state);
+          const j = pullJson(p, state, ctx.origin);
           return { number: j.number, title: j.title, state: j.state, merged: j.merged, head: j.head, base: j.base, gitring: j.gitring };
         });
         return data(items, `${all.length} pull requests.`);
@@ -758,7 +824,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         for (;;) {
           const state = await h.stub.state();
           const p = pullAt(state, ctx.who, a.pullNumber);
-          const info = pullInfo(p, state);
+          const info = pullInfo(p, state, ctx.origin);
           if (info.final || Date.now() >= until) {
             return data(
               { number: p.number, merged: info.merged, state: info.state, status: info.status, message: info.message },

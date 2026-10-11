@@ -6,7 +6,7 @@
  * reads the same data to know which tools only read (the read-only scope and path).
  */
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { InputRequiredResult, McpServer, RequestStateCodec, ServerContext } from "@modelcontextprotocol/server";
 import type { Env } from "./env";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
@@ -18,7 +18,25 @@ import { directory, type Principal } from "./auth";
 /** The methods of a project object that tools call. */
 export type HarborApi = Pick<
   HarborMaster,
-  "ensure" | "openIntents" | "declare" | "log" | "traffic" | "read" | "list" | "write" | "check" | "submit" | "ack" | "update" | "state" | "tree" | "file" | "attemptDiff" | "createIntent"
+  | "ensure"
+  | "openIntents"
+  | "declare"
+  | "log"
+  | "traffic"
+  | "read"
+  | "list"
+  | "write"
+  | "check"
+  | "submit"
+  | "ack"
+  | "update"
+  | "state"
+  | "tree"
+  | "file"
+  | "attemptDiff"
+  | "createIntent"
+  | "status"
+  | "decide"
 >;
 
 /** The four MCP hints. Every tool sets all four: directories need a read-only or a destructive hint on each tool. */
@@ -46,13 +64,30 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+/** The state of a question that gitring asks the person in the chat of an agent (see mcp-approval.ts). */
+export interface AskState {
+  v: 1;
+  project: string;
+  attemptId: string;
+  approvalId: string;
+  /** The person who may answer. Another caller cannot use this state. */
+  user: string;
+}
+
 /** What a handler gets: the deployment, the caller and the role check. */
 export interface ToolContext {
   env: Env;
   who: Principal;
+  /** The address of this deployment (https://host), for links in answers. */
+  origin: string;
+  /** Signs the state of a question in chat. Absent: gitring never asks in chat (it gives a link instead). */
+  ask?: RequestStateCodec<AskState>;
   /** The project object, after a role check (member to act, viewer to read). */
-  access(raw: string | undefined, need?: A.Role): Promise<{ id: string; stub: HarborApi }>;
+  access(raw: string | undefined, need?: A.Role): Promise<{ id: string; stub: HarborApi; role: A.Role }>;
 }
+
+/** What a tool answers: a result, or a question for the person (MCP 2026-07-28: the client asks, then calls the tool again). */
+export type ToolReturn = ToolResult | InputRequiredResult;
 
 export interface ToolDef {
   name: string;
@@ -61,7 +96,7 @@ export interface ToolDef {
   description: string;
   inputSchema: z.ZodRawShape;
   annotations: ToolHints;
-  run(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult>;
+  run(ctx: ToolContext, args: Record<string, unknown>, req: ServerContext): Promise<ToolReturn>;
 }
 
 /** Define a tool with typed arguments. */
@@ -71,9 +106,9 @@ export function defineTool<S extends z.ZodRawShape>(d: {
   description: string;
   inputSchema: S;
   annotations: ToolHints;
-  run: (ctx: ToolContext, args: z.infer<z.ZodObject<S>>) => Promise<ToolResult>;
+  run: (ctx: ToolContext, args: z.infer<z.ZodObject<S>>, req: ServerContext) => Promise<ToolReturn>;
 }): ToolDef {
-  return { ...d, run: (ctx, args) => d.run(ctx, args as z.infer<z.ZodObject<S>>) };
+  return { ...d, run: (ctx, args, req) => d.run(ctx, args as z.infer<z.ZodObject<S>>, req) };
 }
 
 /** Register tools on a server. The title is set twice: on the tool, and in its annotations (older clients read that one). */
@@ -82,7 +117,7 @@ export function registerTools(server: McpServer, ctx: ToolContext, tools: readon
     server.registerTool(
       t.name,
       { title: t.title, description: t.description, inputSchema: z.object(t.inputSchema), annotations: { title: t.title, ...t.annotations } },
-      (async (args: Record<string, unknown>) => t.run(ctx, args)) as never,
+      (async (args: Record<string, unknown>, req: ServerContext) => t.run(ctx, args, req)) as never,
     );
   }
 }
@@ -95,20 +130,25 @@ export function readOnlyTools(tools: readonly ToolDef[]): ToolDef[] {
 /** How a person finds the id of a project, for the error of a bad id. Each tool set names its own tool. */
 export const LIST_HOW = "Call gitring_intents without a project to list your projects.";
 
-export function makeContext(env: Env, who: Principal, listHow: string = LIST_HOW): ToolContext {
+export function makeContext(env: Env, who: Principal, opts: { listHow?: string; origin?: string; ask?: RequestStateCodec<AskState> } = {}): ToolContext {
+  const listHow = opts.listHow ?? LIST_HOW;
   return {
     env,
     who,
+    origin: opts.origin ?? "",
+    ask: opts.ask,
     async access(raw, need = "member") {
       const id = String(raw ?? "").trim();
       if (!PROJECT_ID.test(id)) throw new Error(`Give the project id (lowercase letters, digits and dashes). ${listHow}`);
+      let found: A.Role = "owner";
       if (who.via !== "operator") {
         const role = await directory(env).role(id, who.user?.id ?? null);
         if (!role) throw new Error(`Unknown project "${id}", or your key has no access to it.`);
         if (!atLeast(role, need)) throw new Error(`Your key needs the ${need} role on "${id}". Ask an owner of the project.`);
+        found = role;
       }
       const stub = env.HARBOR.get(env.HARBOR.idFromName(id)) as unknown as HarborApi;
-      return { id, stub };
+      return { id, stub, role: found };
     },
   };
 }

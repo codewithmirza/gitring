@@ -204,6 +204,7 @@ export const PROTOCOL = [
   "Read each change request in an answer. Apply it, then call gitring_ack. Continue your work.",
   "Write files with gitring_write (api mode), or push to your work copy remote (git mode). gitring reads your latest push at gitring_check and gitring_submit.",
   "Call gitring_check before gitring_submit. Do not edit the test files of other tasks.",
+  "When gitring_submit says that a person must say yes, tell the person and wait. Do not change the work copy. Call gitring_status to see the answer.",
   "Read gitring_traffic before you edit a shared file. Call gitring_update when main moves.",
 ];
 

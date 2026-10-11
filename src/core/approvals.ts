@@ -64,7 +64,7 @@ export function riskSigns(a: Pick<Attempt, "footprint" | "stats">): string[] {
  */
 export function approvalNeeded(i: { mode: LandingMode; untested: boolean; competing: number; signs: string[] }): { reason: ApprovalReason; why: string[] } | null {
   const why: string[] = [];
-  if (i.untested) why.push("No test ran, so nothing is verified.");
+  if (i.untested) why.push("No test ran. The work is not verified.");
   if (i.competing > 0) why.push(`${i.competing + 1} work copies compete on this task. A person chooses one.`);
   if (i.mode === "ask") why.push("This project asks a person before every merge.");
   else if (i.mode === "risky") why.push(...i.signs);
@@ -102,9 +102,9 @@ export function approvalLine(a: Pick<Attempt, "stats" | "checks" | "composedChec
   return `${size}. ${testsLine(a.composedChecks ?? a.checks)}`;
 }
 
-/** The question that a chat card shows: short, with the facts, and the reason to ask. */
-export function approvalQuestion(title: string, a: Pick<Attempt, "stats" | "checks" | "composedChecks">, approval: Pick<Approval, "why">): string {
-  return `Merge "${title}" into main? ${approvalLine(a)} ${approval.why[0] ?? ""}`.trim();
+/** The question that a chat card shows: short, with the facts (`line` is approvalLine), and the reason to ask. */
+export function approvalQuestion(title: string, line: string, approval: Pick<Approval, "why">): string {
+  return `Merge "${title}" into main? ${line} ${approval.why[0] ?? ""}`.trim();
 }
 
 /** The path in the gitring app where a person answers the approval of a work copy. */
@@ -122,17 +122,19 @@ export const APPROVAL_WORD: Record<Approval["status"], string> = {
 
 /**
  * What an agent reads while its work waits for a person. It says what happened, who answers, where, and
- * what the agent does next. `link` is the address where the person answers (the gitring app).
+ * what the agent does next. `link` is the address where the person answers (the gitring app). `check` is
+ * the plain sentence that names the tool that shows the answer (each tool set has its own). `header` replaces
+ * the first line (the GitHub-compatible tools start with the pull request).
  */
-export function waitingText(i: { title: string; attemptId: string; approval: Pick<Approval, "why" | "approver">; line: string; link: string; asked?: boolean }): string {
+export function waitingText(i: { title: string; approval: Pick<Approval, "why" | "approver">; line: string; link: string; check: string; asked?: boolean; header?: string }): string {
   const who = i.approval.approver?.name ?? "A person of the project";
   return [
-    "WAITING FOR A PERSON. Nothing is merged yet.",
+    i.header ?? "A PERSON MUST SAY YES. The work is not merged yet.",
     `${who} must say yes to this work: "${i.title}". ${i.line}`,
     ...i.approval.why.map((w) => `Why: ${w}`),
-    i.asked ? "gitring asked in this chat. The person has not answered." : "The person answers in gitring.",
+    i.asked ? "gitring asked in this chat. The person did not answer there." : "The person answers in gitring.",
     `Link: ${i.link}`,
-    "Do not change the work copy while you wait. A change cancels the answer.",
-    `To see the answer, call the status tool with the work copy id ${i.attemptId}. Do not stop the task: tell the person that it waits.`,
+    "Do not change the work copy while you wait. A change cancels the question.",
+    `${i.check} Do not stop the task: tell the person that the work waits.`,
   ].join("\n");
 }

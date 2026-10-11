@@ -111,6 +111,15 @@ export interface LaunchInput {
   models?: string[];
 }
 
+/**
+ * What the Worker tells the project object about one call (the MCP tools use it): the address of this
+ * deployment, for links in answers, and the person who calls, with the role that the Worker checked.
+ */
+export interface CallInfo {
+  origin?: string;
+  viewer?: { id: string; role: Role };
+}
+
 export interface Brief {
   attemptId?: string;
   intent: T.Intent;
@@ -1810,7 +1819,8 @@ export class HarborMaster extends DurableObject<Env> {
 
   /* ════════════════════════════ submit + landing ════════════════════════════ */
 
-  async submit(attemptId: string, summary?: string): Promise<T.SubmitResult> {
+  async submit(attemptId: string, summary?: string, call: CallInfo = {}): Promise<T.SubmitResult> {
+    this.rememberOrigin(call.origin);
     const a = this.mustAttempt(attemptId);
     if (TERMINAL.has(a.status)) {
       return { attemptId, status: a.status, next: a.status === "landed" ? "landed" : "fix-checks", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
@@ -1819,7 +1829,7 @@ export class HarborMaster extends DurableObject<Env> {
     await this.adoptForkTip(a);
     if (a.status === "ready" && a.approval?.status === "waiting" && (!a.approval.digest || a.approval.digest === (await this.digestOf(a)))) {
       // The agent asks again, and a person has not answered: the same work, the same question.
-      return { attemptId, status: a.status, checks: a.composedChecks ?? a.checks, next: "awaiting-approval", approval: a.approval, message: this.waitingMessage(a), clearance: this.clearanceFor(a.id) };
+      return { attemptId, status: a.status, checks: a.composedChecks ?? a.checks, next: "awaiting-approval", approval: a.approval, ...this.mayAnswerOf(a, call.viewer), message: this.waitingMessage(a), clearance: this.clearanceFor(a.id) };
     }
     a.summary = summary ? String(summary).slice(0, 600) : a.summary;
     a.status = "submitted";
@@ -1854,7 +1864,7 @@ export class HarborMaster extends DurableObject<Env> {
         const approval = await this.askApproval(a, need);
         next = "awaiting-approval";
         const compete = siblings.length ? ` ${siblings.length + 1} work copies compete on this task.` : "";
-        message = `${untested ? "No test ran, so nothing is verified." : lead}${compete} ${this.approverWords(approval)} must say yes before this merges.`;
+        message = `${untested ? "No test ran. The work is not verified." : lead}${compete} ${this.approverWords(approval)} must say yes before this merges.`;
         if (siblings.every((x) => x.status === "ready")) {
           intent.status = "judging";
           this.putIntent(intent);
@@ -1875,7 +1885,7 @@ export class HarborMaster extends DurableObject<Env> {
       message: `${this.callsign(a.id)} submits "${intent.title}": ${message}`,
     });
     if (approvalAsked) this.webhook("approval", { attemptId: a.id, approval: approvalAsked, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
-    return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked } : {}), clearance: this.clearanceFor(a.id) };
+    return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked, ...this.mayAnswerOf(a, call.viewer) } : {}), clearance: this.clearanceFor(a.id) };
   }
 
   /** API-mode work becomes a real commit in the attempt's Artifacts fork. */
@@ -2153,7 +2163,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (noTestRan(run) && !p.settings.allowUntested && !this.pickedLineage(a)) {
       // No test ran on main plus this work: nothing is verified. A person must say yes first.
       a.status = "ready";
-      const approval = await this.askApproval(a, { reason: "no-test-ran", why: ["No test ran on main plus this work, so nothing is verified."] });
+      const approval = await this.askApproval(a, { reason: "no-test-ran", why: ["No test ran on main plus this work. The work is not verified."] });
       intent.status = "judging";
       this.putAttempt(a);
       this.putIntent(intent);
@@ -2845,6 +2855,12 @@ export class HarborMaster extends DurableObject<Env> {
     return ap.approver?.name ?? "A person of the project";
   }
 
+  /** May the caller answer the question of this work copy? Only a question that waits has an answer for this. */
+  private mayAnswerOf(a: T.Attempt, viewer: CallInfo["viewer"]): { mayAnswer?: boolean } {
+    if (!viewer || a.approval?.status !== "waiting") return {};
+    return { mayAnswer: canDecide(a.approval, viewer, this.requireProject().settings.approver) };
+  }
+
   private waitingMessage(a: T.Attempt): string {
     const ap = a.approval!;
     return `${ap.why[0] ?? "A person must decide."} ${this.approverWords(ap)} must say yes before this merges.`;
@@ -2992,8 +3008,8 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /** Where is this work copy? An agent that waits for a person calls this. The answer also brings new change requests. */
-  async status(attemptId: string, origin?: string): Promise<T.WorkStatus> {
-    this.rememberOrigin(origin);
+  async status(attemptId: string, call: CallInfo = {}): Promise<T.WorkStatus> {
+    this.rememberOrigin(call.origin);
     const a = this.mustAttempt(attemptId);
     this.heard(a);
     const intent = this.intents.get(a.intentId)!;
@@ -3010,7 +3026,7 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId,
       status: a.status,
       task: { id: intent.id, title: intent.title, status: intent.status },
-      ...(ap ? { approval: ap } : {}),
+      ...(ap ? { approval: ap, ...this.mayAnswerOf(a, call.viewer) } : {}),
       line: approvalLine(a),
       link: this.approvalLink(a),
       mainSha: this.requireProject().mainSha,

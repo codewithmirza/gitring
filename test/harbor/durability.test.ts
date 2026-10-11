@@ -364,7 +364,7 @@ describe("no test ran (gitring test runner)", () => {
     await w.start({ files: NO_TEST_FILES });
     const t = await w.submitTask("alpha");
     expect(t.next).toBe("awaiting-approval");
-    expect(t.message).toBe("No test ran, so nothing is verified. A person of the project must say yes before this merges.");
+    expect(t.message).toBe("No test ran. The work is not verified. A person of the project must say yes before this merges.");
     expect(w.inner.attempts.get(t.attemptId)?.approval).toMatchObject({ status: "waiting", reason: "no-test-ran" });
     await w.settle();
     expect(w.status(t.attemptId)).toBe("ready");

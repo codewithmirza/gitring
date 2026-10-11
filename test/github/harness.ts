@@ -166,12 +166,13 @@ export class World {
     return p;
   }
 
-  async signIn(login: string): Promise<{ userId: string; key: string }> {
+  /** `session`: the token of the browser session of this person (send it as the cookie `__Host-gitring`). `key`: a personal API key. */
+  async signIn(login: string): Promise<{ userId: string; key: string; session: string }> {
     this.signingIn = login;
     const url = await this.dir.signInUrl("github", ORIGIN, "/");
     const res = await this.dir.finishSignIn("github", "code", new URL(url).searchParams.get("state")!);
     const { key } = await this.dir.createKey(res.user.id, "k");
-    return { userId: res.user.id, key };
+    return { userId: res.user.id, key, session: res.token ?? "" };
   }
 
   fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
