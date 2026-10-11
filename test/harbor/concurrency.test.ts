@@ -15,7 +15,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseTrailers, LOGBOOK_SCHEMA } from "../../src/core/logbook";
-import { audit, runAll, ScriptedAgent, shop, shopFor, type AgentResult, type Audit, type Shop } from "./shop";
+import { audit, runAll, ScriptedAgent, shop, shopFor, type AgentResult, type Audit, type Shop, type TaskSpec } from "./shop";
 import { mulberry32, Scheduler, shuffled, sleep, World, type WorldOptions } from "./world";
 
 interface Run {
@@ -426,6 +426,131 @@ describe("bugs that the runs found", () => {
     checkRun(run, { requests: false });
     expect(run.audit.main[path]).toContain("function shout");
     expect(run.audit.main[path]).toContain("function whisper");
+  });
+
+  it("tells the agent each time the work comes back, also the second time (fixed)", async () => {
+    // Three agents add a function at the end of the same file and submit together. One merge goes in. The two other
+    // work copies cannot merge, and gitring gives them back. They write again and submit together again. One merge
+    // goes in, and the last work copy cannot merge for the second time: gitring gives it back again.
+    // Before the fix, the agent did not hear about the second time. The change request of the first time was
+    // confirmed already, and gitring only counted a refresh. The agent waited for a merge that never came.
+    const { world, key } = await newWorld();
+    const full = shop(0, 1);
+    const [shout, whisper] = full.tasks.filter((t) => t.group === "file");
+    const mix = shout.files[0];
+    const mumble: TaskSpec = {
+      ...whisper,
+      id: "file-01-e",
+      title: "Mumble in two dots m01",
+      goal: "A new function mumble returns the text in lower case with two dots.",
+      plan: ["Add mumble at the end of the file."],
+      symbols: [`${mix}#mumble`],
+      approach: `Add mumble to ${mix}.`,
+      check: {
+        path: "tests/mix01-mumble.test.js",
+        description: "mumble works",
+        content: `${['import { test, expect } from "../harness/test.js";', `import { mumble } from "../${mix}";`, "", 'test("mumble works", () => {', '  expect(mumble("HI")).toBe("hi..");', "});"].join("\n")}\n`,
+      },
+      edits: [{ path: mix, apply: (t) => (t.includes("function mumble") ? t : `${t}\nexport function mumble(text) {\n  return String(text).toLowerCase() + "..";\n}\n`) }],
+      landed: [{ path: mix, has: ["function mumble"] }],
+    };
+    const s: Shop = { files: full.files, tasks: [shout, whisper, mumble] };
+    const project = await openProject(world, key, s);
+    const sched = new Scheduler(77);
+    const agents = s.tasks.map((t, i) => new ScriptedAgent(world, key, project.id, sched, t, i + 1));
+    for (const x of agents) expect(await x.start(), x.callsign).toBeUndefined();
+    const state = () => world.harbor(project.id).state();
+    const stateOf = async (x: ScriptedAgent) => (await state()).attempts.find((at) => at.id === x.attemptId)!;
+
+    /** The agent reads the file, writes its change on the text that it read, and the tests run. */
+    const writeAndCheck = async (x: ScriptedAgent) => {
+      const r = await x.call("gitring_read", { path: mix });
+      const w = await x.call("gitring_write", { files: [{ path: mix, content: x.spec.edits[0].apply(r.text) }], message: x.spec.title });
+      expect(w.json?.refused ?? [], x.callsign).toEqual([]);
+      await x.ackAll();
+      expect((await x.call("gitring_check")).ok, x.callsign).toBe(true);
+    };
+
+    // Round 1: all three submit together. One merge goes in, and two work copies come back.
+    for (const x of agents) await writeAndCheck(x);
+    const sent1 = await Promise.all(agents.map((x) => x.call("gitring_submit", { summary: "Done" })));
+    expect(sent1.map((x) => x.json?.next)).toEqual(["landing-queue", "landing-queue", "landing-queue"]);
+    await vi.waitFor(async () => expect((await state()).attempts.filter((at) => at.status === "underway" && at.returns === 1), "two work copies came back").toHaveLength(2), { timeout: 20_000, interval: 25 });
+    await world.settle();
+    const losers: ScriptedAgent[] = [];
+    for (const x of agents) if ((await stateOf(x)).status === "underway") losers.push(x);
+    const winner = agents.find((x) => !losers.includes(x))!;
+    expect(losers, "two agents lost").toHaveLength(2);
+    for (const x of losers) {
+      const heard = await x.call("gitring_log", { message: "Back." });
+      expect(heard.notices.filter((n) => n.kind === "upstream" && /cannot merge into main/.test(n.message)), `${x.callsign} hears that the work came back`).toHaveLength(1);
+      await x.ackAll();
+    }
+
+    // Round 2: the two agents write again on the new main and submit together. One merge goes in, one work copy comes back again.
+    for (const x of losers) await writeAndCheck(x);
+    const sent2 = await Promise.all(losers.map((x) => x.call("gitring_submit", { summary: "Done again" })));
+    expect(sent2.map((x) => x.json?.next)).toEqual(["landing-queue", "landing-queue"]);
+    await vi.waitFor(async () => expect((await state()).attempts.filter((at) => at.status === "underway" && at.returns === 2), "one work copy came back for the second time").toHaveLength(1), { timeout: 20_000, interval: 25 });
+    await world.settle();
+    const after = await Promise.all(losers.map(async (x) => ({ x, status: (await stateOf(x)).status })));
+    const lastOne = after.find((r) => r.status === "underway")!.x;
+    const second = after.find((r) => r.x !== lastOne)!;
+    expect(second.status, "the other agent merged").toBe("landed");
+
+    // The agent hears about the second time. It is a new change request, with the new main in it.
+    const again = await lastOne.call("gitring_log", { message: "Waiting for the merge." });
+    const news = again.notices.filter((n) => n.kind === "upstream" && /cannot merge into main/.test(n.message));
+    expect(news, `${lastOne.callsign} hears that the work came back for the second time`).toHaveLength(1);
+    expect(again.text).toContain("GITRING CHANGE REQUEST");
+    const mainNow = (await state()).project.mainSha;
+    expect(news[0].message, "the request names the main of now").toContain(mainNow.slice(0, 7));
+
+    // The agent applies it, and the work merges on top of the other changes.
+    const res = await lastOne.work();
+    expect(res.outcome).toBe("landed");
+    const run: Run = { world, key: "", project, shop: s, results: [winner.done("landed", "", 1), second.x.done("landed", "", 2), res], audit: await audit(world, project.id, project.mainRepo), ms: 0 };
+    checkRun(run, { requests: false });
+    for (const fn of ["function shout", "function whisper", "function mumble"]) expect(run.audit.main[mix], fn).toContain(fn);
+  });
+
+  it("tells the agent each time a person changes the task (fixed)", async () => {
+    // A person changes the goal, the agent confirms the change request, and the person changes the goal again.
+    // Before the fix, gitring did not send the second change request: it was of the same kind as the first one.
+    const { world, key } = await newWorld();
+    const full = shop(1, 0);
+    const task = full.tasks[0];
+    const project = await openProject(world, key, { files: full.files, tasks: [task] });
+    const agent = new ScriptedAgent(world, key, project.id, new Scheduler(5), task, 1);
+    expect(await agent.start()).toBeUndefined();
+    const intent = (await world.harbor(project.id).state()).intents.find((i) => i.title === task.title)!;
+    const amend = async (goal: string) => {
+      const res = await world.call("PATCH", `/api/projects/${project.id}/intents/${intent.id}`, { key, body: { goal, reason: "The person changed the goal." } });
+      expect(res.status, res.text).toBe(200);
+    };
+
+    await amend('The function name01 returns "SOLO 01".');
+    const first = await agent.call("gitring_log", { message: "Working." });
+    expect(first.notices.filter((n) => n.kind === "intent-amended"), "the first change").toHaveLength(1);
+    await agent.ackAll();
+    expect((await agent.call("gitring_log", { message: "Still working." })).notices, "nothing new: no change request").toEqual([]);
+
+    await amend('The function name01 returns "SOLO 01!".');
+    const second = await agent.call("gitring_log", { message: "Working again." });
+    const news = second.notices.filter((n) => n.kind === "intent-amended");
+    expect(news, "the second change is news for the agent").toHaveLength(1);
+    expect(news[0].message).toContain("version 3");
+    expect(news[0].id).not.toBe(first.notices[0].id);
+
+    // Two changes before the agent calls: it gets one change request, with the newest words.
+    await agent.ackAll();
+    await amend('The function name01 returns "SOLO 01!!".');
+    await amend('The function name01 returns "SOLO 01!!!".');
+    const both = await agent.call("gitring_log", { message: "Back from a long step." });
+    const latest = both.notices.filter((n) => n.kind === "intent-amended");
+    expect(latest, "one request for two changes").toHaveLength(1);
+    expect(latest[0].message).toContain("version 5");
+    expect(await world.harbor(project.id).state().then((st) => st.corrections.filter((c) => c.attemptId === agent.attemptId && c.kind === "intent-amended" && c.status !== "superseded"))).toHaveLength(1);
   });
 
   // BUG (not fixed, see rules.ts): two plans with the same declaredAt (the same millisecond) give two

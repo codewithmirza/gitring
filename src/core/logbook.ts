@@ -170,6 +170,7 @@ export function landingNote(args: {
       rule: c.rule,
       message: c.message,
       standOn: c.standOnAttemptId ?? null,
+      ...(c.alsoStandOn?.length ? { alsoStandOn: c.alsoStandOn } : {}),
       status: c.status,
       ...(c.ackNote ? { ackNote: c.ackNote } : {}),
     })),

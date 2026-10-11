@@ -179,11 +179,4 @@ export class Db {
     const rows = this.sql.exec<{ attempt_id: string }>("SELECT attempt_id FROM hooks WHERE key = ?", key).toArray();
     return rows[0]?.attempt_id;
   }
-
-  /** Wipe everything (demo reset). */
-  wipe(): void {
-    for (const t of ["meta", "intents", "attempts", "agents", "corrections", "checks", "logs", "landings", "decisions", "radar", "worktree", "queue", "hooks", "seen", "mustread"]) {
-      this.sql.exec(`DELETE FROM ${t}`);
-    }
-  }
 }

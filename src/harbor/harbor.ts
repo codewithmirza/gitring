@@ -77,8 +77,15 @@ import {
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
-export const BUILD_ID = "0.9.0+20261011a";
+export const BUILD_ID = "0.9.1+20261011b";
 const MAX_LOGS = 500;
+/** The lines that a "same lines" change request names, as one text. Empty for any other kind of change request. */
+function regionKey(c: { kind: T.CorrectionKind; constraints: T.Correction["constraints"] }): string {
+  const regions = c.constraints.avoidRegions;
+  if (c.kind !== "region" || !regions?.length) return "";
+  return regions.map((r) => `${r.path}:${r.lines[0]}-${r.lines[1]}`).sort().join("|");
+}
+
 const MAX_CHECKS = 300;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
 /** Default built-in AI agent starts per hour for the whole deployment (AI_AGENTS_PER_HOUR overrides). */
@@ -1110,7 +1117,6 @@ export class HarborMaster extends DurableObject<Env> {
       message: `${agent?.callsign ?? a.agentId}: ${String(input.message).slice(0, 300)}`,
       files: input.files?.length ? input.files.map(normPath) : Object.keys(a.footprint.files),
     });
-    this.autoAck(a);
     await this.courseCheck(a.id, trigger);
     return this.clearanceFor(a.id);
   }
@@ -1184,9 +1190,8 @@ export class HarborMaster extends DurableObject<Env> {
   async write(input: T.WriteInput): Promise<T.WriteResult> {
     const a = this.mustAttempt(input.attemptId);
     this.heard(a);
-    if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. Send a new plan with gitring_declare to continue.`);
+    if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. ${this.overAdvice(a)}`);
     if (a.mode === "git") throw new Error("This work copy uses git mode. Push to its remote. gitring reads your latest push at gitring_check and gitring_submit.");
-    const intent = this.intents.get(a.intentId);
     const protectedPaths = new Set(
       [...this.intents.values()].filter((i) => i.id !== a.intentId).flatMap((i) => i.checks.map((c) => c.path)),
     );
@@ -1228,8 +1233,6 @@ export class HarborMaster extends DurableObject<Env> {
         (refused.length ? ` gitring did not write ${refused.map((r) => r.path).join(", ")}: the file changed after the last read.` : ""),
       files: written,
     });
-    void intent;
-    this.autoAck(a);
     await this.courseCheck(a.id, "write");
     return {
       written,
@@ -1342,16 +1345,6 @@ export class HarborMaster extends DurableObject<Env> {
       });
     }
     return this.clearanceFor(a.id);
-  }
-
-  /** Corrections that a later action already followed count as acknowledged. */
-  private autoAck(a: T.Attempt): void {
-    for (const id of a.corrections) {
-      const c = this.corrections.get(id);
-      if (c && c.status === "delivered" && c.deliveredAt && Date.now() - c.deliveredAt > 0) {
-        // Delivered and the agent continued: keep "delivered" until an explicit ack, but do not resend.
-      }
-    }
   }
 
   async brief(attemptId: string | undefined, intentId?: string): Promise<Brief> {
@@ -1634,15 +1627,47 @@ export class HarborMaster extends DurableObject<Env> {
     rule: T.RuleOfTheRoad | "human",
     checkId: string,
     severity = 50,
+    /**
+     * The change request answers an event: a person changes the task or sends the work back, the work does not
+     * merge, GitHub changes main. Each event is news for the agent. The agent gets the new request, even when it
+     * did not confirm the earlier request of the same kind (or already did).
+     */
+    event = false,
   ): T.Correction | undefined {
     const target = this.attempts.get(attemptId);
     if (!target || !ACTIVE.has(target.status)) return undefined;
     // One live correction per (vessel, stand-on vessel, kind). Refresh it in place; send a new one
     // only when the situation gets worse (closer range, more overlapping lines, a new interface).
+    // Many work copies can edit the same lines. The agent gets one change request for those lines, not one for
+    // each work copy: a work copy that edits lines that a live change request already names joins that request.
+    // An event is not a situation that gets worse: a new event always gives a new change request (see `event`).
+    const regions = regionKey(drafted);
     for (const id of target.corrections) {
       const old = this.corrections.get(id);
-      if (old && drafted.kind === "review" && old.kind === "review" && old.status !== "superseded") {
-        // A person sends the work back again: the new note replaces the old one, and it always goes to the agent.
+      if (regions && old && standOnAttemptId && old.kind === "region" && old.status !== "superseded" && old.standOnAttemptId && old.standOnAttemptId !== standOnAttemptId && regionKey(old) === regions) {
+        const first = this.attempts.get(old.standOnAttemptId);
+        if (first && ACTIVE.has(first.status)) {
+          if (!old.alsoStandOn?.includes(standOnAttemptId)) {
+            // The request names the work copy that was declared last. The agent waits for that one, so the agents in a row
+            // go one after the other (each waits for the one before it). If it named the first one, all would wake together.
+            const joined = this.attempts.get(standOnAttemptId);
+            if (joined && joined.course.declaredAt > first.course.declaredAt) {
+              old.alsoStandOn = [...(old.alsoStandOn ?? []), old.standOnAttemptId];
+              old.standOnAttemptId = standOnAttemptId;
+              old.message = drafted.message;
+              old.constraints = drafted.constraints;
+            } else {
+              old.alsoStandOn = [...(old.alsoStandOn ?? []), standOnAttemptId];
+            }
+            this.putCorrection(old);
+          }
+          return undefined;
+        }
+      }
+      if (event && old && old.kind === drafted.kind && old.standOnAttemptId === standOnAttemptId && old.status !== "superseded") {
+        // The same words, and the agent did not read them yet: it gets them once.
+        if (old.status === "pending" && old.message === drafted.message) return undefined;
+        // Else the new request replaces the old one, and it always goes to the agent.
         old.status = "superseded";
         this.putCorrection(old);
         continue;
@@ -2441,6 +2466,7 @@ export class HarborMaster extends DurableObject<Env> {
       "R1-landed-has-way",
       "redo",
       95,
+      true, // each time the work comes back is news: the agent must read it, also the second and the third time
     );
     this.addLog({
       kind: "stale",
@@ -2490,7 +2516,7 @@ export class HarborMaster extends DurableObject<Env> {
    */
   async update(attemptId: string): Promise<T.UpdateResult> {
     const a = this.mustAttempt(attemptId);
-    if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. Send a new plan with gitring_declare.`);
+    if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. ${this.overAdvice(a)}`);
     this.heard(a);
     const p = this.requireProject();
     const main = await this.loadMain();
@@ -2620,7 +2646,7 @@ export class HarborMaster extends DurableObject<Env> {
       if (a.intentId !== id || !ACTIVE.has(a.status)) continue;
       const agent = this.agents.get(a.agentId)!;
       const v = vesselView(a, intent, agent, (await this.attemptView(a)).signatures, main.signatures, "active");
-      this.issueCorrection(a.id, undefined, draftIntentAmendedCorrection(v, amendment), "human", "amend");
+      this.issueCorrection(a.id, undefined, draftIntentAmendedCorrection(v, amendment), "human", "amend", 50, true);
     }
     this.recordDecision({ kind: "amend", intentId: id, attemptIds: [], by, rationale: patch.reason || "Goal changed" });
     return intent;
@@ -3002,15 +3028,26 @@ export class HarborMaster extends DurableObject<Env> {
       "human",
       decision.id,
       90,
+      true,
     );
     this.refreshJudging(a.intentId);
     return out("sent-back", "The work went back to the agent with your note. The agent changes it and submits again.");
+  }
+
+  /** What an agent reads when its work copy is over without a merge, or merged: what to do next. */
+  private overAdvice(a: T.Attempt): string {
+    if (a.status === "landed") return "The work is in main. Send a new plan with gitring_declare for another change.";
+    const redo = [...this.attempts.values()].find((x) => x.lineage.rederivedFrom === a.id && !TERMINAL.has(x.status));
+    if (redo) return `gitring does the task again as ${redo.id}. Stop work on ${a.id}.`;
+    if (a.status === "alternate") return "Another work copy of this task is merged. Stop work on this copy.";
+    return "Send a new plan with gitring_declare to continue.";
   }
 
   /** Where is this work copy? An agent that waits for a person calls this. The answer also brings new change requests. */
   async status(attemptId: string, call: CallInfo = {}): Promise<T.WorkStatus> {
     this.rememberOrigin(call.origin);
     const a = this.mustAttempt(attemptId);
+    const returned = a.returned; // heard() clears it
     this.heard(a);
     const intent = this.intents.get(a.intentId)!;
     const ap = a.approval;
@@ -3021,6 +3058,9 @@ export class HarborMaster extends DurableObject<Env> {
     else if (ap?.status === "sent-back" && a.status === "underway") message = `${ap.answer?.by.name ?? "A person"} sent the work back${ap.answer?.note ? `: ${ap.answer.note}` : "."} Change the work, run the tests, and submit again.`;
     else if (ap?.status === "approved" && (a.status === "ready" || a.status === "landing")) message = a.mergeWait ? `${a.mergeWait.message} The merge waits in the queue.` : "A person said yes. The merge is in the queue.";
     else if (ap?.status === "withdrawn" && a.status === "underway") message = `${ap.closed ?? "The question closed."} Submit again to ask again.`;
+    else if (a.status === "underway" && returned) message = `The work did not merge: ${returned.reason} The work is back with you. Change it on the new main, run the tests, and submit again.`;
+    else if (a.status === "underway") message = "The work copy is in work. It is not in the merge queue. Change it, run the tests, and call gitring_submit.";
+    else if (TERMINAL.has(a.status)) message = `The work copy is ${copyStatusWord(a.status)}. ${this.overAdvice(a)}`;
     else message = `The work copy is ${copyStatusWord(a.status)}.`;
     return {
       attemptId,
@@ -3124,9 +3164,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.persistStats();
     if (by.kind === "human") this.recordDecision({ kind: "rederive", intentId: a.intentId, attemptIds: [old.id, a.id], by, rationale: reason });
     this.addLog({ kind: "rederive", attemptId: a.id, agentId: agent.id, intentId: a.intentId, message: `Redo "${this.intents.get(a.intentId)?.title}" on main ${main.sha.slice(0, 7)} (try ${a.lineage.generation}). Reason: ${reason}` });
-    if (!builtin && oldAgent) {
-      this.issueCorrection(old.id, undefined, { kind: "upstream", message: `Your work cannot merge into the new main. A built-in agent does the task again as ${a.id}. Stop work on ${old.id}.`, constraints: {} }, "R1-landed-has-way", "rederive");
-    }
+    // The outside agent of the old work copy reads "stop work" in the answer of its next call (see overAdvice).
     if (a.waitsForBudget) await this.scheduleBudgetRetry(a.waitsForBudget);
     else await this.startVessel(a, agent, old.id);
     return { attempt: a };
@@ -3731,11 +3769,11 @@ export class HarborMaster extends DurableObject<Env> {
       const moved = await this.replot(other, main).catch(() => undefined);
       const v = vesselView(other, oIntent, oAgent, (await this.attemptView(other)).signatures, main.signatures, WAITING.has(other.status) ? "waiting" : "active");
       if (moved && (moved.merged.length || moved.reapply.length)) {
-        this.issueCorrection(other.id, undefined, draftReplotCorrection(v, landedInfo, { mainSha: main.sha, merged: moved.merged, reapply: moved.reapply }), "R1-landed-has-way", "github", moved.reapply.length ? 90 : 70);
+        this.issueCorrection(other.id, undefined, draftReplotCorrection(v, landedInfo, { mainSha: main.sha, merged: moved.merged, reapply: moved.reapply }), "R1-landed-has-way", "github", moved.reapply.length ? 90 : 70, true);
         continue;
       }
       if (other.footprint && Object.keys(other.footprint.files).some((f) => change.files.includes(f))) {
-        this.issueCorrection(other.id, undefined, draftUpstreamCorrection(v, landedInfo), "R1-landed-has-way", "github");
+        this.issueCorrection(other.id, undefined, draftUpstreamCorrection(v, landedInfo), "R1-landed-has-way", "github", 50, true);
       }
     }
   }
@@ -4047,7 +4085,7 @@ function decisiveness(as: T.CourseAssessment[]): number {
   return as.length ? Math.min(...as.map((a) => Math.abs(a.collision - 0.5) * 2)) : 1;
 }
 
-/** Keep a settings patch inside safe bounds (the demo API can be open to the public). */
+/** Keep a settings patch inside safe bounds (any owner, key or client can send a patch). */
 function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) => boolean): Partial<T.ProjectSettings> {
   const out: Partial<T.ProjectSettings> = {};
   const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : undefined);

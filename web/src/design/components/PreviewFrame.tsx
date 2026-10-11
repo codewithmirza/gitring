@@ -3,7 +3,7 @@ import { IconButton } from "./Button";
 
 interface PreviewFrameProps {
   title: string;
-  /** Live preview URL (Dynamic Worker), e.g. /preview/demo/at-dark-1/ */
+  /** Live preview URL (Dynamic Worker), e.g. /preview/my-project/at-dark-1/ */
   src?: string | null;
   height?: number | string;
   path?: string;

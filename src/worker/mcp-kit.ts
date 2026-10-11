@@ -166,7 +166,7 @@ export function text(obj: unknown, headline: string, clr?: T.Clearance, opts: { 
   const lines: string[] = [];
   if (clr?.corrections?.length) {
     lines.push("GITRING CHANGE REQUEST — apply it in your next edits, then call gitring_ack. Do not stop.");
-    for (const c of clr.corrections) lines.push(`- [${c.id}] (${KIND_WORD[c.kind] ?? c.kind}${c.from ? `; ${c.from} continues` : ""}) ${c.message}`);
+    for (const c of clr.corrections) lines.push(`- [${c.id}] (${KIND_WORD[c.kind] ?? c.kind}${c.from ? `; ${c.from}${c.more ? ` and ${c.more} more continue` : " continues"}` : ""}) ${c.message}`);
     lines.push("");
   }
   lines.push(headline);

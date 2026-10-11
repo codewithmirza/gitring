@@ -652,6 +652,12 @@ export interface Correction {
   attemptId: string;
   /** The stand-on attempt, if any. */
   standOnAttemptId?: string;
+  /**
+   * More attempts that edit the same lines at the same time. The agent gets one change request for the lines,
+   * not one for each of them. `standOnAttemptId` is the one that declared last. An agent that waits for that
+   * one stands in a row behind the others. If every agent waited for the first one, all would wake up together.
+   */
+  alsoStandOn?: string[];
   kind: CorrectionKind;
   rule: RuleOfTheRoad | "human";
   /** Instruction text for the agent (ASD-STE100 style, imperative, short). */
@@ -883,6 +889,7 @@ export interface CorrectionNotice {
   message: string;
   constraints: Correction["constraints"];
   from?: string; // callsign of the stand-on vessel
+  more?: number; // other vessels that edit the same lines (see Correction.alsoStandOn)
 }
 
 export interface Clearance {

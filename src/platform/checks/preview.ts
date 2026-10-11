@@ -1,7 +1,7 @@
 /**
  * Live preview of an attempt: the attempt's app runs in a Dynamic Worker (Worker Loader).
  *
- * The page is served under a path prefix (basePath), for example /preview/demo/a_123/. servePreview
+ * The page is served under a path prefix (basePath), for example /preview/my-project/a_123/. servePreview
  * strips the prefix, keeps the query, forwards the request to the app's default export, and marks
  * the response with "x-gitring-preview: <key>". The app has no network (globalOutbound: null).
  * Apps must use relative links, so that they work under the prefix.

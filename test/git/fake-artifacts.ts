@@ -44,6 +44,9 @@ function runCgi(env: NodeJS.ProcessEnv, body: Buffer): Promise<Buffer> {
       if (code !== 0 && out.length === 0) reject(new Error(`git http-backend exited ${code}: ${Buffer.concat(err).toString()}`));
       else resolve(Buffer.concat(out));
     });
+    // git can exit before it reads the whole body (EPIPE). Without this handler the error stops the process.
+    // The "close" event above reports what happened.
+    child.stdin.on("error", () => undefined);
     child.stdin.end(body);
   });
 }

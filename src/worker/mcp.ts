@@ -22,7 +22,7 @@ import { GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github
 import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
 
 /** The version that the server tells to clients. */
-export const MCP_VERSION = "0.9.0";
+export const MCP_VERSION = "0.9.1";
 
 const project = z.string().describe("Project id (gitring_intents without a project lists your projects).");
 const attemptId = z.string().describe("Your work copy id (attemptId) from gitring_declare.");
@@ -136,7 +136,9 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     async run(ctx, args) {
       try {
         const res = await (await ctx.access(args.project)).stub.traffic(args.attemptId);
-        return text(res, `${res.vessels.length} work copies near you. ${res.landedSinceBase.length} tasks merged after your work copy started.`);
+        const near = res.vessels.length;
+        const merged = res.landedSinceBase.length;
+        return text(res, `${near} ${near === 1 ? "work copy" : "work copies"} near you. ${merged} ${merged === 1 ? "task" : "tasks"} merged after your work copy started.`);
       } catch (e) {
         return fail(e);
       }

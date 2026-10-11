@@ -732,5 +732,5 @@ export class ArtifactsBackend implements RepoBackend {
  *   8. FORK_IN_PROGRESS / CREATE_IN_PROGRESS timing: is a 20 s retry budget enough?
  *   9. `readTree` returns canonical modes ("40000") and `type` "exec"/"symlink"/"gitlink".
  *  10. Push of a root commit to an empty repo (no refs) and to a new branch of a non-empty repo.
- *  11. Workers CPU/memory for clone + push on the demo repo size (isomorphic-git hashes in JS).
+ *  11. Workers CPU/memory for clone + push on the size of a real repository (isomorphic-git hashes in JS).
  */

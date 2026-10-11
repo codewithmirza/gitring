@@ -52,6 +52,8 @@ export function CorrectionNotice({ correction: c, from, to, check, nameOf, size 
   const [open, setOpen] = useState(expanded);
   const rid = useId();
   const st = STATUS[c.status];
+  // Other agents edit the same lines: one change request names them all.
+  const more = c.alsoStandOn?.length ?? 0;
   const constraints = [
     ...(c.constraints.useSignatures ?? []).map((s) => `Use ${s.signature}`),
     ...(c.constraints.avoidRegions ?? []).map((r) => `Keep out of ${r.path}, ${r.lines[0] === r.lines[1] ? `line ${r.lines[0]}` : `lines ${r.lines[0]}–${r.lines[1]}`}`),
@@ -102,7 +104,8 @@ export function CorrectionNotice({ correction: c, from, to, check, nameOf, size 
         <span>
           {from ? (
             <>
-              <span className="voice-agent ink-2">{from}</span> continues → <span className="voice-agent ink-2">{to}</span> adapts
+              <span className="voice-agent ink-2">{from}</span>
+              {more > 0 ? ` and ${more} more continue` : " continues"} → <span className="voice-agent ink-2">{to}</span> adapts
             </>
           ) : (
             <>

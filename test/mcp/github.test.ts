@@ -402,7 +402,7 @@ describe("change requests", () => {
     // The change request comes once. The next write gets the check and the traffic, and no second copy of the request.
     const again = await gh("create_or_update_file", { branch: "feature/hi", path: "src/greet.js", content: GREET.replace("Hello", "Hey"), message: "Hey" });
     expect(again.text).not.toMatch(/GITRING CHANGE REQUEST/);
-    expect(again.text).toMatch(/^Written: src\/greet\.js\. Conflict check: change request\. Plan clear\. 1 other agent work near you\. Their plans are in the traffic list below\./);
+    expect(again.text).toMatch(/^Written: src\/greet\.js\. Conflict check: change request\. Plan clear\. 1 other agent works near you\. Their plans are in the traffic list below\./);
     expect(again.text).not.toMatch(/gitring_ack|gitring_traffic/);
     // The same write with the gitring tools gives the same change request in the same words.
     const mine = await callTool(world, key, "gitring_declare", { project, newIntent: { title: "Greet loudly", goal: "The greeting is loud." }, plan: ["Change the greeting"], files: ["src/greet.js"], symbols: ["src/greet.js#greet"], approach: "Edit greet." });

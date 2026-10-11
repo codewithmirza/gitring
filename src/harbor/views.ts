@@ -138,6 +138,7 @@ export function notices(corrections: Correction[], callsignOf: (attemptId?: stri
     message: c.message,
     constraints: c.constraints,
     from: callsignOf(c.standOnAttemptId),
+    ...(c.alsoStandOn?.length ? { more: c.alsoStandOn.length } : {}),
   }));
 }
 
@@ -175,7 +176,7 @@ export function adviceFor(verdict: Verdict | undefined, newCorrections: number, 
   }
   const close = traffic.filter((t) => t.range <= 2);
   if (verdict === "escalate") return "A person looks at a risk in your plan. Continue your work. gitring tells you if the plan must change.";
-  if (close.length) return `Plan clear. ${close.length} other agent${close.length > 1 ? "s" : ""} work near you. Read their context with gitring_traffic before you edit shared files.`;
+  if (close.length) return `Plan clear. ${close.length} other ${close.length > 1 ? "agents work" : "agent works"} near you. Read their context with gitring_traffic before you edit shared files.`;
   return "Plan clear. Continue your work.";
 }
 
@@ -213,6 +214,7 @@ export function failureSummary(cases: { file: string; name: string; ok: boolean;
   const failed = cases.filter((c) => !c.ok);
   if (!failed.length) return "All tests pass.";
   const lines = failed.slice(0, max).map((c) => `${c.file}: "${c.name}" fails${c.error ? `: ${c.error.split("\n")[0].slice(0, 160)}` : "."}`);
-  const more = failed.length > max ? ` ${failed.length - max} more tests fail.` : "";
-  return `${failed.length} test${failed.length > 1 ? "s" : ""} fail. ${lines.join(" ")}${more}`;
+  const left = failed.length - max;
+  const more = left > 0 ? ` ${left} more ${left > 1 ? "tests fail" : "test fails"}.` : "";
+  return `${failed.length} ${failed.length > 1 ? "tests fail" : "test fails"}. ${lines.join(" ")}${more}`;
 }
