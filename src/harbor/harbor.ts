@@ -1743,6 +1743,10 @@ export class HarborMaster extends DurableObject<Env> {
     this.putAttempt(a);
     await this.flushToFork(a).catch((e) => console.warn("flush to fork failed", String(e)));
     const run = await this.check(a.id);
+    if (a.status !== "submitted") {
+      // Another submit of this work copy was faster: it already queued or merged the work while these tests ran.
+      return { attemptId, status: a.status, checks: run, next: a.status === "landed" ? "landed" : a.status === "underway" ? "fix-checks" : "landing-queue", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
+    }
     const intent = this.intents.get(a.intentId)!;
     let next: T.SubmitResult["next"];
     let message: string;
@@ -2123,7 +2127,8 @@ export class HarborMaster extends DurableObject<Env> {
       intentId: a.intentId,
       message: `${name} cannot merge "${intent.title}": ${reason} gitring gives the work back to ${name} (try ${a.returns} of 3).`,
     });
-    await this.scheduleBudgetRetry(a.returned.until);
+    // Not a.returned.until: a call of the agent can clear a.returned (heard) while this method waits.
+    await this.scheduleBudgetRetry(now + minutes * 60_000);
   }
 
   /** The outside agent did not answer in time: a built-in agent (agent-first) or a person (agent-only) takes over. */
