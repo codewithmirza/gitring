@@ -14,7 +14,7 @@ import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import { hmacSha256Hex } from "../directory/crypto";
 import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
-import { RepoConflictError, type FileChange } from "../platform/repo/backend";
+import { RepoConflictError, type CommitMeta, type FileChange } from "../platform/repo/backend";
 import { ArtifactsBackend } from "../platform/repo/artifacts";
 import { MemoryTreeCache, readSnapshot, diffSnapshots, type Snapshot } from "../core/git/snapshot";
 import { hashObject, isValidBranchName, utf8 } from "../core/git/objects";
@@ -38,7 +38,7 @@ import { computeRange, shapeFromFootprint } from "../core/analysis/range";
 import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
 import { merge3 } from "../core/text/merge3";
-import { landingMessage, landingNote, intentFile } from "../core/logbook";
+import { landingMessage, landingNote, intentFile, parseTrailers } from "../core/logbook";
 import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, publicHostname, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
@@ -78,6 +78,24 @@ const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "
 const LLM_STARTS_PER_HOUR = 40;
 /** Default built-in AI agent starts per hour and person (AI_AGENTS_PER_USER_HOUR overrides). */
 const LLM_STARTS_PER_USER_HOUR = 12;
+/**
+ * A merge run that no run has finished stays "in progress" this long. After that, the queue starts it
+ * again (the object that ran it stopped: evicted or crashed).
+ */
+const LANDING_LEASE_MS = 5 * 60_000;
+/** One merge starts at most this many times (crashes included). Then a person decides. */
+const MAX_LANDING_STARTS = 4;
+
+/** The merge run in progress (meta "landing"): written before the landing work starts, cleared when it ends. */
+interface LandingRun {
+  /** The work copy that merges. */
+  id: string;
+  startedAt: number;
+  /** The object instance that started the run (see bootId). */
+  boot: string;
+  /** How many times this merge started. */
+  tries: number;
+}
 
 export interface LaunchInput {
   fanout?: number;
@@ -128,7 +146,10 @@ export class HarborMaster extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.db = new Db(ctx.storage.sql);
-    ctx.blockConcurrencyWhile(async () => this.load());
+    ctx.blockConcurrencyWhile(async () => {
+      this.load();
+      this.wakeQueue();
+    });
   }
 
   /* ════════════════════════════ load / bootstrap ════════════════════════════ */
@@ -1809,31 +1830,161 @@ export class HarborMaster extends DurableObject<Env> {
 
   private enqueueLanding(a: T.Attempt): void {
     this.db.enqueue(a.id, Date.now());
+    void this.driveQueue();
+  }
+
+  /** Run the queue after the merge that runs now. One merge runs at a time. */
+  private driveQueue(): Promise<unknown> {
     const job = this.landingChain.then(() => this.processQueue());
     this.landingChain = job.catch((e) => console.error("landing failed", e));
     this.ctx.waitUntil(this.landingChain);
+    return this.landingChain;
   }
 
+  /**
+   * The queue and the marker of the merge in progress are in storage. An object that starts again after
+   * an eviction or a crash runs what they hold, so a queued work copy does not wait for a request.
+   */
+  private wakeQueue(): void {
+    if (!this.project || this.project.importing) return;
+    const stuck = [...this.attempts.values()].some((a) => a.status === "landing");
+    if (!stuck && !this.db.queue().length && !this.db.getMeta<LandingRun>("landing")) return;
+    void this.driveQueue();
+  }
+
+  /**
+   * Merge the queued work copies, one after the other. A work copy leaves the queue only when its merge
+   * ends. A merge that a stopped object began (its marker is older than the lease) starts again.
+   */
   private async processQueue(): Promise<void> {
-    for (const id of this.db.queue()) {
-      this.db.dequeue(id);
-      const a = this.attempts.get(id);
-      if (!a || a.status !== "ready") continue;
-      try {
-        await this.landOne(a);
-      } catch (err) {
-        console.error("landOne", id, err);
-        a.status = "ready";
-        this.putAttempt(a);
-        this.addLog({ kind: "system", attemptId: a.id, message: `The merge of the work of ${this.callsign(a.id)} stopped: ${String(err).slice(0, 200)}. Try again.` });
-      }
+    if (!this.project || this.project.importing) return;
+    // An older version of gitring dropped the queue entry when a merge began: a "landing" work copy without one is stuck.
+    const queued = new Set(this.db.queue());
+    for (const a of this.attempts.values()) {
+      if (a.status === "landing" && !queued.has(a.id)) this.db.enqueue(a.id, Date.now());
     }
+    for (let round = 0; round < 100; round++) {
+      const next = this.pickLanding();
+      if (!next) break;
+      await this.runLanding(next.attempt, next.tries);
+    }
+    const wakeAt = this.queueWakeAt();
+    if (wakeAt !== undefined) await this.scheduleBudgetRetry(wakeAt);
+  }
+
+  /** The next queued merge that may start now, with the number of times it starts. */
+  private pickLanding(): { attempt: T.Attempt; tries: number } | undefined {
+    const now = Date.now();
+    const marker = this.db.getMeta<LandingRun>("landing");
+    for (const id of this.db.queue()) {
+      const a = this.attempts.get(id);
+      if (!a || (a.status !== "ready" && a.status !== "landing")) {
+        this.db.dequeue(id);
+        if (marker?.id === id) this.db.setMeta("landing", undefined);
+        continue;
+      }
+      const held = marker?.id === id ? marker : undefined;
+      // Another object began this merge: it may still run until the lease ends.
+      if (held && held.boot !== this.bootId && held.startedAt + LANDING_LEASE_MS > now) continue;
+      return { attempt: a, tries: (held?.tries ?? 0) + 1 };
+    }
+    return undefined;
+  }
+
+  /** The next time a queued merge may start later than now (the end of a lease). */
+  private queueWakeAt(): number | undefined {
+    const now = Date.now();
+    const marker = this.db.getMeta<LandingRun>("landing");
+    const times: number[] = [];
+    if (marker && this.db.queue().includes(marker.id)) times.push(marker.startedAt + LANDING_LEASE_MS);
+    const later = times.filter((t) => t > now);
+    return later.length ? Math.min(...later) : undefined;
+  }
+
+  /** Write the marker, merge, then clear the marker and the queue entry. A stop in between leaves both. */
+  private async runLanding(a: T.Attempt, tries: number): Promise<void> {
+    if (tries > MAX_LANDING_STARTS) {
+      this.db.setMeta("landing", undefined);
+      this.db.dequeue(a.id);
+      const intent = this.intents.get(a.intentId);
+      a.status = "ready";
+      this.putAttempt(a);
+      if (intent) {
+        intent.status = "judging";
+        this.putIntent(intent);
+      }
+      this.stats.escalations += 1;
+      this.persistStats();
+      this.addLog({
+        kind: "decision",
+        attemptId: a.id,
+        intentId: a.intentId,
+        message: `The merge of the work of ${this.callsign(a.id)} did not finish after ${MAX_LANDING_STARTS} tries. A person must decide on "${intent?.title ?? "this task"}".`,
+      });
+      return;
+    }
+    const startedAt = Date.now();
+    this.db.setMeta("landing", { id: a.id, startedAt, boot: this.bootId, tries } satisfies LandingRun);
+    // If this object stops, the alarm starts the merge again when the lease ends.
+    await this.scheduleBudgetRetry(startedAt + LANDING_LEASE_MS);
+    try {
+      await this.landOne(a);
+    } catch (err) {
+      console.error("landOne", a.id, err);
+      a.status = "ready";
+      this.putAttempt(a);
+      this.addLog({ kind: "system", attemptId: a.id, message: `The merge of the work of ${this.callsign(a.id)} stopped: ${String(err).slice(0, 200)}. Try again.` });
+    }
+    this.db.setMeta("landing", undefined);
+    this.db.dequeue(a.id);
+  }
+
+  /**
+   * The commit on main that merged this work copy, when a run made it and stopped: the message of the
+   * commit names the work copy. gitring merges one work copy at a time, so only the last commits can hold it.
+   */
+  private async mainHolds(a: T.Attempt): Promise<CommitMeta | undefined> {
+    const recent = await this.backend.log(this.requireProject().repo.name, this.branch, 8);
+    return recent.find((c) => parseTrailers(c.message)["Gitring-Attempt"] === a.id);
+  }
+
+  /** Main has the merge of this work copy: a run stopped after the commit. Write the record now, commit nothing. */
+  private async finishFromMain(a: T.Attempt, commit: CommitMeta): Promise<void> {
+    const p = this.requireProject();
+    const intent = this.intents.get(a.intentId)!;
+    const agent = this.agents.get(a.agentId)!;
+    const word = parseTrailers(commit.message)["Gitring-Method"];
+    const method: T.LandingMethod = word === "fast-forward" || word === "rederive" ? word : "merge";
+    const applied = a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status !== "superseded");
+    const run: T.CheckRun = a.composedChecks ?? a.checks ?? { id: newId("ck"), subject: commit.treeHash, scope: "composed", ok: true, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now() };
+    const decision = [...this.decisions].reverse().find((d) => d.attemptIds[0] === a.id && d.kind === "pick");
+    const note =
+      (await this.backend.readNote(p.repo.name, commit.hash).catch(() => null)) ??
+      landingNote({ intent, attempt: a, agent, method, corrections: applied, courseChecks: this.db.checksFor<T.CourseCheck>(a.id), checks: run, decision });
+    this.addLog({
+      kind: "system",
+      attemptId: a.id,
+      message: `Main has the merge of the work of ${this.callsign(a.id)} already (${commit.hash.slice(0, 7)}). gitring writes its record now.`,
+    });
+    await this.recordLanding(a, {
+      committed: { sha: commit.hash, tree: commit.treeHash },
+      before: commit.parents[0] ?? p.mainSha,
+      method,
+      applied,
+      run,
+      message: commit.message,
+      note,
+      touched: Object.keys(a.footprint.files),
+    });
   }
 
   private async landOne(a: T.Attempt, attempt = 0): Promise<void> {
     const p = this.requireProject();
     const intent = this.intents.get(a.intentId)!;
     const agent = this.agents.get(a.agentId)!;
+    // A run that stopped after its commit: main has the merge. Finish the record, do not commit twice.
+    const held = await this.mainHolds(a);
+    if (held) return this.finishFromMain(a, held);
     a.status = "landing";
     intent.status = "landing";
     this.putAttempt(a);
@@ -1891,26 +2042,48 @@ export class HarborMaster extends DurableObject<Env> {
       }
       throw err;
     }
-    const before = p.mainSha;
-    p.mainSha = committed.sha;
-    p.mainTree = committed.tree;
-    this.db.setMeta("project", p);
-    this.db.setMeta("mainSeq", [...(this.db.getMeta<string[]>("mainSeq") ?? []), committed.sha]);
-    const landing: T.Landing = {
-      id: newId("ld"),
-      attemptId: a.id,
-      intentId: intent.id,
-      agentId: a.agentId,
-      method,
-      mainBefore: before,
-      mainAfter: committed.sha,
-      checks: run,
-      correctionsApplied: applied.length,
-      at: Date.now(),
-      message,
-    };
-    this.landings.push(landing);
-    this.db.putLanding(landing, note);
+    await this.recordLanding(a, { committed, before: main.sha, method, applied, run, message, note, touched: result.touched });
+  }
+
+  /**
+   * Write what a merge on main means for gitring: the new main, the landing, the statuses, the events.
+   * It is safe to run again: a work copy that the record has already counts once. The writes up to the
+   * first await are one step, so a stop never leaves half of them.
+   */
+  private async recordLanding(
+    a: T.Attempt,
+    done: { committed: { sha: string; tree: string }; before: string; method: T.LandingMethod; applied: T.Correction[]; run: T.CheckRun; message: string; note: string; touched: string[] },
+  ): Promise<void> {
+    const { committed, before, method, applied, run, message, note, touched } = done;
+    const p = this.requireProject();
+    const intent = this.intents.get(a.intentId)!;
+    const agent = this.agents.get(a.agentId)!;
+    if (p.mainSha === before) {
+      p.mainSha = committed.sha;
+      p.mainTree = committed.tree;
+      this.db.setMeta("project", p);
+      const seq = this.db.getMeta<string[]>("mainSeq") ?? [];
+      if (!seq.includes(committed.sha)) this.db.setMeta("mainSeq", [...seq, committed.sha]);
+    }
+    let landing = this.landings.find((l) => l.attemptId === a.id && l.mainAfter === committed.sha);
+    const counted = !!landing;
+    if (!landing) {
+      landing = {
+        id: newId("ld"),
+        attemptId: a.id,
+        intentId: intent.id,
+        agentId: a.agentId,
+        method,
+        mainBefore: before,
+        mainAfter: committed.sha,
+        checks: run,
+        correctionsApplied: applied.length,
+        at: Date.now(),
+        message,
+      };
+      this.landings.push(landing);
+      this.db.putLanding(landing, note);
+    }
     a.status = "landed";
     a.landedAt = Date.now();
     intent.status = "landed";
@@ -1936,9 +2109,12 @@ export class HarborMaster extends DurableObject<Env> {
         this.putCorrection(c);
       }
     }
-    this.stats.landings += 1;
-    this.stats.landedByMethod[method] = (this.stats.landedByMethod[method] ?? 0) + 1;
+    if (!counted) {
+      this.stats.landings += 1;
+      this.stats.landedByMethod[method] = (this.stats.landedByMethod[method] ?? 0) + 1;
+    }
     if (method === "rederive") this.stats.rederives += 0; // counted when the re-derive starts
+    this.persistStats();
     const newMain = await this.loadMain();
     this.emit({ type: "landing", landing });
     this.emit({ type: "main", sha: newMain.sha, tree: newMain.tree, files: newMain.files, imports: newMain.imports });
@@ -1948,9 +2124,8 @@ export class HarborMaster extends DurableObject<Env> {
       agentId: a.agentId,
       intentId: intent.id,
       message: `"${intent.title}" merged into main by ${METHOD_WORD[method]} (${committed.sha.slice(0, 7)}). Tests ${run.passed}/${run.passed + run.failed} pass.`,
-      files: result.touched,
+      files: touched,
     });
-    this.persistStats();
     this.webhook("landing", { landing, intent: { id: intent.id, title: intent.title }, callsign: agent.callsign, mainSha: committed.sha });
     if (p.settings.github.mode !== "off" && p.settings.github.repo) {
       this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
@@ -2395,7 +2570,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (current === null || current > at) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, at));
   }
 
-  /** Alarm: finish an import, then start the built-in agents that waited for the AI budget. */
+  /** Alarm: finish an import, start the built-in agents that waited for the AI budget, then run the merge queue. */
   async alarm(): Promise<void> {
     if (!this.project) return;
     if (this.project.importing) {
@@ -2425,9 +2600,13 @@ export class HarborMaster extends DurableObject<Env> {
     for (const a of [...this.attempts.values()]) {
       if (a.returned && a.returned.until <= Date.now() && !TERMINAL.has(a.status)) await this.returnTimedOut(a);
     }
+    // The merge queue: queued work copies run, and a merge that a stopped object began starts again.
+    await this.driveQueue();
+    const queueAt = this.queueWakeAt();
     const next = [
       ...waiting().map((a) => a.waitsForBudget!),
       ...[...this.attempts.values()].filter((a) => a.returned && !TERMINAL.has(a.status)).map((a) => a.returned!.until),
+      ...(queueAt === undefined ? [] : [queueAt]),
     ];
     if (next.length) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, Math.min(...next)));
   }
