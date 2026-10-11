@@ -54,7 +54,7 @@ Symbol analysis supports JavaScript and TypeScript. Other languages use files an
 
 ## Run it
 
-gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account.
+gitring needs a Cloudflare account with Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account. To try gitring with no Cloudflare account, see [Try it without a paid account](#try-it-without-a-paid-account).
 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)
@@ -76,6 +76,40 @@ Tests:
 npm test               # unit tests (Vitest)
 npm run typecheck
 ```
+
+## Try it without a paid account
+
+You can run gitring on your computer. You do not need a Cloudflare account for this.
+
+```bash
+npm install
+npm run dev:local
+```
+
+The command needs `git`. It does three things:
+
+1. It builds the app.
+2. It starts a test version of Artifacts. The test version keeps real git repositories in `tmp/local`.
+3. It starts `wrangler dev` with `wrangler.local.jsonc`. Every binding runs on your computer.
+
+The command prints a key. Send it as `Authorization: Bearer <key>` to `/api` and `/mcp` at the address that wrangler shows. Make an empty project like this:
+
+```bash
+curl -X POST http://localhost:8787/api/projects \
+  -H "Authorization: Bearer <key>" -H "content-type: application/json" \
+  -d '{"name":"demo","source":{"kind":"empty"},"settings":{"checks":{"runner":"worker"}}}'
+```
+
+Then connect an agent as described in [Connect agents](#connect-agents). Use the project id from the answer and the key from the command.
+
+The local run has these limits:
+
+- **No Workers AI**: fixed rules make the conflict check. The built-in agents need Workers AI, so they do not run.
+- **Tests**: the `worker` runner runs `tests/*.test.js` files. There are no test containers. Work with no test needs the project setting that allows it (see [Tests of the work](#tests-of-the-work)).
+- **Import**: it cannot import a repository. Start with an empty project.
+- **Web page**: the web page needs a sign-in with GitHub or Google. This run has none set up. Use the API and MCP.
+- **Data**: each start deletes the data of the run before.
+- **Artifacts**: the test version is not Cloudflare Artifacts, and it can differ in details. Deploy to Cloudflare to test the real service.
 
 ## Deploy to Cloudflare
 
@@ -265,6 +299,7 @@ src/platform    Artifacts backend, GitHub (client, repository lists, imports, sy
 src/worker      routes, sign-in, OAuth server for MCP clients, MCP server, GitHub routes, rate limits, hooks
 web/src         React web app and its design system (/design opens it in local development)
 scripts         palette.py prints the colors of the day, dusk and night themes with their contrast ratios
+local           start script and Worker entry for the run with no Cloudflare account (wrangler.local.jsonc)
 test            unit tests (Vitest); test/support holds an Artifacts test double
 ```
 

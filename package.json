@@ -35,6 +35,7 @@
   },
   "scripts": {
     "dev": "vite dev",
+    "dev:local": "vite build && node local/start.mjs",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
