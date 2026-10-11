@@ -93,7 +93,8 @@
 .approve__label { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-1); }
 .approve__noteacts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .approve__noteacts .b-btn--block { flex: 1 1 100%; }
-.approve__reason { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.approve__reason { display: flex; align-items: flex-start; gap: var(--s-2); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
+.approve__reason .b-icon { flex: none; margin-top: 3px; color: var(--accent); }
 .approve__notice { display: flex; align-items: flex-start; gap: var(--s-2); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-1); }
 .approve__notice .b-icon { flex: none; margin-top: 1px; color: var(--accent); }
 .approve__outcome {

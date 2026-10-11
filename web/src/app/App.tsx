@@ -99,39 +99,73 @@ function useShortcuts() {
   }, []);
 }
 
+/** How long "work could not merge" must last before it gets a toast (see useQueueToasts). */
+const SETTLE_MS = 1500;
+
 /**
  * Announce new decisions once. A merge that waits for a yes has its own chip in the tray, so it gets no toast:
  * this is for the other items (work that could not merge, a conflict check that asks for a person).
+ * "Could not merge" can be a short moment: when a person sends work back, its work copy is stale for a moment
+ * before the new one starts. That kind of item waits a little, and the toast comes only if it is still there.
  */
 function useQueueToasts() {
   useEffect(() => {
     let seen: Set<string> | null = null;
     let lastState: unknown = null;
-    return store.subscribe(() => {
+    const waiting = new Map<string, number>();
+    const items = (): OtherJudgmentItem[] => {
       const s = store.get();
-      const st = s.state;
+      // Only people who can decide get the toast.
+      return s.state && atLeast(s.access, "member")
+        ? selectJudgmentQueue(s.state, { id: s.me?.user?.id, role: s.access }).filter((x): x is OtherJudgmentItem => x.kind !== "approval")
+        : [];
+    };
+    const announce = (item: OtherJudgmentItem) => {
+      toast({
+        tone: "info",
+        title: item.kind === "pick" ? "Work is ready to merge" : "A decision needs you",
+        text: `“${item.title}”. ${item.detail}.`,
+        action: { label: item.kind === "pick" ? "Compare work copies" : "Open the task", onClick: () => navigate(`/tasks/${item.intentId}`) },
+      });
+    };
+    const unsubscribe = store.subscribe(() => {
+      const st = store.get().state;
       if (!st || st === lastState) return;
       lastState = st;
-      // Only people who can decide get the toast.
-      const q: OtherJudgmentItem[] = atLeast(s.access, "member")
-        ? selectJudgmentQueue(st, { id: s.me?.user?.id, role: s.access }).filter((x): x is OtherJudgmentItem => x.kind !== "approval")
-        : [];
+      const q = items();
       if (!seen) {
         seen = new Set(q.map((x) => x.key));
         return;
       }
       for (const item of q) {
-        if (seen.has(item.key)) continue;
-        seen.add(item.key);
-        toast({
-          tone: "info",
-          title: item.kind === "pick" ? "Work is ready to merge" : "A decision needs you",
-          text: `“${item.title}”. ${item.detail}.`,
-          action: { label: item.kind === "pick" ? "Compare work copies" : "Open the task", onClick: () => navigate(`/tasks/${item.intentId}`) },
-        });
+        if (seen.has(item.key) || waiting.has(item.key)) continue;
+        if (!item.key.startsWith("stuck:")) {
+          seen.add(item.key);
+          announce(item);
+          continue;
+        }
+        waiting.set(
+          item.key,
+          window.setTimeout(() => {
+            waiting.delete(item.key);
+            const now = items().find((x) => x.key === item.key);
+            if (!now || !seen || seen.has(now.key)) return;
+            seen.add(now.key);
+            announce(now);
+          }, SETTLE_MS),
+        );
       }
       for (const k of [...seen]) if (!q.some((x) => x.key === k)) seen.delete(k);
+      for (const [k, timer] of waiting) {
+        if (q.some((x) => x.key === k)) continue;
+        window.clearTimeout(timer);
+        waiting.delete(k);
+      }
     });
+    return () => {
+      unsubscribe();
+      waiting.forEach((t) => window.clearTimeout(t));
+    };
   }, []);
 }
 

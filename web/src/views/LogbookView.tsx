@@ -506,13 +506,13 @@ function WhyTrail({ id }: { id: string }) {
             <figure className="why__decision">
               <blockquote className="voice-human">“{decision.rationale}”</blockquote>
               <figcaption>
-                <Icon name="human" size={12} /> {decision.by.name} chose <span className="voice-agent">{names(decision.attemptIds[0])}</span>
+                <Icon name="human" size={12} /> {decision.by.name} {decision.attemptIds.length > 1 ? "chose" : "said yes to"} <span className="voice-agent">{names(decision.attemptIds[0])}</span>
                 {decision.attemptIds.length > 1 ? ` over ${decision.attemptIds.slice(1).map(names).join(", ")}` : ""} · {ago(decision.at, now)}
               </figcaption>
             </figure>
           ) : (
             <p className="why__auto">
-              No person had to choose. The task had one active work copy and its tests passed, so gitring merged it by itself
+              No person had to say yes. The tests passed, so gitring merged the work by itself
               {siblings.length ? ` (${plural(siblings.length, "alternative")} stay visible)` : ""}.
             </p>
           )}

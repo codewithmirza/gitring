@@ -67,6 +67,9 @@
   font-weight: 500;
 }
 .aptray__morebtn:hover { background: var(--surface-2); }
+/* On the approve page the tray is one line in the corner. The answer of that page needs the room. */
+.aptray--line { width: auto; display: flex; justify-content: flex-end; }
+.aptray--line .aptray__morebtn { pointer-events: auto; animation: aptray-in var(--dur-2) var(--ease-out); }
 
 @keyframes aptray-in {
   from { opacity: 0; transform: translateY(8px); }
@@ -89,8 +92,14 @@
   .app.app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom) + var(--tray-h, 0px)); }
 }
 
+/* A low window: the chips scroll inside the tray, so that none of them leaves the screen. */
+@media (max-height: 640px) {
+  .aptray__list { max-height: calc(100dvh - 150px); overflow-y: auto; padding: 4px 4px 14px; margin: -4px -4px -14px; }
+}
+
 /* Reduced motion: chips appear without movement. */
 @media (prefers-reduced-motion: reduce) {
   .aptray__item,
-  .aptray__more { animation: none; }
+  .aptray__more,
+  .aptray--line .aptray__morebtn { animation: none; }
 }

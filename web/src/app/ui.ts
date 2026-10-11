@@ -53,6 +53,8 @@ export interface UiState {
   paletteQuery: string;
   /** Counts the requests to open the decisions list from outside the top bar (the "+N more" chip). */
   decisionsRequest: number;
+  /** The decisions list is open. The tray of chips waits: the list shows the same questions. */
+  decisionsOpen: boolean;
 }
 
 let state: UiState = {
@@ -69,6 +71,7 @@ let state: UiState = {
   palette: false,
   paletteQuery: "",
   decisionsRequest: 0,
+  decisionsOpen: false,
 };
 const listeners = new Set<() => void>();
 

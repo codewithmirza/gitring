@@ -12,7 +12,7 @@ import { isProjectRoute, Link, navigate, type Route } from "./router";
 import { ProjectSwitcher, UserMenu } from "./Account";
 import { useCanAct } from "../state/account";
 import { launchAllNow } from "./actions";
-import { closePalette, openPalette, openShortcuts, useUi } from "./ui";
+import { closePalette, openPalette, openShortcuts, setUi, useUi } from "./ui";
 import { PALETTE_KEY } from "./keys";
 import { ApprovalCard } from "./ApprovalCard";
 
@@ -220,6 +220,12 @@ function Decisions() {
     seen.current = request;
     setOpen(true);
   }, [request, setOpen]);
+  // While the list is open, the tray of chips waits: both show the same questions.
+  const listOpen = pop.open;
+  useEffect(() => {
+    setUi({ decisionsOpen: listOpen });
+    return () => setUi({ decisionsOpen: false });
+  }, [listOpen]);
 
   // A member decides on the questions that wait for them and on the other items. A question that waits for
   // somebody else is in the list too, but it is not theirs. People who only view see everything as "waits".

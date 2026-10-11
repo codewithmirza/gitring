@@ -1,16 +1,28 @@
 /**
  * The tray: one chip for every merge that waits for a yes from the person who looks. It shows on every
  * project page, so that a question does not wait behind a page that the person does not look at. At most
- * three chips show, the newest at the bottom; "+N more" opens the decisions list.
+ * three chips show, the newest at the bottom; "+N more" opens the decisions list. A small window shows
+ * fewer chips: the tray must not cover the page. On the approve page the tray is one line, because the
+ * answer of that page is in the same corner.
  */
 import { useEffect, useRef, useState } from "react";
 import { announceText, useMyQuestions } from "../state/approvals";
 import { useStore } from "../state/store";
 import { ApprovalCard } from "./ApprovalCard";
 import { isProjectRoute, type Route } from "./router";
-import { openDecisions } from "./ui";
+import { openDecisions, useUi } from "./ui";
+import { useMedia } from "./useMedia";
 
 const MAX_CHIPS = 3;
+
+/** How many chips fit: three on a wide screen, two on a phone, one where the window is low. */
+function useMaxChips(): number {
+  const wide = useMedia("(min-width: 761px)");
+  const high = useMedia("(min-height: 640px)");
+  const low = useMedia("(min-height: 480px)");
+  if (wide) return high ? MAX_CHIPS : low ? 2 : 1;
+  return high ? 2 : 1;
+}
 
 /** Tell the toasts how tall the tray is, so that they sit above it (CSS: --tray-h). */
 function useTrayHeight(el: HTMLElement | null) {
@@ -62,35 +74,47 @@ export function ApprovalTray({ route }: { route: Route }) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const onProject = isProjectRoute(route);
   const announcement = useArrivals(mine, ready);
+  const max = useMaxChips();
 
-  // The approve page of a work copy has its answer. Its chip would say the same twice.
+  // The approve page of a work copy has its answer. Its chip would say the same twice. The other questions
+  // shrink to one line there: chips would cover the answer.
   const here = route.name === "approve" ? route.id : null;
   const list = onProject ? mine.filter((x) => x.attemptId !== here) : [];
-  const shown = list.slice(-MAX_CHIPS);
+  const compact = route.name === "approve";
+  const shown = compact ? [] : list.slice(-max);
   const more = list.length - shown.length;
-  useTrayHeight(shown.length ? el : null);
+  // The decisions list shows the same questions: while it is open, the tray waits.
+  const waits = useUi().decisionsOpen;
+  const visible = list.length > 0 && !waits;
+  useTrayHeight(visible ? el : null);
 
   return (
     <>
       <div className="vh" role="status" aria-live="polite" aria-atomic="true">
         {onProject ? announcement : ""}
       </div>
-      {shown.length > 0 && (
-        <section ref={setEl} className="aptray" role="region" aria-label="Merges that wait for you" data-route={route.name}>
-          <ul className="aptray__list">
-            {more > 0 && (
-              <li className="aptray__more">
-                <button type="button" className="aptray__morebtn" aria-haspopup="dialog" aria-label={`+${more} more. Show all decisions.`} onClick={openDecisions}>
-                  +{more} more
-                </button>
-              </li>
-            )}
-            {shown.map((item) => (
-              <li key={item.key} className="aptray__item">
-                <ApprovalCard item={item} variant="chip" />
-              </li>
-            ))}
-          </ul>
+      {visible && (
+        <section ref={setEl} className={["aptray", compact && "aptray--line"].filter(Boolean).join(" ")} role="region" aria-label="Merges that wait for you" data-route={route.name}>
+          {compact ? (
+            <button type="button" className="aptray__morebtn" aria-haspopup="dialog" onClick={openDecisions}>
+              {list.length} other {list.length === 1 ? "merge waits" : "merges wait"} for you
+            </button>
+          ) : (
+            <ul className="aptray__list">
+              {more > 0 && (
+                <li className="aptray__more">
+                  <button type="button" className="aptray__morebtn" aria-haspopup="dialog" aria-label={`+${more} more. Show all decisions.`} onClick={openDecisions}>
+                    +{more} more
+                  </button>
+                </li>
+              )}
+              {shown.map((item) => (
+                <li key={item.key} className="aptray__item">
+                  <ApprovalCard item={item} variant="chip" />
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
     </>

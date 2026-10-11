@@ -367,7 +367,7 @@ function Lane({ attempt: a, all, agent, intent, corrections, checks, names, land
           <p className="lane__note lane__note--drift">
             <Icon name="rederive" size={14} />
             Main moved to <span className="voice-agent">{shortSha(a.drift.mainSha)}</span>. {a.drift.overlaps.join(", ")} overlap{a.drift.overlaps.length > 1 ? "" : "s"} the
-            merged change. If you choose this work copy, gitring redoes it on the new main.
+            merged change. If you say yes to this work copy, gitring redoes it on the new main.
           </p>
         )}
         {landed && landing && (
@@ -737,7 +737,11 @@ function IntentDetail({ intent }: { intent: Intent }) {
           </h2>
           <p className="compare__help">
             {intent.status === "judging"
-              ? `${ready.length} work copies are ready. Compare the tests${preview ? " and the previews" : ""}. Merge one. The others stay as alternatives.`
+              ? ready.length > 1
+                ? `${ready.length} work copies are ready. A person must say yes to one. Compare the tests${preview ? " and the previews" : ""}. The others stay as alternatives.`
+                : ready.length === 1
+                  ? `1 work copy is ready. A person must say yes before it merges. Check the tests${preview ? " and the preview" : ""}.`
+                  : "No work copy is ready. The work could not merge. Redo it on the new main, or pause the task."
               : intent.status === "landed"
                 ? pick
                   ? `${pick.by.name} chose ${names(pick.attemptIds[0])}: “${pick.rationale}”`

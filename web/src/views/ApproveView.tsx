@@ -12,6 +12,7 @@ import { SignInChoices } from "../app/Account";
 import { answerApproval, useAnswering, type Answer } from "../app/approvalActions";
 import { MOD } from "../app/keys";
 import { codeHref, Link } from "../app/router";
+import { useMedia } from "../app/useMedia";
 import { useNow } from "../app/useNow";
 import { harborOrNull, isAbort, type ApprovalResult, type DiffResult } from "../state/api";
 import { cannotAnswerText, describeOutcome, phaseOf, useApproverRule, type Outcome, type Phase } from "../state/approvals";
@@ -23,17 +24,7 @@ import "./approve.css";
 
 /** True while the viewport is at most `px` wide. */
 function useNarrow(px = 900): boolean {
-  const query = `(max-width: ${px}px)`;
-  const [narrow, setNarrow] = useState(() => typeof matchMedia !== "undefined" && matchMedia(query).matches);
-  useEffect(() => {
-    if (typeof matchMedia === "undefined") return;
-    const m = matchMedia(query);
-    const on = () => setNarrow(m.matches);
-    on();
-    m.addEventListener("change", on);
-    return () => m.removeEventListener("change", on);
-  }, [query]);
-  return narrow;
+  return useMedia(`(max-width: ${px}px)`);
 }
 
 /** The pill next to the title: where the question stands. */
@@ -134,7 +125,6 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
   const [noteOpen, setNoteOpen] = useState(false);
   const uid = useId();
   const noteId = `${uid}-note`;
-  const reasonId = `${uid}-reason`;
   const toggle = useRef<HTMLButtonElement | null>(null);
   const showNote = wide || noteOpen;
 
@@ -145,7 +135,7 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
   const onNoteKey = (e: KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      if (mayAnswer && !busy) onSend("send-back", note);
+      if (!busy) onSend("send-back", note);
     } else if (e.key === "Escape" && !wide) {
       e.preventDefault();
       e.stopPropagation();
@@ -188,21 +178,18 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
         </div>
       ) : !signedIn ? (
         <SignInChoices reason="Sign in to answer." />
+      ) : !mayAnswer ? (
+        // A person who may not answer sees why, and no button that does nothing.
+        <p className="approve__reason">
+          <Icon name="info" size={14} /> {reason}
+        </p>
       ) : (
         <div className="approve__form">
-          <Button
-            variant="primary"
-            icon="merge"
-            block
-            busy={sending === "approve"}
-            disabled={!mayAnswer || (busy && sending !== "approve")}
-            aria-describedby={!mayAnswer ? reasonId : undefined}
-            onClick={() => onSend("approve", "")}
-          >
+          <Button variant="primary" icon="merge" block busy={sending === "approve"} disabled={busy && sending !== "approve"} onClick={() => onSend("approve", "")}>
             Yes, merge it
           </Button>
           {!showNote && (
-            <Button ref={toggle} block aria-expanded={false} disabled={!mayAnswer} aria-describedby={!mayAnswer ? reasonId : undefined} onClick={() => setNoteOpen(true)}>
+            <Button ref={toggle} block aria-expanded={false} onClick={() => setNoteOpen(true)}>
               Send back…
             </Button>
           )}
@@ -216,7 +203,6 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
                 voice="human"
                 rows={wide ? 4 : 2}
                 value={note}
-                disabled={!mayAnswer}
                 autoFocus={!wide}
                 aria-keyshortcuts="Control+Enter Meta+Enter"
                 onChange={(e) => setNote(e.target.value)}
@@ -226,7 +212,7 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
                 <Kbd>{MOD}</Kbd> + <Kbd>Enter</Kbd> sends it back.
               </p>
               <div className="approve__noteacts">
-                <Button block={wide} busy={sending === "send-back"} disabled={!mayAnswer || (busy && sending !== "send-back")} aria-describedby={!mayAnswer ? reasonId : undefined} onClick={() => onSend("send-back", note)}>
+                <Button block={wide} busy={sending === "send-back"} disabled={busy && sending !== "send-back"} onClick={() => onSend("send-back", note)}>
                   Send back
                 </Button>
                 {!wide && (
@@ -237,12 +223,7 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
               </div>
             </div>
           )}
-          {!mayAnswer && (
-            <p className="approve__reason" id={reasonId}>
-              {reason}
-            </p>
-          )}
-          {mayAnswer && <p className="approve__hint">A yes merges the work into main. Send back tells the agent what to change.</p>}
+          <p className="approve__hint">A yes merges the work into main. Send back tells the agent what to change.</p>
           {error && (
             <p className="approve__error" role="alert">
               <Icon name="cross" size={12} /> {error}
@@ -324,18 +305,25 @@ function Question({ attempt }: { attempt: Attempt }) {
     if (!approval) return;
     setError(null);
     setNotice(null);
+    // The live connection is faster than a merge: the result can show before the answer comes back. The focus
+    // moves to the result then, because this person asked for it.
+    askedHere.current = true;
     const r = await answerApproval({ attemptId: attempt.id, approvalId: approval.id, answer, note, title, quiet: true });
     if (!r.ok) {
+      askedHere.current = false;
       setError(`The answer did not send: ${r.error}`);
       return;
     }
     if (r.kind === "refused") {
+      askedHere.current = false;
       setError(r.result.message);
       return;
     }
     // An old question has no answer here: the notice says why, and the page shows the new question.
-    if (r.kind === "old") setNotice({ approvalId: approval.id, text: r.result.message });
-    else askedHere.current = true;
+    if (r.kind === "old") {
+      askedHere.current = false;
+      setNotice({ approvalId: approval.id, text: r.result.message });
+    }
     setAnswered({ approvalId: approval.id, result: r.result });
   };
 

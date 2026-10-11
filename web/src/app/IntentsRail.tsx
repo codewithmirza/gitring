@@ -51,7 +51,7 @@ function intentMeta(i: Intent, attempts: Attempt[]): string {
   const ready = attempts.filter((a) => a.status === "ready").length;
   switch (i.status) {
     case "judging":
-      return `${ready} ready · choose one`;
+      return `${ready} ready · needs a yes`;
     case "landed":
       return `Merged ${shortSha(i.landedSha)}${attempts.length > 1 ? ` · ${attempts.length - 1} ${attempts.length > 2 ? "alternatives" : "alternative"}` : ""}`;
     case "parked":
