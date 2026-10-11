@@ -290,7 +290,7 @@ export function toolSet(set: McpSet): { tools: readonly ToolDef[]; instructions:
 
 function createServer(env: Env, who: Principal, set: McpSet) {
   const { tools, instructions } = toolSet(set);
-  const server = new McpServer({ name: "gitring", version: "0.7.0" }, { instructions });
+  const server = new McpServer({ name: "gitring", version: "0.8.0" }, { instructions });
   registerTools(server, makeContext(env, who, set === "github" ? GITHUB_LIST_HOW : undefined), tools);
   return server;
 }
