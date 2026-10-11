@@ -353,6 +353,8 @@ export async function runChecks(loader: WorkerLoader, key: string, input: CheckF
     ok: error === undefined && failed === 0,
     passed: cases.length - failed,
     failed,
+    // How many real tests ran. 0 with ok: true means nothing was verified (the caller decides what that means).
+    ran: cases.filter((c) => !SYNTHETIC.has(c)).length,
     cases,
     ms: Date.now() - started,
     at: started,
@@ -502,8 +504,13 @@ function withEmptyFiles(cases: CheckCaseResult[], run: string[]): CheckCaseResul
   return [...cases, ...empty];
 }
 
+/** Cases that gitring makes up to report a problem (a missing file, a load error). They are not tests that ran. */
+const SYNTHETIC = new WeakSet<CheckCaseResult>();
+
 function failedCase(file: string, name: string, error: string): CheckCaseResult {
-  return { file, name, ok: false, error: clip(error), ms: 0 };
+  const made: CheckCaseResult = { file, name, ok: false, error: clip(error), ms: 0 };
+  SYNTHETIC.add(made);
+  return made;
 }
 
 /** "Failed to start Worker:\nUncaught SyntaxError: …\n  at tests/x.test.js:1:2" → one line. */

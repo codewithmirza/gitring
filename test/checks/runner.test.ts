@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { noTestRan } from "../../src/core/types";
 import {
   HARNESS_PATH,
   HARNESS_SOURCE,
@@ -166,6 +167,25 @@ describe("runChecks (generated modules executed in Node)", () => {
     expect(run.cases).toEqual([{ file: "tests/empty.test.js", name: "(no tests)", ok: false, error: "The file registers no tests.", ms: 0 }]);
   });
 
+  it("counts the tests that ran: 0 when none ran, and not the cases that gitring makes up", async () => {
+    const local = nodeLoader();
+    // No test path: nothing ran, nothing failed. The run is ok but verifies nothing (see noTestRan).
+    const none = await runChecks(local, "none-ran", { files: greeter, testPaths: [] });
+    expect(none).toMatchObject({ ok: true, passed: 0, failed: 0, ran: 0 });
+    const ran = await runChecks(loader, "greeter-ran", { files: greeter, testPaths: [GREETER_TEST_FILE] });
+    expect(ran).toMatchObject({ ok: true, failed: 0, ran: GREETER_TEST_COUNT });
+    // A missing file, an unsupported file and a file without tests are failures that gitring reports. They are not tests that ran.
+    const missing = await runChecks(loader, "missing-ran", { files: greeter, testPaths: ["tests/gone.test.js"] });
+    expect(missing).toMatchObject({ ok: false, failed: 1, ran: 0 });
+    const emptyFile = withFiles({ "tests/empty.test.js": 'import { test } from "../harness/test.js";\n' });
+    const empty = await runChecks(loader, "empty-ran", { files: emptyFile, testPaths: ["tests/empty.test.js"] });
+    expect(empty).toMatchObject({ ok: false, failed: 1, ran: 0 });
+    // A test that fails did run.
+    const french = 'import { test, expect } from "../harness/test.js";\nimport { greet } from "../src/greet.js";\ntest("greets in French", () => expect(greet("Ada")).toBe("Bonjour, Ada!"));\n';
+    const failing = await runChecks(loader, "french-ran", { files: withFiles({ "tests/french.test.js": french }), testPaths: ["tests/french.test.js"] });
+    expect(failing).toMatchObject({ ok: false, failed: 1, ran: 1 });
+  });
+
   it("isolates a test file that does not load and still runs the others", async () => {
     const files = withFiles({
       "tests/broken.test.js": 'import { test } from "../harness/test.js";\ntest("x", () => { ) });\n',
@@ -241,5 +261,30 @@ describe("contentKey", () => {
     expect(await contentKey(new Map([["b.js", "2"], ["a.js", "1"]]))).toBe(a);
     expect(await contentKey(new Map([["a.js", "1"], ["b.js", "3"]]))).not.toBe(a);
     expect(await contentKey(new Map([["a.js1", ""], ["b.js", "2"]]))).not.toBe(a);
+  });
+});
+
+describe("noTestRan", () => {
+  const base = { ok: true, passed: 0, failed: 0 } as const;
+
+  it("is true when the gitring test harness ran no test and nothing failed", () => {
+    expect(noTestRan({ ...base, ran: 0 })).toBe(true);
+    expect(noTestRan({ ...base, ran: 0, runner: "worker" })).toBe(true);
+    // A run from before the count existed: no test passed or failed.
+    expect(noTestRan({ ...base })).toBe(true);
+  });
+
+  it("is false when a test ran, when the run failed, or when the container decided", () => {
+    expect(noTestRan({ ok: true, passed: 3, failed: 0, ran: 3 })).toBe(false);
+    expect(noTestRan({ ok: true, passed: 3, failed: 0 })).toBe(false);
+    expect(noTestRan({ ok: false, passed: 0, failed: 1, ran: 0 })).toBe(false);
+    expect(noTestRan({ ...base, ran: 0, runner: "container" })).toBe(false);
+    expect(noTestRan(undefined)).toBe(false);
+    expect(noTestRan(null)).toBe(false);
+  });
+
+  it("is false for a run that waits for the test budget: it did not happen", () => {
+    expect(noTestRan({ ok: false, passed: 0, failed: 0, ran: 0, runner: "container", wait: { retryAt: 1, message: "Wait." } })).toBe(false);
+    expect(noTestRan({ ...base, ran: 0, wait: { retryAt: 1, message: "Wait." } })).toBe(false);
   });
 });

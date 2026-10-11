@@ -51,6 +51,7 @@ function settingsDefaults(extra = {}) {
     decisionModel: "clef-flash",
     agentModels: ["@cf/moonshotai/kimi-k2.7-code", "@cf/openai/gpt-oss-120b"],
     intentsInRepo: true,
+    allowUntested: false,
     thresholds: { collision: 0.5, interference: 1.7, duplicate: 0.7, minConfidence: 0.55 },
     webhooks: [],
     github: { mode: "off", branch: "gitring" },

@@ -18,6 +18,7 @@ import type {
   Range,
   Verdict,
 } from "../../../src/core/types";
+import { noTestRan } from "../../../src/core/types";
 import { hullName, type HullName } from "../design/icons";
 import { RANGE_TEXT } from "./format";
 
@@ -406,12 +407,14 @@ const queueMemo = memo((intents: Intent[], attempts: Attempt[], checks: CourseCh
       });
       continue;
     }
+    // No test ran for any of them: nothing is verified, and a person must decide.
+    const untested = ready.every((a) => noTestRan(a.composedChecks ?? a.checks));
     out.push({
       key: `pick:${i.id}`,
       kind: "pick",
       intentId: i.id,
       title: i.title,
-      detail: `Choose 1 of ${ready.length} ready work copies`,
+      detail: untested ? `No test ran. A person must decide to merge${ready.length > 1 ? `. Choose 1 of ${ready.length} work copies` : ""}` : `Choose 1 of ${ready.length} ready work copies`,
       attemptIds: ready.map((a) => a.id),
       at: i.updatedAt,
     });

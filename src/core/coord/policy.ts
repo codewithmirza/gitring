@@ -30,6 +30,35 @@ export function needsCorrection(a: CourseAssessment, t: PolicyThresholds): boole
   return a.collision >= t.collision || a.interference >= t.interference;
 }
 
+/**
+ * A soft pair has no evidence of a clash: the two works are one import apart or more (range 3 and up),
+ * the range is not closing, and no interface that one changes is used by the other.
+ */
+export function isSoftPair(f: PairFacts): boolean {
+  return f.range >= 3 && !f.closing && f.interfaceHits.length === 0;
+}
+
+/** The ceiling of a soft pair. The decision model cannot raise a soft pair above these scores. */
+export const SOFT_PAIR_CAP = { collision: 0.45, interference: 1.4 } as const;
+
+/** The decision model may call two tasks one task only when the words of the two tasks overlap this much. */
+export const DUPLICATE_MIN_SIMILARITY = 0.2;
+/** Without that overlap, the duplicate score of the decision model counts at most this much. */
+export const DUPLICATE_UNSHARED_CAP = 0.5;
+
+/**
+ * True when a call to the decision model cannot change the verdict. The fixed rules give the same verdict.
+ *
+ * Every pair must be soft, so its scores stay under the caps above, and both thresholds must lie above
+ * those caps. Then no pair needs a correction, with the model or without it. The model could still
+ * call the tasks a duplicate. It cannot when the words of the tasks do not overlap and the duplicate
+ * threshold lies above the cap that applies then. A threshold that is not a number never passes.
+ */
+export function modelCannotChangeVerdict(facts: readonly PairFacts[], t: PolicyThresholds): boolean {
+  const thresholdsAbove = SOFT_PAIR_CAP.collision < t.collision && SOFT_PAIR_CAP.interference < t.interference && DUPLICATE_UNSHARED_CAP < t.duplicate;
+  return thresholdsAbove && facts.every((f) => isSoftPair(f) && f.intentSimilarity < DUPLICATE_MIN_SIMILARITY);
+}
+
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
 function placeholderFacts(otherAttemptId: string): PairFacts {

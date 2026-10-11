@@ -156,6 +156,7 @@ function makeState() {
         decisionModel: "clef-flash",
         agentModels: [],
         intentsInRepo: true,
+        allowUntested: false,
         thresholds: { collision: 0.5, interference: 1.7, duplicate: 0.7, minConfidence: 0.55 },
         webhooks: [],
         github: { repo: "robin/shop", mode: "pull-request", branch: "gitring" },
