@@ -1,6 +1,6 @@
 {
   "name": "gitring",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "gitring lets many coding agents change one repository at the same time. Agents send a plan. gitring compares it with the 20 nearest plans, sends change requests instead of rejections, and merges work only when the tests pass. It runs on Cloudflare Workers and Artifacts.",
   "license": "MIT",
@@ -65,6 +65,7 @@
     "@fontsource-variable/source-serif-4": "5.3.0",
     "@fontsource/atkinson-hyperlegible-mono": "5.3.0",
     "@fontsource/atkinson-hyperlegible-next": "5.3.0",
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/node": "^24",
     "@types/react": "^19",

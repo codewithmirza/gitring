@@ -158,7 +158,8 @@ export function describeOutcome(i: { phase: Phase; approval?: Approval; me: stri
   const answer = approval?.answer;
   const mine = answer ? answer.by.id === i.me : false;
   const who = !answer ? "A person" : mine ? "You" : answer.by.name;
-  const when = answer ? ` ${ago(answer.at, i.now)}` : "";
+  const rel = answer ? ago(answer.at, i.now) : "";
+  const when = rel === "now" ? " just now" : rel ? ` ${rel}` : "";
   // An answer from somebody else: say so first.
   const other = answer && !mine ? [`Already answered by ${answer.by.name}.`] : [];
   switch (phase.kind) {

@@ -46,6 +46,21 @@ export const LANDING_CHOICES: Choice<LandingMode>[] = [
   },
 ];
 
+/**
+ * What gitring does with work that no question holds back, by the choice of the project. The decisions list says it
+ * when it is empty: the sentence must be true for every choice.
+ */
+export function quietText(mode: LandingMode): string {
+  switch (mode) {
+    case "automatic":
+      return "gitring merges work when its tests pass.";
+    case "risky":
+      return "gitring merges safe work when its tests pass. It asks you about risky work.";
+    default:
+      return "gitring asks you before every merge.";
+  }
+}
+
 export const APPROVER_CHOICES: Choice<ApproverRule>[] = [
   {
     value: "sender",

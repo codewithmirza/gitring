@@ -122,7 +122,7 @@ export function ProjectsView() {
           <h1 className="page__title" tabIndex={-1}>
             Projects
           </h1>
-          <p className="page__lede">A project is one repository. Many agents change it at the same time. gitring checks their plans and merges their work when the tests pass.</p>
+          <p className="page__lede">A project is one repository. Many agents change it at the same time. gitring checks their plans and merges their work when the tests pass. You say yes to risky work.</p>
         </div>
         {ready && !inline && (
           <div className="projects__new">

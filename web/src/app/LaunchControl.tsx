@@ -56,7 +56,7 @@ export function FanoutPicker({
       </fieldset>
       <p className="launch__help">
         {fanout === 1
-          ? "One agent. gitring merges its work when the tests pass."
+          ? "One agent works in its own work copy."
           : `${fanout} agents work in parallel, each in its own work copy. Compare the results, then merge one.`}
         {models.length === 0 ? " No model is selected: gitring uses all models." : ""}
       </p>

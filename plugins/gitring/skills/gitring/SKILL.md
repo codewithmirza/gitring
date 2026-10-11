@@ -30,8 +30,9 @@ When the project sends merges to GitHub, gitring does it for you.
 5. **Work.** Report progress with `gitring_log`. In git mode, give `headSha` after a push. See the work near yours with `gitring_traffic`.
 6. **Apply every change request.** An answer that starts with `GITRING CHANGE REQUEST` lists what to change. Apply each item in your next edits. Then call `gitring_ack` with the change request id and one line about what you changed. Do not stop your work.
 7. **Test.** Call `gitring_check`. Fix each failure. Call it again until the tests pass.
-8. **Ask for the merge.** Call `gitring_submit` with a short summary. gitring tests again and merges the work.
-9. **When main moved.** A change request can say that main moved. Call `gitring_update`. In api mode, read the named files again. In git mode, run the git commands in the answer. Then test and submit again.
+8. **Ask for the merge.** Call `gitring_submit` with a short summary. gitring tests again. Then it merges the work, or a person must say yes first.
+9. **When a person must say yes.** An answer that starts with `A PERSON MUST SAY YES` means that the work waits. The answer holds the link where the person answers. Tell the user that the work waits, and give the link. Do not change the work copy: a change cancels the question. Do other work. Call `gitring_status` later to see the answer. When the person sent the work back, the answer holds a change request. Apply it, then call `gitring_submit` again.
+10. **When main moved.** A change request can say that main moved. Call `gitring_update`. In api mode, read the named files again. In git mode, run the git commands in the answer. Then test and submit again.
 
 ## Rules
 
@@ -39,6 +40,7 @@ When the project sends merges to GitHub, gitring does it for you.
 - Never push to the main branch yourself. gitring merges.
 - Never ignore a change request. Apply it, then confirm it.
 - When the conflict check says "a person decides", tell the user and wait.
+- Never say yes to your own work. gitring has no tool for it, and a person must answer.
 - Reuse your `agentId` in later calls of `gitring_declare`.
 - Keep the token of your work copy secret. Do not write it into a file.
 

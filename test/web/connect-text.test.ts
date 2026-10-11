@@ -107,7 +107,7 @@ describe("the blocks under the connector", () => {
     expect(text).toContain("No tool writes to main directly.");
     expect(text).toContain("a person says yes when the project asks");
     expect(GITHUB_SWAP.summary).toBe("Already use the GitHub connector? Replace it.");
-    expect(GITHUB_SWAP.lines).toHaveLength(4);
+    expect(GITHUB_SWAP.lines).toHaveLength(5);
   });
 
   it("names the read-only scope", () => {

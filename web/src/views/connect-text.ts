@@ -78,6 +78,7 @@ export const GITHUB_SWAP = {
     "The tools keep the GitHub names, for example `get_file_contents` and `create_pull_request`.",
     "A branch is a gitring work copy. A pull request is a merge request: the tests run first, and a person says yes when the project asks.",
     "No tool writes to main directly.",
+    "The agent signs in again for this URL. A sign-in is good for one URL only.",
   ],
 };
 

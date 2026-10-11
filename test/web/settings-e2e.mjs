@@ -436,7 +436,7 @@ step("H. Connect: one main URL, and two closed blocks (GitHub connector, read-on
   const swapUrl = swap.getByLabel("URL to use instead of the GitHub connector");
   check((await swapUrl.inputValue()) === `${BASE}/mcp/github`, "…with the GitHub address (<origin>/mcp/github)", await swapUrl.inputValue());
   const lines = await swap.locator("ul.cx-lines > li").allTextContents();
-  check(lines.length === 4, "…and four short lines", lines.length);
+  check(lines.length === 5, "…and five short lines", lines.length);
   check(same(await swap.locator(".code-inline").allTextContents(), ["get_file_contents", "create_pull_request"]), "…that name two GitHub tools as code", await swap.locator(".code-inline").allTextContents());
   check(lines.some((t) => /No tool writes to main directly\./.test(t)) && lines.some((t) => /a person says yes when the project asks/.test(t)), "…that say that no tool writes to main and that a person says yes when the project asks", lines);
   await swap.getByRole("button", { name: "Copy URL" }).click();

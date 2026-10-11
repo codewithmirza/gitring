@@ -220,7 +220,7 @@ export function HomeView() {
         </h1>
         <p className="home__lede">
           gitring checks the plan of each agent before it writes code. It sends a change request instead of a rejection. It merges work only when the tests
-          pass.
+          pass, and it asks you before risky work.
         </p>
         <div className="home__actions">
           {signedIn ? (

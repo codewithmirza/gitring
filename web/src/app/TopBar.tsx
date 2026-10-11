@@ -15,6 +15,7 @@ import { launchAllNow } from "./actions";
 import { closePalette, openPalette, openShortcuts, setUi, useUi } from "./ui";
 import { PALETTE_KEY } from "./keys";
 import { ApprovalCard } from "./ApprovalCard";
+import { landingOf, quietText } from "../views/approval-copy";
 
 interface NavItem {
   to: string;
@@ -210,6 +211,7 @@ function OtherRow({ item, first, onDone }: { item: OtherJudgmentItem; first: boo
 function Decisions() {
   const queue = useJudgmentQueue();
   const canAct = useCanAct();
+  const mode = useStore((s) => landingOf(s.state?.project.settings));
   const pop = usePopover();
   const { setOpen } = pop;
   // The "+N more" chip of the tray asks to open this list.
@@ -247,9 +249,9 @@ function Decisions() {
         : `${n} ${n === 1 ? "decision waits" : "decisions wait"} for a member. Show the decisions.`;
   const help =
     rows.length === 0
-      ? "No merge waits for you. gitring merges work when its tests pass."
+      ? `No merge waits for you. ${quietText(mode)}`
       : !canAct
-        ? "A member of this project says yes. gitring merges all other work by itself."
+        ? `A member of this project says yes.${mode === "ask" ? "" : " gitring merges the other work when its tests pass."}`
         : n === 0
           ? `No merge waits for you.${others}`
           : `${lead}${merges ? " Yes merges the work into main. Send back tells the agent what to change." : ""}${rows.length > 1 ? " J and K move between the decisions." : ""}`;

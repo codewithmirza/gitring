@@ -4,7 +4,7 @@ gitring lets many coding agents change one repository at the same time.
 
 Each agent sends its plan (steps, files, functions) before it writes code. gitring compares the plan with the 20 nearest other plans. It also compares the plan with changes that merged into main after the work copy began. If two agents will collide, gitring sends a change request to one of them. It does not reject the agent, and the agent continues. A collision with any other plan appears later, at the merge, as a text conflict or a failed test.
 
-gitring merges work into main only when the tests pass. When main moves, api mode and git mode differ (see [Connect agents](#connect-agents)). In api mode, gitring moves the work copy onto the new main. In git mode, the agent runs `git pull` and fixes conflicts itself. Agents fix merge conflicts. When agents cannot agree, a person chooses. For example, a person picks one of several results.
+gitring merges work into main only when the tests pass. A person can say yes first: gitring asks in the chat of the agent or in the gitring app, and no agent can answer for the person (see [Approvals](#approvals-a-person-says-yes)). When main moves, api mode and git mode differ (see [Connect agents](#connect-agents)). In api mode, gitring moves the work copy onto the new main. In git mode, the agent runs `git pull` and fixes conflicts itself. Agents fix merge conflicts. When agents cannot agree, a person chooses. For example, a person picks one of several results.
 
 gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dynamic Workers and Containers. Agents connect through MCP or plain git.
 
@@ -22,6 +22,7 @@ gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dyna
    Result: clear, or a change request to ONE agent. The other agent continues.
 4. The agent works. Each write, report or push runs step 3 again.
 5. The agent runs the tests (gitring_check) and asks for a merge (gitring_submit).
+   When the project asks, or the work looks risky, a person says yes first (see Approvals). The work waits. The agent does not stop.
 6. Merge, one at a time in each project:
    fast-forward → 3-way merge → tests on main + work → commit to main with a git note (the record of why)
    If the text conflicts or the combined tests fail, the work goes back to its agent (redo policy).
@@ -38,6 +39,7 @@ The note on distance 3: gitring skips the model call only when the model cannot 
 | conflict check | gitring compares one plan with the 20 nearest other plans. It also compares the plan with changes that merged into main after the work copy began. |
 | change request | A message from gitring to one agent: change your plan or your code. Never a rejection. |
 | rebase | Work in progress gets the new main after a merge. In api mode, gitring does this (3-way, per file). In git mode, the agent does it with `git pull`. |
+| approval | A merge that waits for a person. The person says yes (gitring merges) or sends the work back (the agent changes it). |
 | redo | The task is done again on the new main, when the first work cannot merge. |
 | history | The record of each merge: task, plan, change requests, tests and decisions (git notes and commit trailers). |
 
@@ -184,6 +186,37 @@ If the worker runner finds no test, gitring does not call the work verified. A p
 
 Owners change the runner, the commands and the time limit in Settings → Tests. Test containers have no direct Internet access: a Worker entrypoint lets requests to package registries (npm, PyPI, Go proxy, Debian, crates.io, RubyGems, Maven, Gradle, JSR) pass and refuses all other hosts.
 
+## Approvals: a person says yes
+
+gitring can ask a person before it merges the work of an agent. The agent never answers that question. Only a person can.
+
+An owner chooses when gitring asks, in Settings → Merging:
+
+| Choice | gitring asks when |
+|---|---|
+| Only when the tests pass | No test ran, or work copies compete on one task. In all other cases gitring merges when the tests pass. |
+| When a change looks risky (the default) | Also when the parameters of a function change, build or deploy files change, files are deleted, or the change is large (15 files or 600 changed lines). |
+| Before every merge | Always. |
+
+Two cases need a person in every choice: no test ran (the work is not verified), and work copies that compete on one task (a person chooses one). The person who sent the agent answers. Owners can always answer. An owner can limit the answers to owners.
+
+**Where the question shows**
+
+- **In the gitring app, always.** A card at the bottom of every page of the project shows the question with the size of the change and the tests. The page `/approve/<work copy>?project=<project>` shows the change, the tests, and the answers "Yes, merge it" and "Send back" (with a note for the agent). Each person sees the questions that wait for them.
+- **In the chat of the agent, when the client can show a form.** The client must use the MCP revision 2026-07-28 and declare the `elicitation` capability. Then `gitring_submit` (or `create_pull_request` on `/mcp/github`) ends with an "input required" result. The client shows the form, the person answers, and the client calls the tool again with the answer. The SDK of the client does these steps. `test/mcp/official-client.test.ts` runs them with the official client SDK.
+- **A link, for every other client.** The answer of the tool starts with `A PERSON MUST SAY YES` and holds the link of the approve page. The agent tells the person, does other work, and calls `gitring_status` (or `pull_request_read`) to see the answer. The official client SDK uses the 2025 revision unless the code asks for the new one, so many clients get the link today.
+
+**What an answer does.** A yes: gitring tests the work again on the new main, then merges it. A send-back: the agent gets a change request with the note, changes the work and submits again. A built-in agent does the task again and reads the note. The first answer counts. A second answer, for the same question or for an old one, changes nothing and says why.
+
+**What keeps the question honest**
+
+- No tool says yes. The routes that answer (`POST /api/projects/:p/attempts/:id/decide` and `/land`) and the approval settings need a browser session. A personal key or an OAuth token (what an agent holds) cannot call them.
+- A yes is for one version of the work. gitring ties the question to the content of the changed files. When the agent changes the work, the question closes, and the next `gitring_submit` asks again.
+- The question in chat travels through the client as `requestState`. gitring signs it with `GITRING_SECRET`, ties it to the person, and lets it expire after one hour. The project object checks again who may answer, which question waits, and that the work did not change.
+- Limit: a program that holds the credentials of the person can send the answer by itself. Approvals protect against an agent that runs away and against a merge by mistake. They do not protect against a program that holds a person's key.
+
+A project can send an `approval` event to a webhook (Settings → Webhooks) when a question starts and when it is answered, for example to Slack.
+
 ## Limits
 
 These limits come from the design, not from speed tests.
@@ -227,8 +260,8 @@ claude mcp add --transport http gitring https://<your-worker>/mcp --header "Auth
 
 | Endpoint | Tools |
 |---|---|
-| `/mcp` | The 11 gitring tools (the table below). |
-| `/mcp/github` | 20 tools with the names and the argument names of the GitHub MCP server: `get_file_contents`, `search_code`, `push_files`, `create_pull_request`, `list_issues` and others. `repo` is a gitring project id (`get_me` lists them). A branch other than `main` is your own work copy, and no tool writes to `main`. `create_pull_request` asks for a merge: gitring runs the tests first. `merge_pull_request` waits and reports, because gitring merges when the tests pass. |
+| `/mcp` | The 12 gitring tools (the table below). |
+| `/mcp/github` | 20 tools with the names and the argument names of the GitHub MCP server: `get_file_contents`, `search_code`, `push_files`, `create_pull_request`, `list_issues` and others. `repo` is a gitring project id (`get_me` lists them). A branch other than `main` is your own work copy, and no tool writes to `main`. `create_pull_request` asks for a merge: gitring runs the tests first. `merge_pull_request` waits and reports: gitring merges when the tests pass and, when the project asks, after a person says yes. |
 | `/mcp/readonly` | Only the gitring tools that read. The OAuth scope `mcp:read` limits a token to these tools. |
 
 To use gitring in place of the GitHub MCP server, remove the GitHub server and add `/mcp/github` under the same name:
@@ -237,6 +270,8 @@ To use gitring in place of the GitHub MCP server, remove the GitHub server and a
 claude mcp remove github
 claude mcp add --transport http --scope user github https://<your-worker>/mcp/github
 ```
+
+**Why a second address?** `/mcp/github` is not a second system. It is the same project, the same plan check, the same tests and the same approvals, with the tool names that agents already know. Many agents have a habit or a prompt that says "use the GitHub tools". With this address, a team changes one URL, and the agents keep their habit while gitring does the merging. New setups use `/mcp`. A sign-in is good for one address only, so an agent signs in again after the change.
 
 Prompts and skills that name GitHub tools keep working for the code-change loop: read, search, branch, push, pull request and task. The GitHub server has more tools (Actions, code scanning, releases and others), and gitring has none of them. `issue_write` makes a task. A person changes or closes a task in gitring. The tools of `/mcp/github` are in `src/worker/mcp-github.ts`.
 
@@ -250,7 +285,8 @@ Prompts and skills that name GitHub tools keep working for the code-change loop:
 | `gitring_log` | Reports progress. In git mode, reports a push at once. Runs a conflict check. |
 | `gitring_ack` | Confirms that you applied a change request. |
 | `gitring_check` | Runs the tests of your work copy. In git mode, gitring tests your latest push. |
-| `gitring_submit` | Asks for a merge. gitring tests again, then merges or asks a person to choose. |
+| `gitring_submit` | Asks for a merge. gitring tests again. Then it merges, or a person says yes first when the project asks (see Approvals). |
+| `gitring_status` | Shows where a work copy is: with a person, sent back, in the merge queue or merged. It changes nothing. |
 | `gitring_update` | Brings the new main into your work copy. In git mode: a read-only remote and token for main. |
 
 Two modes:
@@ -325,7 +361,7 @@ Rights: linking a repository needs read rights on GitHub; turning sync on needs 
 | `POST /hooks/github-app` | The gitring GitHub App: an issue labeled `gitring` by a project member → a task in each project that imports or links the repository; a push to a followed branch → GitHub changes come into main. Each delivery counts once. |
 | `POST /hooks/github` | A plain repository webhook (`GITHUB_WEBHOOK_SECRET`; the URL from the Connect page holds the project and its key) → a task, for the project's own repository only. Each delivery counts once. |
 | `POST /hooks/slack` | Slash command `/gitring Add a dark mode — Readers can switch…` (`SLACK_SIGNING_SECRET`; the command URL from the Connect page holds the project and its key). Each signed request counts once. |
-| **Out** | Project webhooks (Settings → Webhooks) get `landing` (a merge), `correction` (a change request), `decision` and `intent` events as JSON or Slack messages |
+| **Out** | Project webhooks (Settings → Webhooks) get `landing` (a merge), `correction` (a change request), `decision`, `approval` (a question for a person, and its answer) and `intent` events as JSON or Slack messages |
 
 ## Security
 
@@ -333,6 +369,7 @@ Rights: linking a repository needs read rights on GitHub; turning sync on needs 
 - Sign-ins are bound to the browser that started them (a cookie with the OAuth state); an OAuth consent is bound the same way. Browser sessions cannot make cross-site writes.
 - Rate limits per Cloudflare location (Workers Rate Limiting): sign-in starts and client registration 20 a minute per address, OAuth token calls 120, MCP 600 a minute per person, the API 1200, and 3000 credential lookups a minute per address (keys and cookies that are not valid stop at the edge). New OAuth clients: 30 an hour per address.
 - The OAuth consent page names the address that gets the app's code (a registered app can call itself anything); the Allow button works after one second. A request that cannot go on shows a page, not a redirect.
+- A key or an OAuth token (what an agent holds) cannot say yes to a merge, merge work, or change the approval settings. Only a browser session can. See [Approvals](#approvals-a-person-says-yes).
 - A change of access closes the live connections that it concerns (a removed member, a project that turns private, a sign-out): each one connects again and gets its role checked.
 - Imports, outbound webhooks and client metadata documents go to public hosts only (no IP addresses, no local names).
 - The web app has a strict Content Security Policy (inline scripts allowed by hash only); server pages allow no scripts except one by nonce. Live previews of agent code run sandboxed and can set no cookies or other headers on the gitring origin.

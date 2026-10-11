@@ -245,6 +245,9 @@ describe("where a question stands", () => {
     // Somebody else answered first: the page says so.
     const other = describeOutcome({ phase: { kind: "merged", landing }, approval: yes, me: "u9", builtin: false, now });
     expect(other?.lines.slice(0, 2)).toEqual(["Already answered by Robin.", "Robin said yes 2 min ago."]);
+    // A yes from the last seconds reads "just now", not "now".
+    const fresh = asking("a1", 1, { status: "approved", answer: { by: person("u1", "Robin"), how: "app", at: now - 1000 } });
+    expect(describeOutcome({ phase: { kind: "merged", landing }, approval: fresh, me, builtin: false, now })?.lines[0]).toBe("You said yes just now.");
     const waits = describeOutcome({ phase: { kind: "queued" }, approval: yes, me, builtin: false, mergeUntil: now + 600_000, now });
     expect(waits?.headline).toBe("Approved. The merge waits.");
     expect(waits?.lines[1]).toMatch(/^The test budget for this hour is used\. gitring tries again at /);

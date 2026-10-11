@@ -981,7 +981,7 @@ export function DesignView() {
               ["Expand, then narrow", "Launch asks for the fan-out (1–4) and the models. The intent view shows all attempts as lanes. A human lands one.", "/intents", "Open the intents"],
               ["Alternates shelf", "After a landing, sibling attempts stay in the intent view, dimmed and labeled “Alternate”, with their preview and diff.", "/intents/in-picks", "See an alternate"],
               ["Living spec", "An intent shows its version and its amendments: who, why, text. Corrections that change scope amend the constraints.", "/intents/in-search", "See a living spec"],
-              ["Judgment queue", "The top bar shows only the decisions that need a human. Everything else lands by itself.", "/", "See the queue"],
+              ["Judgment queue", "The top bar shows only the decisions that need a human. The project decides which merges need one.", "/", "See the queue"],
               ["Why trail", "From any landing: intent → course → corrections → checks → decision → diff.", "/logbook", "Open the logbook"],
               ["Connect other apps", "One screen shows how inputs arrive and where outputs go.", "/connect", "Open Connect"],
               ["Theme", "Day, Dusk and Night in the top bar. The choice persists per viewer.", "/design#themes", "See the themes"],
