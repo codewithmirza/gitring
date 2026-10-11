@@ -385,6 +385,39 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     await expect(be.resolve("missing-repo", "main")).rejects.toThrow(/NOT_FOUND/);
   });
 
+  it("a short problem of the service (INTERNAL_ERROR) is sent again twice, then it reaches the caller", async () => {
+    const be = backend();
+    binding.failures.set("get:att-1", ["INTERNAL_ERROR"]);
+    expect(await be.resolve("att-1", "main")).toMatch(/^[0-9a-f]{40}$/);
+    expect(sleeps).toEqual([250]);
+
+    sleeps = [];
+    binding.failures.set("get:att-1", ["INTERNAL_ERROR", "INTERNAL_ERROR"]);
+    expect(await be.resolve("att-1", "main")).toMatch(/^[0-9a-f]{40}$/);
+    expect(sleeps).toEqual([250, 500]);
+
+    sleeps = [];
+    binding.failures.set("get:att-1", ["INTERNAL_ERROR", "INTERNAL_ERROR", "INTERNAL_ERROR"]);
+    const err = await be.resolve("att-1", "main").catch((e: unknown) => e);
+    expect(artifactsErrorCode(err)).toBe("INTERNAL_ERROR");
+    expect(sleeps).toEqual([250, 500]);
+    binding.failures.delete("get:att-1");
+
+    // A fork that fails once is made on the second call, and exists once.
+    sleeps = [];
+    binding.failures.set("fork:demo", ["INTERNAL_ERROR"]);
+    const fork = await be.fork("demo", "att-internal");
+    expect(fork.name).toBe("att-internal");
+    expect(sleeps).toEqual([250]);
+    expect(binding.calls.filter((c) => c === "fork:demo->att-internal")).toHaveLength(2);
+    await be.deleteRepo("att-internal");
+
+    // Other errors are not sent again.
+    sleeps = [];
+    await expect(be.resolve("missing-repo", "main")).rejects.toThrow(/NOT_FOUND/);
+    expect(sleeps).toEqual([]);
+  });
+
   it("createToken, deleteRepo, and every get() handle is disposed", async () => {
     const be = backend();
     const t = await be.createToken("att-1", "read", 5);
@@ -453,6 +486,7 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     expect(artifactsErrorCode({ code: "NOT_FOUND" })).toBe("NOT_FOUND");
     expect(artifactsErrorCode(new Error("repo is still forking"))).toBe("FORK_IN_PROGRESS");
     expect(artifactsErrorCode(new Error("Repository does not exist"))).toBe("NOT_FOUND");
+    expect(artifactsErrorCode(new Error("An internal error occurred."))).toBe("INTERNAL_ERROR");
     expect(artifactsErrorCode(new Error("boom"))).toBeUndefined();
     expect(tokenSecret("art_v1_abc?expires=123")).toBe("art_v1_abc");
   });

@@ -16,6 +16,7 @@
 import { Hono, type Context } from "hono";
 import type { Env } from "./env";
 import { createMcp, toolSet } from "./mcp";
+import { retryAfterReset } from "./mcp-kit";
 import { servePreview } from "../platform/checks/preview";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
@@ -60,8 +61,10 @@ export function projectId(raw: string | undefined): string {
   return id;
 }
 
+/** The object of a project. A call that fails because the platform restarted the object is sent again (see retryAfterReset). */
 function harbor(env: Env, project: string) {
-  return env.HARBOR.get(env.HARBOR.idFromName(projectId(project)));
+  const id = env.HARBOR.idFromName(projectId(project));
+  return retryAfterReset(() => env.HARBOR.get(id));
 }
 
 app.onError((e, c) => {

@@ -77,8 +77,14 @@ import {
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
-export const BUILD_ID = "0.9.2+20261011d";
+export const BUILD_ID = "0.9.2+20261011e";
 const MAX_LOGS = 500;
+/** An error as one line for the log. The log of the platform shows only the stack of an error object, and the message is the part that tells what happened. */
+function errorLine(err: unknown): string {
+  const e = err as { name?: unknown; message?: unknown } | null | undefined;
+  const name = typeof e?.name === "string" && e.name ? e.name : "Error";
+  return `${name}: ${(typeof e?.message === "string" ? e.message : String(err)).slice(0, 300)}`;
+}
 /** The lines that a "same lines" change request names, as one text. Empty for any other kind of change request. */
 function regionKey(c: { kind: T.CorrectionKind; constraints: T.Correction["constraints"] }): string {
   const regions = c.constraints.avoidRegions;
@@ -1960,7 +1966,7 @@ export class HarborMaster extends DurableObject<Env> {
   /** Run the queue after the merge that runs now. One merge runs at a time. */
   private driveQueue(): Promise<unknown> {
     const job = this.landingChain.then(() => this.processQueue());
-    this.landingChain = job.catch((e) => console.error("landing failed", e));
+    this.landingChain = job.catch((e) => console.error("landing failed", errorLine(e), e));
     this.ctx.waitUntil(this.landingChain);
     return this.landingChain;
   }
@@ -2062,7 +2068,7 @@ export class HarborMaster extends DurableObject<Env> {
     try {
       outcome = await this.landOne(a);
     } catch (err) {
-      console.error("landOne", a.id, err);
+      console.error("landOne", a.id, errorLine(err), err);
       outcome = await this.mergeStopped(a, err);
     }
     this.db.setMeta("landing", undefined);

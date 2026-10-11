@@ -130,6 +130,68 @@ export function readOnlyTools(tools: readonly ToolDef[]): ToolDef[] {
 /** How a person finds the id of a project, for the error of a bad id. Each tool set names its own tool. */
 export const LIST_HOW = "Call gitring_intents without a project to list your projects.";
 
+/* ───────────────────────── a project object that restarts ───────────────────────── */
+
+/**
+ * The platform can stop a project object between two calls (a new version, a move to another machine, a
+ * crash). The call that is on its way then fails, for example with "Connection closed: this Durable Object
+ * instance is no longer active. Reconnect or retry the request." The object starts again with its storage,
+ * so the same call works a moment later.
+ */
+export function isObjectReset(err: unknown): boolean {
+  const e = err as { message?: unknown; retryable?: unknown; overloaded?: unknown } | null | undefined;
+  // An object that has too much to do needs fewer calls, not more.
+  if (e?.overloaded === true) return false;
+  if (e?.retryable === true) return true;
+  return /no longer active|connection closed|object to be reset|was reset|reset because|network connection lost|has moved machine|code (has been|was) updated/i.test(String(e?.message ?? ""));
+}
+
+/**
+ * The calls that give the same result when they run twice: reads, and writes that repeat without harm (the same
+ * file text again, a second submit of the same work, a second ack). A call that makes something new (declare,
+ * createIntent) or records a decision of a person (decide) is not here: when the first call did run, a second one
+ * would make a second work copy or a second decision.
+ */
+const AGAIN: ReadonlySet<string> = new Set([
+  "ensure", "openIntents", "log", "traffic", "read", "list", "state", "tree", "file", "attemptDiff", "status",
+  "write", "submit", "ack", "check", "update",
+]);
+
+/** How many times a call is sent when the project object restarts (the first call counts). */
+const RESET_TRIES = 3;
+
+/**
+ * A project object for a caller. A call from the AGAIN list that fails because the object restarted is sent
+ * again with a new stub (a stub that saw this error can be broken), after 250 and 500 ms. Other calls and other
+ * errors pass through as they are. `make` gives a new stub of the same object.
+ */
+export function retryAfterReset<T extends object>(make: () => T, sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))): T {
+  let stub = make();
+  // The target holds only what the caller sets on the object (Object.assign(stub, { role })). The methods and
+  // the other properties come from the stub that is current when the call is made.
+  return new Proxy({} as T, {
+    get(target, prop) {
+      if (Object.hasOwn(target, prop)) return Reflect.get(target, prop);
+      if (typeof prop !== "string" || prop === "then") return undefined;
+      const value = Reflect.get(stub, prop, stub) as unknown;
+      if (typeof value !== "function") return value;
+      const send = (args: unknown[]) => (stub as unknown as Record<string, (...a: unknown[]) => unknown>)[prop](...args);
+      if (!AGAIN.has(prop)) return (...args: unknown[]) => send(args);
+      return async (...args: unknown[]) => {
+        for (let tries = 1; ; tries++) {
+          try {
+            return await send(args);
+          } catch (err) {
+            if (tries >= RESET_TRIES || !isObjectReset(err)) throw err;
+            await sleep(250 * tries);
+            stub = make();
+          }
+        }
+      };
+    },
+  });
+}
+
 export function makeContext(env: Env, who: Principal, opts: { listHow?: string; origin?: string; ask?: RequestStateCodec<AskState> } = {}): ToolContext {
   const listHow = opts.listHow ?? LIST_HOW;
   return {
@@ -147,7 +209,8 @@ export function makeContext(env: Env, who: Principal, opts: { listHow?: string; 
         if (!atLeast(role, need)) throw new Error(`Your key needs the ${need} role on "${id}". Ask an owner of the project.`);
         found = role;
       }
-      const stub = env.HARBOR.get(env.HARBOR.idFromName(id)) as unknown as HarborApi;
+      const objectId = env.HARBOR.idFromName(id);
+      const stub = retryAfterReset(() => env.HARBOR.get(objectId) as unknown as HarborApi);
       return { id, stub, role: found };
     },
   };
@@ -217,6 +280,8 @@ export function plain(message: string): ToolResult {
   return { content: [{ type: "text" as const, text: message }] };
 }
 
+/** The answer when a tool stops with an error. A restart of the project object gets plain words: the work is kept. */
 export function fail(err: unknown): ToolResult {
-  return { content: [{ type: "text" as const, text: `Error: ${String((err as Error)?.message ?? err)}` }], isError: true };
+  const message = isObjectReset(err) ? "gitring restarted this project for a moment. The work you already sent is kept. Send the same call again." : String((err as Error)?.message ?? err);
+  return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true };
 }

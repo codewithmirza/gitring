@@ -47,6 +47,10 @@ const GIT_TOKEN_TTL_S = 600;
 /** Re-mint the internal token when it has less than this left. */
 const GIT_TOKEN_MARGIN_MS = 120_000;
 const RETRIABLE = new Set(["CREATE_IN_PROGRESS", "FORK_IN_PROGRESS", "IMPORT_IN_PROGRESS"]);
+/** A short problem of the service itself ("An internal error occurred."). The same call usually works a moment later. */
+const HICCUP = new Set(["INTERNAL_ERROR"]);
+/** How many times a call is sent again after such an error (250 ms, then 500 ms). */
+const HICCUP_RETRIES = 2;
 
 export interface ArtifactsBackendOptions {
   /** Identity for notes commits (commit author/committer come from CommitInput.author). */
@@ -77,6 +81,7 @@ const MESSAGE_CODES: [RegExp, string][] = [
   [/IMPORT_IN_PROGRESS|still importing/i, "IMPORT_IN_PROGRESS"],
   [/ALREADY_EXISTS|already exists/i, "ALREADY_EXISTS"],
   [/NOT_FOUND|not found|does not exist/i, "NOT_FOUND"],
+  [/INTERNAL_ERROR|internal error occurred/i, "INTERNAL_ERROR"],
 ];
 
 /** `ArtifactsError.code`, or a code guessed from the message (RPC can drop custom fields). */
@@ -311,13 +316,21 @@ export class ArtifactsBackend implements RepoBackend {
 
   /* ───────────────────────────── helpers ───────────────────────────── */
 
-  /** Retry `fn` while Artifacts reports *_IN_PROGRESS, with exponential backoff (budget ~20 s). */
+  /**
+   * Retry `fn` while Artifacts reports *_IN_PROGRESS, with exponential backoff (budget ~20 s), and twice after a
+   * short problem of the service (INTERNAL_ERROR).
+   */
   private async retrying<T>(fn: () => Promise<T>): Promise<T> {
     let waited = 0;
+    let hiccups = 0;
     for (let attempt = 0; ; attempt++) {
       try {
         return await fn();
       } catch (err) {
+        if (await this.hiccup(err, hiccups)) {
+          hiccups += 1;
+          continue;
+        }
         const code = artifactsErrorCode(err);
         if (!code || !RETRIABLE.has(code)) throw err;
         const delay = Math.min(250 * 2 ** attempt, 4000);
@@ -328,13 +341,29 @@ export class ArtifactsBackend implements RepoBackend {
     }
   }
 
-  /** `get(name)` (retried while the repo is being created/forked/imported), use, dispose. */
+  /** True after a short wait when `err` is a short problem of the service and the caller has tries left (`used` so far). */
+  private async hiccup(err: unknown, used: number): Promise<boolean> {
+    const code = artifactsErrorCode(err);
+    if (!code || !HICCUP.has(code) || used >= HICCUP_RETRIES) return false;
+    await this.sleep(250 * (used + 1));
+    return true;
+  }
+
+  /**
+   * `get(name)` (retried while the repo is being created/forked/imported), use, dispose. A short problem of the
+   * service while `fn` runs sends `fn` again, up to twice: every `fn` below reads, mints a token, or ends with a
+   * push that a second run finds already done (see commit).
+   */
   private async withRepo<T>(name: string, fn: (repo: ArtifactsRepo) => Promise<T>): Promise<T> {
-    const repo = await this.retrying(() => this.binding.get(name));
-    try {
-      return await fn(repo);
-    } finally {
-      dispose(repo);
+    for (let hiccups = 0; ; hiccups++) {
+      const repo = await this.retrying(() => this.binding.get(name));
+      try {
+        return await fn(repo);
+      } catch (err) {
+        if (!(await this.hiccup(err, hiccups))) throw err;
+      } finally {
+        dispose(repo);
+      }
     }
   }
 
@@ -412,6 +441,7 @@ export class ArtifactsBackend implements RepoBackend {
 
   async ensureRepo(name: string, opts: { description?: string } = {}): Promise<RepoHandle> {
     let waited = 0;
+    let hiccups = 0;
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.withRepoOnce(name, async (repo) => {
@@ -420,6 +450,10 @@ export class ArtifactsBackend implements RepoBackend {
           return { name: info.name, remote: info.remote, defaultBranch: info.defaultBranch };
         });
       } catch (err) {
+        if (await this.hiccup(err, hiccups)) {
+          hiccups += 1;
+          continue;
+        }
         const code = artifactsErrorCode(err);
         if (code === "NOT_FOUND") {
           try {
@@ -430,6 +464,10 @@ export class ArtifactsBackend implements RepoBackend {
             this.remember(created.name, created.remote);
             return { name: created.name, remote: created.remote, defaultBranch: created.defaultBranch || DEFAULT_BRANCH };
           } catch (createErr) {
+            if (await this.hiccup(createErr, hiccups)) {
+              hiccups += 1;
+              continue;
+            }
             const createCode = artifactsErrorCode(createErr) ?? "";
             // ALREADY_EXISTS: lost a creation race, read the winner on the next round.
             if (createCode !== "ALREADY_EXISTS" && !RETRIABLE.has(createCode)) throw createErr;
