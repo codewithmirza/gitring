@@ -13,10 +13,10 @@
  *   - each landing commit has its trailers and its git note (the logbook)
  *   - a plan that meets another plan gets one change request, and the other agent continues
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseTrailers, LOGBOOK_SCHEMA } from "../../src/core/logbook";
-import { audit, runAll, ScriptedAgent, shopFor, type AgentResult, type Audit, type Shop } from "./shop";
-import { mulberry32, Scheduler, shuffled, World } from "./world";
+import { audit, runAll, ScriptedAgent, shop, shopFor, type AgentResult, type Audit, type Shop } from "./shop";
+import { mulberry32, Scheduler, shuffled, World, type WorldOptions } from "./world";
 
 interface Run {
   world: World;
@@ -33,10 +33,10 @@ afterEach(async () => {
   for (const w of worlds.splice(0)) await w.close();
 });
 
-async function newWorld(): Promise<{ world: World; key: string }> {
+async function newWorld(opts: WorldOptions = {}): Promise<{ world: World; key: string }> {
   const world = new World();
   worlds.push(world);
-  await world.init();
+  await world.init(opts);
   const { key } = await world.signIn("robin", 1);
   return { world, key };
 }
@@ -71,8 +71,8 @@ function story(run: Run): string {
 const R1 = "R1-landed-has-way";
 const R4 = "R4-first-declared-stands-on";
 
-/** The rules of the run. */
-function checkRun(run: Run): void {
+/** The rules of the run. `requests: false` skips the part about change requests (a test that drives the steps itself). */
+function checkRun(run: Run, { requests = true }: { requests?: boolean } = {}): void {
   const { results, shop: s, world } = run;
   const { state: st } = run.audit;
   const why = story(run);
@@ -148,6 +148,8 @@ function checkRun(run: Run): void {
   for (const r of landed) for (const f of r.task.landed) for (const text of f.has) expect(run.audit.main[f.path], `${r.task.id}: ${f.path} must hold ${text}`).toContain(text);
   expect(run.audit.finalTests, "the tests of the final main").toEqual({ ok: true, passed: s.tasks.length + 1, failed: 0 });
 
+  if (!requests) return;
+
   // Change requests. A task alone gets none. Two tasks that meet (the same function, or the same place in
   // one file) get one change request while both work, to one agent. The other agent continues and gets
   // no change request from its partner. If the agent that gave way merges first, the partner then gets
@@ -215,4 +217,200 @@ describe.each([
     console.log(`${agents} agents, seed ${seed}: ${run.ms} ms, ${run.world.calls.length} calls, ${run.audit.state.landings.length} landings, ${run.audit.state.corrections.length} change requests`);
     expect(run.ms, `${agents} agents took ${run.ms} ms`).toBeLessThan(limitMs);
   }, 60_000);
+});
+
+/* ───────────────────────────── scenario 3: main moves while agents work ───────────────────────────── */
+
+/**
+ * Three agents. `far` works in its own file. `mover` and `near` each add a function to the same file:
+ * the plan check finds no meeting (other symbols), so nobody gets a change request when they start.
+ */
+async function trio(seed: number) {
+  const { world, key } = await newWorld();
+  const full = shop(1, 1);
+  const tasks = ["solo-01", "file-01-c", "file-01-d"].map((id) => full.tasks.find((t) => t.id === id)!);
+  const s: Shop = { files: full.files, tasks };
+  const project = await openProject(world, key, s);
+  const sched = new Scheduler(seed);
+  const [far, mover, near] = tasks.map((t, i) => new ScriptedAgent(world, key, project.id, sched, t, i + 1));
+  for (const a of [far, mover, near]) expect(await a.start(), a.callsign).toBeUndefined();
+  for (const a of [far, mover, near]) expect(a.notices, `${a.callsign} has no change request yet`).toEqual([]);
+  const finish = async (results: AgentResult[]): Promise<Run> => ({ world, key, project, shop: s, results, audit: await audit(world, project.id, project.mainRepo), ms: 0 });
+  return { world, key, project, far, mover, near, path: mover.spec.files[0], finish };
+}
+
+describe("main moves while agents work", () => {
+  it("tells the agent near the change, moves every work copy to the new main, and keeps both changes", async () => {
+    const t = await trio(31);
+    const { world, project, far, mover, near } = t;
+
+    const moved = await mover.work();
+    expect(moved.outcome).toBe("landed");
+    const state = await world.harbor(project.id).state();
+    const landing = state.landings[0];
+    expect(state.landings).toHaveLength(1);
+
+    // The agent near the change gets one notice with its next report: main moved. It names the mover and the file.
+    // (A change request rides on the answers of declare, log, write, submit and ack.)
+    await near.call("gitring_log", { message: "Reading the code." });
+    expect(near.notices.map((n) => `${n.kind}<-${n.from}`)).toEqual([`upstream<-${mover.callsign}`]);
+    expect(near.notices[0].message).toContain(t.path);
+    expect(near.notices[0].message).toContain(mover.spec.title);
+    const up = await near.call("gitring_update");
+    expect(up.ok).toBe(true);
+    expect(up.json.mainSha, "gitring_update brings the new main").toBe(landing.mainAfter);
+    await near.ackAll();
+
+    // The agent far from the change gets no notice. Its work copy moves to the new main anyway.
+    await far.call("gitring_log", { message: "Reading the code." });
+    const farUp = await far.call("gitring_update");
+    expect(farUp.ok).toBe(true);
+    expect(farUp.json.mainSha).toBe(landing.mainAfter);
+    expect(far.notices, "no change request for the far agent").toEqual([]);
+    const after = await world.harbor(project.id).state();
+    for (const a of [near, far]) expect(after.attempts.find((x) => x.id === a.attemptId)!.baseSha, `${a.callsign} is on the new main`).toBe(landing.mainAfter);
+
+    // Both finish on the new main. The file holds the change of the mover and the change of the near agent.
+    const [nearRes, farRes] = await Promise.all([near.work(), far.work()]);
+    const run = await t.finish([farRes, moved, nearRes]);
+    checkRun(run, { requests: false });
+    expect(run.audit.main[t.path]).toContain("function shout");
+    expect(run.audit.main[t.path]).toContain("function whisper");
+    expect(near.notices.filter((n) => n.kind === "upstream")).toHaveLength(1);
+    expect(far.notices).toEqual([]);
+  });
+
+  it("refuses a write on text that main changed after the read, and accepts it on the new text", async () => {
+    const t = await trio(32);
+    const { world, project, far, mover, near, path } = t;
+
+    const old = await near.call("gitring_read", { path });
+    const moved = await mover.work();
+    expect(moved.outcome).toBe("landed");
+
+    // The near agent writes its change on the text that it read before main moved: both changes are at the same place.
+    const w = await near.call("gitring_write", { files: [{ path, content: near.spec.edits[0].apply(old.text) }], message: "On the old text" });
+    expect(w.ok).toBe(true);
+    expect(w.json.written).toEqual([]);
+    expect(w.json.refused).toHaveLength(1);
+    expect(w.json.refused[0].path).toBe(path);
+    expect(w.json.refused[0].reason).toMatch(/changed after your last read: main moved\. Read .+ again/);
+
+    // The agent reads again, and its change goes on top of the change that main holds.
+    const fresh = await near.call("gitring_read", { path });
+    expect(fresh.text).toContain("function shout");
+    const w2 = await near.call("gitring_write", { files: [{ path, content: near.spec.edits[0].apply(fresh.text) }], message: "On the new text" });
+    expect(w2.json.refused ?? []).toEqual([]);
+    expect(w2.json.written).toEqual([path]);
+
+    const [nearRes, farRes] = await Promise.all([near.work(), far.work()]);
+    const run = await t.finish([farRes, moved, nearRes]);
+    checkRun(run, { requests: false });
+    expect(run.audit.main[t.path]).toContain("function shout");
+    expect(run.audit.main[t.path]).toContain("function whisper");
+  });
+
+  it("lands the work once when the agent submits many times at once", async () => {
+    const t = await trio(33);
+    const { world, far, mover, near, path } = t;
+    const r = await mover.call("gitring_read", { path });
+    await mover.call("gitring_write", { files: [{ path, content: mover.spec.edits[0].apply(r.text) }], message: mover.spec.title });
+    expect((await mover.call("gitring_check")).ok).toBe(true);
+    const answers = await Promise.all([1, 2, 3, 4].map(() => mover.call("gitring_submit", { summary: "Done" })));
+    for (const a of answers) expect(a.text, "each answer is an answer, not a crash").not.toMatch(/TypeError|Cannot read|undefined/);
+    expect(await mover.waitForMerge()).toBe("landed");
+
+    const [nearRes, farRes] = await Promise.all([near.work(), far.work()]);
+    const run = await t.finish([farRes, mover.done("landed", "", 1), nearRes]);
+    checkRun(run, { requests: false });
+    expect(run.audit.state.landings.filter((l) => l.attemptId === mover.attemptId), "the work of the mover lands once").toHaveLength(1);
+    expect(world.mainCommits).toHaveLength(3);
+  });
+});
+
+/* ───────────────────────────── bugs that the runs found ───────────────────────────── */
+
+/** The two tasks that add a function to the same file, and two agents for them. */
+async function filePair(seed: number, opts: WorldOptions = {}) {
+  const { world, key } = await newWorld(opts);
+  const full = shop(0, 1);
+  const tasks = full.tasks.filter((t) => t.group === "file");
+  const s: Shop = { files: full.files, tasks };
+  const project = await openProject(world, key, s);
+  const sched = new Scheduler(seed);
+  const [a, b] = tasks.map((t, i) => new ScriptedAgent(world, key, project.id, sched, t, i + 1));
+  expect(await a.start(), a.callsign).toBeUndefined();
+  expect(await b.start(), b.callsign).toBeUndefined();
+  return { world, key, project, s, a, b, path: a.spec.files[0] };
+}
+
+describe("bugs that the runs found", () => {
+  it("keeps the work of an agent that answers while gitring gives the work back (fixed)", async () => {
+    // Both agents write at the same place and submit together. The first merge goes in. The second work
+    // copy cannot merge, and gitring gives it back to its agent. When the agent calls gitring while this
+    // happens, the work must stay with the agent. (Before the fix: TypeError in returnToAgent; the merge
+    // stopped, and the work copy stayed in "ready" for ever.)
+    const { world, project, s, a, b, path } = await filePair(41);
+    for (const x of [a, b]) {
+      const r = await x.call("gitring_read", { path });
+      await x.call("gitring_write", { files: [{ path, content: x.spec.edits[0].apply(r.text) }], message: x.spec.title });
+      await x.ackAll();
+    }
+    // The agent answers at the moment gitring has set "given back" and waits for the store: it calls gitring_traffic.
+    const h = world.harbor(project.id) as unknown as { putAttempt(at: { id: string; returned?: unknown }): void; traffic(id: string): Promise<unknown> };
+    const put = h.putAttempt.bind(h);
+    const hooked: string[] = [];
+    h.putAttempt = (at) => {
+      put(at);
+      if (at.returned && !hooked.length) {
+        hooked.push(at.id);
+        void h.traffic(at.id).catch(() => undefined);
+      }
+    };
+    expect((await a.call("gitring_check")).ok).toBe(true);
+    expect((await b.call("gitring_check")).ok).toBe(true);
+    const sent = await Promise.all([a.call("gitring_submit", { summary: "Done" }), b.call("gitring_submit", { summary: "Done" })]);
+    expect(sent.map((x) => x.json?.next)).toEqual(["landing-queue", "landing-queue"]);
+
+    await vi.waitFor(() => expect(hooked, "gitring gave one work copy back").toHaveLength(1), { timeout: 15_000, interval: 20 });
+    const loser = hooked[0] === a.attemptId ? a : b;
+    const winner = loser === a ? b : a;
+    expect(await winner.waitForMerge()).toBe("landed");
+    await world.settle();
+    const mid = await world.harbor(project.id).state();
+    expect(mid.attempts.find((x) => x.id === loser.attemptId)!.status, "the work is with the agent, not stuck").toBe("underway");
+    expect(mid.logs.filter((l) => /stopped/.test(l.message)).map((l) => l.message)).toEqual([]);
+
+    // The agent applies the change request and lands its change on top of the other change.
+    const res = await loser.work();
+    expect(res.outcome).toBe("landed");
+    const run: Run = { world, key: "", project, shop: s, results: [winner.done("landed", "", 1), res], audit: await audit(world, project.id, project.mainRepo), ms: 0 };
+    checkRun(run, { requests: false });
+    expect(run.audit.main[path]).toContain("function shout");
+    expect(run.audit.main[path]).toContain("function whisper");
+  });
+
+  // BUG (not fixed, see rules.ts): two plans with the same declaredAt (the same millisecond) give two
+  // change requests, one to each agent, and each one says "give way to the other". Rule R4 (earlier plan
+  // continues) cannot decide when the times are equal. Rule R6 then says "on a tie, the plan that is
+  // checked now gives way", and each plan is the one that is checked at its own turn: the later plan at
+  // its declare, the earlier plan at its next report. Both agents then wait for each other.
+  // A Worker clock does not move while a request runs, so two declares that arrive together can read the
+  // same millisecond. The other tests use a clock that never repeats a value (see World.init).
+  it.fails("gives one change request, not two, when two plans have the same time", async () => {
+    const { world, key } = await newWorld({ strictClock: false });
+    const frozen = Date.now();
+    Date.now = () => frozen;
+    const full = shop(0, 1);
+    const tasks = full.tasks.filter((t) => t.group === "function");
+    const project = await openProject(world, key, { files: full.files, tasks });
+    const sched = new Scheduler(42);
+    const [a, b] = tasks.map((t, i) => new ScriptedAgent(world, key, project.id, sched, t, i + 1));
+    expect(await a.start()).toBeUndefined();
+    expect(await b.start()).toBeUndefined();
+    await a.call("gitring_log", { message: "Reading the code." });
+    await b.call("gitring_log", { message: "Reading the code." });
+    const told = [a, b].filter((x) => x.notices.some((n) => n.kind === "region" && n.from));
+    expect(told.map((x) => x.callsign), "one agent gives way").toHaveLength(1);
+  });
 });

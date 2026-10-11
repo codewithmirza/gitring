@@ -218,12 +218,12 @@ export class ScriptedAgent {
     return res;
   }
 
-  private async ackAll(): Promise<void> {
+  /** Confirm every change request that the agent got and did not confirm yet. */
+  async ackAll(): Promise<void> {
     while (this.unacked.length) {
       const nt = this.unacked.shift()!;
-      const res = await this.call("gitring_ack", { correctionId: nt.id, note: `Applied: ${nt.kind}.` });
-      // An answer to the ack can hold new change requests: they are in `unacked` already.
-      void res;
+      // An answer to the ack can hold new change requests: `call` adds them to `unacked`.
+      await this.call("gitring_ack", { correctionId: nt.id, note: `Applied: ${nt.kind}.` });
     }
   }
 
@@ -242,7 +242,7 @@ export class ScriptedAgent {
   }
 
   /** After a submit that went to the merge queue: wait for the merge, or for the work to come back. */
-  private async waitForMerge(): Promise<"landed" | "returned" | "closed"> {
+  async waitForMerge(): Promise<"landed" | "returned" | "closed"> {
     const until = performance.now() + WAIT_LIMIT_MS;
     for (let polls = 0; performance.now() < until; polls++) {
       await this.sched.backoff(this.id, polls);
@@ -258,23 +258,18 @@ export class ScriptedAgent {
     return "closed";
   }
 
-  async run(): Promise<AgentResult> {
+  /** The result of this agent (a test that drives the steps itself builds the result with this). */
+  done(outcome: AgentResult["outcome"], reason: string, rounds: number): AgentResult {
+    return { task: this.spec, agentId: this.id, callsign: this.callsign, attemptId: this.attemptId, outcome, reason, rounds, notices: this.notices, trace: this.trace };
+  }
+
+  /** The agent finds its task and sends its plan. It returns a result only when the agent cannot go on. */
+  async start(): Promise<AgentResult | undefined> {
     const { spec } = this;
-    const done = (outcome: AgentResult["outcome"], reason: string, rounds: number): AgentResult => ({
-      task: spec,
-      agentId: this.id,
-      callsign: this.callsign,
-      attemptId: this.attemptId,
-      outcome,
-      reason,
-      rounds,
-      notices: this.notices,
-      trace: this.trace,
-    });
     await this.sched.pause(this.id);
     const list = await this.call("gitring_intents");
     const intent = (list.json?.intents ?? []).find((i: { title: string }) => i.title === spec.title);
-    if (!intent) return done("stopped", `The task "${spec.title}" is not in the list of open tasks.`, 0);
+    if (!intent) return this.done("stopped", `The task "${spec.title}" is not in the list of open tasks.`, 0);
     await this.sched.pause(this.id);
     const d = await this.call("gitring_declare", {
       intentId: intent.id,
@@ -284,10 +279,20 @@ export class ScriptedAgent {
       approach: spec.approach,
       agent: { id: this.id, name: this.callsign, client: "vitest", model: "scripted" },
     });
-    if (!d.ok) return done("stopped", `declare failed: ${d.text.slice(0, 200)}`, 0);
+    if (!d.ok) return this.done("stopped", `declare failed: ${d.text.slice(0, 200)}`, 0);
     this.attemptId = d.json.attemptId;
     await this.ackAll();
+    return undefined;
+  }
 
+  async run(): Promise<AgentResult> {
+    return (await this.start()) ?? (await this.work());
+  }
+
+  /** From the plan to the merge: read, write, check, submit, and obey change requests. */
+  async work(): Promise<AgentResult> {
+    const { spec } = this;
+    const done = (outcome: AgentResult["outcome"], reason: string, rounds: number) => this.done(outcome, reason, rounds);
     for (let round = 1; round <= MAX_ROUNDS; round++) {
       await this.giveWay();
       await this.sched.pause(this.id);
