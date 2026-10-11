@@ -100,7 +100,13 @@ curl -X POST http://localhost:8787/api/projects \
   -d '{"name":"demo","source":{"kind":"empty"},"settings":{"checks":{"runner":"worker"}}}'
 ```
 
-Then connect an agent as described in [Connect agents](#connect-agents). Use the project id from the answer and the key from the command.
+Then connect an agent. For Claude Code, run this command with the key from above:
+
+```bash
+claude mcp add --transport http gitring http://localhost:8787/mcp --header "Authorization: Bearer <key>"
+```
+
+[Connect agents](#connect-agents) shows other clients. Give the agent the project id from the answer to the `curl` command.
 
 The local run has these limits:
 
