@@ -29,7 +29,7 @@ import type * as T from "../core/types";
 import type { Role } from "../core/accounts";
 import { approvalPath } from "../core/approvals";
 import { actorOf, directory, type Principal } from "./auth";
-import { ADDS, CHANGES, READS, defineTool, fail, joinClearance, plain, text, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
+import { ADDS, CHANGES, READS, defineTool, fail, joinClearance, plain, text, VERDICT_WORD, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
 import { answerNote, approvalView, askInChat, statusHeadline, takeAnswer } from "./mcp-approval";
 
 /** Said in the error of a bad project id (the gitring tool for it is not in this set). */
@@ -607,7 +607,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const d = made.declared;
         return data(
           { ref: `refs/heads/${branch}`, object: { sha: d.workspace.baseSha } },
-          `The branch "${branch}" is ready. It starts from main at ${sha7(d.workspace.baseSha)}. Conflict check: ${d.clearance.advice}`,
+          `The branch "${branch}" is ready. It starts from main at ${sha7(d.workspace.baseSha)}. Conflict check: ${VERDICT_WORD[d.clearance.verdict] ?? d.clearance.verdict}. ${d.clearance.advice}`,
           d.clearance,
         );
       } catch (e) {

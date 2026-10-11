@@ -81,6 +81,7 @@ npm test               # unit tests and end-to-end tests with 8 to 60 agents (Vi
 npm run typecheck
 npm run bench          # the coordination logic on many simulated plans: no network, no Artifacts, no AI
 npm run load -- --help # a load test for a deployed gitring: it costs money, so it asks for --yes
+npm run meet -- --help # three scripted agents meet on a small project: you read the real answers
 ```
 
 The end-to-end tests run the real coordinator on a test version of Artifacts, so they do not prove how the real service behaves. `npm run load` does that on a deployed copy.
@@ -129,6 +130,16 @@ claude mcp add --transport http gitring http://localhost:8787/mcp --header "Auth
 ```
 
 [Connect agents](#connect-agents) shows other clients. Give the agent the project id from the answer to the `curl` command.
+
+To read what the coordination says before you connect a real agent, run three scripted agents. They meet on a small shop project (the files of `examples/shop`), and the script prints each real answer of the MCP tools:
+
+```bash
+GITRING_URL=http://localhost:8787 GITRING_KEY=<key> npm run meet -- --approval --wait 0
+```
+
+Agent A and Agent B change the same function. Agent B gets a change request and applies it. Both changes merge. Agent C changes the parameters of two functions, and a person must say yes. The script makes one private project and archives it at the end (`--keep` keeps it). The agents are scripts: the run shows the answers of gitring, not the behavior of a model. It also works on a deployed gitring, with a personal API key (Account → API keys).
+
+To try real agents on a deployed gitring, make a project from the folder `examples/shop` (New project → Upload a folder), choose the gitring test runner in Settings → Tests, and give two agents a task that changes `formatPrice`.
 
 The local run has these limits:
 

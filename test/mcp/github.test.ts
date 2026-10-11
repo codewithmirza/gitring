@@ -409,6 +409,10 @@ describe("change requests", () => {
     const id = /work copy (a_\w+)/.exec(mine.text)?.[1] ?? "";
     const same = await callTool(world, key, "gitring_write", { project, attemptId: id, files: [{ path: "src/greet.js", content: GREET.replace("Hello", "Yo") }] });
     expect(same.text).toMatch(/GITRING CHANGE REQUEST — apply it in your next edits, then call gitring_ack\. Do not stop\./);
+    // Bob keeps his lines. The other agents give way, so his next answer is "clear" and does not talk of a change request.
+    const bobAgain = await callTool(world, bob.key, "gitring_write", { project, attemptId, files: [{ path: "src/greet.js", content: GREET.replace("Hello", "Good day") }] });
+    expect(bobAgain.text).toMatch(/^Written: src\/greet\.js\. Conflict check: clear\. Plan clear\./);
+    expect(bobAgain.text).not.toMatch(/change request/i);
   });
 
   it("keeps the change requests of the plan check when the first write gives none", () => {

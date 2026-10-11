@@ -77,7 +77,7 @@ import {
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
-export const BUILD_ID = "0.9.1+20261011b";
+export const BUILD_ID = "0.9.1+20261011c";
 const MAX_LOGS = 500;
 /** The lines that a "same lines" change request names, as one text. Empty for any other kind of change request. */
 function regionKey(c: { kind: T.CorrectionKind; constraints: T.Correction["constraints"] }): string {
@@ -1417,7 +1417,14 @@ export class HarborMaster extends DurableObject<Env> {
       c.deliveredAt = now;
       this.putCorrection(c);
     }
-    const verdict = latestCheck(this.checks, attemptId)?.verdict;
+    // A check names a pair, and "correct" means that one agent of the pair changes course. The agent that
+    // keeps its lines has no change request: its answer says "clear", and not "change request".
+    const open = a.corrections.some((id) => {
+      const c = this.corrections.get(id);
+      return c?.status === "pending" || c?.status === "delivered";
+    });
+    const checked = latestCheck(this.checks, attemptId)?.verdict;
+    const verdict = checked === "correct" && !open ? "clear" : checked;
     return clearance(verdict, notices(pending, (id) => this.callsign(id)), this.trafficFor(a));
   }
 
