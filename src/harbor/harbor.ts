@@ -13,6 +13,8 @@ import { Db } from "./store";
 import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import { hmacSha256Hex, sha256Hex } from "../directory/crypto";
 import { approvalLine, approvalNeeded, approvalPath, canDecide, riskSigns } from "../core/approvals";
+import { pushKeys } from "../worker/push";
+import { canAnswerQuestion, escalationFacts, escalationOptions, inboxOf, REDO_OPTIONS, taskPath, type InboxItem } from "../core/inbox";
 import { atLeast, type Role } from "../core/accounts";
 import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
@@ -57,6 +59,7 @@ import {
   ACTIVE,
   WAITING,
   PROTOCOL,
+  adviceFor,
   changedVersions,
   clearance,
   failureSummary,
@@ -131,6 +134,11 @@ export interface LaunchInput {
 export interface CallInfo {
   origin?: string;
   viewer?: { id: string; role: Role };
+  /**
+   * Change requests that an earlier answer of the same tool call delivered (submit, then status). The answer
+   * holds them again until the agent confirms them: the agent reads them only in the last answer of the call.
+   */
+  again?: string[];
 }
 
 export interface Brief {
@@ -157,6 +165,7 @@ export class HarborMaster extends DurableObject<Env> {
   private logs: T.LogEntry[] = [];
   private landings: T.Landing[] = [];
   private decisions: T.Decision[] = [];
+  private questions = new Map<string, T.Question>();
   private radar = new Map<string, T.RadarPair>();
   private stats: T.HarborStats = emptyStats();
   private checkLatencies: number[] = [];
@@ -196,6 +205,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.logs = this.db.recentLogs<T.LogEntry>(MAX_LOGS);
     this.landings = this.db.all<T.Landing>("landings").sort((a, b) => a.at - b.at);
     this.decisions = this.db.all<T.Decision>("decisions").sort((a, b) => a.at - b.at);
+    for (const q of this.db.all<T.Question>("questions")) this.questions.set(q.id, q);
     for (const r of this.db.all<T.RadarPair>("radar")) this.radar.set(pairKey(r.a, r.b), r);
     this.stats = this.db.getMeta<T.HarborStats>("stats") ?? emptyStats();
     this.checkLatencies = this.db.getMeta<number[]>("latencies") ?? [];
@@ -809,6 +819,8 @@ export class HarborMaster extends DurableObject<Env> {
     this.intents.set(i.id, i);
     this.db.putIntent(i);
     this.emit({ type: "intent", intent: i });
+    // A task that does not wait for a person any more: its open redo question has no use.
+    if (i.status !== "judging") this.closeRedoQuestions(i.id, "A person or an agent acted on the task.");
   }
 
   private putAttempt(a: T.Attempt): void {
@@ -818,6 +830,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.attempts.set(a.id, a);
     this.db.putAttempt(a);
     this.emit({ type: "attempt", attempt: a });
+    if (TERMINAL.has(a.status)) this.closeQuestionsOf(a);
   }
 
   private putAgent(g: T.AgentInfo): void {
@@ -830,6 +843,13 @@ export class HarborMaster extends DurableObject<Env> {
     this.corrections.set(c.id, c);
     this.db.putCorrection(c);
     this.emit({ type: "correction", correction: c });
+  }
+
+  private putQuestion(q: T.Question): void {
+    q.updatedAt = Date.now();
+    this.questions.set(q.id, q);
+    this.db.putQuestion(q);
+    this.emit({ type: "question", question: q });
   }
 
   private callsign(attemptId?: string): string | undefined {
@@ -852,6 +872,7 @@ export class HarborMaster extends DurableObject<Env> {
       checks: this.checks.slice(-200),
       landings: this.landings,
       decisions: this.decisions,
+      questions: this.questionList(),
       logs: this.logs.slice(-400),
       radar: [...this.radar.values()],
       files: main.files,
@@ -1431,7 +1452,16 @@ export class HarborMaster extends DurableObject<Env> {
     });
     const checked = latestCheck(this.checks, attemptId)?.verdict;
     const verdict = checked === "correct" && !open ? "clear" : checked;
-    return clearance(verdict, notices(pending, (id) => this.callsign(id)), this.trafficFor(a));
+    return this.withQuestions(a, clearance(verdict, notices(pending, (id) => this.callsign(id)), this.trafficFor(a)));
+  }
+
+  /** Both agents of an escalated pair read that a person decides, and that they continue. */
+  private withQuestions(a: T.Attempt, clr: T.Clearance): T.Clearance {
+    const q = [...this.questions.values()].find((x) => x.status === "open" && x.kind === "escalation" && x.attemptIds.includes(a.id));
+    if (!q) return clr;
+    const otherId = q.attemptIds.find((id) => id !== a.id);
+    const words = `A person decides how your work and the work of ${this.callsign(otherId) ?? "another agent"} fit together. Continue your work. If your work must change, gitring sends a change request.`;
+    return { ...clr, advice: clr.verdict === "escalate" && !clr.corrections.length ? words : `${clr.advice} ${words}` };
   }
 
   /* ════════════════════════════ course check ════════════════════════════ */
@@ -1618,7 +1648,11 @@ export class HarborMaster extends DurableObject<Env> {
         const giveWayView = c.giveWay === "incoming" ? incoming : other.view;
         const standOnView = c.giveWay === "incoming" ? other.view : incoming;
         if (giveWayView.state === "landed") continue;
-        if (check.verdict === "escalate") continue; // a human decides first
+        if (check.verdict === "escalate") {
+          // A person decides first: gitring asks which work adapts. Both agents continue while they wait.
+          if (other.view.state !== "landed") this.askAboutPair(incoming, other.view, c.facts, check.id);
+          continue;
+        }
         const drafted = draftCorrection(giveWayView, standOnView, c.facts, c.rule, c.giveWay);
         this.issueCorrection(giveWayView.attempt.id, standOnView.attempt.id, drafted, c.rule, check.id, severityOf(c.facts));
       }
@@ -1922,7 +1956,10 @@ export class HarborMaster extends DurableObject<Env> {
       intentId: a.intentId,
       message: `${this.callsign(a.id)} submits "${intent.title}": ${message}`,
     });
-    if (approvalAsked) this.webhook("approval", { attemptId: a.id, approval: approvalAsked, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
+    if (approvalAsked) {
+      this.webhook("approval", { attemptId: a.id, approval: approvalAsked, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
+      this.notifyPeople(approvalAsked.approver ? [approvalAsked.approver.id] : [], "approval");
+    }
     return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked, ...this.mayAnswerOf(a, call.viewer) } : {}), clearance: this.clearanceFor(a.id) };
   }
 
@@ -2120,6 +2157,7 @@ export class HarborMaster extends DurableObject<Env> {
       this.putIntent(intent);
     }
     this.webhook("approval", { attemptId: a.id, approval, task: intent?.title ?? "", agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
+    this.notifyPeople(approval.approver ? [approval.approver.id] : [], "approval");
     this.stats.escalations += 1;
     this.persistStats();
     this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: logMessage });
@@ -2544,13 +2582,11 @@ export class HarborMaster extends DurableObject<Env> {
       await this.rederive(a.id, `${name} did not answer after the merge failed. ${r.reason}`, SYSTEM);
       return;
     }
-    if (intent) {
-      intent.status = "judging";
-      this.putIntent(intent);
-    }
-    this.stats.escalations += 1;
-    this.persistStats();
-    this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `${name} did not answer in ${minutes} minutes. A person must decide on "${intent?.title}".` });
+    await this.askPersonToDecide(
+      a,
+      `${name} did not answer in ${minutes} minutes after the work came back. ${r.reason}`.trim(),
+      `${name} did not answer in ${minutes} minutes. A person must decide on "${intent?.title}".`,
+    );
   }
 
   /** Any tool call of the agent on its work copy is an answer: the work no longer waits for it. */
@@ -2613,32 +2649,54 @@ export class HarborMaster extends DurableObject<Env> {
       }
       if (policy === "agent-only") {
         // Three tries by the agent failed, and no built-in agent may take the task: a person decides.
-        a.status = "stale";
-        this.putAttempt(a);
         const it = this.intents.get(a.intentId)!;
-        it.status = "judging";
-        this.putIntent(it);
-        this.stats.escalations += 1;
-        this.persistStats();
-        this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `The work of ${this.callsign(a.id)} did not merge after 3 tries. A person must decide on "${it.title}".` });
+        await this.askPersonToDecide(
+          a,
+          `The work did not merge after 3 tries by ${this.callsign(a.id)}: ${reason}`,
+          `The work of ${this.callsign(a.id)} did not merge after 3 tries. A person must decide on "${it.title}".`,
+        );
         return;
       }
     }
+    const intent = this.intents.get(a.intentId)!;
+    if (a.lineage.generation >= 3) {
+      await this.askPersonToDecide(a, `Two redos failed: ${reason}`, `Two redos failed for "${intent.title}". A person must decide.`);
+      return;
+    }
     a.status = "stale";
     this.putAttempt(a);
-    const intent = this.intents.get(a.intentId)!;
     intent.status = "underway";
     this.putIntent(intent);
     this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The work of ${this.callsign(a.id)} cannot merge: ${reason} gitring does the task again on the new main.` });
-    if (a.lineage.generation >= 3) {
-      this.stats.escalations += 1;
-      this.persistStats();
-      this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `Two redos failed for "${intent.title}". A person must decide.` });
-      intent.status = "judging";
-      this.putIntent(intent);
-      return;
-    }
     await this.rederive(a.id, reason, SYSTEM);
+  }
+
+  /**
+   * The one way for "a person decides" when work did not merge and no agent tries again: the work copy stops
+   * (stale, with the reason), the task waits for a person, and a redo question goes to the inbox of the
+   * people who may answer, to the webhooks and to the push notifications. The answer starts a redo on the
+   * new main or pauses the task (answerQuestion).
+   */
+  private async askPersonToDecide(a: T.Attempt, why: string, logMessage: string): Promise<T.Question> {
+    a.status = "stale";
+    a.stoppedFor = why;
+    a.returned = undefined;
+    this.putAttempt(a);
+    const intent = this.intents.get(a.intentId)!;
+    const now = Date.now();
+    const facts = [why, "No agent tries again. A person decides what happens next."];
+    const old = [...this.questions.values()].find((q) => q.status === "open" && q.kind === "redo" && q.intentId === a.intentId);
+    const q: T.Question = old
+      ? { ...old, attemptIds: [a.id], facts, askedAt: now }
+      : { id: newId("q"), kind: "redo", status: "open", intentId: a.intentId, attemptIds: [a.id], facts, options: [...REDO_OPTIONS], askedAt: now, updatedAt: now };
+    this.putQuestion(q);
+    intent.status = "judging";
+    this.putIntent(intent);
+    this.stats.escalations += 1;
+    this.persistStats();
+    this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: logMessage });
+    this.questionAsked(q);
+    return q;
   }
 
   /* ════════════════════════════ human + system actions ════════════════════════════ */
@@ -3085,12 +3143,209 @@ export class HarborMaster extends DurableObject<Env> {
     return out("sent-back", "The work went back to the agent with your note. The agent changes it and submits again.");
   }
 
+  /* ════════════════════════════ questions for a person ════════════════════════════ */
+
+  /** Open questions, and the latest 50 answered or closed ones. Oldest first. */
+  private questionList(): T.Question[] {
+    const all = [...this.questions.values()].sort((a, b) => a.askedAt - b.askedAt);
+    const done = new Set(all.filter((q) => q.status !== "open").slice(-50));
+    return all.filter((q) => q.status === "open" || done.has(q));
+  }
+
+  /**
+   * A conflict check escalated a pair: ask a person which work adapts. The question holds the change request
+   * for each side (drafted now, from the facts that the person reads). A new escalation of the same pair
+   * updates the open question: the person sees one question for one pair.
+   */
+  private askAboutPair(inc: VesselView, oth: VesselView, facts: T.PairFacts, checkId: string): void {
+    const draft = (giveWay: VesselView, standOn: VesselView, side: "incoming" | "other") => {
+      const d = draftCorrection(giveWay, standOn, facts, "R4-first-declared-stands-on", side);
+      return { attemptId: giveWay.attempt.id, standOnAttemptId: standOn.attempt.id, kind: d.kind, message: d.message, constraints: d.constraints };
+    };
+    const a = inc.attempt.id;
+    const b = oth.attempt.id;
+    const old = [...this.questions.values()].find((q) => q.status === "open" && q.kind === "escalation" && q.attemptIds.includes(a) && q.attemptIds.includes(b));
+    // An open question keeps its order: its first work copy stays "first".
+    const incomingFirst = !old || old.attemptIds[0] === a;
+    const [first, second] = incomingFirst ? [inc, oth] : [oth, inc];
+    const now = Date.now();
+    const words = escalationFacts(facts, { a: inc.agent.callsign, b: oth.agent.callsign, taskA: inc.intent.title, taskB: oth.intent.title });
+    const drafts = incomingFirst
+      ? { first: draft(oth, inc, "other"), second: draft(inc, oth, "incoming") }
+      : { first: draft(inc, oth, "incoming"), second: draft(oth, inc, "other") };
+    const q: T.Question = {
+      ...(old ?? { id: newId("q"), kind: "escalation" as const, status: "open" as const, askedAt: now, updatedAt: now }),
+      intentId: first.attempt.intentId,
+      attemptIds: [first.attempt.id, second.attempt.id],
+      checkId,
+      facts: words,
+      options: escalationOptions(first.agent.callsign, second.agent.callsign),
+      drafts,
+    };
+    this.putQuestion(q);
+    if (old) return;
+    this.addLog({
+      kind: "decision",
+      attemptId: a,
+      intentId: inc.attempt.intentId,
+      message: `gitring asks a person which work adapts: ${inc.agent.callsign} or ${oth.agent.callsign}. Both continue until the answer.`,
+    });
+    this.questionAsked(q);
+  }
+
+  /** A new question is in the inbox of the people who may answer: tell the webhooks and the devices of those people. */
+  private questionAsked(q: T.Question): void {
+    const intent = this.intents.get(q.intentId);
+    this.webhook("question", { question: q, task: intent?.title ?? "", link: this.questionLink(q) });
+    const senders = q.attemptIds.map((id) => this.attempts.get(id)?.sender?.id).filter((x): x is string => Boolean(x));
+    this.notifyPeople([...new Set(senders)], "question");
+  }
+
+  /** The address of a question in the gitring app: the task, where the decision list shows it. */
+  private questionLink(q: T.Question): string {
+    const path = taskPath(this.requireProject().id, q.intentId);
+    const origin = this.db.getMeta<string>("origin");
+    return origin ? `${origin}${path}` : path;
+  }
+
+  /**
+   * A push notification (without content) to the devices of the people who answer: the senders, or every person
+   * who may answer when no person sent the work. The Directory knows the people and their devices. Without
+   * the push keys of the deployment, nothing goes out.
+   */
+  private notifyPeople(users: string[], kind: "approval" | "question"): void {
+    const p = this.project;
+    // Push is off without the keys of the deployment: no call to the Directory then.
+    if (!p || !this.env.DIRECTORY || !pushKeys(this.env)) return;
+    const need = p.settings.approver === "owner" ? "owner" : "member";
+    const send = (async () => this.directory().pushInbox(p.id, { users: need === "owner" ? [] : users, need, kind }))();
+    this.ctx.waitUntil(send.then(() => undefined).catch((e) => console.warn("push failed", errorLine(e))));
+  }
+
+  /** The escalation questions of a work copy that closed have no use: nobody can adapt now. */
+  private closeQuestionsOf(a: T.Attempt): void {
+    for (const q of this.questions.values()) {
+      if (q.status !== "open" || q.kind !== "escalation" || !q.attemptIds.includes(a.id)) continue;
+      this.putQuestion({ ...q, status: "closed", closed: `The work of ${this.callsign(a.id) ?? "an agent"} closed. ${closedBecause(a.status)}` });
+    }
+  }
+
+  private closeRedoQuestions(intentId: string, why: string): void {
+    for (const q of this.questions.values()) {
+      if (q.status === "open" && q.kind === "redo" && q.intentId === intentId) this.putQuestion({ ...q, status: "closed", closed: why });
+    }
+  }
+
+  /**
+   * A person answers a question. The first valid answer counts; the same answer again changes nothing.
+   *   escalation  "first" or "second": the side that adapts gets the change request ("a person decided").
+   *               "both": nothing changes, and the question closes.
+   *   redo        "redo": a built-in agent does the task again on the new main. "park": the task pauses.
+   * `who` carries the role that the Worker checked; the rules of canAnswerQuestion apply here too.
+   */
+  async answerQuestion(questionId: string, input: T.QuestionAnswer, who: { id: string; name: string; role: Role }, origin?: string): Promise<T.QuestionResult> {
+    this.rememberOrigin(origin);
+    const p = this.requireProject();
+    const q = this.questions.get(questionId);
+    if (!q) throw new Error("Unknown question.");
+    const out = (outcome: T.QuestionResult["outcome"], message: string): T.QuestionResult => ({ outcome, question: this.questions.get(questionId) ?? q, message });
+    const senders = q.attemptIds.map((id) => this.attempts.get(id)?.sender);
+    if (!canAnswerQuestion(senders, who, p.settings.approver)) {
+      return out("refused", !atLeast(who.role, "member") ? "You need the member role to answer." : "Only a person who sent one of the agents, or an owner of the project, can answer this.");
+    }
+    if (q.status === "answered") return out("already", `${q.answer?.by.name ?? "A person"} answered this question already.`);
+    if (q.status === "closed") return out("closed", `This question is closed. ${q.closed ?? ""}`.trim());
+    const option = q.options.find((o) => o.id === input.option);
+    if (!option) throw new Error(`Give one of these answers: ${q.options.map((o) => o.id).join(", ")}.`);
+    const note = String(input.note ?? "").trim().slice(0, 1000);
+    const by: T.Actor = { kind: "human", id: who.id, name: who.name };
+    // The answer is stored first: a second answer that comes while this one works finds it.
+    this.putQuestion({ ...q, status: "answered", answer: { by: { id: who.id, name: who.name }, option: option.id, ...(note ? { note } : {}), at: Date.now() } });
+    const rationale = `${option.label}.${note ? ` ${note}` : ""}`;
+    const intent = this.intents.get(q.intentId);
+    let message: string;
+    if (q.kind === "escalation") {
+      const decision = this.recordDecision({ kind: "resolve-escalation", intentId: q.intentId, attemptIds: q.attemptIds, by, rationale });
+      const d = q.drafts?.[option.id];
+      const sent = d
+        ? this.issueCorrection(
+            d.attemptId,
+            d.standOnAttemptId,
+            {
+              kind: d.kind,
+              message: `A person decided: ${this.callsign(d.standOnAttemptId) ?? "the other agent"} continues, and your work adapts.${note ? ` Note: ${note}` : ""} ${d.message}`,
+              constraints: note ? { ...d.constraints, notes: [...(d.constraints.notes ?? []), note] } : d.constraints,
+            },
+            "human",
+            decision.id,
+            90,
+            true,
+          )
+        : undefined;
+      message = d ? (sent ? `${option.label}. ${this.callsign(d.attemptId) ?? "The agent"} gets a change request.` : `${option.label}. The work that adapts is closed, so no change request went out.`) : "Both agents continue. Nothing changes.";
+    } else if (option.id === "park") {
+      await this.park(q.intentId, note || "A person paused the task after the work did not merge.", by);
+      message = "The task is paused.";
+    } else {
+      const a = this.attempts.get(q.attemptIds[0]);
+      if (!a) throw new Error("The work copy of this question is gone.");
+      if (intent?.status === "judging") {
+        intent.status = "underway";
+        this.putIntent(intent);
+      }
+      const res = await this.rederive(a.id, note ? `A person asked for a redo: ${note}` : "A person asked for a redo on the new main.", by);
+      message = `A built-in agent does "${intent?.title ?? "the task"}" again on the new main.${res.attempt.waitsForBudget ? " It starts when the hourly AI budget has room." : ""}`;
+    }
+    this.addLog({ kind: "decision", intentId: q.intentId, attemptId: q.attemptIds[0], message: `${who.name} answers the question about "${intent?.title ?? "a task"}": ${rationale}` });
+    this.webhook("question", { question: this.questions.get(questionId), task: intent?.title ?? "", link: this.questionLink(q) });
+    return out("answered", message);
+  }
+
+  /** What waits for this person in this project (the inbox; GET /api/me/inbox joins the projects). */
+  async inbox(viewer: { id: string; role: Role }): Promise<InboxItem[]> {
+    const p = this.requireProject();
+    return inboxOf(
+      { project: p.id, rule: p.settings.approver, intents: [...this.intents.values()], attempts: [...this.attempts.values()], agents: [...this.agents.values()], questions: [...this.questions.values()] },
+      viewer,
+    );
+  }
+
+  /**
+   * A person asks the agent to change some lines of its work (a line comment in the app). The agent gets a
+   * change request, like any other: in the answer of its next call.
+   */
+  async requestChange(attemptId: string, input: { path: string; from: number; to: number; text: string }, who: { id: string; name: string }): Promise<T.Correction> {
+    const a = this.mustAttempt(attemptId);
+    if (TERMINAL.has(a.status)) throw new Error(`The work copy is ${copyStatusWord(a.status)}. The agent does not work on it any more.`);
+    const path = String(input.path ?? "").trim().replace(/^\/+/, "");
+    const from = Math.floor(Number(input.from));
+    const to = Math.floor(Number(input.to));
+    const text = String(input.text ?? "").trim().slice(0, 1000);
+    if (!path || path.length > 500) throw new Error("Give the path of the file.");
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < from) throw new Error("Give the lines: from and to. From is 1 or more, and to is not before from.");
+    if (!text) throw new Error("Write what the agent must change.");
+    const lines = from === to ? `line ${from}` : `lines ${from}–${to}`;
+    const corr = this.issueCorrection(
+      a.id,
+      undefined,
+      { kind: "review", message: `${who.name} asks you to change ${path} ${lines}: ${text} Change it, run the tests, and call gitring_ack.`, constraints: { notes: [`${path} ${lines}: ${text}`] } },
+      "human",
+      "person",
+      80,
+      true,
+    );
+    if (!corr) throw new Error("gitring sent this request already. The agent did not read it yet.");
+    this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} asks ${this.callsign(a.id)} to change ${path} ${lines}.`, files: [path] });
+    return corr;
+  }
+
   /** What an agent reads when its work copy is over without a merge, or merged: what to do next. */
   private overAdvice(a: T.Attempt): string {
     if (a.status === "landed") return "The work is in main. Send a new plan with gitring_declare for another change.";
     const redo = [...this.attempts.values()].find((x) => x.lineage.rederivedFrom === a.id && !TERMINAL.has(x.status));
     if (redo) return `gitring does the task again as ${redo.id}. Stop work on ${a.id}.`;
     if (a.status === "alternate") return "Another work copy of this task is merged. Stop work on this copy.";
+    if (a.status === "stale" && a.stoppedFor) return `${a.stoppedFor} A person decides what happens next. Stop work on ${a.id}.`;
     return "Send a new plan with gitring_declare to continue.";
   }
 
@@ -3125,8 +3380,21 @@ export class HarborMaster extends DurableObject<Env> {
       ...(landing ? { landing: { sha: landing.mainAfter, method: landing.method, at: landing.at } } : {}),
       ...(a.mergeWait ? { mergeWait: a.mergeWait } : {}),
       message,
-      clearance: this.clearanceFor(attemptId),
+      clearance: this.withAgain(a, this.clearanceFor(attemptId), call.again),
     };
+  }
+
+  /**
+   * The change requests of an earlier answer in the same tool call (see CallInfo.again) that the agent did
+   * not confirm yet: the last answer of the call holds them again, so they are never lost.
+   */
+  private withAgain(a: T.Attempt, clr: T.Clearance, again?: string[]): T.Clearance {
+    if (!again?.length) return clr;
+    const have = new Set(clr.corrections.map((c) => c.id));
+    const extra = again.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.attemptId === a.id && c.status === "delivered" && !have.has(c.id));
+    if (!extra.length) return clr;
+    const corrections = [...notices(extra, (id) => this.callsign(id)), ...clr.corrections];
+    return this.withQuestions(a, { ...clr, corrections, advice: adviceFor(clr.verdict, corrections.length, clr.traffic) });
   }
 
   /**
@@ -3214,7 +3482,12 @@ export class HarborMaster extends DurableObject<Env> {
     this.putAgent(agent);
     this.stats.rederives += 1;
     this.persistStats();
-    if (by.kind === "human") this.recordDecision({ kind: "rederive", intentId: a.intentId, attemptIds: [old.id, a.id], by, rationale: reason });
+    if (by.kind === "human") {
+      this.recordDecision({ kind: "rederive", intentId: a.intentId, attemptIds: [old.id, a.id], by, rationale: reason });
+      // A person started the redo: the task does not wait for a person any more (unless other work waits).
+      this.closeRedoQuestions(a.intentId, `${by.name} started a redo.`);
+      this.refreshJudging(a.intentId);
+    }
     this.addLog({ kind: "rederive", attemptId: a.id, agentId: agent.id, intentId: a.intentId, message: `Redo "${this.intents.get(a.intentId)?.title}" on main ${main.sha.slice(0, 7)} (try ${a.lineage.generation}). Reason: ${reason}` });
     // The outside agent of the old work copy reads "stop work" in the answer of its next call (see overAdvice).
     if (a.waitsForBudget) await this.scheduleBudgetRetry(a.waitsForBudget);
@@ -4367,6 +4640,12 @@ function slackText(event: string, p: Record<string, unknown>): string {
     if (ap.status === "waiting") return `:raised_hand: ${who}, say yes or send back: *${p.task}* by ${p.agent}. ${p.line} ${ap.why[0] ?? ""} ${p.link}`.trim();
     if (ap.status === "approved") return `:white_check_mark: ${ap.answer?.by.name ?? "A person"} said yes to *${p.task}* (${p.agent}).`;
     return `:leftwards_arrow_with_hook: ${ap.answer?.by.name ?? "A person"} sent *${p.task}* back to ${p.agent}${ap.answer?.note ? `: ${ap.answer.note}` : "."}`;
+  }
+  if (event === "question") {
+    const q = p.question as T.Question;
+    if (q.status === "answered") return `:scales: ${q.answer?.by.name ?? "A person"} answered about *${p.task}*: ${q.options.find((o) => o.id === q.answer?.option)?.label ?? q.answer?.option}.`;
+    if (q.status === "closed") return `:heavy_minus_sign: The question about *${p.task}* closed. ${q.closed ?? ""}`.trim();
+    return `:raised_hand: A person decides on *${p.task}*: ${q.facts[0] ?? ""} ${q.options.map((o) => o.label).join(" / ")}. ${p.link}`.trim();
   }
   if (event === "intent") return `:memo: New task: *${(p.intent as { title: string }).title}*`;
   return `${event}: ${JSON.stringify(p).slice(0, 300)}`;

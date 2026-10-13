@@ -124,15 +124,17 @@ export const APPROVAL_WORD: Record<Approval["status"], string> = {
  * What an agent reads while its work waits for a person. It says what happened, who answers, where, and
  * what the agent does next. `link` is the address where the person answers (the gitring app). `check` is
  * the plain sentence that names the tool that shows the answer (each tool set has its own). `header` replaces
- * the first line (the GitHub-compatible tools start with the pull request).
+ * the first line (the GitHub-compatible tools start with the pull request). `app`: the person answers only in
+ * the gitring app.
  */
-export function waitingText(i: { title: string; approval: Pick<Approval, "why" | "approver">; line: string; link: string; check: string; asked?: boolean; header?: string }): string {
+export function waitingText(i: { title: string; approval: Pick<Approval, "why" | "approver">; line: string; link: string; check: string; asked?: boolean; header?: string; app?: boolean }): string {
   const who = i.approval.approver?.name ?? "A person of the project";
   return [
     i.header ?? "A PERSON MUST SAY YES. The work is not merged yet.",
     `${who} must say yes to this work: "${i.title}". ${i.line}`,
     ...i.approval.why.map((w) => `Why: ${w}`),
-    i.asked ? "gitring asked in this chat. The person did not answer there." : "The person answers in gitring.",
+    // `app`: the person chose to answer in the gitring app only (approvalsIn "app"). gitring does not ask in the chat.
+    i.app ? "The person answers in the gitring app only. gitring does not ask in this chat." : i.asked ? "gitring asked in this chat. The person did not answer there." : "The person answers in gitring.",
     `Link: ${i.link}`,
     "Do not change the work copy while you wait. A change cancels the question.",
     `${i.check} Do not stop the task: tell the person that the work waits.`,

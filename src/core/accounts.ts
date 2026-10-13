@@ -149,3 +149,26 @@ export interface MemberInfo {
 
 /** Project ids: lowercase letters, digits and dashes (1–40). */
 export const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/**
+ * Where a person answers the merge questions of the agents that they send (contract C3):
+ *   agent  in the chat of the agent, when its client can show a form (else the link to the gitring app)
+ *   app    only in the gitring app: gitring never asks in the chat, and it refuses an answer from the chat
+ *   both   in the chat when the client can show a form, and in the gitring app
+ */
+export type ApprovalsIn = "agent" | "app" | "both";
+
+export const APPROVALS_IN: readonly ApprovalsIn[] = ["agent", "app", "both"];
+
+/** The preferences of one person. */
+export interface PersonPrefs {
+  approvalsIn: ApprovalsIn;
+}
+
+export const DEFAULT_PREFS: PersonPrefs = { approvalsIn: "both" };
+
+/** Preferences from stored or sent data: a value that is not known keeps the default. */
+export function cleanPrefs(raw: unknown): PersonPrefs {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Partial<PersonPrefs>;
+  return { approvalsIn: APPROVALS_IN.includes(r.approvalsIn as ApprovalsIn) ? (r.approvalsIn as ApprovalsIn) : DEFAULT_PREFS.approvalsIn };
+}

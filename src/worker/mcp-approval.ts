@@ -12,6 +12,10 @@
  *   2. In the gitring app. A client that cannot show a form gets a normal answer, "A PERSON MUST SAY YES",
  *      with a link. The person opens the link, reads the change and answers there.
  *
+ * The person chooses (contract C3, approvalsIn): "agent" or "both" use the chat when the client can show a form;
+ * "app" never asks in the chat, and an answer from the chat does not count. For a person who chooses "app", no
+ * agent can answer for them, also an agent that holds their key.
+ *
  * The state of a question travels through the client (requestState). gitring signs it with a key from
  * GITRING_SECRET and binds it to the person: another person cannot use it. The project object checks the
  * rest again: who may answer, that the question is the one that waits, and that the work is the work that
@@ -34,9 +38,10 @@ import { z } from "zod";
 import type { Env } from "./env";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
+import { DEFAULT_PREFS } from "../core/accounts";
 import { approvalQuestion, waitingText } from "../core/approvals";
 import { hmacSha256Hex } from "../directory/crypto";
-import type { Principal } from "./auth";
+import { directory, type Principal } from "./auth";
 import { text, type AskState, type HarborApi, type ToolContext, type ToolResult } from "./mcp-kit";
 
 /** The key of the question in the answer of the client. */
@@ -96,10 +101,30 @@ export function isWaiting(st: Pick<T.WorkStatus, "approval" | "status">): boolea
   return st.approval?.status === "waiting" && st.status === "ready";
 }
 
+/** The preference of one person; the default when the Directory cannot say. */
+async function prefsOf(ctx: ToolContext, userId: string): Promise<A.PersonPrefs> {
+  try {
+    return await directory(ctx.env).prefs(userId);
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+/**
+ * Where the question of this work copy is answered (contract C3): the preference of the person who answers (the
+ * sender of the work) and of the caller (a form in this chat goes to the caller). "app" of either one wins.
+ */
+export async function answerPlace(ctx: ToolContext, st: Pick<T.WorkStatus, "approval">): Promise<A.ApprovalsIn> {
+  const ids = [...new Set([st.approval?.approver?.id, ctx.who.user?.id].filter((x): x is string => Boolean(x)))];
+  if (!ids.length) return DEFAULT_PREFS.approvalsIn;
+  const prefs = await Promise.all(ids.map((id) => prefsOf(ctx, id)));
+  return prefs.some((p) => p.approvalsIn === "app") ? "app" : prefs[0].approvalsIn;
+}
+
 /** What the agent reads about a work copy: the words first, then the facts. Each tool set names its own tool to check the answer. */
-export function statusHeadline(st: T.WorkStatus, opts: { check: string; asked?: boolean; before?: string; header?: string }): string {
+export function statusHeadline(st: T.WorkStatus, opts: { check: string; asked?: boolean; before?: string; header?: string; app?: boolean }): string {
   const main = isWaiting(st)
-    ? waitingText({ title: st.task.title, approval: st.approval!, line: st.line, link: st.link, check: opts.check, asked: opts.asked, header: opts.header })
+    ? waitingText({ title: st.task.title, approval: st.approval!, line: st.line, link: st.link, check: opts.check, asked: opts.asked, header: opts.header, app: opts.app })
     : st.message;
   return opts.before ? `${opts.before} ${main}` : main;
 }
@@ -122,25 +147,36 @@ export function statusFacts(st: T.WorkStatus) {
 /** The sentence that names the tool of the gitring set that shows the answer. */
 export const CHECK_WITH_STATUS = (attemptId: string): string => `To see the answer, call gitring_status with the work copy id ${attemptId}.`;
 
-/** The answer of gitring_status, and of a tool of the gitring set that reports a work copy. */
-export function statusReply(st: T.WorkStatus, opts: { asked?: boolean; before?: string; extra?: Record<string, unknown> } = {}): ToolResult {
-  return text({ ...statusFacts(st), ...(opts.extra ?? {}) }, statusHeadline(st, { check: CHECK_WITH_STATUS(st.attemptId), asked: opts.asked, before: opts.before }), st.clearance);
+/** The same, when the person answers in the gitring app only: the agent waits with gitring_wait (contract C1). */
+export const WAIT_FOR_APP = (attemptId: string): string => `To wait for the answer, call gitring_wait with the work copy id ${attemptId}. gitring_status also shows the answer.`;
+
+/** The answer of gitring_status, and of a tool of the gitring set that reports a work copy. `app`: the person answers in the gitring app only. */
+export function statusReply(st: T.WorkStatus, opts: { asked?: boolean; before?: string; extra?: Record<string, unknown>; app?: boolean } = {}): ToolResult {
+  const check = opts.app ? WAIT_FOR_APP(st.attemptId) : CHECK_WITH_STATUS(st.attemptId);
+  return text({ ...statusFacts(st), ...(opts.extra ?? {}) }, statusHeadline(st, { check, asked: opts.asked, before: opts.before, app: opts.app }), st.clearance);
+}
+
+/** One sentence for the person when the agent got change requests with this answer: the work can still change. */
+function requestsNote(n: number): string {
+  return n ? ` gitring also sent ${n} change ${n === 1 ? "request" : "requests"} to the agent. The work can change.` : "";
 }
 
 /**
  * The question for the person, as a form in the chat of the agent. Absent when gitring cannot ask here (the client
- * cannot show a form, the person is not known, or the person may not answer): the caller then gives the link.
+ * cannot show a form, the person is not known, the person may not answer, or the person answers in the gitring app
+ * only): the caller then gives the link. `again`: the change requests that the first answer delivered. The state
+ * carries them, so the answer of the second call holds them again (the agent reads only that answer).
  */
-export async function askInChat(ctx: ToolContext, req: ServerContext, h: Access, st: T.WorkStatus): Promise<InputRequiredResult | undefined> {
+export async function askInChat(ctx: ToolContext, req: ServerContext, h: Access, st: T.WorkStatus, opts: { place?: A.ApprovalsIn; again?: string[] } = {}): Promise<InputRequiredResult | undefined> {
   const me = ctx.who.user;
   const ap = st.approval;
-  if (!ctx.ask || !me || !ap || !isWaiting(st) || st.mayAnswer === false || !clientCanAsk(req)) return undefined;
-  const state: AskState = { v: 1, project: h.id, attemptId: st.attemptId, approvalId: ap.id, user: me.id };
+  if (opts.place === "app" || !ctx.ask || !me || !ap || !isWaiting(st) || st.mayAnswer === false || !clientCanAsk(req)) return undefined;
+  const state: AskState = { v: 1, project: h.id, attemptId: st.attemptId, approvalId: ap.id, user: me.id, ...(opts.again?.length ? { cr: opts.again.slice(0, 20) } : {}) };
   const requestState = await ctx.ask.mint(state, req);
   return inputRequired({
     inputRequests: {
       [QUESTION_KEY]: inputRequired.elicit({
-        message: approvalQuestion(st.task.title, st.line, ap),
+        message: `${approvalQuestion(st.task.title, st.line, ap)}${requestsNote(st.clearance.corrections.length)}`,
         requestedSchema: {
           type: "object",
           properties: {
@@ -167,6 +203,8 @@ export interface Taken {
   status: T.WorkStatus;
   /** Set when the person answered. Absent: the person closed the question without an answer. */
   result?: T.ApprovalResult;
+  /** The person answers in the gitring app only: the answer from the chat did not count. */
+  app?: boolean;
 }
 
 /**
@@ -182,13 +220,20 @@ export async function takeAnswer(ctx: ToolContext, req: ServerContext, h: Access
   const state = req.mcpReq.requestState<AskState>();
   if (!state || state.v !== 1 || state.user !== me.id || state.project !== h.id || state.attemptId !== attemptId) return undefined;
   const viewer = { id: me.id, role: h.role };
+  const call = { origin: ctx.origin, viewer, ...(state.cr?.length ? { again: state.cr } : {}) };
   const answered = inputResponse(responses, QUESTION_KEY);
   if (answered.kind !== "elicit") return undefined;
-  if (answered.action !== "accept") return { status: await h.stub.status(attemptId, { origin: ctx.origin, viewer }) };
+  if (answered.action !== "accept") return { status: await h.stub.status(attemptId, call) };
   const form = ANSWER_FORM.safeParse(answered.content);
   if (!form.success) return undefined;
+  // A person who answers in the gitring app only: an answer from a chat does not count (an agent can hold their key).
+  if ((await prefsOf(ctx, me.id)).approvalsIn === "app") {
+    const status = await h.stub.status(attemptId, call);
+    const message = "You chose to answer merge questions in the gitring app only. gitring did not use the answer from this chat. Answer in the app.";
+    return { status, app: true, ...(status.approval ? { result: { attemptId, outcome: "refused" as const, approval: status.approval, status: status.status, message } } : {}) };
+  }
   const result = await h.stub.decide(attemptId, form.data, { id: me.id, name: me.name, role: h.role }, "chat", { approvalId: state.approvalId }, ctx.origin);
-  return { status: await h.stub.status(attemptId, { origin: ctx.origin, viewer }), result };
+  return { status: await h.stub.status(attemptId, call), result };
 }
 
 /**

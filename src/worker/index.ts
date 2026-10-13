@@ -211,6 +211,75 @@ app.delete("/api/keys/:id", async (c) => {
   return ok ? c.body(null, 204) : c.json({ error: "Unknown key." }, 404);
 });
 
+/* ───────────── the person: preferences, inbox, push ───────────── */
+
+app.get("/api/me/prefs", async (c) => c.json(await directory(c.env).prefs(needUser(c).id)));
+
+/**
+ * Where the person answers merge questions (contract C3). A key can make the rule stricter ("app"). Only the
+ * person in the gitring app (a browser session) can loosen "app": an agent that holds the key must not undo it.
+ */
+app.put("/api/me/prefs", async (c) => {
+  try {
+    const user = needUser(c);
+    const body = await c.req.json<Partial<A.PersonPrefs>>().catch(() => ({}) as Partial<A.PersonPrefs>);
+    const dir = directory(c.env);
+    if (body.approvalsIn !== undefined && body.approvalsIn !== "app" && c.get("principal").via !== "session" && (await dir.prefs(user.id)).approvalsIn === "app") {
+      throw new HTTPError(403, "Only you can change this, in the gitring app. A key cannot change it from \"In the gitring app\".");
+    }
+    return c.json(await dir.setPrefs(user.id, body.approvalsIn !== undefined ? { approvalsIn: body.approvalsIn } : {}));
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/**
+ * The inbox of the person (contract C4): what waits for them in every project where they may act, oldest first.
+ * A project that does not answer now (it imports, or it restarts) is left out of this answer.
+ */
+app.get("/api/me/inbox", async (c) => {
+  const user = needUser(c);
+  const projects = (await directory(c.env).listProjects(user.id)).filter((p) => atLeast(p.role, "member"));
+  const lists = await Promise.all(
+    projects.map(async (p) => {
+      try {
+        const items = await harbor(c.env, p.id).inbox({ id: user.id, role: p.role as A.Role });
+        return items.map((x) => ({ ...x, projectName: p.name }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return c.json({ items: lists.flat().sort((a, b) => a.at - b.at), at: Date.now() });
+});
+
+/** Push notifications for the inbox: available on this gitring, the public key for the browser, and the devices of the person. */
+app.get("/api/me/push", async (c) => c.json(await directory(c.env).pushStatus(needUser(c).id)));
+
+/** A device of the person gets push notifications. Only in the gitring app: the browser gives the push address. */
+app.post("/api/me/push", async (c) => {
+  try {
+    const user = needUser(c);
+    if (c.get("principal").via !== "session") throw new HTTPError(403, "Turn on push notifications in the gitring app.");
+    const body = await c.req.json<{ endpoint?: unknown }>().catch(() => ({}) as { endpoint?: unknown });
+    if (typeof body.endpoint !== "string") throw new HTTPError(400, "Give endpoint: the push address of the browser.");
+    return c.json(await directory(c.env).pushSubscribe(user.id, body.endpoint), 201);
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/** A device stops push notifications. Without an endpoint, every device of the person stops. */
+app.delete("/api/me/push", async (c) => {
+  try {
+    const user = needUser(c);
+    const body = await c.req.json<{ endpoint?: unknown }>().catch(() => ({}) as { endpoint?: unknown });
+    return c.json(await directory(c.env).pushUnsubscribe(user.id, typeof body.endpoint === "string" ? body.endpoint : undefined));
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
 /* ───────────── projects ───────────── */
 
 app.get("/api/projects", async (c) => {
@@ -516,6 +585,50 @@ app.post("/api/projects/:p/attempts/:id/decide", async (c) => {
       new URL(c.req.url).origin,
     );
     return c.json(res, res.outcome === "refused" ? 403 : 200);
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/**
+ * A person answers a question (an escalated conflict check, or work that did not merge). Only in the gitring
+ * app, as for approvals: a key or an agent token cannot answer for the person.
+ */
+app.post("/api/projects/:p/questions/:id/answer", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "member");
+    const principal = c.get("principal");
+    if (principal.via !== "session" || !principal.user) throw new HTTPError(403, "A person must answer in the gitring app. A key or an agent token cannot answer for a person.");
+    const body = await c.req.json<{ option?: unknown; note?: unknown }>().catch(() => ({}) as { option?: unknown; note?: unknown });
+    if (typeof body.option !== "string" || !body.option) throw new HTTPError(400, "Give option: the id of your answer.");
+    const res = await h.answerQuestion(
+      c.req.param("id"),
+      { option: body.option, note: typeof body.note === "string" ? body.note : undefined },
+      { id: principal.user.id, name: principal.user.name, role: h.role },
+      new URL(c.req.url).origin,
+    );
+    return c.json(res, res.outcome === "refused" ? 403 : 200);
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/**
+ * A person asks the agent to change some lines of its work (a line comment on the diff). The agent gets a
+ * change request in the answer of its next call. Only a person in the gitring app can send it.
+ */
+app.post("/api/projects/:p/attempts/:id/requests", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "member");
+    const principal = c.get("principal");
+    if (principal.via !== "session" || !principal.user) throw new HTTPError(403, "A person asks for a change in the gitring app. A key or an agent token cannot do it.");
+    const body = await c.req.json<{ path?: unknown; from?: unknown; to?: unknown; text?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+    const corr = await h.requestChange(
+      c.req.param("id"),
+      { path: String(body.path ?? ""), from: Number(body.from), to: Number(body.to ?? body.from), text: String(body.text ?? "") },
+      { id: principal.user.id, name: principal.user.name },
+    );
+    return c.json(corr, 201);
   } catch (e) {
     return err(c, e);
   }
