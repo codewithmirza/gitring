@@ -16,6 +16,8 @@ describe("privacy and terms", () => {
     expect(p).toContain("does not keep Google's access tokens");
     expect(p).toContain("encrypted (AES-GCM)");
     expect(p).toContain("Connected apps");
+    // A passkey stays on the device: gitring keeps the public key only.
+    expect(p).toContain("gitring keeps its public key");
   });
 
   it("links the two pages to each other", () => {

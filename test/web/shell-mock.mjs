@@ -242,6 +242,7 @@ function reset(scenario = "base") {
       { id: "k_1", name: "my laptop", prefix: "gk_ab12", createdAt: NOW - 9 * 24 * 60 * min, lastUsed: NOW - 2 * 60 * min },
       { id: "k_2", name: "CI", prefix: "gk_cd34", createdAt: NOW - 30 * 24 * 60 * min },
     ],
+    passkeys: [{ id: "pk_1", name: "Passkey (Mac)", createdAt: NOW - 12 * 24 * 60 * min, lastUsed: NOW - 50 * min }],
     grants: [
       { id: "gr_1", clientId: "claude", clientName: "Claude", clientUri: "https://claude.ai", scope: "projects", createdAt: NOW - 3 * 24 * 60 * min, lastUsedAt: NOW - 4 * min },
       { id: "gr_2", clientId: "cursor", clientName: "Cursor", clientUri: "https://cursor.com", scope: "projects", createdAt: NOW - 24 * 60 * min },
@@ -466,6 +467,22 @@ const server = http.createServer(async (req, res) => {
     return json(res, 204);
   }
   if (p === "/api/projects" && method === "GET") return json(res, 200, sid ? data.projects : data.projects.filter((x) => x.visibility === "public").map((x) => ({ ...x, role: "viewer" })));
+
+  // passkeys of the signed-in person (the WebAuthn steps need a real browser key: not in the mock)
+  if (p.startsWith("/api/me/passkeys")) {
+    if (!sid) return json(res, 401, { error: "Sign in first." });
+    if (p === "/api/me/passkeys" && method === "GET") return json(res, 200, data.passkeys);
+    const k = /^\/api\/me\/passkeys\/([^/]+)$/.exec(p);
+    if (k && method === "PATCH") {
+      const body = await readBody(req);
+      data.passkeys = data.passkeys.map((x) => (x.id === k[1] ? { ...x, name: String(body.name || x.name) } : x));
+      return json(res, 200, data.passkeys.find((x) => x.id === k[1]));
+    }
+    if (k && method === "DELETE") {
+      data.passkeys = data.passkeys.filter((x) => x.id !== k[1]);
+      return json(res, 204);
+    }
+  }
 
   // keys and grants (signed in only)
   if (p.startsWith("/api/keys") || p.startsWith("/api/oauth/grants")) {

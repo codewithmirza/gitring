@@ -78,6 +78,13 @@
 .acct-fresh .b-btn { justify-self: start; }
 .acct-signin { max-width: 360px; margin-top: var(--s-6); }
 
+/* Passkeys: rename in place, add below the list. */
+.acct-rename { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.acct-rename .b-input { flex: 1 1 200px; max-width: 320px; }
+.acct-rename .acct-error { flex-basis: 100%; }
+.acct-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.acct-actions .acct-error { flex-basis: 100%; }
+
 @media (max-width: 600px) {
   .acct-row { grid-template-columns: 28px minmax(0, 1fr); }
   .acct-row__acts { grid-column: 2; justify-content: flex-start; }

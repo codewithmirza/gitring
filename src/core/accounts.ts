@@ -6,6 +6,8 @@ import type { ProjectSource } from "./types";
 
 export type Role = "owner" | "member" | "viewer";
 export type Provider = "github" | "google";
+/** A way to sign in: a passkey (built in, no outside account) or an outside provider. */
+export type SignInKind = "passkey" | Provider;
 export type Visibility = "public" | "private";
 
 export const ROLE_RANK: Record<Role, number> = { viewer: 1, member: 2, owner: 3 };
@@ -27,8 +29,49 @@ export interface UserInfo {
   email?: string;
   avatar?: string;
   identities: Identity[];
+  /** How many passkeys the person has. A person may have passkeys only (no identities). */
+  passkeys?: number;
   /** A deployment owner (GITRING_OWNERS): may set up sign-in and act on every project. */
   admin: boolean;
+}
+
+/** A passkey of a person (a WebAuthn credential). gitring keeps its public key only. */
+export interface PasskeyInfo {
+  /** The credential id (base64url). */
+  id: string;
+  /** A name that the person chose, for example "Passkey (Windows)". */
+  name: string;
+  createdAt: number;
+  lastUsed?: number;
+}
+
+/** A credential in a passkey request: the id is base64url. */
+export interface PasskeyDescriptor {
+  type: "public-key";
+  id: string;
+  transports?: string[];
+}
+
+/** Options for navigator.credentials.create() (PublicKeyCredentialCreationOptionsJSON: bytes are base64url). */
+export interface PasskeyCreationOptions {
+  challenge: string;
+  rp: { id: string; name: string };
+  user: { id: string; name: string; displayName: string };
+  pubKeyCredParams: { type: "public-key"; alg: number }[];
+  timeout: number;
+  attestation: "none";
+  authenticatorSelection: { residentKey: "required"; requireResidentKey: true; userVerification: "preferred" };
+  excludeCredentials: PasskeyDescriptor[];
+}
+
+/** Options for navigator.credentials.get() (PublicKeyCredentialRequestOptionsJSON). */
+export interface PasskeyRequestOptions {
+  challenge: string;
+  rpId: string;
+  timeout: number;
+  userVerification: "preferred";
+  /** Empty: the browser offers the passkeys that it has for this site (discoverable credentials). */
+  allowCredentials: PasskeyDescriptor[];
 }
 
 export interface ProjectInfo {
@@ -44,9 +87,9 @@ export interface ProjectInfo {
 
 export interface MeInfo {
   user: UserInfo | null;
-  /** Sign-in providers that are set up on this deployment. */
+  /** Outside sign-in providers that are set up on this deployment. Passkeys need no setup. */
   providers: { github: boolean; google: boolean };
-  /** No sign-in provider is set up yet: an owner must open /setup. */
+  /** No outside sign-in provider is set up. People can still sign in with a passkey. */
   setupNeeded: boolean;
   /** The GitHub connection of the signed-in person (repository list, imports, sync). */
   github?: GithubConnection;
@@ -140,7 +183,7 @@ export interface ApiKeyInfo {
 export interface MemberInfo {
   userId?: string;
   name: string;
-  /** GitHub login or email that identifies the member (pending invites have only this). */
+  /** Account id, email or GitHub login that identifies the member (pending invites have only this). */
   handle: string;
   role: Role;
   /** True until the person signs in for the first time. */

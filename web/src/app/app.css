@@ -358,6 +358,14 @@
 .signin__error .b-icon { flex: none; margin-top: 3px; color: var(--danger); }
 .signin__none { font-size: var(--t-sm); color: var(--ink-2); }
 .signin__note { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+/* passkeys first, then "or", then the providers */
+.signin .b-provider .b-icon { flex: none; }
+.signin .b-provider:disabled { opacity: .55; cursor: not-allowed; }
+.signin__or { display: flex; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--t-xs); color: var(--ink-3); }
+.signin__or::before,
+.signin__or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.signin__create { display: grid; gap: var(--s-2); }
+.signin__row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 
 /* ───────────── chart view ───────────── */
 .chartview {

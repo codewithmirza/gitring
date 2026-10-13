@@ -237,7 +237,7 @@ describe("projects and roles", () => {
     let members = await dir.addMember(p.id, "@Sam", "member");
     expect(members.find((m) => m.handle === "sam")).toMatchObject({ role: "member", pending: true });
     await dir.addMember(p.id, "lee@example.com", "viewer");
-    await expect(dir.addMember(p.id, "not a login!", "member")).rejects.toThrow(/not a GitHub login/);
+    await expect(dir.addMember(p.id, "not a login!", "member")).rejects.toThrow(/not an account id, an email or a GitHub login/);
     await expect(dir.addMember(p.id, "sam", "admin" as never)).rejects.toThrow(/owner, member or viewer/);
 
     const { user: sam } = await githubSignIn(dir, { id: 21, login: "sam" });

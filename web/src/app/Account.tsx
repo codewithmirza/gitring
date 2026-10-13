@@ -2,14 +2,15 @@
  * Account UI in the shell: the project switcher, the person menu, the sign-in panel and the
  * "you can only view" banner. Each one is a popover that grows from its button: no modal dialogs.
  */
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { ProjectInfo, Provider } from "../../../src/core/accounts";
-import { Button, Menu, MenuItem, MenuSeparator, Popover, SkeletonRows, usePopover } from "../design/components";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import type { ProjectInfo, Provider, SignInKind } from "../../../src/core/accounts";
+import { Button, Input, Menu, MenuItem, MenuSeparator, Popover, SkeletonRows, usePopover } from "../design/components";
 import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
 import { useStore } from "../state/store";
 import { openProject, signOut, useCanAct, useMe } from "../state/account";
 import { githubSignInUrl, googleSignInUrl } from "../state/signin";
+import { createAccountWithPasskey, passkeyErrorText, passkeysWork, signInWithPasskey } from "../state/passkey";
 import { Link, linkProps, navigate } from "./router";
 import { openSignIn, rememberAfterSignIn, setUi, useUi } from "./ui";
 import { fuzzyScore } from "./palette";
@@ -179,7 +180,8 @@ export function UserMenu() {
     );
   }
   const u = me.user;
-  const ids = u.identities.map((i) => (i.provider === "github" ? `GitHub @${i.login}` : `Google ${i.email}`)).join(" · ");
+  const passkeys = u.passkeys ? (u.passkeys === 1 ? "1 passkey" : `${u.passkeys} passkeys`) : null;
+  const ids = [...u.identities.map((i) => (i.provider === "github" ? `GitHub @${i.login}` : `Google ${i.email}`)), passkeys].filter(Boolean).join(" · ");
   return (
     <>
       <button {...pop.triggerProps} type="button" className="acct-me" aria-label={`Signed in as ${u.name}. Open the account menu.`}>
@@ -226,29 +228,51 @@ const LAST_KEY = "gitring.lastProvider";
 const PROVIDER_NAME: Record<Provider, string> = { github: "GitHub", google: "Google" };
 
 /**
- * The provider of the last sign-in in this browser: the server's cookie "gitring_last" (set when a
- * sign-in finishes), else the provider that the person chose last here.
+ * The way of the last sign-in in this browser: the server's cookie "gitring_last" (set when a sign-in
+ * finishes), else the way that the person chose last here.
  */
-export function lastProvider(): Provider | null {
+export function lastProvider(): SignInKind | null {
   try {
-    const m = /(?:^|;\s*)gitring_last=(github|google)\b/.exec(document.cookie);
-    if (m) return m[1] as Provider;
+    const m = /(?:^|;\s*)gitring_last=(github|google|passkey)\b/.exec(document.cookie);
+    if (m) return m[1] as SignInKind;
     const v = localStorage.getItem(LAST_KEY);
-    return v === "github" || v === "google" ? v : null;
+    return v === "github" || v === "google" || v === "passkey" ? v : null;
   } catch {
     return null;
   }
 }
 
 /**
- * The sign-in choices: real provider marks, the last used provider first, one click to the provider.
- * Each choice is a link (it leaves for the provider), and it shows "Opening …" until the page changes.
- * `returnTo` is the page to come back to (default: this page).
+ * The outside providers that this gitring has, in a neutral order: the one used last first, then the
+ * others alphabetically by name.
+ */
+export function orderedProviders(available: { github: boolean; google: boolean }, last: SignInKind | null): Provider[] {
+  const list = (["github", "google"] as Provider[]).filter((p) => available[p]);
+  return last && last !== "passkey" && list.includes(last) ? [last, ...list.filter((p) => p !== last)] : list;
+}
+
+function rememberLast(kind: SignInKind) {
+  try {
+    localStorage.setItem(LAST_KEY, kind);
+  } catch {
+    /* storage off */
+  }
+}
+
+/**
+ * The sign-in choices. Passkeys come first: they need no outside account. Then the providers that this
+ * gitring has (real provider marks, the last used first). A provider choice is a link (it leaves for the
+ * provider) and shows "Opening …" until the page changes. A passkey sign-in loads `returnTo` again
+ * (default: this page), so the app starts signed in, like after a provider.
  */
 export function SignInChoices({ reason, error, returnTo }: { reason?: string | null; error?: string | null; returnTo?: string }) {
   const me = useMe();
   const ui = useUi();
-  const [busy, setBusy] = useState<Provider | null>(null);
+  const [busy, setBusy] = useState<SignInKind | "create" | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const nameId = useId();
   useEffect(() => {
     // Back from the provider (the page comes from the back-forward cache): the choices work again.
     const reset = (e: PageTransitionEvent) => {
@@ -259,17 +283,34 @@ export function SignInChoices({ reason, error, returnTo }: { reason?: string | n
   }, []);
   const last = lastProvider();
   if (!me) return <SkeletonRows rows={2} label="Loading the sign-in choices" />;
-  const available = (["github", "google"] as Provider[]).filter((p) => me.providers[p]);
-  const ordered = last && available.includes(last) ? [last, ...available.filter((p) => p !== last)] : available;
+  const ordered = orderedProviders(me.providers, last);
   const back = returnTo ?? location.pathname + location.search;
+  const canPasskey = passkeysWork();
   const chose = (p: Provider) => {
     setBusy(p);
-    try {
-      localStorage.setItem(LAST_KEY, p);
-    } catch {
-      /* storage off */
-    }
+    rememberLast(p);
     rememberAfterSignIn(ui.signInThen);
+  };
+  const signedIn = () => {
+    rememberLast("passkey");
+    rememberAfterSignIn(ui.signInThen);
+    location.assign(back);
+  };
+  const withPasskey = async (kind: "passkey" | "create", run: () => Promise<unknown>) => {
+    setBusy(kind);
+    setProblem(null);
+    try {
+      await run();
+      signedIn();
+    } catch (e) {
+      setProblem(passkeyErrorText(e));
+      setBusy(null);
+    }
+  };
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return setProblem("Give your name. Other people in your projects see it.");
+    void withPasskey("create", () => createAccountWithPasskey(name.trim()));
   };
   return (
     <div className="signin">
@@ -280,32 +321,78 @@ export function SignInChoices({ reason, error, returnTo }: { reason?: string | n
           <span>{error}</span>
         </p>
       )}
-      {ordered.length === 0 ? (
-        <p className="signin__none">Sign-in is not set up on this server. Its owner opens /setup to add GitHub or Google.</p>
-      ) : (
-        <div className="signin__buttons">
-          {ordered.map((p, i) => (
-            <a
-              key={p}
-              className="b-provider"
-              href={p === "github" ? githubSignInUrl(back) : googleSignInUrl(back)}
-              aria-busy={busy === p || undefined}
-              onClick={(e) => {
-                // A new tab or window keeps this page as it is.
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-                chose(p);
-              }}
-              data-autofocus={i === 0 ? "" : undefined}
-            >
-              {p === "github" ? <GitHubMark size={18} /> : <GoogleG size={18} />}
-              <span className="b-provider__text">{busy === p ? `Opening ${PROVIDER_NAME[p]}…` : `Continue with ${PROVIDER_NAME[p]}`}</span>
-              {p === last && ordered.length > 1 && <span className="b-provider__tag">Last used</span>}
-            </a>
-          ))}
-        </div>
+      <div className="signin__buttons">
+        <button
+          type="button"
+          className="b-provider"
+          onClick={() => void withPasskey("passkey", signInWithPasskey)}
+          aria-busy={busy === "passkey" || undefined}
+          disabled={!canPasskey || busy !== null}
+          data-autofocus=""
+        >
+          <Icon name="key" size={18} />
+          <span className="b-provider__text">{busy === "passkey" ? "Confirm on your device…" : "Sign in with a passkey"}</span>
+          {last === "passkey" && ordered.length > 0 && <span className="b-provider__tag">Last used</span>}
+        </button>
+        {creating ? (
+          <form className="signin__create" onSubmit={create}>
+            <label className="b-field__label" htmlFor={nameId}>
+              Your name
+            </label>
+            <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="name" autoFocus aria-describedby={`${nameId}-help`} />
+            <span className="b-field__help" id={`${nameId}-help`}>
+              Other people in your projects see this name. Your device keeps the passkey.
+            </span>
+            <span className="signin__row">
+              <Button type="submit" size="sm" variant="primary" busy={busy === "create"}>
+                Create the account
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+            </span>
+          </form>
+        ) : (
+          <button type="button" className="b-provider" onClick={() => setCreating(true)} disabled={!canPasskey || busy !== null}>
+            <Icon name="plus" size={18} />
+            <span className="b-provider__text">Create an account with a passkey</span>
+          </button>
+        )}
+      </div>
+      {problem && (
+        <p className="signin__error" role="alert">
+          <Icon name="cross" size={14} />
+          <span>{problem}</span>
+        </p>
+      )}
+      {!canPasskey && <p className="signin__none">This browser cannot use passkeys. Use another browser{ordered.length ? " or another sign-in" : ""}.</p>}
+      {ordered.length > 0 && (
+        <>
+          <p className="signin__or">or</p>
+          <div className="signin__buttons">
+            {ordered.map((p) => (
+              <a
+                key={p}
+                className="b-provider"
+                href={p === "github" ? githubSignInUrl(back) : googleSignInUrl(back)}
+                aria-busy={busy === p || undefined}
+                onClick={(e) => {
+                  // A new tab or window keeps this page as it is.
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                  chose(p);
+                }}
+              >
+                {p === "github" ? <GitHubMark size={18} /> : <GoogleG size={18} />}
+                <span className="b-provider__text">{busy === p ? `Opening ${PROVIDER_NAME[p]}…` : `Continue with ${PROVIDER_NAME[p]}`}</span>
+                {p === last && <span className="b-provider__tag">Last used</span>}
+              </a>
+            ))}
+          </div>
+        </>
       )}
       <p className="signin__note">
-        gitring keeps your name, email and avatar. It does not post anything for you. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+        gitring keeps your name, and your email and avatar when a provider sends them. gitring never posts for you. <a href="/privacy">Privacy</a> ·{" "}
+        <a href="/terms">Terms</a>
       </p>
     </div>
   );
