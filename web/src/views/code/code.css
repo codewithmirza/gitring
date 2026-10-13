@@ -625,3 +625,21 @@
   .cv-skel { animation: none; }
   .cv-line.is-flash .cv-code { animation: none; background: color-mix(in oklch, var(--caution) 18%, transparent); }
 }
+
+/* Line requests on the diff of a work copy: the new line number is a button; the form opens under the lines. */
+.cv-drow__n--btn { padding-right: 0; }
+.cv-drow__nbtn {
+  width: 100%;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+}
+.cv-drow__nbtn::before { content: attr(data-n); }
+.cv-drow__nbtn:hover, .cv-drow__nbtn:focus-visible { color: var(--accent); text-decoration: underline; }
+.cv-drow.is-picked { box-shadow: inset 3px 0 0 var(--accent); }
+.cv-drow.is-picked .cv-drow__nbtn { color: var(--accent); font-weight: 600; }
+.cv-drow--request { grid-template-columns: minmax(0, 1fr); padding: var(--s-3); background: var(--surface-1); white-space: normal; width: auto; }

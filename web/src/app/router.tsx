@@ -13,6 +13,7 @@ export type Route =
   | { name: "projects" }
   | { name: "settings" }
   | { name: "account" }
+  | { name: "inbox" }
   | { name: "notfound"; path: string };
 
 function decode(part: string): string {
@@ -27,7 +28,7 @@ function decode(part: string): string {
  * Paths: "/" home, "/overview", "/tasks" and "/tasks/:id", "/history" and "/history/:id",
  * "/approve/:id" (a person says yes to the merge of a work copy),
  * "/code", "/code/:ref" and "/code/:ref/<file path>" (ref: main, a work copy id or a commit), "/connect",
- * "/projects", "/settings", "/account". Old paths stay as aliases: "/chart", "/intents/:id", "/logbook/:id".
+ * "/projects", "/settings", "/account", "/inbox" (what waits for the person in all projects). Old paths stay as aliases: "/chart", "/intents/:id", "/logbook/:id".
  * "/design" exists in development builds only.
  */
 export function parseRoute(pathname: string): Route {
@@ -59,6 +60,8 @@ export function parseRoute(pathname: string): Route {
       return { name: "settings" };
     case "account":
       return { name: "account" };
+    case "inbox":
+      return { name: "inbox" };
   }
   return { name: "notfound", path: pathname };
 }

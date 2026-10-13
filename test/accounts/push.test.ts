@@ -40,7 +40,7 @@ describe("the push keys of the deployment", () => {
     const dec = (s: string) => JSON.parse(new TextDecoder().decode(fromB64url(s)));
     expect(dec(m[1])).toEqual({ typ: "JWT", alg: "ES256" });
     expect(dec(m[2])).toEqual({ aud: "https://push.example.org", exp: now / 1000 + 12 * 3600, sub: "mailto:robin@example.org" });
-    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k.verify, fromB64url(m[3]), new TextEncoder().encode(`${m[1]}.${m[2]}`));
+    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k.verify, fromB64url(m[3]) as BufferSource, new TextEncoder().encode(`${m[1]}.${m[2]}`));
     expect(ok).toBe(true);
   });
 

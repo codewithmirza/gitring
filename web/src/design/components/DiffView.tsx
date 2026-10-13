@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Icon } from "../icons";
 import { Button } from "./Button";
+import { inSelection, LineRequestForm, linesText, pickLine, type LineRequestInput, type LineSelection } from "./LineRequest";
 
 export interface DiffFileLike {
   path: string;
@@ -47,7 +48,15 @@ export function parseUnified(diff: string): Row[] {
 
 const STATUS_TEXT = { A: "Added", M: "Changed", D: "Deleted" } as const;
 
-function FileDiff({ file, large, defaultOpen = true }: { file: DiffFileLike; large?: boolean; defaultOpen?: boolean }) {
+/** A person may ask the agent to change lines: the new line numbers become buttons, and the form opens under the lines. */
+interface LineAsk {
+  sel: LineSelection | null;
+  pick: (path: string, line: number, extend: boolean) => void;
+  send: (input: LineRequestInput) => Promise<void>;
+  cancel: () => void;
+}
+
+function FileDiff({ file, large, defaultOpen = true, ask }: { file: DiffFileLike; large?: boolean; defaultOpen?: boolean; ask?: LineAsk }) {
   const [open, setOpen] = useState(defaultOpen);
   const rows = useMemo(() => parseUnified(file.diff), [file.diff]);
   return (
@@ -86,15 +95,41 @@ function FileDiff({ file, large, defaultOpen = true }: { file: DiffFileLike; lar
                       <td colSpan={4}>⋯ {r.lines} unchanged {r.lines === 1 ? "line" : "lines"}</td>
                     </tr>
                   );
+                const picked = ask ? inSelection(ask.sel, file.path, r.b) : false;
+                const formHere = ask?.sel && picked && r.b === ask.sel.to;
                 return (
-                  <tr key={i} className={r.kind === "add" ? "is-add" : r.kind === "del" ? "is-del" : undefined}>
-                    <td className="b-diff__ln">{r.a ?? ""}</td>
-                    <td className="b-diff__ln">{r.b ?? ""}</td>
-                    <td className="b-diff__sign" aria-label={r.kind === "add" ? "added" : r.kind === "del" ? "removed" : undefined}>
-                      {r.kind === "add" ? "+" : r.kind === "del" ? "−" : ""}
-                    </td>
-                    <td className="b-diff__code">{r.text || " "}</td>
-                  </tr>
+                  <Fragment key={i}>
+                    <tr className={[r.kind === "add" ? "is-add" : r.kind === "del" ? "is-del" : "", picked ? "is-picked" : ""].filter(Boolean).join(" ") || undefined}>
+                      <td className="b-diff__ln">{r.a ?? ""}</td>
+                      <td className="b-diff__ln">
+                        {ask && r.b !== undefined ? (
+                          <button
+                            type="button"
+                            className="b-diff__lnbtn"
+                            aria-pressed={picked}
+                            aria-label={`Ask the agent to change ${file.path} line ${r.b}`}
+                            title="Ask the agent to change this line. Shift-click selects more lines."
+                            onClick={(e) => ask.pick(file.path, r.b!, e.shiftKey)}
+                          >
+                            {r.b}
+                          </button>
+                        ) : (
+                          (r.b ?? "")
+                        )}
+                      </td>
+                      <td className="b-diff__sign" aria-label={r.kind === "add" ? "added" : r.kind === "del" ? "removed" : undefined}>
+                        {r.kind === "add" ? "+" : r.kind === "del" ? "−" : ""}
+                      </td>
+                      <td className="b-diff__code">{r.text || " "}</td>
+                    </tr>
+                    {formHere && ask?.sel && (
+                      <tr className="is-request">
+                        <td colSpan={4}>
+                          <LineRequestForm sel={ask.sel} onSend={ask.send} onCancel={ask.cancel} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -106,13 +141,46 @@ function FileDiff({ file, large, defaultOpen = true }: { file: DiffFileLike; lar
   );
 }
 
-/** DiffView: unified, mono, line numbers, +/− gutters, hunk headers, collapsed unchanged regions. */
-export function DiffView({ files, large, empty = "No changes.", onlyFirstOpen }: { files: DiffFileLike[]; large?: boolean; empty?: string; onlyFirstOpen?: boolean }) {
+/**
+ * DiffView: unified, mono, line numbers, +/− gutters, hunk headers, collapsed unchanged regions. With
+ * `onRequest`, a person selects lines (the new line numbers) and asks the agent to change them; the promise
+ * rejects with a plain sentence when the request did not go out.
+ */
+export function DiffView({
+  files,
+  large,
+  empty = "No changes.",
+  onlyFirstOpen,
+  onRequest,
+}: {
+  files: DiffFileLike[];
+  large?: boolean;
+  empty?: string;
+  onlyFirstOpen?: boolean;
+  onRequest?: (input: LineRequestInput) => Promise<void>;
+}) {
+  const [sel, setSel] = useState<LineSelection | null>(null);
   if (!files.length) return <p className="b-diff__empty">{empty}</p>;
+  const ask: LineAsk | undefined = onRequest
+    ? {
+        sel,
+        pick: (path, line, extend) => setSel((s) => pickLine(s, path, line, extend)),
+        send: async (input) => {
+          await onRequest(input);
+          setSel(null);
+        },
+        cancel: () => setSel(null),
+      }
+    : undefined;
   return (
     <div className={["b-diff", large && "b-diff--lg"].filter(Boolean).join(" ")}>
+      {onRequest && (
+        <p className="b-diff__hint">
+          Select a line number to ask the agent to change that line{sel ? ` (now: ${sel.path} ${linesText(sel.from, sel.to)})` : ""}.
+        </p>
+      )}
       {files.map((f, i) => (
-        <FileDiff key={f.path} file={f} large={large} defaultOpen={!onlyFirstOpen || i === 0} />
+        <FileDiff key={f.path} file={f} large={large} defaultOpen={!onlyFirstOpen || i === 0} ask={ask} />
       ))}
     </div>
   );

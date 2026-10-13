@@ -106,6 +106,8 @@ export const WEBHOOK_EVENTS: { value: GitringEventType; label: string }[] = [
   { value: "decision", label: "A person decided" },
   { value: "intent", label: "A new task" },
   { value: "approval", label: APPROVAL_EVENT_LABEL },
+  // A question for a person: which work adapts, or what happens with work that did not merge.
+  { value: "question", label: "A person must decide, or answered" },
 ];
 
 /** What the message of the `approval` event holds. */

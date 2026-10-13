@@ -105,3 +105,9 @@
   .aptray__more,
   .aptray--line .aptray__morebtn { animation: none; }
 }
+
+/* A question card (QuestionCard): the facts in a short list, the answers as buttons. */
+.qcard__headline { font-weight: 500; color: var(--ink-1); }
+.qcard__facts { display: grid; gap: var(--s-1); margin: 0; padding-left: var(--s-4); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.qcard__more summary { cursor: pointer; font-size: var(--t-xs); color: var(--ink-2); }
+.qcard__acts { justify-content: flex-start; }

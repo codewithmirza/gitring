@@ -1,0 +1,11 @@
+{
+  "name": "gitring",
+  "short_name": "gitring",
+  "description": "Many coding agents, one codebase. Answer merges and questions from your inbox.",
+  "start_url": "/inbox",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#090f16",
+  "theme_color": "#090f16",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

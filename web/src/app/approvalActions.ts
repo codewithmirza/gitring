@@ -4,7 +4,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { toast } from "../design/components";
-import { harbor, type ApprovalResult } from "../state/api";
+import { harbor, harborOrNull, LiveHarbor, type ApprovalResult } from "../state/api";
 import { answerKind, type AnswerKind } from "../state/approvals";
 import { shortSha } from "../state/format";
 import { store } from "../state/store";
@@ -22,6 +22,8 @@ export interface AnswerInput {
   title: string;
   /** The screen shows the result in place: no toast. */
   quiet?: boolean;
+  /** The project of the question, when it is not the open project (the inbox shows all projects). */
+  projectId?: string;
 }
 
 export type AnswerResult = { ok: true; kind: AnswerKind; result: ApprovalResult } | { ok: false; error: string };
@@ -103,6 +105,13 @@ function applyAnswer(r: ApprovalResult) {
   store.dispatch({ type: "attempt", attempt: { ...a, status: r.status, approval: r.approval } });
 }
 
+/** The client of the project of a question: the open project, or another one (the inbox shows all projects). */
+function clientFor(projectId: string | undefined) {
+  if (!projectId) return harbor();
+  const open = harborOrNull();
+  return open?.projectId === projectId ? open : new LiveHarbor(projectId);
+}
+
 /**
  * Send a person's answer. A refusal, an answer that came too late and a request that failed all come back
  * as a result with a plain sentence: this function does not throw. A second answer for the same question
@@ -113,7 +122,7 @@ export async function answerApproval(input: AnswerInput): Promise<AnswerResult> 
   setSending(input.approvalId, input.answer);
   try {
     const note = input.answer === "send-back" ? input.note?.trim() || undefined : undefined;
-    const result = await harbor().decide(input.attemptId, { approvalId: input.approvalId, answer: input.answer, note });
+    const result = await clientFor(input.projectId).decide(input.attemptId, { approvalId: input.approvalId, answer: input.answer, note });
     const kind = answerKind(result);
     applyAnswer(result);
     if (!input.quiet) report(input, kind, result);

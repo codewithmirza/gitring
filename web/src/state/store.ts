@@ -156,6 +156,7 @@ export function reconcile(prev: ProjectState, next: ProjectState): ProjectState 
     checks: shareList(prev.checks, next.checks, byIdKey),
     landings: shareList(prev.landings, next.landings, byIdKey),
     decisions: shareList(prev.decisions, next.decisions, byIdKey),
+    ...(next.questions ? { questions: shareList(prev.questions ?? [], next.questions, byIdKey) } : {}),
     logs: shareList(prev.logs, next.logs, byIdKey),
     radar: shareList(prev.radar, next.radar, pairKey),
     files: shareList(prev.files, next.files, (f) => f.path),
@@ -177,6 +178,7 @@ const SLICES: Record<string, true> = {
   checks: true,
   landings: true,
   decisions: true,
+  questions: true,
   logs: true,
   radar: true,
   files: true,
@@ -232,6 +234,10 @@ export function reduce(st: ProjectState, ev: GitringEvent): ProjectState {
     case "decision": {
       const decisions = upsert(st.decisions, ev.decision);
       return decisions === st.decisions ? st : { ...st, decisions };
+    }
+    case "question": {
+      const questions = upsert(st.questions ?? [], ev.question);
+      return questions === st.questions ? st : { ...st, questions };
     }
     case "log": {
       if (st.logs.length && st.logs[st.logs.length - 1].id === ev.log.id) return st;

@@ -3,7 +3,8 @@ import { Button, EmptyState, SkeletonPage, SkeletonSplit, ToastHost, toast } fro
 import { store, useStore } from "../state/store";
 import { atLeast } from "../../../src/core/accounts";
 import { syncProject } from "../state/api";
-import { selectJudgmentQueue, type OtherJudgmentItem } from "../state/selectors";
+import { selectJudgmentQueue, type OtherJudgmentItem, type QuestionItem } from "../state/selectors";
+import { startInbox } from "../state/inbox";
 import { tabTitle, useMyQuestions } from "../state/approvals";
 import { TopBar, ViewNav } from "./TopBar";
 import { ApprovalTray } from "./ApprovalTray";
@@ -25,6 +26,7 @@ const TITLES: Record<Route["name"], string> = {
   intents: "Tasks",
   logbook: "History",
   approve: "Approve a merge",
+  inbox: "Inbox",
   code: "Code",
   connect: "Connect",
   design: "Design",
@@ -42,6 +44,7 @@ const GO: Record<string, string> = {
   k: "/connect",
   p: "/projects",
   a: "/account",
+  i: "/inbox",
   ...(import.meta.env.DEV ? { d: "/design" } : {}),
 };
 
@@ -113,14 +116,14 @@ function useQueueToasts() {
     let seen: Set<string> | null = null;
     let lastState: unknown = null;
     const waiting = new Map<string, number>();
-    const items = (): OtherJudgmentItem[] => {
+    const items = (): (OtherJudgmentItem | QuestionItem)[] => {
       const s = store.get();
-      // Only people who can decide get the toast.
+      // Only people who can decide get the toast. A question goes to the people who may answer it.
       return s.state && atLeast(s.access, "member")
-        ? selectJudgmentQueue(s.state, { id: s.me?.user?.id, role: s.access }).filter((x): x is OtherJudgmentItem => x.kind !== "approval")
+        ? selectJudgmentQueue(s.state, { id: s.me?.user?.id, role: s.access }).filter((x): x is OtherJudgmentItem | QuestionItem => x.kind !== "approval" && (x.kind !== "question" || x.mayAnswer))
         : [];
     };
-    const announce = (item: OtherJudgmentItem) => {
+    const announce = (item: OtherJudgmentItem | QuestionItem) => {
       toast({
         tone: "info",
         title: item.kind === "pick" ? "Work is ready to merge" : "A decision needs you",
@@ -252,6 +255,8 @@ function View({ route }: { route: Route }) {
       return <V.SettingsView />;
     case "account":
       return <V.AccountView />;
+    case "inbox":
+      return <V.InboxView />;
     default:
       return <NotFound />;
   }
@@ -298,6 +303,8 @@ export function App() {
   const needsProject = isProjectRoute(route);
   useShortcuts();
   useQueueToasts();
+  // The inbox count in the top bar: kept fresh on every page while a person is signed in.
+  useEffect(() => startInbox(), []);
   useLocationSync();
   useSignInReturn();
 

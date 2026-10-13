@@ -371,7 +371,7 @@ step("F. Settings: the `approval` webhook event");
   await url.fill("https://hooks.slack.com/services/T000/B000/xyz");
   const events = page.getByRole("group", { name: "Events" });
   const labels = await events.locator("label").allTextContents();
-  check(same(labels.map((t) => t.trim()), ["A merge", "A change request", "A person decided", "A new task", "A person must say yes, or answered"]), "the events are a merge, a change request, a decision, a new task and the approval", labels);
+  check(same(labels.map((t) => t.trim()), ["A merge", "A change request", "A person decided", "A new task", "A person must say yes, or answered", "A person must decide, or answered"]), "the events are a merge, a change request, a decision, a new task, the approval and the question", labels);
   const approval = events.getByRole("checkbox", { name: "A person must say yes, or answered" });
   check(!(await approval.isChecked()), "a new webhook does not send approval events until the person picks it");
   const note = await approval.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby"))?.textContent ?? "");

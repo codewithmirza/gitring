@@ -30,7 +30,9 @@ function staticHeaders(): Plugin {
         "font-src 'self' data:",
         "connect-src 'self'",
         "frame-src 'self'",
+        // The service worker (/sw.js, push notifications) and the web app manifest come from this site only.
         "worker-src 'self' blob:",
+        "manifest-src 'self'",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
@@ -46,6 +48,9 @@ function staticHeaders(): Plugin {
         "  X-Frame-Options: DENY",
         "/assets/*",
         "  Cache-Control: public, max-age=31536000, immutable",
+        // The browser checks the service worker for a new version on each visit.
+        "/sw.js",
+        "  Cache-Control: no-cache",
         "",
       ].join("\n");
       writeFileSync(join(options.dir, "_headers"), headers);

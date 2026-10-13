@@ -154,10 +154,11 @@ describe("untestedHelp", () => {
 });
 
 describe("the webhook events", () => {
-  const VALID: GitringEventType[] = ["landing", "correction", "decision", "intent", "approval"];
+  const VALID: GitringEventType[] = ["landing", "correction", "decision", "intent", "approval", "question"];
 
-  it("lists the five events that a webhook can send, with the approval event last", () => {
+  it("lists the six events that a webhook can send, with the approval and question events last", () => {
     expect(WEBHOOK_EVENTS.map((e) => e.value)).toEqual(VALID);
+    expect(WEBHOOK_EVENTS.find((e) => e.value === "question")?.label).toBe("A person must decide, or answered");
     expect(WEBHOOK_EVENTS.find((e) => e.value === "approval")?.label).toBe("A person must say yes, or answered");
   });
 

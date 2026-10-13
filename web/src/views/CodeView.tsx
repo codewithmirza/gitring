@@ -41,6 +41,7 @@ import {
 import { CodeLines, splitLines, StaticCode, WRAP_MAX, type GutterLane } from "./code/CodeLines";
 import { CodeTree, rowMarksOf, type RowMarks } from "./code/CodeTree";
 import { AllDiffs, FileDiff } from "./code/CodeDiff";
+import { lineRequester } from "../app/lineRequest";
 import { CodeLink } from "./code/CodeLink";
 import { resolveRef, useAttemptDiff, useDelayedFlag, useFileText, useHarbor, useTree, type RefInfo } from "./code/data";
 import { languageOf } from "./code/highlight";
@@ -793,6 +794,9 @@ export function CodeView() {
     );
   const refText = info.kind === "main" ? `main ${shortSha(mainSha)}` : info.kind === "work" ? `the work copy of ${info.wc.callsign}` : info.kind === "commit" ? `commit ${shortSha(info.sha)}` : loc.ref;
 
+  // A member asks the agent of an active work copy to change lines of its diff.
+  const askAgent = info.kind === "work" && canAct ? lineRequester(projectId, info.attempt.id, info.wc.callsign) : undefined;
+
   /* ── body of the right side ── */
   const listReady = diffMode ? Boolean(diffFiles) : treeReady;
   const showTreeSkel = useDelayedFlag(!listReady && (diffMode ? diff?.status === "loading" : tree.status === "loading"));
@@ -865,7 +869,7 @@ export function CodeView() {
       const f = ownByPath.get(path);
       main = f ? (
         <div className="cv-scroll">
-          <FileDiff file={f} open={{ ref: loc.ref, path, view: "code" }} />
+          <FileDiff file={f} open={{ ref: loc.ref, path, view: "code" }} onRequest={askAgent} />
         </div>
       ) : (
         <EmptyState
@@ -880,7 +884,7 @@ export function CodeView() {
     } else
       main = (
         <div className="cv-scroll">
-          <AllDiffs files={diff.data.files} openOf={(p) => ({ ref: loc.ref, path: p, view: "code" })} />
+          <AllDiffs files={diff.data.files} openOf={(p) => ({ ref: loc.ref, path: p, view: "code" })} onRequest={askAgent} />
         </div>
       );
   } else if (!path) {

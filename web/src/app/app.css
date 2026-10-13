@@ -878,3 +878,22 @@
   .composer { animation: b-fade-in 100ms linear; }
   .irow__spin { animation: none; border-top-color: var(--line-strong); }
 }
+
+/* The inbox button of the top bar (every page, signed in): the count shows on every screen size. */
+.topbar__inbox { text-decoration: none; }
+.topbar__inbox.has-items .topbar__queuecount {
+  display: inline;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--caution);
+  color: var(--bg);
+  font-size: var(--t-2xs);
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.topbar__inbox[aria-current="page"] { background: var(--surface-2); }
+@media (max-width: 600px) {
+  .topbar .topbar__inbox { min-width: 40px; height: 40px; justify-content: center; }
+}

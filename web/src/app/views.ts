@@ -15,6 +15,7 @@ const loaders = {
   projects: () => import("../views/ProjectsView"),
   settings: () => import("../views/SettingsView"),
   account: () => import("../views/AccountView"),
+  inbox: () => import("../views/InboxView"),
 } satisfies Partial<Record<Route["name"], () => Promise<unknown>>>;
 
 export const ChartView = lazy(() => loaders.chart().then((m) => ({ default: m.ChartView })));
@@ -26,6 +27,7 @@ export const ConnectView = lazy(() => loaders.connect().then((m) => ({ default: 
 export const ProjectsView = lazy(() => loaders.projects().then((m) => ({ default: m.ProjectsView })));
 export const SettingsView = lazy(() => loaders.settings().then((m) => ({ default: m.SettingsView })));
 export const AccountView = lazy(() => loaders.account().then((m) => ({ default: m.AccountView })));
+export const InboxView = lazy(() => loaders.inbox().then((m) => ({ default: m.InboxView })));
 
 // The design page is a development aid. Production builds drop this import, so they have no chunk for it.
 export const DesignView = import.meta.env.DEV ? lazy(() => import("../views/DesignView").then((m) => ({ default: m.DesignView }))) : null;
