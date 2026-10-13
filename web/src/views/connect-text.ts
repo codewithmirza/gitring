@@ -27,6 +27,9 @@ export const TOOLS: [string, string][] = [
   ["gitring_status", "See where your work copy is: with a person, sent back, in the merge queue, or merged. It does not change the work copy."],
   ["gitring_ack", "Confirm that you applied a change request."],
   ["gitring_update", "Bring the new main into your work copy. In git mode, you get a read-only remote for main."],
+  ["gitring_create_project", "Create a project: from a template, empty, from files, or from a git URL. It can open the first task and start built-in agents."],
+  ["gitring_templates", "List the starter templates of a new project."],
+  ["gitring_clone", "Get a git clone command. The read token in it works for 6 hours."],
 ];
 
 /** The tool names of the list above ("gitring_read · gitring_list" gives two). */

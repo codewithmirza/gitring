@@ -11,11 +11,11 @@ import { steViolations } from "../coord/ste";
 import { World } from "../github/harness";
 import { callTool, legacyClient, makeProject, metadataProblems, modernCall, MODERN } from "./support";
 
-const NAMES = ["gitring_intents", "gitring_declare", "gitring_log", "gitring_traffic", "gitring_read", "gitring_list", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update", "gitring_status"];
-const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_traffic"];
+const NAMES = ["gitring_intents", "gitring_declare", "gitring_log", "gitring_traffic", "gitring_read", "gitring_list", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update", "gitring_status", "gitring_create_project", "gitring_templates", "gitring_clone"];
+const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_templates", "gitring_traffic"];
 
 describe("tool definitions", () => {
-  it("has the twelve tools, each name once", () => {
+  it("has the gitring tools, each name once", () => {
     expect(GITRING_TOOLS.map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
@@ -34,8 +34,8 @@ describe("tool definitions", () => {
     expect(GITRING_TOOLS.filter((t) => t.annotations.readOnlyHint).map((t) => t.name).sort()).toEqual(READ_ONLY);
   });
 
-  it("marks only the merge as a tool that talks to GitHub", () => {
-    expect(GITRING_TOOLS.filter((t) => t.annotations.openWorldHint).map((t) => t.name)).toEqual(["gitring_submit"]);
+  it("marks only the merge and the project creation (an import) as tools that talk to other systems", () => {
+    expect(GITRING_TOOLS.filter((t) => t.annotations.openWorldHint).map((t) => t.name)).toEqual(["gitring_submit", "gitring_create_project"]);
   });
 
   it("marks the tools that can overwrite or delete work, and no merge or report", () => {

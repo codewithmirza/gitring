@@ -1,10 +1,11 @@
 /**
  * Repositories that a person can import: the repositories of the gitring GitHub App's installations
  * that the person can see (GET /user/installations, /user/installations/{id}/repositories, with the
- * person's GitHub App user token). And the guess for a new project from one repository.
+ * person's GitHub App user token). And the guess for a new project from one repository: the file list
+ * and a reader of GitHub's tree go to the same guess as every other source (core/guess.ts guessTree).
  */
 import type * as A from "../../core/accounts";
-import { guessChecks, projectNameOf } from "../../core/guess";
+import { guessTree, projectNameOf, type AskModel, type ChecksGuess } from "../../core/guess";
 import { GithubClient } from "./api";
 
 interface InstallationJson {
@@ -84,17 +85,19 @@ interface TreeJson {
   tree: { path: string; type: "blob" | "tree" | "commit"; size?: number }[];
 }
 
-/** Everything gitring needs to guess a new project from one repository. */
-export async function guessFromGithub(gh: GithubClient, repo: string, branch?: string): Promise<{ meta: A.GithubRepo; sha: string; guess: Awaited<ReturnType<typeof guessChecks>>; name: string; truncated: boolean }> {
+/** Everything gitring needs to guess a new project from one repository. `ask`: the model for the cases that the rules do not know. */
+export async function guessFromGithub(gh: GithubClient, repo: string, branch?: string, ask?: AskModel): Promise<{ meta: A.GithubRepo; sha: string; guess: ChecksGuess; name: string; truncated: boolean }> {
   const meta = await gh.json<RepoJson>(`/repos/${repo}`);
   if (!meta) throw Object.assign(new Error(`gitring cannot read ${repo}. It is private and the GitHub app is not on it, or the name is wrong.`), { status: 404 });
   const ref = branch || meta.default_branch || "main";
   const tree = await gh.json<TreeJson>(`/repos/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
   const paths = (tree?.tree ?? []).filter((e) => e.type === "blob").map((e) => e.path);
   const sizes = new Map((tree?.tree ?? []).map((e) => [e.path, e.size ?? 0]));
-  const guess = await guessChecks({
+  const guess = await guessTree({
+    label: meta.full_name,
     paths,
     read: async (path) => ((sizes.get(path) ?? 0) > 200_000 ? null : gh.text(repo, path, ref)),
+    ask,
   });
   return { meta: { ...toRepo(meta), defaultBranch: ref }, sha: tree?.sha ?? "", guess, name: projectNameOf(meta.full_name), truncated: Boolean(tree?.truncated) };
 }

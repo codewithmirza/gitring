@@ -24,14 +24,12 @@ import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, closeUserSockets, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, mcpScopeChallenge, oauthRoutes } from "./oauth";
 import { MCP_PATH, mcpSetOf, resourceOf, SCOPE, SCOPE_READ, type McpSet } from "../directory/oauth";
-import { githubRoutes, readAsPerson } from "./github";
-import type { RepoJson } from "../platform/github/repos";
-import { GithubClient, GithubError } from "../platform/github/api";
+import { githubRoutes } from "./github";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
-import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
+import { githubRepoName } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
 import { clientAddress, hasCredential, limitFor, overLimit, tooMany } from "./limits";
-import type { SeedFile } from "../harbor/harbor";
+import { cloneHelp, createProjectFor, ProjectError, type CreateProjectInput } from "./projects";
 
 export { HarborMaster } from "../harbor/harbor";
 import { hookKey, viewerState } from "../harbor/harbor";
@@ -218,119 +216,25 @@ app.get("/api/projects", async (c) => {
   return c.json(await directory(c.env).listProjects(p.user?.id ?? null, p.via === "operator"));
 });
 
+/**
+ * A new project (contract C5: the same code as the MCP tool gitring_create_project). The source is a
+ * template, empty, an upload, a push, any git URL, or a GitHub repository. Optional: the tests, the first
+ * task, and built-in agents that start on it.
+ */
 app.post("/api/projects", async (c) => {
   const principal = c.get("principal");
   // People own their projects. The operator key (scripts) makes projects that no person owns.
-  const user = principal.via === "operator" ? null : needUser(c);
-  const body = await c.req
-    .json<{ name?: string; id?: string; visibility?: A.Visibility; source?: T.ProjectSource; files?: SeedFile[]; settings?: Partial<T.ProjectSettings> }>()
-    .catch(() => ({}) as Record<string, never>);
-  let source: T.ProjectSource;
+  if (principal.via !== "operator") needUser(c);
+  const body = await c.req.json<CreateProjectInput>().catch(() => ({}) as CreateProjectInput);
   try {
-    source = parseSource(body.source, body.files);
+    const out = await createProjectFor(c.env, principal, body);
+    forgetRoles(out.project.id);
+    return c.json(out, 201);
   } catch (e) {
-    return err(c, e);
-  }
-  let visibility = body.visibility;
-  let canPush = false;
-  // GitHub source: did GitHub show the repository to the person (or to nobody, for a public one)?
-  let verified = false;
-  if (source.kind === "github") {
-    // gitring reads the repository as the person: GitHub shows it only to people who may see it.
-    const repo = source.repo;
-    const anon = () => new GithubClient(null, { cacheKey: "anon" }).json<RepoJson>(`/repos/${repo}`);
-    // The operator key (scripts) reads as nobody: public repositories only.
-    let meta: (Omit<RepoJson, "private"> & { private?: boolean }) | null;
-    try {
-      meta = await (user ? readAsPerson(c.env, user.id, (gh) => gh.json<RepoJson>(`/repos/${repo}`)) : anon());
-      verified = true;
-    } catch (e) {
-      if (!(e instanceof GithubError) || (e.status !== 403 && e.status !== 429)) return c.json({ error: `gitring could not ask GitHub about ${repo}. Try again.` }, 502);
-      // GitHub limits anonymous calls per address, and Workers share addresses. One cheap read without a
-      // token (an answer with a known ETag costs no quota) says whether the repository is public. Without
-      // an answer, the facts stay unknown: Artifacts imports public repositories only, so a private one
-      // fails there, and gitring records no read right for the person.
-      const probe = await anon().catch(() => undefined);
-      if (probe === null) return c.json({ error: `gitring cannot read ${repo}. It is private, or the name is wrong. Connect GitHub, or use Push with git.` }, 404);
-      verified = Boolean(probe);
-      meta = probe ?? { full_name: repo, html_url: `https://github.com/${repo}` };
-    }
-    if (!meta) return c.json({ error: `gitring cannot read ${repo}. It is private, or the name is wrong. Connect GitHub, or use Push with git.` }, 404);
-    if (meta.archived) return c.json({ error: `${meta.full_name} is archived on GitHub.` }, 400);
-    const access = await directory(c.env).githubRepoAccess(meta.full_name).catch(() => ({ ok: false as const, message: "gitring could not ask GitHub.", installUrl: undefined }));
-    if (meta.private && !access.ok) {
-      return c.json({ error: `Install the gitring GitHub app on ${meta.full_name} to import it.`, ...(access.installUrl ? { installUrl: access.installUrl } : {}) }, 403);
-    }
-    canPush = verified && access.ok && Boolean(meta.permissions?.push || meta.permissions?.admin || meta.permissions?.maintain);
-    const branch = source.branch || meta.default_branch;
-    source = { kind: "github", repo: meta.full_name, ...(branch ? { branch } : {}), ...(meta.private !== undefined ? { private: meta.private } : {}) };
-    // Code of a private repository only goes into a private project.
-    visibility = meta.private ? "private" : (visibility ?? "public");
-  }
-  const dir = directory(c.env);
-  let info: A.ProjectInfo;
-  try {
-    const name = body.name ?? (source.kind === "github" ? source.repo.split("/")[1] : "");
-    info = await dir.createProject({ name, id: body.id, visibility, source, ownerId: user?.id ?? null });
-    forgetRoles(info.id);
-  } catch (e) {
-    return err(c, e);
-  }
-  try {
-    const files = source.kind === "upload" && Array.isArray(body.files) ? body.files : undefined;
-    const h = harbor(c.env, info.id);
-    let st = await h.init({ projectId: info.id, name: info.name, source, ownerId: user?.id, files });
-    // Settings from the guess step, in the same request: checks, and GitHub sync for a repository that
-    // the person can push to (a pull request by default).
-    const wanted: Partial<T.ProjectSettings> = {};
-    if (body.settings?.checks) wanted.checks = body.settings.checks;
-    if (body.settings?.redo) wanted.redo = body.settings.redo;
-    if (source.kind === "github") {
-      const mode = body.settings?.github?.mode ?? (canPush ? "pull-request" : "off");
-      wanted.github = { repo: source.repo, mode: canPush ? mode : "off", branch: body.settings?.github?.branch ?? "gitring", ...(source.branch ? { base: source.branch } : {}) };
-    }
-    if (Object.keys(wanted).length) {
-      await h.updateSettings(wanted);
-      // The importer is the person whose GitHub rights gitring re-checks for sync and pulls. A read that
-      // GitHub did not confirm is not recorded: the first pull asks GitHub.
-      if (source.kind === "github" && user) await h.setGithubActor(user.id, { read: verified, push: canPush, ...(source.private !== undefined ? { private: source.private } : {}) });
-      st = (await h.state()) as unknown as typeof st;
-    }
-    return c.json({ project: info, state: st }, 201);
-  } catch (e) {
-    await dir.dropProject(info.id).catch(() => undefined);
+    if (e instanceof ProjectError) return c.json({ error: e.message, ...e.extra }, e.status);
     return err(c, e);
   }
 });
-
-function parseSource(raw: unknown, files?: unknown): T.ProjectSource {
-  const s = (raw ?? {}) as Record<string, unknown>;
-  switch (s.kind) {
-    case "empty":
-      return { kind: "empty" };
-    case "push":
-      return { kind: "push" };
-    case "upload": {
-      if (!Array.isArray(files) || !files.length) throw new HTTPError(400, "Send the files of the folder.");
-      return { kind: "upload", files: files.length };
-    }
-    case "github": {
-      const repo = githubRepoName(String(s.repo ?? ""));
-      if (!repo) throw new HTTPError(400, "Give the GitHub repository as owner/name or as its GitHub URL.");
-      const branch = typeof s.branch === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(s.branch) ? s.branch : undefined;
-      return { kind: "github", repo, ...(branch ? { branch } : {}) };
-    }
-    case "git": {
-      const url = normalizeGitUrl(String(s.url ?? ""));
-      const hostname = new URL(url).hostname;
-      const host = /(^|\.)github\.com$/.test(hostname) ? "github" : /(^|\.)gitlab\.com$/.test(hostname) ? "gitlab" : /(^|\.)bitbucket\.org$/.test(hostname) ? "bitbucket" : "other";
-      const branch = typeof s.branch === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(s.branch) ? s.branch : undefined;
-      return { kind: "git", url, host, ...(branch ? { branch } : {}) };
-    }
-    default:
-      throw new HTTPError(400, "Choose a source: github (a repository), git (an https URL), upload, push or empty.");
-  }
-}
 
 app.get("/api/projects/:p", async (c) => {
   const { id } = await access(c, c.req.param("p"), "viewer");
@@ -613,6 +517,17 @@ app.post("/api/projects/:p/push-token", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "owner");
     return c.json(await h.pushAccess());
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
+/** A member clones the project with plain git: a 6-hour read token, sent in a header (never in the URL). */
+app.post("/api/projects/:p/clone-token", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "member");
+    const project = projectId(c.req.param("p"));
+    return c.json(cloneHelp(await h.cloneAccess(), project));
   } catch (e) {
     return err(c, e);
   }

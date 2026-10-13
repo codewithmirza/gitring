@@ -1,6 +1,7 @@
 /** Guesses of install and test commands from the files of a repository. */
 import { describe, expect, it } from "vitest";
-import { cleanCommand, guessChecks, projectNameOf, projectSlug } from "../../src/core/guess";
+import { cleanCommand, GUESS_MODEL, guessChecks, guessMessages, guessTree, parseModelGuess, projectNameOf, projectSlug, readmeOf, type GuessMessage } from "../../src/core/guess";
+import { templateFiles } from "../../src/core/templates";
 
 function repo(files: Record<string, string>) {
   return { paths: Object.keys(files), read: async (p: string) => files[p] ?? null };
@@ -80,5 +81,72 @@ describe("names", () => {
     expect(cleanCommand("a\nb")).toBeUndefined();
     expect(cleanCommand("x".repeat(400))).toBeUndefined();
     expect(cleanCommand(3)).toBeUndefined();
+  });
+});
+
+describe("the gitring test runner", () => {
+  const harnessTest = 'import { test, expect } from "../harness/test.js";\ntest("a", () => expect(1).toBe(1));\n';
+
+  it("fits tests that import the gitring harness, with no container and no install", async () => {
+    const g = await guessChecks(repo({ "package.json": JSON.stringify({ name: "x", type: "module" }), "src/index.js": "", "tests/index.test.js": harnessTest }));
+    expect(g).toMatchObject({ runner: "worker", confident: true });
+    expect(g.install).toBeUndefined();
+    expect(g.test).toBeUndefined();
+    // Every template with code is such a repository: a pushed copy of a template keeps its runner.
+    for (const id of ["js-library", "worker-api", "static-site"] as const) {
+      const files = Object.fromEntries(templateFiles(id, { name: "Robin" }).map((f) => [f.path, f.content]));
+      expect((await guessChecks(repo(files))).runner, id).toBe("worker");
+    }
+  });
+
+  it("keeps a real test script of package.json", async () => {
+    const g = await guessChecks(repo({ "package.json": JSON.stringify({ scripts: { test: "vitest run" } }), "tests/index.test.js": harnessTest }));
+    expect(g.runner).toBeUndefined();
+    expect(g.test).toBe("npm test");
+  });
+});
+
+describe("guessTree", () => {
+  const unknown = { "README.md": "# Tool\n\nRun the tests with make check.\n", "src/main.c": "int main() {}\n" };
+
+  it("asks the model with the README and the file list when the rules find no test command", async () => {
+    let asked: GuessMessage[] = [];
+    const g = await guessTree({
+      ...repo(unknown),
+      label: "robin/tool",
+      ask: async (m) => {
+        asked = m;
+        return 'Here: {"install": "apt-get install -y make", "test": "make check", "why": "The README says make check."}';
+      },
+    });
+    expect(g).toMatchObject({ install: "apt-get install -y make", test: "make check", guessed: true, confident: false });
+    expect(g.reasons.at(-1)).toBe("Guess: a model read the README and the file list (The README says make check.). Check the commands.");
+    expect(asked[1].content).toContain("Repository robin/tool.");
+    expect(asked[1].content).toContain("src/main.c");
+    expect(asked[1].content).toContain("Run the tests with make check.");
+    expect(GUESS_MODEL).toBe("@cf/zai-org/glm-5.3-flash");
+  });
+
+  it("keeps the rules when the model has no answer, a bad answer or an error", async () => {
+    for (const ask of [async () => null, async () => '{"test": "a\nb"}', async () => "no json", async () => Promise.reject(new Error("down"))]) {
+      const g = await guessTree({ ...repo(unknown), label: "x", ask });
+      expect(g.test).toBeUndefined();
+      expect(g.guessed).toBeUndefined();
+    }
+  });
+
+  it("does not ask the model when the rules know the answer", async () => {
+    let calls = 0;
+    const g = await guessTree({ ...repo({ "go.mod": "module x" }), label: "x", ask: async () => (calls++, null) });
+    expect(g.test).toBe("go test ./...");
+    expect(calls).toBe(0);
+  });
+
+  it("reads the commands of a model answer", () => {
+    expect(parseModelGuess('{"test": " npm test ", "install": "", "why": " short "}')).toEqual({ test: "npm test", why: "short" });
+    expect(parseModelGuess('{"test": ""}')).toBeNull();
+    expect(parseModelGuess(null)).toBeNull();
+    expect(readmeOf(["docs/README.md", "Readme.rst"])).toBe("Readme.rst");
+    expect(guessMessages("x", ["a"], "")[0].content).toMatch(/Answer JSON only/);
   });
 });

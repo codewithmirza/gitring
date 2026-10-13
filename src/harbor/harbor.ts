@@ -51,6 +51,9 @@ import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
 import { syncToGithub, type UpstreamMark } from "../platform/github/sync";
+import { guessModel } from "../platform/ai/guess";
+import { guessTree } from "../core/guess";
+import { isTemplateId, templateFiles, TEMPLATES } from "../core/templates";
 import { githubSnapshot, SNAPSHOT_LIMITS, SnapshotTooLarge } from "../platform/github/tarball";
 import { upstreamChanges } from "../platform/github/upstream";
 import {
@@ -256,12 +259,16 @@ export class HarborMaster extends DurableObject<Env> {
    *   git     Artifacts imports a public https remote (history kept); main = the remote's default branch
    *   push    an empty repo; the owner pushes to it with plain git (gitring adopts the pushed branch)
    *   upload  the files of a folder from the owner's computer, in one commit
-   * Imports run in the background: the project shows "importing" until Artifacts is done.
+   *   template  the files of a starter template (core/templates.ts), in one commit; its tests run in
+   *           the gitring test runner (fast: no container, no test budget)
+   * Imports run in the background: the project shows "importing" until Artifacts is done. After an
+   * import, a push or an upload, gitring guesses the test commands (see guessTests).
    */
   async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] }): Promise<T.ProjectState> {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
     const source: T.ProjectSource = opts.source ?? { kind: "empty" };
     if (source.kind === "sample") throw new Error("The sample left gitring. Import a repository, upload a folder, push with git, or start empty.");
+    if (source.kind === "template" && !isTemplateId(source.template)) throw new Error(`Unknown template "${source.template}". Use one of: ${TEMPLATES.map((t) => t.id).join(", ")}.`);
     const namespace = this.env.ARTIFACTS_NAMESPACE ?? "gitring";
     this.project = undefined;
     this.backendCache = undefined;
@@ -281,8 +288,8 @@ export class HarborMaster extends DurableObject<Env> {
         agentModels: this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels,
         // Task files in the repository are a choice of the owner (Settings → Merging).
         intentsInRepo: false,
-        // Repositories run their own tests in a container.
-        checks: { runner: "container" as const },
+        // Repositories run their own tests in a container. Templates have tests for the gitring test runner.
+        checks: source.kind === "template" ? { runner: "worker" as const } : { runner: "container" as const },
       },
     };
     this.project = draft;
@@ -343,14 +350,20 @@ export class HarborMaster extends DurableObject<Env> {
     const changes =
       source.kind === "upload"
         ? uploaded
-        : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in gitring. Agents send a plan before they change it.\n` }];
+        : source.kind === "template" && isTemplateId(source.template)
+          ? templateFiles(source.template, { name: draft.name })
+          : [{ path: "README.md", content: `# ${draft.name}\n\nThis repository lives in gitring. Agents send a plan before they change it.\n` }];
     const seed = await this.backend.commit({
       repo: repoName,
       branch: "main",
       parent: "",
       changes,
       message:
-        source.kind === "upload" ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nGitring-Seed: upload` : `Start ${draft.name}\n\nGitring-Seed: ${source.kind}`,
+        source.kind === "upload"
+          ? `Upload ${draft.name}\n\n${changes.length} files from a folder.\n\nGitring-Seed: upload`
+          : source.kind === "template"
+            ? `Start ${draft.name} from the ${TEMPLATES.find((t) => t.id === source.template)?.title ?? source.template} template\n\n${changes.length} files.\n\nGitring-Seed: template ${source.template}`
+            : `Start ${draft.name}\n\nGitring-Seed: ${source.kind}`,
       author: GITRING_AUTHOR,
     });
     draft.mainSha = seed.sha;
@@ -360,6 +373,8 @@ export class HarborMaster extends DurableObject<Env> {
     this.addLog({ kind: "system", message: `Project ready. Main is ${seed.sha.slice(0, 7)} in Cloudflare Artifacts (${repoName}).` });
     await this.loadMain();
     this.persistStats();
+    // An uploaded folder brings its own tests: gitring guesses the commands (in the background).
+    if (source.kind === "upload") this.ctx.waitUntil(this.guessTests().catch((e) => console.warn("guess failed", errorLine(e))));
     const state = await this.state();
     this.emit({ type: "snapshot", state });
     return state;
@@ -456,6 +471,63 @@ export class HarborMaster extends DurableObject<Env> {
     this.addLog({ kind: "system", message: `${url === "git push" ? "Push received" : `Import done: ${url}`} at ${sha.slice(0, 7)} on ${branch} (${main.files.length} files). Write tasks for agents.` });
     this.persistStats();
     this.emit({ type: "snapshot", state: await this.state() });
+    // The code is in main now: gitring guesses how it installs and tests itself (in the background).
+    this.ctx.waitUntil(this.guessTests().catch((e) => console.warn("guess failed", errorLine(e))));
+    // Built-in agents that the creator asked for start now (see launchWhenReady).
+    const later = this.db.getMeta<{ intentId: string; fanout: number; by: T.Actor }>("launchAfterImport");
+    if (later) {
+      this.db.setMeta("launchAfterImport", undefined);
+      this.ctx.waitUntil(
+        this.launch(later.intentId, { fanout: later.fanout }, later.by)
+          .then(() => undefined)
+          .catch((e) => this.addLog({ kind: "system", intentId: later.intentId, message: `The built-in agents did not start after the import: ${String((e as Error)?.message ?? e).slice(0, 200)}` })),
+      );
+    }
+  }
+
+  /**
+   * Start built-in agents on a task now, or when the import is done (a new project can have its first
+   * task before its code is in main). Answers the work copies that started now.
+   */
+  async launchWhenReady(intentId: string, fanout: number, by: T.Actor = HUMAN): Promise<{ attempts: string[]; afterImport: boolean }> {
+    const p = this.requireProject();
+    if (p.importing && !p.importing.error) {
+      this.db.setMeta("launchAfterImport", { intentId, fanout, by });
+      return { attempts: [], afterImport: true };
+    }
+    const res = await this.launch(intentId, { fanout }, by);
+    return { attempts: res.attempts.map((a) => a.id), afterImport: false };
+  }
+
+  /**
+   * Guess the test commands from the files of main (after an import, a push or an upload), unless someone
+   * already set the tests (meta "checksSet"). The rules read the manifests; when they find no test
+   * command, a model reads the README and the file list. A guess with no test command changes nothing.
+   */
+  async guessTests(): Promise<T.CheckSettings | null> {
+    if (this.db.getMeta<boolean>("checksSet")) return null;
+    const p = this.requireProject();
+    if (p.importing) return null;
+    const main = await this.loadMain();
+    const g = await guessTree({ label: p.name, paths: [...main.snapshot.keys()], read: async (path) => main.text.get(path) ?? null, ask: guessModel(this.env.AI) });
+    // A person (or an agent) set the tests while the model answered: their choice stays.
+    if (this.db.getMeta<boolean>("checksSet") || this.project !== p) return null;
+    const checks: T.CheckSettings | null = g.runner === "worker" ? { runner: "worker" } : g.test ? { runner: "container", ...(g.install ? { install: g.install } : {}), test: g.test } : null;
+    if (!checks) {
+      this.addLog({ kind: "system", message: "gitring found no test command in the files of main. An owner sets it in Settings → Tests." });
+      return null;
+    }
+    p.settings = withDefaults({ ...p.settings, checks });
+    this.db.setMeta("project", p);
+    this.addLog({
+      kind: "system",
+      message:
+        checks.runner === "worker"
+          ? "Tests: the gitring test runner runs tests/*.test.js. An owner can change it in Settings → Tests."
+          : `Tests: gitring runs "${checks.test}"${checks.install ? ` after "${checks.install}"` : ""}.${g.guessed ? " A model guessed these commands." : ""} An owner can change them in Settings → Tests.`,
+    });
+    this.emit({ type: "snapshot", state: await this.state() });
+    return checks;
   }
 
   /**
@@ -636,6 +708,19 @@ export class HarborMaster extends DurableObject<Env> {
     const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name)) ?? "";
     this.addLog({ kind: "system", message: "The owner took a push token (24 hours)." });
     return { remote, token: t.token, expiresAt: t.expiresAt };
+  }
+
+  /**
+   * A member clones the project with plain git: the remote of main and a read token for 6 hours. The
+   * Worker builds the git command (the token goes in a header, not in the URL).
+   */
+  async cloneAccess(): Promise<{ remote: string; token: string; expiresAt: string; branch: string }> {
+    const p = this.requireProject();
+    if (p.importing) throw new Error(p.importing.push ? "This project waits for its first git push. Clone it after the push." : "The repository is still importing. Try again in a minute.");
+    const tok = await this.backend.createToken(p.repo.name, "read", 6 * 3600);
+    const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name));
+    if (!tok || !remote) throw new Error("gitring cannot give a clone remote now. Try again.");
+    return { remote, token: tok.token, expiresAt: tok.expiresAt, branch: this.branch };
   }
 
   /** "Check now": look for the owner's push without waiting for the alarm. */
@@ -3638,6 +3723,9 @@ export class HarborMaster extends DurableObject<Env> {
     const repo = g.repo;
     if (!repo) throw new Error("Link a GitHub repository first (Settings → GitHub).");
     if (p.importing) return this.githubStatus();
+    // GitHub is optional: a push on GitHub changes main only when an owner turned GitHub sync on. A member
+    // can still bring the changes in by hand (Pull now).
+    if (opts.reason === "webhook" && g.mode === "off") return this.githubStatus();
     // A push webhook: only pushes to the followed branch matter.
     if (opts.ref && opts.ref !== `refs/heads/${g.base || opts.defaultBranch}`) return this.githubStatus();
     if (this.pullRun) {
@@ -3795,8 +3883,50 @@ export class HarborMaster extends DurableObject<Env> {
     this.setPull(repo, { state: "merged", message: `main has ${n} from GitHub ${res.branch} (${res.head.slice(0, 7)}).`, headSha: res.head, mainSha: committed.sha, compareUrl: res.compareUrl, at: Date.now() });
     this.webhook("main", { reason: "github", mainBefore: before, mainSha: committed.sha, files });
     if (files.length) await this.mainMovedUnder(newMain, { title: `GitHub changes (${repo})`, files });
+    // The tests run on the new main. A failure does not undo the pull: it opens a task for agents.
+    if (files.length) this.ctx.waitUntil(this.testMainAfterPull(repo, newMain, n).catch((e) => console.warn("tests after pull failed", errorLine(e))));
     // Send the merge back, so the GitHub branch has main again (fast-forward or the pull request).
     if (p.settings.github.mode !== "off" && reason !== "sync") this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+  }
+
+  /**
+   * The tests of main after GitHub changes came in. When tests fail, a high-priority task asks agents to
+   * fix them (one open task at a time). A run that did not happen (the test budget) opens no task.
+   */
+  private async testMainAfterPull(repo: string, main: MainView, what: string): Promise<T.CheckRun> {
+    const run = await this.runTreeChecks(main.text, "main", "main");
+    const total = run.passed + run.failed;
+    if (run.wait) {
+      this.addLog({ kind: "check", message: `Tests after the GitHub changes: not run. ${run.wait.message}`, data: { checkRunId: run.id, ok: false } });
+      return run;
+    }
+    const failed = run.cases.filter((c) => !c.ok);
+    if (run.ok || !failed.length) {
+      this.addLog({ kind: "check", message: `Tests after the GitHub changes: ${run.passed}/${total} pass.`, data: { checkRunId: run.id, ok: true } });
+      return run;
+    }
+    this.addLog({ kind: "check", message: `Tests after the GitHub changes: ${failed.length} of ${total} fail on main ${main.sha.slice(0, 7)}.`, data: { checkRunId: run.id, ok: false } });
+    const openId = this.db.getMeta<string>("pullTestTask");
+    const open = openId ? this.intents.get(openId) : undefined;
+    if (open && !["landed", "parked", "merged-into"].includes(open.status)) return run;
+    const intent = await this.createIntent(
+      {
+        title: "Fix the tests after GitHub changes",
+        goal: [
+          `${what} from GitHub ${repo} came into main (${main.sha.slice(0, 7)}). After that change, ${failed.length} of ${total} tests fail on main:`,
+          ...failed.slice(0, 12).map((c) => `- ${c.file} ${c.name}: ${(c.error ?? "failed").replace(/\s+/g, " ").slice(0, 300)}`),
+          ...(failed.length > 12 ? [`- and ${failed.length - 12} more`] : []),
+          ...(run.error ? [`Test runner: ${run.error.slice(0, 300)}`] : []),
+          "",
+          "Fix the code or the tests, so that every test passes on main. Keep the GitHub changes.",
+        ].join("\n"),
+        priority: "high",
+        source: { kind: "webhook", ref: `github:${repo}` },
+      },
+      { kind: "system", id: "github", name: "GitHub" },
+    );
+    this.db.setMeta("pullTestTask", intent.id);
+    return run;
   }
 
   /** The conflict task of a repository is done or not needed any more. */
@@ -3929,6 +4059,8 @@ export class HarborMaster extends DurableObject<Env> {
       };
     }
     p.settings = withDefaults({ ...p.settings, ...patch, thresholds: { ...p.settings.thresholds, ...(patch.thresholds ?? {}) } });
+    // Someone chose the tests: a later guess (after an import or a push) does not change them.
+    if (patch.checks) this.db.setMeta("checksSet", true);
     const g = p.settings.github;
     const githubChanged = Boolean(patch.github) && (g.repo !== oldGithub.repo || g.mode !== oldGithub.mode || g.branch !== oldGithub.branch || g.base !== oldGithub.base);
     if (patch.github && g.repo?.toLowerCase() !== oldGithub.repo?.toLowerCase()) {
