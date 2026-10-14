@@ -606,7 +606,7 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
       <h2 className="page__h2" id="st-checks">
         Tests
       </h2>
-      <p className="np__help">gitring runs the tests before a work copy is ready, and again on main plus the work copy before it merges. Work merges only when they pass.</p>
+      <p className="np__help">gitring runs the tests of a work copy before the work copy is ready. The first choice below says when gitring tests main with the work.</p>
       <Segmented<TestsWhen>
         label="When are tests run?"
         value={settings.testsWhen ?? "before"}
