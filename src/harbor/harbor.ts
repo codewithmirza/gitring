@@ -10,8 +10,9 @@ import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
 import { DEFAULT_SETTINGS, isLandingMode, noTestRan, withDefaults } from "../core/types";
 import { Db } from "./store";
-import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
-import { hmacSha256Hex, sha256Hex } from "../directory/crypto";
+import { CHECK_RUN, callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
+import { hmacSha256Hex, seal, sha256Hex, unseal } from "../directory/crypto";
+import { deliverWebhook, newWebhookSecret, SECRET_SEAL, secretHint } from "./webhooks";
 import { approvalLine, approvalNeeded, approvalPath, canDecide, riskSigns } from "../core/approvals";
 import { pushKeys } from "../worker/push";
 import { canAnswerQuestion, escalationFacts, escalationOptions, inboxOf, REDO_OPTIONS, taskPath, type InboxItem } from "../core/inbox";
@@ -52,7 +53,7 @@ import { landingMessage, landingNote, intentFile, parseTrailers } from "../core/
 import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, publicHostname, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult, type PackFile } from "../drydock/drydock";
-import { callClef, chat } from "../platform/ai/models";
+import { callClef, contextBudget } from "../platform/ai/models";
 import { syncToGithub, type UpstreamMark } from "../platform/github/sync";
 import { guessModel } from "../platform/ai/guess";
 import { guessTree } from "../core/guess";
@@ -331,7 +332,7 @@ export class HarborMaster extends DurableObject<Env> {
       settings: {
         ...DEFAULT_SETTINGS,
         decisionModel: "clef-flash",
-        agentModels: this.env.AGENT_MODELS?.split(",").map((s) => s.trim()).filter(Boolean) ?? DEFAULT_SETTINGS.agentModels,
+        agentModels: this.operatorModels(),
         // Task files in the repository are a choice of the owner (Settings → Merging).
         intentsInRepo: false,
         // Repositories run their own tests in a container. Templates have tests for the gitring test runner.
@@ -1762,18 +1763,24 @@ export class HarborMaster extends DurableObject<Env> {
     return open.length ? `Open change requests of ${a.id}: ${open.join(", ")}.` : `Work copy ${a.id} has no open change request.`;
   }
 
-  async brief(attemptId: string | undefined, intentId?: string): Promise<Brief> {
+  /**
+   * The first prompt of a built-in agent: the task, the tests, and the text of the files it likely needs, in
+   * rank order. `model` sets the size: a model with a 1M-token context (GLM 5.3) gets far more file text.
+   */
+  async brief(attemptId: string | undefined, intentId?: string, opts: { model?: string } = {}): Promise<Brief> {
     const a = attemptId ? this.attempts.get(attemptId) : undefined;
     const intent = this.intents.get(a?.intentId ?? intentId ?? "");
     if (!intent) throw new Error("Unknown task.");
     const main = await this.loadMain();
     const files = a ? (await this.attemptView(a)).files : main.text;
     const context: Record<string, string> = {};
-    let budget = 60_000;
+    const size = contextBudget(opts.model);
+    let budget = size.briefChars;
     const wanted = new Set([...(intent.scope?.paths ?? []), ...(a?.course.files ?? [])].map(normPath));
     for (const [path, text] of rankForBrief(files, intent, wanted)) {
       if (/(^|\/)tests?\//.test(path) && !intent.checks.some((c) => c.path === path) && !wanted.has(path)) continue;
-      if (text.length > 20_000 || budget - text.length < 0) continue;
+      // A huge file stays out (the agent reads it with read_file when it needs it).
+      if (text.length > size.fileChars || budget - text.length < 0) continue;
       context[path] = text;
       budget -= text.length;
     }
@@ -2600,7 +2607,7 @@ export class HarborMaster extends DurableObject<Env> {
     const word = parseTrailers(commit.message)["Gitring-Method"];
     const method: T.LandingMethod = word === "fast-forward" || word === "rederive" ? word : "merge";
     const applied = a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status !== "superseded");
-    const run: T.CheckRun = a.composedChecks ?? a.checks ?? { id: newId("ck"), subject: commit.treeHash, scope: "composed", ok: true, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now() };
+    const run: T.CheckRun = a.composedChecks ?? a.checks ?? { id: newId(CHECK_RUN), subject: commit.treeHash, scope: "composed", ok: true, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now() };
     const decision = [...this.decisions].reverse().find((d) => d.attemptIds[0] === a.id && d.kind === "pick");
     const note =
       (await this.backend.readNote(p.repo.name, commit.hash).catch(() => null)) ??
@@ -3098,8 +3105,6 @@ export class HarborMaster extends DurableObject<Env> {
     const tok = await this.backend.createToken(p.repo.name, "read", 6 * 3600);
     const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name));
     if (!tok || !remote) throw new Error("gitring cannot give a remote for main now. Try again.");
-    const secret = tok.token.split("?expires=")[0];
-    const auth = `https://x:${secret}@${remote.replace(/^https:\/\//, "")}`;
     return {
       mode: "git",
       mainSha: main.sha,
@@ -3107,8 +3112,8 @@ export class HarborMaster extends DurableObject<Env> {
       remote,
       token: tok.token,
       tokenExpiresAt: tok.expiresAt,
-      commands: [`git pull --no-rebase "${auth}" ${this.branch}`, "# fix conflicts, run the tests, commit", "git push", "# then call gitring_submit"],
-      message: `Main is at ${main.sha.slice(0, 7)}. The token is read-only and ends in 6 hours.`,
+      commands: [gitPullCommand(remote, tok.token, this.branch), "# fix conflicts, run the tests, commit", "git push", "# then call gitring_submit"],
+      message: `Main is at ${main.sha.slice(0, 7)}. The token is read-only and lasts 6 hours.`,
     };
   }
 
@@ -3244,7 +3249,7 @@ export class HarborMaster extends DurableObject<Env> {
     const fanout = Math.max(1, Math.min(4, Math.round(Number(input.fanout ?? intent.suggestedFanout ?? p.settings.fanout) || 1)));
     const ok = this.allowedModels();
     const asked = (input.models ?? []).filter((m) => typeof m === "string" && ok(m));
-    const models = asked.length ? asked : p.settings.agentModels.filter(ok);
+    const models = asked.length ? asked : this.projectModels(p);
     if (!models.length) throw new Error("No agent model is set for this project. Add one in the settings.");
     const budget = await this.takeLlmBudget(fanout, by);
     const created: T.Attempt[] = [];
@@ -3371,7 +3376,7 @@ export class HarborMaster extends DurableObject<Env> {
   private async startVessel(a: T.Attempt, agent: T.AgentInfo, rederiveOf?: string): Promise<void> {
     const p = this.requireProject();
     const ok = this.allowedModels();
-    const model = agent.model && ok(agent.model) ? agent.model : (p.settings.agentModels.find(ok) ?? DEFAULT_SETTINGS.agentModels[0]);
+    const model = agent.model && ok(agent.model) ? agent.model : this.projectModels(p)[0];
     const stub = this.env.VESSEL.get(this.env.VESSEL.idFromName(`${p.id}:${a.id}`));
     await stub.start({ projectId: p.id, attemptId: a.id, intentId: a.intentId, agentId: agent.id, callsign: agent.callsign, model, rederiveOf });
   }
@@ -3978,7 +3983,7 @@ export class HarborMaster extends DurableObject<Env> {
     }
     const oldAgent = this.agents.get(old.agentId);
     const builtin = oldAgent?.kind === "builtin";
-    const agent = builtin ? oldAgent! : this.upsertAgent({ kind: "builtin", model: p.settings.agentModels[0] });
+    const agent = builtin ? oldAgent! : this.upsertAgent({ kind: "builtin", model: this.projectModels(p)[0] });
     const budget = await this.takeLlmBudget(1, by);
     const id = newId("a");
     const now = Date.now();
@@ -4781,9 +4786,17 @@ export class HarborMaster extends DurableObject<Env> {
     return this.requireProject().settings;
   }
 
-  async updateSettings(raw: Partial<T.ProjectSettings>): Promise<T.ProjectSettings> {
-    const p = this.requireProject();
+  async updateSettings(raw: Partial<T.ProjectSettings>): Promise<T.SettingsAnswer> {
     const patch = sanitizeSettings(raw, this.allowedModels());
+    // Webhook secrets: the new ones go into this answer only (shown once in Settings).
+    let webhookSecrets: Record<string, string> | undefined;
+    if (patch.webhooks) {
+      const made = await this.webhookSecrets(patch.webhooks, raw.webhooks);
+      patch.webhooks = made.list;
+      if (Object.keys(made.shown).length) webhookSecrets = made.shown;
+    }
+    // The project after the wait above (from here to the save, nothing waits).
+    const p = this.requireProject();
     const oldGithub = p.settings.github;
     // GitHub settings merge: a field that the patch leaves out keeps its value; repo "" unlinks.
     const rawG = raw.github && typeof raw.github === "object" ? (raw.github as unknown as Record<string, unknown>) : undefined;
@@ -4813,15 +4826,35 @@ export class HarborMaster extends DurableObject<Env> {
       if (g.mode !== "off" && g.repo) this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
       else this.setGithub(await this.githubStatus());
     }
-    return p.settings;
+    return webhookSecrets ? { ...p.settings, webhookSecrets } : p.settings;
   }
 
   /** Agent models a settings change or a launch can choose: the operator's list (AGENT_MODELS) and the defaults. */
   private allowedModels(): (m: string) => boolean {
-    const ok = new Set([...(this.env.AGENT_MODELS ?? "").split(",").map((m) => m.trim()).filter(Boolean), ...DEFAULT_SETTINGS.agentModels]);
+    const ok = new Set([...this.operatorModels(), ...DEFAULT_SETTINGS.agentModels]);
     return (m) => ok.has(m);
   }
 
+  /** The agent models of this deployment for new projects: AGENT_MODELS, or the defaults (GLM 5.3 Flash, GLM 5.3). */
+  private operatorModels(): string[] {
+    const list = (this.env.AGENT_MODELS ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+    return list.length ? list : DEFAULT_SETTINGS.agentModels;
+  }
+
+  /**
+   * The agent models of a project that the deployment still offers. When none is left (the project chose
+   * models before the deployment changed its list), the project uses the models of the deployment.
+   */
+  private projectModels(p: T.Project): string[] {
+    const own = p.settings.agentModels.filter(this.allowedModels());
+    return own.length ? own : this.operatorModels();
+  }
+
+  /**
+   * Send an event to the webhooks that want it. Each request is signed with the secret of its webhook
+   * (gitring-signature) and gets 3 more tries on a server or network error. The delivery runs in the
+   * background: a slow webhook never holds a merge.
+   */
   private webhook(event: string, payload: Record<string, unknown>): void {
     const targets = this.project?.settings.webhooks.filter((w) => w.enabled && (w.events as string[]).includes(event)) ?? [];
     for (const w of targets) {
@@ -4830,11 +4863,64 @@ export class HarborMaster extends DurableObject<Env> {
           ? { text: slackText(event, payload) }
           : { event, project: this.project?.id, at: new Date().toISOString(), ...payload };
       this.ctx.waitUntil(
-        fetch(w.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-          .then(() => undefined)
-          .catch((e) => console.warn("webhook failed", w.url, String(e))),
+        (async () => {
+          const res = await deliverWebhook(w.url, JSON.stringify(body), await this.webhookSecret(w.id));
+          if (!res.ok) console.warn("webhook failed", w.url, res.status ?? res.error, `${res.tries} tries`);
+        })().catch((e) => console.warn("webhook failed", w.url, String(e))),
       );
     }
+  }
+
+  /** The signing secret of a webhook (undefined: a webhook from before signatures, or no key to open it). */
+  private async webhookSecret(id: string): Promise<string | undefined> {
+    const sealed = this.db.getMeta<Record<string, string>>("webhookSecrets")?.[id];
+    const key = this.env.GITRING_SECRET;
+    if (!sealed || !key) return undefined;
+    return unseal<string>(key, sealed, SECRET_SEAL).catch(() => undefined);
+  }
+
+  /**
+   * The signing secrets of a new webhook list. A webhook gets a new secret when it is new, when its URL
+   * changes, or when the person asks for one (`newSecret`). The answer holds each new secret once; the
+   * project keeps it sealed. Secrets of removed webhooks go.
+   */
+  private async webhookSecrets(next: T.WebhookTarget[], raw: unknown): Promise<{ list: T.WebhookTarget[]; shown: Record<string, string> }> {
+    const asked = new Set(
+      (Array.isArray(raw) ? (raw as T.WebhookInput[]) : []).filter((w) => w && w.newSecret === true && typeof w.id === "string").map((w) => w.id),
+    );
+    const wants = (w: T.WebhookTarget, old: T.WebhookTarget | undefined) => !old || old.url !== w.url || asked.has(w.id);
+    // Seal a candidate secret for each webhook (at most 5) first. These are the only waits: another change of
+    // the settings can come in between, so the choice below reads the settings after them.
+    const key = this.env.GITRING_SECRET;
+    const made = new Map<string, { secret: string; sealed: string }>();
+    for (const w of key ? next : []) {
+      const secret = newWebhookSecret();
+      made.set(w.id, { secret, sealed: await seal(key!, secret, SECRET_SEAL) });
+    }
+    // No wait from here to the save of the settings: the stored secrets and the list change together.
+    const before = new Map(this.requireProject().settings.webhooks.map((w) => [w.id, w]));
+    const stored = this.db.getMeta<Record<string, string>>("webhookSecrets") ?? {};
+    const shown: Record<string, string> = {};
+    const kept: Record<string, string> = {};
+    const list: T.WebhookTarget[] = [];
+    for (const w of next) {
+      const old = before.get(w.id);
+      const { secretHint: _hint, ...plain } = w;
+      const fresh = wants(w, old) ? made.get(w.id) : undefined;
+      if (wants(w, old) && !fresh) throw new Error("gitring cannot make a secret for the webhook: the server has no GITRING_SECRET.");
+      if (fresh) {
+        shown[w.id] = fresh.secret;
+        kept[w.id] = fresh.sealed;
+        list.push({ ...plain, secretHint: secretHint(fresh.secret) });
+      } else if (stored[w.id]) {
+        kept[w.id] = stored[w.id];
+        list.push({ ...plain, ...(old?.secretHint ? { secretHint: old.secretHint } : {}) });
+      } else {
+        list.push(plain);
+      }
+    }
+    this.db.setMeta("webhookSecrets", Object.keys(kept).length ? kept : undefined);
+    return { list, shown };
   }
 
   async version(): Promise<string> {
@@ -4963,14 +5049,6 @@ export class HarborMaster extends DurableObject<Env> {
     return a;
   }
 
-  /** LLM polish for correction text is optional; templates are the source of truth. */
-  async polish(text: string): Promise<string> {
-    const res = await chat(this.env.AI as never, "@cf/zai-org/glm-4.7-flash", [
-      { role: "system", content: "Rewrite the message in ASD-STE100: short imperative sentences, max 20 words each, active voice. Keep every file name, line number and signature. Output only the message." },
-      { role: "user", content: text },
-    ], { maxTokens: 300, timeoutMs: 8000 });
-    return res?.message.content?.trim() || text;
-  }
 }
 
 /* ════════════════════════════ module helpers ════════════════════════════ */
@@ -4982,6 +5060,15 @@ export class HarborMaster extends DurableObject<Env> {
  */
 export async function hookKey(secret: string, kind: "slack" | "github", projectId: string): Promise<string> {
   return (await hmacSha256Hex(secret, `hook:${kind}:${projectId}`)).slice(0, 32);
+}
+
+/**
+ * The command that merges main into a git work copy. The token goes in an HTTP header and not in the remote
+ * URL: git writes a remote URL to FETCH_HEAD and prints it in errors, and a shell keeps it in its history.
+ */
+export function gitPullCommand(remote: string, token: string, branch: string): string {
+  const secret = token.split("?expires=")[0];
+  return `git -c http.extraHeader="Authorization: Basic ${btoa(`x:${secret}`)}" pull --no-rebase ${remote} ${branch}`;
 }
 
 /** The project state for a viewer: outbound webhook addresses (they can hold secrets) stay with members. */
@@ -5190,8 +5277,9 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
     out.webhooks = raw.webhooks
       .filter((w) => w && typeof w.url === "string" && /^https:\/\/[^\s/]+\.[^\s]+$/.test(w.url) && publicWebhookUrl(w.url))
       .slice(0, 5)
-      .map((w, n) => ({
-        id: typeof w.id === "string" ? w.id.slice(0, 40) : `wh_${n + 1}`,
+      .map((w, n, all) => ({
+        // An id names one webhook (its signing secret goes with the id): a repeated id gets a new one.
+        id: typeof w.id === "string" && all.findIndex((x) => String(x.id).slice(0, 40) === w.id.slice(0, 40)) === n ? w.id.slice(0, 40) : `wh_${n + 1}_${rand(4)}`,
         url: w.url.slice(0, 500),
         events: Array.isArray(w.events) ? w.events.filter((e): e is T.GitringEventType => typeof e === "string").slice(0, 12) : [],
         format: w.format === "slack" ? "slack" : "json",
@@ -5273,7 +5361,7 @@ const STOP_WORDS = new Set(["the", "and", "for", "with", "that", "this", "from",
  */
 export function budgetWait(key: string, scope: T.CheckRun["scope"], retryAt: number): T.CheckRun {
   const message = `The test budget for this hour is used. gitring tries again at ${clock(retryAt)} UTC.`;
-  return { id: newId("cr"), subject: key, scope, ok: false, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now(), runner: "container", error: message, wait: { retryAt, message } };
+  return { id: newId(CHECK_RUN), subject: key, scope, ok: false, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now(), runner: "container", error: message, wait: { retryAt, message } };
 }
 
 export function containerRun(res: DrydockResult, o: { key: string; scope: T.CheckRun["scope"]; cs: T.CheckSettings; ms: number }): T.CheckRun {
@@ -5297,7 +5385,7 @@ export function containerRun(res: DrydockResult, o: { key: string; scope: T.Chec
           ? `The tests took more than ${o.cs.timeoutSec ?? 600} s. gitring stopped them.`
           : undefined;
   return {
-    id: newId("cr"),
+    id: newId(CHECK_RUN),
     subject: o.key,
     scope: o.scope,
     ok: res.ok,

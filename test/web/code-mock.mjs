@@ -188,8 +188,8 @@ function makeState() {
       attempt("at_f0", "i_first", "g1", "landed", { landedAt: NOW - 26 * 60 * min, footprint: fp({ "src/index.js": { status: "A", hunks: [], additions: 7, deletions: 0 } }) }),
     ],
     agents: [
-      { id: "g1", callsign: "PETREL-2", kind: "builtin", model: "@cf/moonshotai/kimi-k2.7-code", color: 0, status: "underway", lastSeen: NOW - min },
-      { id: "g2", callsign: "KESTREL-7", kind: "builtin", model: "@cf/openai/gpt-oss-120b", color: 3, status: "waiting", lastSeen: NOW - 2 * min },
+      { id: "g1", callsign: "PETREL-2", kind: "builtin", model: "@cf/zai-org/glm-5.3-flash", color: 0, status: "underway", lastSeen: NOW - min },
+      { id: "g2", callsign: "KESTREL-7", kind: "builtin", model: "@cf/zai-org/glm-5.3", color: 3, status: "waiting", lastSeen: NOW - 2 * min },
       { id: "g3", callsign: "WREN-4", kind: "mcp", client: "claude-code", model: "claude-code", color: 6, status: "underway", lastSeen: NOW - 30_000 },
     ],
     corrections: [

@@ -28,8 +28,10 @@ import { githubRoutes } from "./github";
 import { hmacSha256Hex, sameString } from "../directory/crypto";
 import { githubRepoName } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
-import { clientAddress, hasCredential, limitFor, overLimit, tooMany } from "./limits";
+import { clientAddress, hasCredential, hookLimitKey, hookUrlKey, limitFor, overLimit, tooMany } from "./limits";
 import { cloneHelp, createProjectFor, ProjectError, type CreateProjectInput } from "./projects";
+import { forgetRoles, roleOf } from "./roles";
+import type { SeedFile } from "../harbor/harbor";
 
 export { HarborMaster } from "../harbor/harbor";
 import { hookKey, viewerState } from "../harbor/harbor";
@@ -76,15 +78,18 @@ app.onError((e, c) => {
 app.use("*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
   const kind = limitFor(c.req.method, path);
-  // Sign-in and OAuth endpoints are limited per address before any lookup.
-  if ((kind === "auth" || kind === "token") && (await overLimit(c.env, kind, clientAddress(c.req.raw)))) return tooMany(60, kind === "token");
-  // Credential lookups are limited per address before the lookup: keys and cookies that are not valid
-  // are never cached, so a flood of them must stop here and not at the account store.
-  if (kind === "api" && hasCredential(c.req.raw) && (await overLimit(c.env, "cred", clientAddress(c.req.raw)))) return tooMany();
+  // Sign-in and OAuth endpoints, and live previews, are limited per address before any lookup.
+  if ((kind === "auth" || kind === "token" || kind === "preview") && (await overLimit(c.env, kind, clientAddress(c.req.raw)))) return tooMany(60, kind === "token");
+  // Credential lookups are limited per address before the lookup, on every route: keys and cookies that are
+  // not valid are never cached, so a flood of them must stop here and not at the account store. The key in
+  // a hook URL is a credential too (gitring compares it with the project's key).
+  if ((hasCredential(c.req.raw) || (kind === "hook" && hookUrlKey(c.req.raw))) && (await overLimit(c.env, "cred", clientAddress(c.req.raw)))) return tooMany();
   const p = await resolvePrincipal(c.env, c.req.raw);
   if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Account → API keys)." }, 401);
   c.set("principal", p);
-  if (kind === "api" && (await overLimit(c.env, "api", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(c.req.raw))))) return tooMany();
+  const who = p.user?.id ?? (p.via === "operator" ? "operator" : null);
+  if (kind === "api" && (await overLimit(c.env, "api", who ?? clientAddress(c.req.raw)))) return tooMany();
+  if (kind === "hook" && (await overLimit(c.env, "hook", await hookLimitKey(c.req.raw, who)))) return tooMany();
   // A browser session may only change state from gitring's own pages (no cross-site requests).
   if (p.via === "session" && isCrossSiteWrite(c.req.method, c.req.header("origin"), c.req.header("sec-fetch-site"), new URL(c.req.url).origin)) {
     return c.json({ error: "Cross-site requests are not allowed." }, 403);
@@ -102,29 +107,6 @@ app.use("*", async (c, next) => {
     /* immutable headers */
   }
 });
-
-/*
- * Roles change rarely and every project request needs one, so this isolate keeps them for ROLE_TTL_MS
- * (a role change in this isolate clears them at once: forgetRoles). Without the cache, each request
- * makes one more round trip to the Directory.
- */
-const ROLE_TTL_MS = 15_000;
-const roles = new Map<string, { until: number; role: A.Role | null }>();
-
-function forgetRoles(projectIdToForget?: string): void {
-  if (!projectIdToForget) return roles.clear();
-  for (const k of roles.keys()) if (k.startsWith(`${projectIdToForget}\u0000`)) roles.delete(k);
-}
-
-async function roleOf(env: Env, id: string, userId: string | null): Promise<A.Role | null> {
-  const key = `${id}\u0000${userId ?? ""}`;
-  const hit = roles.get(key);
-  if (hit && hit.until > Date.now()) return hit.role;
-  const role = await directory(env).role(id, userId);
-  if (roles.size > 5000) roles.clear();
-  roles.set(key, { until: Date.now() + ROLE_TTL_MS, role });
-  return role;
-}
 
 /** The caller's role on a project; refuse when it is below `need`. */
 async function access(c: C, raw: string | undefined, need: A.Role): Promise<{ id: string; role: A.Role }> {

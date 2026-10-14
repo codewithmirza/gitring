@@ -14,6 +14,13 @@ export function newId(prefix: string, n = 6): string {
   return `${prefix}_${rand(n)}`;
 }
 
+/**
+ * The id prefix of a check run made in the project object ("ck_…"; the runner makes "chk_…"). Change
+ * requests use "cr_…". Check runs saved before 13 Oct 2026 can also have "cr_…": gitring never reads the
+ * prefix of a check run id, so those runs stay readable as they are.
+ */
+export const CHECK_RUN = "ck";
+
 export const CALLSIGNS = [
   "KESTREL",
   "HERON",
@@ -46,16 +53,6 @@ export function callsignFor(n: number): string {
 
 export function colorFor(n: number): number {
   return n % 12;
-}
-
-/** Stable small hash (FNV-1a) for keys. */
-export function fnv1a(s: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36);
 }
 
 /** Artifacts repo names: alphanumeric, dots, hyphens, underscores. */

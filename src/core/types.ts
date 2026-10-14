@@ -241,7 +241,19 @@ export interface WebhookTarget {
   /** "slack" formats a Slack message; "json" posts the raw event. */
   format: "json" | "slack";
   enabled: boolean;
+  /**
+   * The start of the signing secret ("whsec_Ab12…"), so that a person knows which secret is in use. gitring
+   * keeps the secret itself sealed apart from the settings, and shows it only once. Absent: requests to this
+   * webhook are not signed (a webhook from before signatures; make a new secret in Settings).
+   */
+  secretHint?: string;
 }
+
+/** A webhook in a settings change: `newSecret` asks gitring to replace its signing secret. */
+export type WebhookInput = WebhookTarget & { newSecret?: boolean };
+
+/** The answer of a settings change: the settings, and the secrets of new webhooks (only in this answer). */
+export type SettingsAnswer = ProjectSettings & { webhookSecrets?: Record<string, string> };
 
 /** Where the code of a project came from. Artifacts holds the canonical repo for every kind. */
 export type ProjectSource =
@@ -1150,7 +1162,8 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   autoLand: false,
   fanout: 1,
   decisionModel: "clef-flash",
-  agentModels: ["@cf/moonshotai/kimi-k2.7-code", "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen3.8-27b"],
+  // GLM 5.3 Flash for most work, GLM 5.3 for hard work (Workers AI, 1,048,576-token context).
+  agentModels: ["@cf/zai-org/glm-5.3-flash", "@cf/zai-org/glm-5.3"],
   intentsInRepo: true,
   thresholds: DEFAULT_THRESHOLDS,
   webhooks: [],

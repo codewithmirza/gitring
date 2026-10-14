@@ -98,8 +98,8 @@ function reset(scenario = "base") {
     ...extra,
   });
   const agents = [
-    { id: "g1", callsign: "PETREL-2", kind: "builtin", model: "@cf/moonshotai/kimi-k2.7-code", color: 0, status: "underway", lastSeen: NOW - 1 * min },
-    { id: "g2", callsign: "KESTREL-7", kind: "builtin", model: "@cf/openai/gpt-oss-120b", color: 3, status: "underway", lastSeen: NOW - 2 * min },
+    { id: "g1", callsign: "PETREL-2", kind: "builtin", model: "@cf/zai-org/glm-5.3-flash", color: 0, status: "underway", lastSeen: NOW - 1 * min },
+    { id: "g2", callsign: "KESTREL-7", kind: "builtin", model: "@cf/zai-org/glm-5.3", color: 3, status: "underway", lastSeen: NOW - 2 * min },
     { id: "g3", callsign: "WREN-4", kind: "mcp", client: "claude-code", model: "claude-code", color: 6, status: "underway", lastSeen: NOW - 30_000 },
   ];
   const state = {
@@ -114,7 +114,7 @@ function reset(scenario = "base") {
         autoLand: true,
         fanout: 2,
         decisionModel: "clef-flash",
-        agentModels: ["@cf/moonshotai/kimi-k2.7-code", "@cf/openai/gpt-oss-120b"],
+        agentModels: ["@cf/zai-org/glm-5.3-flash", "@cf/zai-org/glm-5.3"],
         intentsInRepo: true,
         allowUntested: false,
         thresholds: { collision: 0.5, interference: 1.7, duplicate: 0.7, minConfidence: 0.55 },
