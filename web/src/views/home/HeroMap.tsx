@@ -170,8 +170,8 @@ export function HeroMap() {
     <figure className="hm">
       <svg className="hm__svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-labelledby="hm-title">
         <title id="hm-title">
-          A drawing of the map of gitring. Two agents, HERON-2 and PETREL-9, plan to change the same lines of price.js. gitring puts a change request on that file
-          and sends it to PETREL-9.
+          The map of gitring. Two agents, HERON-2 and PETREL-9, plan to change the same lines of price.js. gitring puts a change request on that file and
+          sends it to PETREL-9.
         </title>
         <rect className="hm-water" x={0} y={0} width={WIDTH} height={HEIGHT} />
         <Frame />
