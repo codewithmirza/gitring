@@ -32,6 +32,7 @@ import { githubRepoName, normalizeGitUrl } from "../core/repo-rules";
 import { isCrossSiteWrite } from "./csrf";
 import { clientAddress, hasCredential, limitFor, overLimit, tooMany } from "./limits";
 import type { SeedFile } from "../harbor/harbor";
+import { historyRoutes } from "./history-routes";
 
 export { HarborMaster } from "../harbor/harbor";
 import { hookKey, viewerState } from "../harbor/harbor";
@@ -593,6 +594,9 @@ app.get("/api/projects/:p/file", async (c) => {
     return err(c, e, 500);
   }
 });
+
+/* History questions: why a line is there, the changes of a file, a search of main, a compare of two versions. */
+historyRoutes(app, { ready, err });
 
 async function shortHash(s: string): Promise<string> {
   const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));

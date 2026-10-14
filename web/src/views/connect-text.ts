@@ -27,6 +27,7 @@ export const TOOLS: [string, string][] = [
   ["gitring_status", "See where your work copy is: with a person, sent back, in the merge queue, or merged. It does not change the work copy."],
   ["gitring_ack", "Confirm that you applied a change request."],
   ["gitring_update", "Bring the new main into your work copy. In git mode, you get a read-only remote for main."],
+  ["gitring_why · gitring_history · gitring_search · gitring_diff", "Ask why a line is there and see the changes of a file. Find a text in main and compare two versions. No clone is necessary."],
 ];
 
 /** The tool names of the list above ("gitring_read · gitring_list" gives two). */

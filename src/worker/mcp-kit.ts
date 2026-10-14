@@ -155,6 +155,8 @@ export function isObjectReset(err: unknown): boolean {
 const AGAIN: ReadonlySet<string> = new Set([
   "ensure", "openIntents", "log", "traffic", "read", "list", "state", "tree", "file", "attemptDiff", "status",
   "write", "submit", "ack", "check", "update",
+  // History questions (src/worker/mcp-history.ts): reads.
+  "why", "pathHistory", "searchCode", "compareRefs",
 ]);
 
 /** How many times a call is sent when the project object restarts (the first call counts). */

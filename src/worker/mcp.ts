@@ -20,6 +20,7 @@ import { MCP_PATH, type McpSet } from "../directory/oauth";
 import { ADDS, CHANGES, READS, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, writeAnswer, type ToolDef } from "./mcp-kit";
 import { GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
 import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
+import { HISTORY_TOOLS } from "./mcp-history";
 
 /** The version that the server tells to clients. */
 export const MCP_VERSION = "0.9.2";
@@ -308,6 +309,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       }
     },
   }),
+  ...HISTORY_TOOLS,
 ];
 
 const INSTRUCTIONS =
