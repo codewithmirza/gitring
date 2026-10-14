@@ -38,6 +38,9 @@ export async function openScreen(page, screen, ids, baseUrl) {
     if (screen.prepare) {
       await screen.prepare(page, ids);
       await waitForContent(page);
+      // The click of a step leaves the pointer on a control, and its hover tip would cover the page in the picture.
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(300);
     }
     return release;
   } catch (error) {

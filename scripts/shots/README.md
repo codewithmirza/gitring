@@ -10,7 +10,7 @@ The parts of `node scripts/shots.mjs`, the tool that gives the design agent eyes
 | `account.mjs` | Signs up a test person with the passkey, and sets the theme before a page loads. |
 | `seed.mjs` | Makes a project with real activity: the story of `scripts/meet.mjs`, a question for the person, and three more agents at work. |
 | `screens.mjs` | The list of screens: the route of each, and the clicks that bring it into the state that a person sees. |
-| `capture.mjs` | Opens one screen, waits for its content, checks the theme and the sign-in, and saves the pictures. |
+| `capture.mjs` | Opens one screen, waits for its content, moves the pointer away, checks the theme and the sign-in, and saves the pictures. |
 | `inspect.mjs` | Measures a page: contrast, small targets, sideways scroll, type sizes, code names, long sentences, focus rings. |
 
 ## What a run writes
