@@ -1,8 +1,9 @@
 /**
  * The tasks page ("/tasks" and "/tasks/:id"): the task rail and the detail of one task.
  *
- * The detail shows the goal and its versions, then one lane for each work copy with its plan, files, diff and
- * tests, and the panels to merge, redo or pause. Read next: intents/ (the lane, the panels, the helpers).
+ * The detail shows the goal, then one lane for each work copy with its plan, files, diff and tests, and the panels
+ * to merge, redo or pause. The constraints, the test files and the versions of the goal come after the work copies.
+ * Read next: intents/ (the lane, the panels, the helpers).
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AgentInfo, Attempt, Intent } from "../../../src/core/types";
@@ -81,8 +82,8 @@ function IntentDetail({ intent }: { intent: Intent }) {
         )}
         {canAct && (
           <div className="intent__actions">
-            {/* Without work copies, starting agents is the next step and comes first. With work, it comes last. */}
-            {n === 0 && <LaunchButton intent={intent} size="md" variant="primary" />}
+            {/* Without work copies, starting agents is the next step and comes first (the empty state below holds the one primary button). With work, it comes last. */}
+            {n === 0 && <LaunchButton intent={intent} size="md" />}
             <Button
               ref={amendBtn}
               icon="amend"
@@ -98,7 +99,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
             <Button ref={pauseBtn} variant="ghost" icon="park" onClick={() => setPanel(panel === "pause" ? null : "pause")} disabled={done} aria-expanded={panel === "pause"}>
               Pause the task
             </Button>
-            {n > 0 && <LaunchButton intent={intent} size="md" variant="secondary" />}
+            {n > 0 && <LaunchButton intent={intent} size="md" />}
           </div>
         )}
         {panel === "pause" && <PausePanel intent={intent} onClose={() => setPanel(null)} returnFocus={pauseBtn} />}
@@ -109,20 +110,20 @@ function IntentDetail({ intent }: { intent: Intent }) {
           <h2 className="intent__h2" id="compare-title">
             {n === 0 ? "Work copies" : n === 1 ? "1 work copy" : `Compare ${n} work copies`}
           </h2>
-          {(n > 0 || intent.status === "landed") && (
-          <p className="compare__help">
-            {intent.status === "judging"
-              ? ready.length > 1
-                ? `${ready.length} work copies are ready. A person must say yes to one. Compare the tests${preview ? " and the previews" : ""}. The others stay as alternatives.`
-                : ready.length === 1
-                  ? `1 work copy is ready. A person must say yes before it merges. Check the tests${preview ? " and the preview" : ""}.`
-                  : "No work copy is ready. The work could not merge. Redo it on the new main, or pause the task."
-              : intent.status === "landed"
-                ? pick
-                  ? `${pick.by.name} chose ${names(pick.attemptIds[0])}: “${pick.rationale}”`
-                  : "gitring merged the work copy that passed its tests. Alternatives stay below."
-                : "Each agent works in its own work copy. gitring checks each plan against the 20 nearest active plans."}
-          </p>
+          {n > 0 && (
+            <p className="compare__help">
+              {intent.status === "judging"
+                ? ready.length > 1
+                  ? `${ready.length} work copies are ready. A person must say yes to one. Compare the tests${preview ? " and the previews" : ""}. The others stay as alternatives.`
+                  : ready.length === 1
+                    ? `1 work copy is ready. A person must say yes before it merges. Check the tests${preview ? " and the preview" : ""}.`
+                    : "No work copy is ready. The work could not merge. Redo it on the new main, or pause the task."
+                : intent.status === "landed"
+                  ? pick
+                    ? `${pick.by.name} chose ${names(pick.attemptIds[0])}: “${pick.rationale}”`
+                    : "gitring merged the work copy that passed its tests. Alternatives stay below."
+                  : "Each agent works in its own work copy. gitring checks each plan against the 20 nearest active plans."}
+            </p>
           )}
           {n > 0 && !preview && <p className="compare__note">Preview works for Cloudflare Workers apps (src/index.js).</p>}
         </div>
