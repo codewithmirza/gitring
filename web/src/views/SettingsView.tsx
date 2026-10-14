@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, InlineConfirm, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
-import type { ApproverRule, CheckSettings, FolderRule, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, Person, ProjectSettings, RedoPolicy, SettingsAnswer, WebhookInput } from "../../../src/core/types";
+import type { ApproverRule, CheckSettings, FolderRule, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, Person, ProjectSettings, RedoPolicy, SettingsAnswer, TestsWhen, WebhookInput } from "../../../src/core/types";
 import { MAX_FOLDER_RULES } from "../../../src/core/coord/folder-rules";
 import { githubRepoName } from "../../../src/core/repo-rules";
 import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess, useMe, type MeWithInstall } from "../state/account";
@@ -33,6 +33,7 @@ import {
   type FolderRuleKind,
 } from "./approval-copy";
 import { ChoiceList } from "./ChoiceList";
+import { TESTS_WHEN_OPTIONS, TRAIN_HELP, parseMaxTrain, testsWhenHelp } from "./trains-copy";
 import { SECRET_ONCE, SIGNATURE_HELP, secretLine } from "./webhook-copy";
 import { STEWARD_LABEL, stewardHelp } from "./steward-copy";
 import "./projects.css";
@@ -422,6 +423,7 @@ function MergingSection({ projectId, owner, settings, onSaved, members }: Sectio
   const [wait, setWait] = useState(String(settings.redoWaitMinutes ?? 15));
   const [rules, setRules] = useState<RuleRow[]>(() => folderRulesOf(settings).map((r) => newRuleRow(r)));
   const [tried, setTried] = useState(false);
+  const [train, setTrain] = useState(String(settings.maxTrain ?? 8));
   const { busy, error, setError, save } = useSave(projectId, onSaved);
 
   // Reset the form only when these values change on the server (a save in another section keeps this draft).
@@ -432,10 +434,11 @@ function MergingSection({ projectId, owner, settings, onSaved, members }: Sectio
     setSteward(savedSteward);
     setRedo(settings.redo ?? "agent-first");
     setWait(String(settings.redoWaitMinutes ?? 15));
+    setTrain(String(settings.maxTrain ?? 8));
     setRules(folderRulesOf(settings).map((r) => newRuleRow(r)));
     setTried(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedLanding, savedApprover, settings.intentsInRepo, savedSteward, settings.redo, settings.redoWaitMinutes, savedRules]);
+  }, [savedLanding, savedApprover, settings.intentsInRepo, savedSteward, settings.redo, settings.redoWaitMinutes, settings.maxTrain, savedRules]);
 
   const change = (key: string, patch: Partial<RuleRow>) => setRules((l) => l.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const badRule = (r: RuleRow) => !r.pattern.trim() || (r.kind === "members" && !r.members.length);
@@ -447,6 +450,7 @@ function MergingSection({ projectId, owner, settings, onSaved, members }: Sectio
     intentsInRepo !== settings.intentsInRepo ||
     steward !== savedSteward ||
     redo !== (settings.redo ?? "agent-first") ||
+    train !== String(settings.maxTrain ?? 8) ||
     (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15)) ||
     JSON.stringify(rules.map(ruleOf)) !== savedRules;
   const submit = () => {
@@ -455,14 +459,18 @@ function MergingSection({ projectId, owner, settings, onSaved, members }: Sectio
       setError("Give a wait time from 5 to 120 minutes.");
       return;
     }
+    const maxTrain = parseMaxTrain(train);
+    if (maxTrain === undefined) {
+      setError("Give a train size from 1 to 16.");
+      return;
+    }
     setTried(true);
     if (rules.some(badRule)) {
       setError("Each rule needs a pattern. A rule for members needs at least one member.");
       return;
     }
     // `landing` replaces the old `autoLand`: the server keeps `autoLand` equal to it, so the form never writes `autoLand`.
-    void save({ landing, approver, intentsInRepo, steward, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
-    void save({ landing, approver, intentsInRepo, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}), folderRules: rules.map(ruleOf) }, "Merge settings saved");
+    void save({ landing, approver, intentsInRepo, steward, redo, maxTrain, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}), folderRules: rules.map(ruleOf) }, "Merge settings saved");
   };
 
   return (
@@ -556,6 +564,11 @@ function MergingSection({ projectId, owner, settings, onSaved, members }: Sectio
           </Field>
         )}
       </div>
+      <div className="st-row">
+        <Field label="Largest train (work copies)" help={TRAIN_HELP}>
+          <Input type="number" min={1} max={16} step={1} inputMode="numeric" value={train} disabled={!owner} onChange={(e) => setTrain(e.target.value)} />
+        </Field>
+      </div>
       {owner && (
         <div>
           <Button busy={busy} disabled={!dirty} onClick={submit}>
@@ -594,6 +607,14 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
         Tests
       </h2>
       <p className="np__help">gitring runs the tests before a work copy is ready, and again on main plus the work copy before it merges. Work merges only when they pass.</p>
+      <Segmented<TestsWhen>
+        label="When are tests run?"
+        value={settings.testsWhen ?? "before"}
+        disabled={!owner || busy}
+        onChange={(testsWhen) => owner && testsWhen !== (settings.testsWhen ?? "before") && void save({ testsWhen }, "Test settings saved")}
+        options={TESTS_WHEN_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+      />
+      <p className="np__help">{testsWhenHelp(settings.testsWhen ?? "before")}</p>
       <Segmented<CheckSettings["runner"]>
         label="Where tests run"
         value={cs.runner}

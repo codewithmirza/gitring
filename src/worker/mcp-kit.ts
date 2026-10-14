@@ -274,7 +274,7 @@ export function makeContext(env: Env, who: Principal, opts: { listHow?: string; 
 
 /* ───────────────────────── answers ───────────────────────── */
 
-export const KIND_WORD: Record<string, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed", review: "sent back by a person" };
+export const KIND_WORD: Record<string, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed", review: "sent back by a person", reverted: "merge reverted" };
 export const VERDICT_WORD: Record<string, string> = { clear: "clear", correct: "change request", "merge-intents": "same task as other work", escalate: "a person decides" };
 
 /**

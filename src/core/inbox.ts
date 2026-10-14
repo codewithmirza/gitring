@@ -89,7 +89,26 @@ export const STEWARD_OPTIONS: readonly QuestionOption[] = [{ id: "seen", label: 
 export function questionHeadline(kind: Question["kind"]): string {
   if (kind === "escalation") return "Which work adapts?";
   if (kind === "steward") return "A note from the steward";
+  if (kind === "revert") return "gitring reverted a merge you said yes to";
   return "The work did not merge";
+}
+
+/** The answers when gitring reverted a merge that a person said yes to: the agent fixes it, or a built-in agent redoes it, or the task pauses. */
+export const REVERT_OPTIONS: readonly QuestionOption[] = [
+  { id: "ok", label: "Understood: the agent fixes it" },
+  { id: "redo", label: "Redo it on the new main" },
+  { id: "park", label: "Pause the task" },
+];
+
+/** What a person reads when gitring reverted a merge that they said yes to. Each line is one plain sentence. */
+export function revertFacts(f: { title: string; agent: string; approvedBy: string; mergeSha: string; revertSha: string; failed: string[] }): string[] {
+  const names = f.failed.length <= 3 ? f.failed.join(", ") : `${f.failed.slice(0, 3).join(", ")} and ${f.failed.length - 3} more`;
+  return [
+    `${f.approvedBy} said yes to the work of ${f.agent} on "${f.title}" (${f.mergeSha.slice(0, 7)}).`,
+    `After the merge, the tests of main failed${names ? `: ${names}` : ""}.`,
+    `gitring reverted the merge (${f.revertSha.slice(0, 7)}). The task is open again.`,
+    `${f.agent} gets a change request with the failed tests.`,
+  ];
 }
 
 /** "a, b, c" for up to three names, then "and N more". */

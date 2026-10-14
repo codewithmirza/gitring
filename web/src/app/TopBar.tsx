@@ -356,7 +356,7 @@ function StatsStrip() {
         variant="inline"
         value={int(stats.landings)}
         label="merges"
-        source={`Fast-forward ${stats.landedByMethod["fast-forward"]} · 3-way merge ${stats.landedByMethod.merge} · redo ${stats.landedByMethod.rederive}`}
+        source={`Fast-forward ${stats.landedByMethod["fast-forward"]} · 3-way merge ${stats.landedByMethod.merge} · redo ${stats.landedByMethod.rederive}${stats.landedByMethod.revert ? ` · reverted ${stats.landedByMethod.revert}` : ""}${stats.trains ? ` · trains ${stats.trains}` : ""}`}
       />
       <Stat variant="inline" value={int(stats.replots ?? 0)} label="rebases" source="Times gitring moved active work onto a new main, so the agent works on current code." />
     </div>
