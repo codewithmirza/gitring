@@ -1,4 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["src/harbor", "src/vessel", "src/worker/env.ts", "test/harbor/world.ts"]
-}
