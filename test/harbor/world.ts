@@ -431,11 +431,16 @@ export class World {
       throw new Error(`MCP ${name}: HTTP ${res.status}, no JSON-RPC answer: ${raw.slice(0, 300)}`);
     }
     if (rpc.error) throw new Error(`MCP ${name}: protocol error ${JSON.stringify(rpc.error)}`);
-    const text = String(rpc.result?.content?.[0]?.text ?? "");
+    const blocks: string[] = (rpc.result?.content ?? []).map((c: any) => String(c?.text ?? ""));
+    const text = blocks[0] ?? "";
     const ok = !rpc.result?.isError;
     const json = lastJson(text);
-    const clr = (json as any)?.clearance ?? json;
-    const notices: Notice[] = Array.isArray(clr?.corrections) ? clr.corrections.map((c: any) => ({ id: c.id, kind: c.kind, message: c.message, from: c.from })) : [];
+    // The change requests come in the answer, or in a second block after the text of a file (gitring_read, gitring_list).
+    const notices: Notice[] = blocks.flatMap((b, i) => {
+      const j: any = i === 0 ? json : lastJson(b);
+      const clr = j?.clearance ?? j;
+      return Array.isArray(clr?.corrections) ? clr.corrections.map((c: any) => ({ id: c.id, kind: c.kind, message: c.message, from: c.from })) : [];
+    });
     this.calls.push({ tool: name, ok, ms });
     return { tool: name, ok, text, json, notices, ms };
   }

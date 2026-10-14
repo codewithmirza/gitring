@@ -415,6 +415,29 @@ describe("change requests", () => {
     expect(bobAgain.text).not.toMatch(/change request/i);
   });
 
+  it("brings a change request in the read tools of a branch: after the file text, and above the GitHub-shaped JSON", async () => {
+    // The project asks a person before every merge. The person sends the pull request back in the app.
+    const settings = await world.call("PUT", `/api/projects/${project}/settings`, { headers: { cookie: `__Host-gitring=${session}` }, body: { landing: "ask" } });
+    expect(settings.status, settings.text).toBe(200);
+    await gh("push_files", { branch: "feature/shout", message: "Shout", files: [{ path: "src/shout.js", content: SHOUT }, { path: "tests/shout.test.js", content: SHOUT_TEST }] });
+    await gh("create_pull_request", { title: "Shout", head: "feature/shout", base: "main" });
+    const st = await world.call("GET", `/api/projects/${project}/state`, { key });
+    const at = st.json.attempts.find((a: { approval?: { status: string } }) => a.approval?.status === "waiting");
+    const back = await world.call("POST", `/api/projects/${project}/attempts/${at.id}/decide`, { headers: { cookie: `__Host-gitring=${session}` }, body: { approvalId: at.approval.id, answer: "send-back", note: "Name it yell." } });
+    expect(back.status, back.text).toBe(200);
+    // The file text stays clean. The change request comes in a second block, in the words of the GitHub set.
+    const rpc = await callTool(world, key, "get_file_contents", { repo: project, path: "src/shout.js", ref: "feature/shout" }, "/mcp/github");
+    expect(rpc.text).toBe(SHOUT);
+    const content = rpc.rpc.body.result.content as { text: string }[];
+    expect(content).toHaveLength(2);
+    expect(content[1].text).toMatch(/^GITRING CHANGE REQUEST — apply it in your next edits\. Do not stop\.\n- \[cr_\w+\] \(sent back by a person\) alice sends your work back: Name it yell\./);
+    expect(content[1].text).not.toMatch(/gitring_ack|gitring_traffic/);
+    // It comes once: pull_request_read does not bring it again, and keeps its JSON.
+    const read = await gh("pull_request_read", { method: "get", pullNumber: 1 });
+    expect(read.text).not.toMatch(/GITRING CHANGE REQUEST/);
+    expect(JSON.parse(read.text.slice(read.text.indexOf("{"))).number).toBe(1);
+  });
+
   it("keeps the change requests of the plan check when the first write gives none", () => {
     const notice = { id: "cr_1", kind: "region" as const, message: "Do not edit line 2.", constraints: {}, from: "KESTREL-4" };
     const first = { verdict: "correct" as const, corrections: [notice], traffic: [], advice: "x" };

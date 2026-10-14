@@ -74,6 +74,7 @@ import {
   type MainView,
   type TreeText,
 } from "./views";
+import { checkAck } from "./ack-check";
 
 /** Commits that gitring makes. ".invalid" is a reserved domain: no person can own this address. */
 const GITRING_AUTHOR = { name: "gitring", email: "noreply@gitring.invalid" };
@@ -818,6 +819,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.attempts.set(a.id, a);
     this.db.putAttempt(a);
     this.emit({ type: "attempt", attempt: a });
+    this.wakeOnChange(a);
   }
 
   private putAgent(g: T.AgentInfo): void {
@@ -830,6 +832,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.corrections.set(c.id, c);
     this.db.putCorrection(c);
     this.emit({ type: "correction", correction: c });
+    if (c.status === "pending") this.wake(c.attemptId, requestEvent(c.id, c.kind));
   }
 
   private callsign(attemptId?: string): string | undefined {
@@ -1093,8 +1096,9 @@ export class HarborMaster extends DurableObject<Env> {
     return job;
   }
 
-  async log(input: T.LogInput): Promise<T.Clearance> {
+  async log(input: T.LogInput, call: CallInfo = {}): Promise<T.Clearance> {
     const a = this.mustAttempt(input.attemptId);
+    this.mayChange(a, call.viewer);
     this.heard(a);
     const agent = this.agents.get(a.agentId);
     if (agent) {
@@ -1193,8 +1197,9 @@ export class HarborMaster extends DurableObject<Env> {
     return true;
   }
 
-  async write(input: T.WriteInput): Promise<T.WriteResult> {
+  async write(input: T.WriteInput, call: CallInfo = {}): Promise<T.WriteResult> {
     const a = this.mustAttempt(input.attemptId);
+    this.mayChange(a, call.viewer);
     this.heard(a);
     if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. ${this.overAdvice(a)}`);
     if (a.mode === "git") throw new Error("This work copy uses git mode. Push to its remote. gitring reads your latest push at gitring_check and gitring_submit.");
@@ -1331,26 +1336,61 @@ export class HarborMaster extends DurableObject<Env> {
     return a.status;
   }
 
-  async ack(attemptId: string, correctionId: string, note?: string): Promise<T.Clearance> {
+  /**
+   * The agent confirms a change request. gitring checks the code of the work copy against the constraints of
+   * the request (see ack-check.ts). When the code still breaks them, the request stays open and the answer
+   * says what to change. An id that is not an open request of this work copy is an error that names the open ones.
+   */
+  async ack(attemptId: string, correctionId: string, note?: string, call: CallInfo = {}): Promise<T.AckResult> {
     const a = this.mustAttempt(attemptId);
+    this.mayChange(a, call.viewer);
     this.heard(a);
-    const c = this.corrections.get(correctionId);
-    if (c && c.attemptId === a.id && c.status !== "superseded") {
-      c.status = "acknowledged";
-      c.acknowledgedAt = Date.now();
-      c.ackNote = note ? String(note).slice(0, 300) : undefined;
+    const c = this.corrections.get(String(correctionId ?? "").trim());
+    const answer = (outcome: T.AckResult["outcome"], message: string): T.AckResult => ({ correctionId, outcome, ...(c?.check ? { check: c.check } : {}), message, clearance: this.clearanceFor(a.id) });
+    if (!c || c.attemptId !== a.id) throw new Error(`${correctionId || "This id"} is not a change request of work copy ${a.id}. ${this.openRequestsLine(a)}`);
+    if (c.status === "superseded") throw new Error(`The change request ${c.id} is old: a newer change request replaced it. ${this.openRequestsLine(a)}`);
+    if (c.status === "acknowledged") return answer("already", `You confirmed ${c.id} before.`);
+    if (c.status === "closed") return answer("already", `The change request ${c.id} closed when the work merged.`);
+    // The latest push of a git-mode work copy is the code that the agent confirms.
+    await this.adoptForkTip(a);
+    const view = await this.attemptView(a);
+    const standOn = c.standOnAttemptId ? this.attempts.get(c.standOnAttemptId) : undefined;
+    // The lines of a request count while the work that holds them is still in the traffic.
+    const regions = !c.standOnAttemptId || (!!standOn && ACTIVE.has(standOn.status));
+    const now = Date.now();
+    const result = checkAck(c, { footprint: a.footprint, files: view.files, signatures: view.signatures }, { regions });
+    c.check = { ...result, at: now };
+    c.ackNote = note ? String(note).slice(0, 300) : c.ackNote;
+    if (result.applied === false) {
+      // The agent knows the request now: it stays open, and it does not come again as new.
+      c.status = "delivered";
+      c.deliveredAt = c.deliveredAt ?? now;
       this.putCorrection(c);
-      this.stats.correctionsAcknowledged += 1;
-      this.persistStats();
-      this.addLog({
-        kind: "ack",
-        attemptId: a.id,
-        agentId: a.agentId,
-        intentId: a.intentId,
-        message: `${this.callsign(a.id)} acknowledges ${c.id}${note ? `: ${note}` : "."}`,
-      });
+      this.addLog({ kind: "ack", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${this.callsign(a.id)} confirms ${c.id}, but the code check fails: ${result.reason}` });
+      return answer("open", `${result.reason} Change it, then call gitring_ack again. The change request stays open.`);
     }
-    return this.clearanceFor(a.id);
+    c.status = "acknowledged";
+    c.acknowledgedAt = now;
+    this.putCorrection(c);
+    this.stats.correctionsAcknowledged += 1;
+    this.persistStats();
+    this.addLog({
+      kind: "ack",
+      attemptId: a.id,
+      agentId: a.agentId,
+      intentId: a.intentId,
+      message: `${this.callsign(a.id)} acknowledges ${c.id}${note ? `: ${note}` : "."}`,
+    });
+    return answer("acknowledged", result.applied ? `Confirmed. ${result.reason}` : "Confirmed.");
+  }
+
+  /** "Open change requests of a_1: cr_1, cr_2." or "Work copy a_1 has no open change request." */
+  private openRequestsLine(a: T.Attempt): string {
+    const open = a.corrections.filter((id) => {
+      const s = this.corrections.get(id)?.status;
+      return s === "pending" || s === "delivered";
+    });
+    return open.length ? `Open change requests of ${a.id}: ${open.join(", ")}.` : `Work copy ${a.id} has no open change request.`;
   }
 
   async brief(attemptId: string | undefined, intentId?: string): Promise<Brief> {
@@ -1413,10 +1453,13 @@ export class HarborMaster extends DurableObject<Env> {
     return out.sort((x, y) => x.range - y.range);
   }
 
-  /** Clearance for an agent: deliver pending corrections once (piggyback). */
-  private clearanceFor(attemptId: string): T.Clearance {
+  /**
+   * Clearance for an agent: deliver pending corrections once (piggyback). `deliver: false` (a caller that did
+   * not send the agent): the verdict and the traffic, and the change requests stay for the agent.
+   */
+  private clearanceFor(attemptId: string, deliver = true): T.Clearance {
     const a = this.mustAttempt(attemptId);
-    const pending = a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status === "pending");
+    const pending = deliver ? a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status === "pending") : [];
     const now = Date.now();
     for (const c of pending) {
       c.status = "delivered";
@@ -1822,8 +1865,9 @@ export class HarborMaster extends DurableObject<Env> {
     return containerRun(res, { key, scope, cs, ms: Date.now() - t0 });
   }
 
-  async check(attemptId: string): Promise<T.CheckRun> {
+  async check(attemptId: string, call: CallInfo = {}): Promise<T.CheckRun> {
     const a = this.mustAttempt(attemptId);
+    this.mayChange(a, call.viewer);
     this.heard(a);
     await this.adoptForkTip(a);
     const view = await this.attemptView(a);
@@ -1860,6 +1904,7 @@ export class HarborMaster extends DurableObject<Env> {
   async submit(attemptId: string, summary?: string, call: CallInfo = {}): Promise<T.SubmitResult> {
     this.rememberOrigin(call.origin);
     const a = this.mustAttempt(attemptId);
+    this.mayChange(a, call.viewer);
     if (TERMINAL.has(a.status)) {
       return { attemptId, status: a.status, next: a.status === "landed" ? "landed" : "fix-checks", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
     }
@@ -2329,10 +2374,10 @@ export class HarborMaster extends DurableObject<Env> {
         this.stopVessel(s.id).catch(() => {});
       }
     }
+    // The agent did not confirm these change requests before the merge: they close, they are not "acknowledged".
     for (const c of applied) {
       if (c.status === "pending" || c.status === "delivered") {
-        c.status = "acknowledged";
-        c.acknowledgedAt = Date.now();
+        c.status = "closed";
         this.putCorrection(c);
       }
     }
@@ -2362,6 +2407,7 @@ export class HarborMaster extends DurableObject<Env> {
       this.ctx.waitUntil(this.githubPull({ reason: "task" }).catch((e) => console.warn("github pull failed", String(e))));
     }
     await this.upstreamCorrections(a, newMain);
+    this.wakeAll({ kind: "main-moved", at: Date.now(), mainSha: committed.sha, message: `Main moved to ${committed.sha.slice(0, 7)}: "${intent.title}" merged.` });
   }
 
   /** Tell vessels near the landed change that main moved under them. */
@@ -2565,8 +2611,9 @@ export class HarborMaster extends DurableObject<Env> {
    *   api  gitring moves the work copy onto main; files where both sides changed go back to main, and the agent writes its change again
    *   git  a read-only remote and token for main (6 hours), to merge main with git
    */
-  async update(attemptId: string): Promise<T.UpdateResult> {
+  async update(attemptId: string, call: CallInfo = {}): Promise<T.UpdateResult> {
     const a = this.mustAttempt(attemptId);
+    this.mayChange(a, call.viewer);
     if (TERMINAL.has(a.status)) throw new Error(`Work copy ${a.id} is ${copyStatusWord(a.status)}. ${this.overAdvice(a)}`);
     this.heard(a);
     const p = this.requireProject();
@@ -3125,7 +3172,8 @@ export class HarborMaster extends DurableObject<Env> {
       ...(landing ? { landing: { sha: landing.mainAfter, method: landing.method, at: landing.at } } : {}),
       ...(a.mergeWait ? { mergeWait: a.mergeWait } : {}),
       message,
-      clearance: this.clearanceFor(attemptId),
+      // A member who did not send the agent sees the state, and the change requests stay for the agent.
+      clearance: this.clearanceFor(attemptId, this.sentBy(a, call.viewer)),
     };
   }
 
@@ -3828,6 +3876,7 @@ export class HarborMaster extends DurableObject<Env> {
         this.issueCorrection(other.id, undefined, draftUpstreamCorrection(v, landedInfo), "R1-landed-has-way", "github", 50, true);
       }
     }
+    this.wakeAll({ kind: "main-moved", at: Date.now(), mainSha: main.sha, message: `Main moved to ${main.sha.slice(0, 7)}: ${change.title}.` });
   }
 
   /* ════════════════════════════ Claude Code hook ════════════════════════════ */
@@ -3835,7 +3884,8 @@ export class HarborMaster extends DurableObject<Env> {
   /**
    * PostToolUse hook from Claude Code. The agent's checkout identifies its attempt by the fork remote
    * (git mode) or by an attempt id the agent wrote into GITRING_ATTEMPT. Returns pending corrections
-   * as additional context, so the agent sees them mid-task without a stop.
+   * as additional context, so the agent sees them mid-task without a stop. `call.viewer`: the person of the key.
+   * The hook of another person (not the sender, not an owner) changes nothing and gets nothing.
    */
   async claudeHook(input: {
     cwd?: string;
@@ -3843,7 +3893,7 @@ export class HarborMaster extends DurableObject<Env> {
     tool_name?: string;
     tool_input?: { file_path?: string; content?: string; old_string?: string; new_string?: string; replace_all?: boolean; edits?: { old_string: string; new_string: string; replace_all?: boolean }[] };
     attemptId?: string;
-  }): Promise<{ hookSpecificOutput?: { hookEventName: "PostToolUse"; additionalContext: string } }> {
+  }, call: CallInfo = {}): Promise<{ hookSpecificOutput?: { hookEventName: "PostToolUse"; additionalContext: string } }> {
     let attempt: T.Attempt | undefined = input.attemptId ? this.attempts.get(input.attemptId) : undefined;
     const cwd = input.cwd ? normDir(input.cwd) : undefined;
     if (!attempt && cwd) {
@@ -3859,11 +3909,13 @@ export class HarborMaster extends DurableObject<Env> {
       const id = this.db.hook(`session:${input.session_id}`);
       if (id) attempt = this.attempts.get(id);
     }
-    if (!attempt || !ACTIVE.has(attempt.status)) return {};
+    if (!attempt || !ACTIVE.has(attempt.status) || !this.mayAct(attempt, call.viewer)) return {};
     if (input.session_id) this.db.setHook(`session:${input.session_id}`, attempt.id);
 
     const abs = input.tool_input?.file_path;
     if (abs && /^(Write|Edit|MultiEdit)$/.test(input.tool_name ?? "")) {
+      // An edit is an answer of the agent: work that came back to it does not go to another agent now.
+      this.heard(attempt);
       const rel = normPath(cwd && abs.startsWith(cwd + "/") ? abs.slice(cwd.length + 1) : abs.replace(/^.*?\/((src|tests|harness)\/)/, "$1"));
       const view = await this.attemptView(attempt);
       let next: string | undefined;
@@ -3969,6 +4021,120 @@ export class HarborMaster extends DurableObject<Env> {
 
   async version(): Promise<string> {
     return BUILD_ID;
+  }
+
+  /* ════════════════════════════ work copy owners, agents that wait ════════════════════════════ */
+
+  /**
+   * Did the caller send the agent of this work copy? Also true for a call from inside gitring or with the
+   * operator key (no viewer), and for work that no person sent.
+   */
+  private sentBy(a: T.Attempt, viewer?: CallInfo["viewer"]): boolean {
+    return !viewer || !a.sender || a.sender.id === viewer.id;
+  }
+
+  /** May the caller change this work copy? The person who sent the agent, an owner, or the operator key may. */
+  private mayAct(a: T.Attempt, viewer?: CallInfo["viewer"]): boolean {
+    return this.sentBy(a, viewer) || viewer?.role === "owner";
+  }
+
+  private mayChange(a: T.Attempt, viewer?: CallInfo["viewer"]): void {
+    if (this.mayAct(a, viewer)) return;
+    throw new Error(`Work copy ${a.id} belongs to the agent of ${a.sender?.name ?? "another person"}. Only that person or an owner of the project can change it.`);
+  }
+
+  /**
+   * The new change requests of a work copy, for the answer of a tool that does not deliver them itself
+   * (MCP gitring_read, gitring_list, gitring_traffic, gitring_check, gitring_update). Only the person who sent
+   * the agent gets them. Another member gets null: a read of another person must not take them from the agent.
+   */
+  async news(attemptId: string, call: CallInfo = {}): Promise<T.Clearance | null> {
+    const a = this.attempts.get(attemptId);
+    if (!a || !this.sentBy(a, call.viewer)) return null;
+    return this.clearanceFor(a.id);
+  }
+
+  /** The agents that wait, per work copy. Memory only: a restart loses them, and the next call of the agent sees the state. */
+  private waiters = new Map<string, Set<(ev: T.WaitEvent) => void>>();
+  /** The state of a work copy that agents wait on: a change of the status or of the approval wakes them. */
+  private waitSeen = new Map<string, { status: T.AttemptStatus; approval?: T.Approval["status"] }>();
+
+  /**
+   * MCP gitring_wait: wait until something new reaches the work copy (a change request, a move of main, the
+   * answer of a person, a new status), or until the time runs out (default 25 s, at most 50 s). A change request
+   * that waits already, or a work copy that is over, answers at once.
+   */
+  async wait(attemptId: string, opts: CallInfo & { seconds?: number } = {}): Promise<T.WaitResult> {
+    const a = this.mustAttempt(attemptId);
+    this.mayChange(a, opts.viewer);
+    this.heard(a);
+    const asked = Number(opts.seconds ?? WAIT_SECONDS.default);
+    const seconds = Number.isFinite(asked) ? Math.max(0, Math.min(WAIT_SECONDS.max, asked)) : WAIT_SECONDS.default;
+    const ready = TERMINAL.has(a.status) || a.corrections.some((id) => this.corrections.get(id)?.status === "pending");
+    const heardOf = ready || !seconds ? [] : await this.waitFor(a, seconds * 1000);
+    const now = this.mustAttempt(attemptId);
+    const clr = this.clearanceFor(now.id);
+    // The change requests of the answer are the news: also those that waited before the call, and not those that changed again.
+    const events = [...heardOf.filter((e) => e.kind !== "change-request"), ...clr.corrections.map((n) => requestEvent(n.id, n.kind))];
+    if (ready && TERMINAL.has(now.status)) events.push(statusEvent(now.status));
+    return { attemptId, status: now.status, events, clearance: clr, message: this.waitMessage(now, events, clr) };
+  }
+
+  private waitFor(a: T.Attempt, ms: number): Promise<T.WaitEvent[]> {
+    return new Promise((resolve) => {
+      const events: T.WaitEvent[] = [];
+      const set = this.waiters.get(a.id) ?? new Set<(ev: T.WaitEvent) => void>();
+      this.waiters.set(a.id, set);
+      if (!this.waitSeen.has(a.id)) this.waitSeen.set(a.id, { status: a.status, approval: a.approval?.status });
+      let gather: ReturnType<typeof setTimeout> | undefined;
+      const end = () => {
+        clearTimeout(timer);
+        if (gather) clearTimeout(gather);
+        set.delete(on);
+        if (!set.size) {
+          this.waiters.delete(a.id);
+          this.waitSeen.delete(a.id);
+        }
+        resolve(events);
+      };
+      // The events of one step come together (a send-back is a new status and a change request).
+      const on = (ev: T.WaitEvent) => {
+        events.push(ev);
+        gather ??= setTimeout(end, WAIT_GATHER_MS);
+      };
+      set.add(on);
+      const timer = setTimeout(end, ms);
+    });
+  }
+
+  private wake(attemptId: string, ev: T.WaitEvent): void {
+    for (const on of [...(this.waiters.get(attemptId) ?? [])]) on(ev);
+  }
+
+  private wakeAll(ev: T.WaitEvent): void {
+    for (const id of [...this.waiters.keys()]) this.wake(id, ev);
+  }
+
+  /** A new status or a new state of the approval wakes the agents that wait on the work copy. */
+  private wakeOnChange(a: T.Attempt): void {
+    const seen = this.waitSeen.get(a.id);
+    if (!seen) return;
+    const approval = a.approval?.status;
+    if (seen.status !== a.status) this.wake(a.id, statusEvent(a.status));
+    if (approval && seen.approval !== approval) this.wake(a.id, { kind: "approval", at: Date.now(), approval, message: approvalWord(a) });
+    seen.status = a.status;
+    seen.approval = approval;
+  }
+
+  /** What an agent that waited does now. */
+  private waitMessage(a: T.Attempt, events: T.WaitEvent[], clr: T.Clearance): string {
+    if (a.status === "landed") return "The work merged. The task is done.";
+    if (TERMINAL.has(a.status)) return `The work copy is ${waitStatusWord(a.status)}. ${this.overAdvice(a)}`;
+    if (clr.corrections.length) return clr.advice;
+    if (a.approval?.status === "waiting" && a.status === "ready") return `${this.waitingMessage(a)} Call gitring_wait again to wait for the answer.`;
+    if (!events.length) return `No news. The work copy is ${waitStatusWord(a.status)}. Call gitring_wait again, or continue your work.`;
+    if (events.some((e) => e.kind === "main-moved") && !WAITING.has(a.status)) return "Main moved. Call gitring_update before you change files that the merge changed. Continue your work.";
+    return `The work copy is ${waitStatusWord(a.status)}. ${WAITING.has(a.status) ? "Call gitring_wait again to wait for the merge." : "Continue your work."}`;
   }
 
   private mustAttempt(id: string): T.Attempt {
@@ -4387,4 +4553,33 @@ function taskStatusWord(s: T.IntentStatus): string {
 function copyStatusWord(s: T.AttemptStatus): string {
   const words: Partial<Record<T.AttemptStatus, string>> = { landed: "merged", landing: "merging", stale: "out of date", rederiving: "in a redo", alternate: "an alternative", abandoned: "stopped", declared: "new", underway: "in work", ready: "ready to merge" };
   return words[s] ?? s;
+}
+
+/** gitring_wait: how long an agent waits, in seconds (contract C1). */
+const WAIT_SECONDS = { default: 25, max: 50 };
+/** Events that come within this time of the first one go into the same answer of gitring_wait. */
+const WAIT_GATHER_MS = 50;
+
+/** The status of a work copy in the words of gitring_wait (no "-ing" forms). */
+function waitStatusWord(s: T.AttemptStatus): string {
+  const words: Partial<Record<T.AttemptStatus, string>> = { landing: "in the merge", checking: "in the tests", submitted: "sent for a merge" };
+  return words[s] ?? copyStatusWord(s);
+}
+
+function requestEvent(id: string, kind: T.CorrectionKind): T.WaitEvent {
+  return { kind: "change-request", at: Date.now(), correctionId: id, message: `gitring sent the change request ${id} (${KIND_WORD[kind] ?? kind}).` };
+}
+
+function statusEvent(status: T.AttemptStatus): T.WaitEvent {
+  return { kind: "status", at: Date.now(), status, message: `The work copy is ${waitStatusWord(status)}.` };
+}
+
+/** The answer of a person (or the state of the question), in one sentence for the agent. */
+function approvalWord(a: T.Attempt): string {
+  const ap = a.approval;
+  const who = ap?.answer?.by.name ?? "A person";
+  if (ap?.status === "approved") return `${who} said yes to the merge.`;
+  if (ap?.status === "sent-back") return `${who} sent the work back.`;
+  if (ap?.status === "withdrawn") return "The question to the person closed. Submit again to ask again.";
+  return "A person must say yes before the merge.";
 }

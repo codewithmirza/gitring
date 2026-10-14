@@ -171,8 +171,10 @@ export function landingNote(args: {
       message: c.message,
       standOn: c.standOnAttemptId ?? null,
       ...(c.alsoStandOn?.length ? { alsoStandOn: c.alsoStandOn } : {}),
-      status: c.status,
+      // The note is written at the merge: a change request that the agent did not confirm closes with it.
+      status: c.status === "pending" || c.status === "delivered" ? "closed" : c.status,
       ...(c.ackNote ? { ackNote: c.ackNote } : {}),
+      ...(c.check ? { check: { applied: c.check.applied, reason: c.check.reason } } : {}),
     })),
     courseChecks: courseChecks.map((k) => ({
       id: k.id,

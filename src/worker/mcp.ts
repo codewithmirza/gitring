@@ -4,7 +4,12 @@
  * Every call carries a personal API key or an OAuth token; each tool checks the caller's role on the project.
  *
  * Every tool result starts with a one-line status. When gitring has new change requests for the agent,
- * the result starts with "GITRING CHANGE REQUEST" so the model cannot miss it.
+ * the result starts with "GITRING CHANGE REQUEST" so the model cannot miss it. Every answer about a work copy
+ * carries them, also the answers that only read: gitring_read and gitring_list keep the file text clean in the
+ * first block and bring the change requests in a second block. gitring_wait waits for them.
+ *
+ * Only the person who sent the agent of a work copy (or an owner, or the operator key) can change it. Every
+ * member can read it, but only that person gets its change requests.
  *
  * Every tool has a title and all four hints (read-only, destructive, idempotent, open-world): MCP
  * directories need them, and the Worker uses the read-only hint for the read-only path and scope.
@@ -17,8 +22,8 @@ import { atLeast } from "../core/accounts";
 import { noTestRan } from "../core/types";
 import { actorOf, directory, type Principal } from "./auth";
 import { MCP_PATH, type McpSet } from "../directory/oauth";
-import { ADDS, CHANGES, READS, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, writeAnswer, type ToolDef } from "./mcp-kit";
-import { GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
+import { ADDS, CHANGES, READS, callOf, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, withClearance, withNews, writeAnswer, type ToolDef } from "./mcp-kit";
+import { GITHUB_CHECK_HOW, GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
 import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
 
 /** The version that the server tells to clients. */
@@ -119,7 +124,8 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     annotations: ADDS,
     async run(ctx, args) {
       try {
-        const clr = await (await ctx.access(args.project)).stub.log({ attemptId: args.attemptId, message: args.message, files: args.files, symbols: args.symbols, headSha: args.headSha });
+        const h = await ctx.access(args.project);
+        const clr = await h.stub.log({ attemptId: args.attemptId, message: args.message, files: args.files, symbols: args.symbols, headSha: args.headSha }, callOf(ctx, h));
         return text(clr, `Conflict check: ${VERDICT_WORD[clr.verdict] ?? clr.verdict}. ${clr.advice}`, clr);
       } catch (e) {
         return fail(e);
@@ -130,15 +136,19 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
   defineTool({
     name: "gitring_traffic",
     title: "See nearby work",
-    description: "See the active work near yours. Each item shows the task, the plan, the files and the latest reports of one other agent. Also see the tasks that merged after your work copy started.",
+    description:
+      "See the active work near yours. Each item shows the task, the plan, the files and the latest reports of one other agent. Also see the tasks that merged after your work copy started. " +
+      "When you wait for other agents, call gitring_wait instead of a sleep.",
     inputSchema: { project, attemptId },
     annotations: READS,
     async run(ctx, args) {
       try {
-        const res = await (await ctx.access(args.project)).stub.traffic(args.attemptId);
+        const h = await ctx.access(args.project);
+        const res = await h.stub.traffic(args.attemptId);
+        const clr = await h.stub.news(args.attemptId, callOf(ctx, h));
         const near = res.vessels.length;
         const merged = res.landedSinceBase.length;
-        return text(res, `${near} ${near === 1 ? "work copy" : "work copies"} near you. ${merged} ${merged === 1 ? "task" : "tasks"} merged after your work copy started.`);
+        return text(withClearance(res, clr), `${near} ${near === 1 ? "work copy" : "work copies"} near you. ${merged} ${merged === 1 ? "task" : "tasks"} merged after your work copy started.`, clr ?? undefined);
       } catch (e) {
         return fail(e);
       }
@@ -148,13 +158,14 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
   defineTool({
     name: "gitring_read",
     title: "Read a file",
-    description: "Read one file of your work copy (api mode). The answer is the whole file.",
+    description: "Read one file of your work copy (api mode). The answer is the whole file. New change requests come after the file, in a second part.",
     inputSchema: { project, attemptId, path: z.string() },
     annotations: READS,
     async run(ctx, args) {
       try {
-        const r = await (await ctx.access(args.project)).stub.read(args.attemptId, args.path);
-        return plain(r.content ?? `The file ${r.path} does not exist.`);
+        const h = await ctx.access(args.project);
+        const r = await h.stub.read(args.attemptId, args.path);
+        return withNews(plain(r.content ?? `The file ${r.path} does not exist.`), await h.stub.news(args.attemptId, callOf(ctx, h)));
       } catch (e) {
         return fail(e);
       }
@@ -164,13 +175,14 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
   defineTool({
     name: "gitring_list",
     title: "List files",
-    description: "List the files of your work copy (api mode). Give dir to list one folder.",
+    description: "List the files of your work copy (api mode). Give dir to list one folder. New change requests come after the list, in a second part.",
     inputSchema: { project, attemptId, dir: z.string().optional() },
     annotations: READS,
     async run(ctx, args) {
       try {
-        const r = await (await ctx.access(args.project)).stub.list(args.attemptId, args.dir);
-        return plain(r.join("\n"));
+        const h = await ctx.access(args.project);
+        const r = await h.stub.list(args.attemptId, args.dir);
+        return withNews(plain(r.join("\n")), await h.stub.news(args.attemptId, callOf(ctx, h)));
       } catch (e) {
         return fail(e);
       }
@@ -193,7 +205,8 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     annotations: CHANGES,
     async run(ctx, args) {
       try {
-        const res = await (await ctx.access(args.project)).stub.write({ attemptId: args.attemptId, files: args.files, message: args.message });
+        const h = await ctx.access(args.project);
+        const res = await h.stub.write({ attemptId: args.attemptId, files: args.files, message: args.message }, callOf(ctx, h));
         return writeAnswer(res);
       } catch (e) {
         return fail(e);
@@ -209,13 +222,15 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     annotations: ADDS,
     async run(ctx, args) {
       try {
-        const run = await (await ctx.access(args.project)).stub.check(args.attemptId);
+        const h = await ctx.access(args.project);
+        const run = await h.stub.check(args.attemptId, callOf(ctx, h));
+        const clr = await h.stub.news(args.attemptId, callOf(ctx, h));
         const headline = run.wait
           ? run.wait.message
           : noTestRan(run)
             ? "No test ran. A person must decide to merge this work."
             : `${run.passed}/${run.passed + run.failed} tests pass.${run.error ? ` Test runner error: ${run.error}` : ""}`;
-        return text(run, headline);
+        return text(withClearance(run, clr), headline, clr ?? undefined);
       } catch (e) {
         return fail(e);
       }
@@ -258,7 +273,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     title: "See the merge state",
     description:
       "See where your work copy is: with a person, sent back, in the merge queue, or merged. " +
-      "Call it after gitring_submit says that a person must say yes. It changes no file. " +
+      "Call it after gitring_submit says that a person must say yes. It changes no file. To wait for the answer, call gitring_wait instead of a sleep. " +
       "When a person sent the work back, the answer has a change request. Apply it, call gitring_ack, and submit again.",
     inputSchema: { project, attemptId },
     annotations: READS,
@@ -276,13 +291,16 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
   defineTool({
     name: "gitring_ack",
     title: "Confirm a change request",
-    description: "Confirm that you applied a change request (correctionId). Say in one line what you changed.",
+    description:
+      "Confirm that you applied a change request (correctionId). Say in one line what you changed. " +
+      "gitring checks your code against the lines and the signatures of the request. When the code still breaks them, the request stays open.",
     inputSchema: { project, attemptId, correctionId: z.string(), note: z.string().optional() },
     annotations: ADDS,
     async run(ctx, args) {
       try {
-        const clr = await (await ctx.access(args.project)).stub.ack(args.attemptId, args.correctionId, args.note);
-        return text(clr, `Confirmed. ${clr.advice}`, clr);
+        const h = await ctx.access(args.project);
+        const res = await h.stub.ack(args.attemptId, args.correctionId, args.note, callOf(ctx, h));
+        return text(res, res.outcome === "open" ? res.message : `${res.message} ${res.clearance.advice}`, res.clearance);
       } catch (e) {
         return fail(e);
       }
@@ -301,8 +319,37 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     annotations: CHANGES,
     async run(ctx, args) {
       try {
-        const res = await (await ctx.access(args.project)).stub.update(args.attemptId);
-        return text(res, res.message);
+        const h = await ctx.access(args.project);
+        const res = await h.stub.update(args.attemptId, callOf(ctx, h));
+        const clr = await h.stub.news(args.attemptId, callOf(ctx, h));
+        return text(withClearance(res, clr), res.message, clr ?? undefined);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  }),
+
+  defineTool({
+    name: "gitring_wait",
+    title: "Wait for news",
+    description:
+      "Wait for news about your work copy. News is a change request, a move of main, the answer of a person, or a new status. " +
+      "The answer comes when news arrives, or when the time is over. The time is 25 seconds, or the seconds that you give (50 at most). " +
+      "When you wait for a merge, a person, or other agents, call gitring_wait instead of a sleep. " +
+      "The answer can hold change requests. Apply them, then call gitring_ack.",
+    inputSchema: {
+      project,
+      attemptId,
+      seconds: z.number().int().min(1).max(50).optional().describe("How long to wait at most, in seconds (1 to 50). 25 if you leave it out."),
+    },
+    // It changes no file. It delivers the change requests of the work copy, so it is not a tool that only reads.
+    annotations: ADDS,
+    async run(ctx, args) {
+      try {
+        const h = await ctx.access(args.project);
+        const res = await h.stub.wait(args.attemptId, { ...callOf(ctx, h), seconds: args.seconds });
+        const news = res.events.filter((e) => e.kind !== "change-request").map((e) => e.message);
+        return text(res, [...news, res.message].join(" "), res.clearance);
       } catch (e) {
         return fail(e);
       }
@@ -316,7 +363,8 @@ const INSTRUCTIONS =
   "Write your work. Apply each change request and call gitring_ack. " +
   "Then call gitring_check and gitring_submit. " +
   "gitring_submit can answer that a person must say yes. Tell the person that the work waits. Do not change the work copy. " +
-  "Call gitring_status to see the answer.";
+  "Call gitring_status to see the answer. " +
+  "When you wait for a merge, a person, or other agents, call gitring_wait instead of a sleep.";
 
 const READONLY_INSTRUCTIONS =
   "This is the read-only endpoint of gitring. You can list tasks, see the work near yours and read files. " +
@@ -334,7 +382,7 @@ async function createServer(env: Env, who: Principal, set: McpSet, origin: strin
   // The key of the questions in chat comes from GITRING_SECRET: every instance of the Worker has the same key.
   const ask = await askCodec(env, who);
   const server = new McpServer({ name: "gitring", version: MCP_VERSION }, { instructions, ...(ask ? { requestState: { verify: ask.verify } } : {}) });
-  registerTools(server, makeContext(env, who, { listHow: set === "github" ? GITHUB_LIST_HOW : undefined, origin, ask }), tools);
+  registerTools(server, makeContext(env, who, { listHow: set === "github" ? GITHUB_LIST_HOW : undefined, checkHow: set === "github" ? GITHUB_CHECK_HOW : undefined, origin, ask }), tools);
   return server;
 }
 

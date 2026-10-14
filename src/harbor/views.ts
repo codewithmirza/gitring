@@ -207,6 +207,7 @@ export const PROTOCOL = [
   "Call gitring_check before gitring_submit. Do not edit the test files of other tasks.",
   "When gitring_submit says that a person must say yes, tell the person and wait. Do not change the work copy. Call gitring_status to see the answer.",
   "Read gitring_traffic before you edit a shared file. Call gitring_update when main moves.",
+  "When you wait for a merge, a person, or other agents, call gitring_wait instead of a sleep.",
 ];
 
 /** ASD-STE100 friendly short reason for check failures. */

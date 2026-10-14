@@ -12,7 +12,7 @@ import { ORIGIN, World } from "../github/harness";
 import { callTool, makeProject, modernCall, oauthTokens, send } from "./support";
 
 const URL_OF = { gitring: `${ORIGIN}/mcp`, github: `${ORIGIN}/mcp/github`, readonly: `${ORIGIN}/mcp/readonly` } as const;
-const CHANGING = ["gitring_declare", "gitring_log", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update"];
+const CHANGING = ["gitring_declare", "gitring_log", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update", "gitring_wait"];
 
 let world: World;
 let key: string;

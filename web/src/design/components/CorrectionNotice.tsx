@@ -23,6 +23,8 @@ const STATUS = {
   delivered: { icon: "send" as const, text: "Delivered" },
   acknowledged: { icon: "check" as const, text: "Acknowledged" },
   superseded: { icon: "cross" as const, text: "Replaced" },
+  // The work merged before the agent confirmed the change request.
+  closed: { icon: "merge" as const, text: "Closed at merge" },
 };
 
 /** A rebase change request carries the agent's earlier diffs after the sentences, as ```diff blocks. */
@@ -121,6 +123,12 @@ export function CorrectionNotice({ correction: c, from, to, check, nameOf, size 
         <div className="b-corr__meta">
           <Icon name="check" size={12} />
           <span className="b-corr__ack">“{c.ackNote}”</span>
+        </div>
+      )}
+      {c.check?.applied === false && c.status === "delivered" && (
+        <div className="b-corr__meta" role="note">
+          <Icon name="info" size={12} />
+          <span>The agent confirmed it, but the code check failed: {c.check.reason}</span>
         </div>
       )}
       {check && nameOf && (

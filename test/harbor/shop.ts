@@ -218,13 +218,19 @@ export class ScriptedAgent {
     return res;
   }
 
-  /** Confirm every change request that the agent got and did not confirm yet. */
+  /**
+   * Confirm every change request that the agent got and did not confirm yet. gitring checks the code: a request
+   * that the code still breaks stays open, and the agent confirms it again after its next edit.
+   */
   async ackAll(): Promise<void> {
+    const later: Notice[] = [];
     while (this.unacked.length) {
       const nt = this.unacked.shift()!;
       // An answer to the ack can hold new change requests: `call` adds them to `unacked`.
-      await this.call("gitring_ack", { correctionId: nt.id, note: `Applied: ${nt.kind}.` });
+      const res = await this.call("gitring_ack", { correctionId: nt.id, note: `Applied: ${nt.kind}.` });
+      if (res.json?.outcome === "open") later.push(nt);
     }
+    this.unacked.push(...later);
   }
 
   /** Wait until the agents that continue have left the traffic (merged or stopped). */
@@ -250,6 +256,8 @@ export class ScriptedAgent {
       // carries the change requests: the work comes back when it cannot merge.
       const u = await this.call("gitring_update");
       if (!u.ok) return /is merged/.test(u.text) ? "landed" : "closed";
+      // The answer of gitring_update carries the change requests too: the work came back.
+      if (u.notices.length) return "returned";
       if (polls % 4 === 3) {
         const l = await this.call("gitring_log", { message: "Waiting for the merge." });
         if (l.notices.length) return "returned";

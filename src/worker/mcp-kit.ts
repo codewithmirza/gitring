@@ -11,7 +11,7 @@ import type { Env } from "./env";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
-import type { HarborMaster } from "../harbor/harbor";
+import type { CallInfo, HarborMaster } from "../harbor/harbor";
 import { adviceFor } from "../harbor/views";
 import { directory, type Principal } from "./auth";
 
@@ -37,6 +37,8 @@ export type HarborApi = Pick<
   | "createIntent"
   | "status"
   | "decide"
+  | "news"
+  | "wait"
 >;
 
 /** The four MCP hints. Every tool sets all four: directories need a read-only or a destructive hint on each tool. */
@@ -84,6 +86,15 @@ export interface ToolContext {
   ask?: RequestStateCodec<AskState>;
   /** The project object, after a role check (member to act, viewer to read). */
   access(raw: string | undefined, need?: A.Role): Promise<{ id: string; stub: HarborApi; role: A.Role }>;
+}
+
+/**
+ * What the project object must know about the caller of a tool: the person and the role that the Worker
+ * checked (absent for the operator key), and the address of this deployment. The project object decides with
+ * it who may change a work copy and who gets its change requests.
+ */
+export function callOf(ctx: ToolContext, h: { role: A.Role }): CallInfo {
+  return { origin: ctx.origin, ...(ctx.who.user ? { viewer: { id: ctx.who.user.id, role: h.role } } : {}) };
 }
 
 /** What a tool answers: a result, or a question for the person (MCP 2026-07-28: the client asks, then calls the tool again). */
@@ -150,22 +161,39 @@ export function isObjectReset(err: unknown): boolean {
  * The calls that give the same result when they run twice: reads, and writes that repeat without harm (the same
  * file text again, a second submit of the same work, a second ack). A call that makes something new (declare,
  * createIntent) or records a decision of a person (decide) is not here: when the first call did run, a second one
- * would make a second work copy or a second decision.
+ * would make a second work copy or a second decision. A wait is safe to send twice, but gitring does not send it
+ * again by itself: a second wait of up to 50 seconds can be longer than the client waits for the answer.
  */
 const AGAIN: ReadonlySet<string> = new Set([
   "ensure", "openIntents", "log", "traffic", "read", "list", "state", "tree", "file", "attemptDiff", "status",
-  "write", "submit", "ack", "check", "update",
+  "write", "submit", "ack", "check", "update", "news",
 ]);
+
+/** What an agent does after a restart stopped a call that is not safe to send again (gitring tools). */
+export const CHECK_HOW = "Call gitring_status or gitring_intents to see if your call took effect before you send it again.";
+
+/** The error of a call that is not safe to send again, after a restart: fail() tells the agent to look first. */
+interface NotSentAgain extends Error {
+  retryable: true;
+  /** What the agent does before it sends the call again. */
+  checkFirst: string;
+}
+
+function notSentAgain(err: unknown, checkHow: string): NotSentAgain {
+  return Object.assign(new Error(String((err as Error)?.message ?? err)), { retryable: true as const, checkFirst: checkHow });
+}
 
 /** How many times a call is sent when the project object restarts (the first call counts). */
 const RESET_TRIES = 3;
 
 /**
  * A project object for a caller. A call from the AGAIN list that fails because the object restarted is sent
- * again with a new stub (a stub that saw this error can be broken), after 250 and 500 ms. Other calls and other
- * errors pass through as they are. `make` gives a new stub of the same object.
+ * again with a new stub (a stub that saw this error can be broken), after 250 and 500 ms. Other errors pass
+ * through as they are. The restart error of a call that is not safe to send again carries `checkHow`: what the
+ * agent does before it sends the call again (a wait is safe, so its error stays as it is). `make` gives a new
+ * stub of the same object.
  */
-export function retryAfterReset<T extends object>(make: () => T, sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))): T {
+export function retryAfterReset<T extends object>(make: () => T, sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)), checkHow = CHECK_HOW): T {
   let stub = make();
   // The target holds only what the caller sets on the object (Object.assign(stub, { role })). The methods and
   // the other properties come from the stub that is current when the call is made.
@@ -176,7 +204,16 @@ export function retryAfterReset<T extends object>(make: () => T, sleep: (ms: num
       const value = Reflect.get(stub, prop, stub) as unknown;
       if (typeof value !== "function") return value;
       const send = (args: unknown[]) => (stub as unknown as Record<string, (...a: unknown[]) => unknown>)[prop](...args);
-      if (!AGAIN.has(prop)) return (...args: unknown[]) => send(args);
+      if (!AGAIN.has(prop)) {
+        return async (...args: unknown[]) => {
+          try {
+            return await send(args);
+          } catch (err) {
+            // The first call can have run before the stop. The agent looks before it sends the call again.
+            throw isObjectReset(err) && prop !== "wait" ? notSentAgain(err, checkHow) : err;
+          }
+        };
+      }
       return async (...args: unknown[]) => {
         for (let tries = 1; ; tries++) {
           try {
@@ -192,8 +229,9 @@ export function retryAfterReset<T extends object>(make: () => T, sleep: (ms: num
   });
 }
 
-export function makeContext(env: Env, who: Principal, opts: { listHow?: string; origin?: string; ask?: RequestStateCodec<AskState> } = {}): ToolContext {
+export function makeContext(env: Env, who: Principal, opts: { listHow?: string; checkHow?: string; origin?: string; ask?: RequestStateCodec<AskState> } = {}): ToolContext {
   const listHow = opts.listHow ?? LIST_HOW;
+  const checkHow = opts.checkHow ?? CHECK_HOW;
   return {
     env,
     who,
@@ -210,7 +248,7 @@ export function makeContext(env: Env, who: Principal, opts: { listHow?: string; 
         found = role;
       }
       const objectId = env.HARBOR.idFromName(id);
-      const stub = retryAfterReset(() => env.HARBOR.get(objectId) as unknown as HarborApi);
+      const stub = retryAfterReset(() => env.HARBOR.get(objectId) as unknown as HarborApi, undefined, checkHow);
       return { id, stub, role: found };
     },
   };
@@ -218,7 +256,7 @@ export function makeContext(env: Env, who: Principal, opts: { listHow?: string; 
 
 /* ───────────────────────── answers ───────────────────────── */
 
-export const KIND_WORD: Record<string, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed" };
+export const KIND_WORD: Record<string, string> = { interface: "function change", region: "same lines", duplicate: "same task", upstream: "main moved", "intent-amended": "task changed", review: "sent back by a person" };
 export const VERDICT_WORD: Record<string, string> = { clear: "clear", correct: "change request", "merge-intents": "same task as other work", escalate: "a person decides" };
 
 /**
@@ -280,8 +318,31 @@ export function plain(message: string): ToolResult {
   return { content: [{ type: "text" as const, text: message }] };
 }
 
-/** The answer when a tool stops with an error. A restart of the project object gets plain words: the work is kept. */
+/**
+ * The answer of a tool that reads a file of a work copy (a file text, a list of paths): the text stays clean in
+ * the first block, and the new change requests come in a second block that starts with "GITRING CHANGE REQUEST".
+ */
+export function withNews(res: ToolResult, clr: T.Clearance | null | undefined, opts: { github?: boolean } = {}): ToolResult {
+  if (!clr?.corrections.length) return res;
+  const news = text(clr, `Conflict check: ${VERDICT_WORD[clr.verdict] ?? clr.verdict}. ${clr.advice}`, clr, opts);
+  return { ...res, content: [...res.content, ...news.content] };
+}
+
+/** An answer object with the conflict check of the work copy in it, when the caller gets one (see HarborMaster.news). */
+export function withClearance<O extends object>(obj: O, clr: T.Clearance | null | undefined): O | (O & { clearance: T.Clearance }) {
+  return clr ? { ...obj, clearance: clr } : obj;
+}
+
+/**
+ * The answer when a tool stops with an error. A restart of the project object gets plain words: the work is
+ * kept. When the call was not safe to send again (declare, createIntent, decide), the agent looks first.
+ */
 export function fail(err: unknown): ToolResult {
-  const message = isObjectReset(err) ? "gitring restarted this project for a moment. The work you already sent is kept. Send the same call again." : String((err as Error)?.message ?? err);
+  const first = (err as Partial<NotSentAgain> | null | undefined)?.checkFirst;
+  const message = !isObjectReset(err)
+    ? String((err as Error)?.message ?? err)
+    : first
+      ? `gitring restarted this project for a moment. ${first}`
+      : "gitring restarted this project for a moment. The work you already sent is kept. Send the same call again.";
   return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true };
 }
