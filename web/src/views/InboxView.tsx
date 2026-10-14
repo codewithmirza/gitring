@@ -64,7 +64,7 @@ function ApprovalItemCard({ item, now }: { item: InboxItem; now: number }) {
       </h2>
       <p className="inbox-card__headline">{item.headline}</p>
       <p className="inbox-card__line">
-        {item.agent && <span className="voice-agent">{item.agent}</span>} {factsLine(item.line, item.why)}
+        {item.agent && <span className="voice-agent">{item.agent}</span>} {factsLine(item.line ?? "", item.why)}
       </p>
       <ul className="inbox-card__why">
         {item.why.map((w, i) => (
