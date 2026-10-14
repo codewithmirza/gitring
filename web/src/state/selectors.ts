@@ -476,7 +476,7 @@ const queueMemo = memo(
         kind: "question",
         intentId: q.intentId,
         title: intentById.get(q.intentId)?.title ?? "A decision needs a person",
-        detail: q.kind === "escalation" ? "Which work adapts? A person decides" : "The work did not merge. A person decides what happens next",
+        detail: q.kind === "escalation" ? "Which work adapts? A person decides" : q.kind === "steward" ? "A note from the steward. Seen closes it" : "The work did not merge. A person decides what happens next",
         question: q,
         mayAnswer: canAnswerQuestion(
           q.attemptIds.map((id) => attemptsById.get(id)?.sender),

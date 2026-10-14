@@ -87,6 +87,11 @@ export interface ProjectSettings {
   redo: RedoPolicy;
   /** agent-first: minutes to wait for the outside agent before a built-in agent starts (5–120). */
   redoWaitMinutes: number;
+  /**
+   * The steward watches the project while agents work (harbor/steward.ts): every few minutes it counts the
+   * facts of the records and puts a real anomaly into the inbox in plain words. Off by default.
+   */
+  steward: boolean;
 }
 
 /**
@@ -795,10 +800,13 @@ export interface Decision {
  *               or says that the two do not conflict. Both agents continue while they wait.
  *   redo        the work could not merge, and no agent may try again (the redo limit, or the agent did not
  *               answer in time). A person starts a redo on the new main, or pauses the task.
+ *   steward     the steward noticed an anomaly (a test that fails again and again, change requests that
+ *               bounce, hot lines, a test that flaps, a merge queue that does not move). The one answer
+ *               is "Seen": the note closes.
  *
  * The first valid answer counts. A question closes without an answer when its work copies close.
  */
-export type QuestionKind = "escalation" | "redo";
+export type QuestionKind = "escalation" | "redo" | "steward";
 
 export type QuestionStatus = "open" | "answered" | "closed";
 
@@ -827,6 +835,10 @@ export interface Question {
    * answer sends it to that side.
    */
   drafts?: Record<string, { attemptId: string; standOnAttemptId: string; kind: CorrectionKind; message: string; constraints: Correction["constraints"] }>;
+  /** Steward: the key of the fact (harbor/steward.ts Finding.key). One open note for one fact. */
+  fact?: string;
+  /** Steward: how large the fact was (runs, requests or minutes). A note comes again when this doubles. */
+  measure?: number;
   askedAt: Millis;
   updatedAt: Millis;
   answer?: { by: Person; option: string; note?: string; at: Millis };
@@ -1180,6 +1192,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   redo: "agent-first",
   redoWaitMinutes: 15,
   allowUntested: false,
+  steward: false,
 };
 
 /**

@@ -18,6 +18,7 @@ import { RepoSelect } from "./newproject/RepoSelect";
 import { APPROVAL_EVENT_NOTE, APPROVER_CHOICES, APPROVER_LEGEND, LANDING_CHOICES, LANDING_LEGEND, WEBHOOK_EVENTS, approverOf, landingOf, untestedHelp } from "./approval-copy";
 import { ChoiceList } from "./ChoiceList";
 import { SECRET_ONCE, SIGNATURE_HELP, secretLine } from "./webhook-copy";
+import { STEWARD_LABEL, stewardHelp } from "./steward-copy";
 import "./projects.css";
 
 /** Save a part of the settings. The server merges it and answers the full settings (or an error to show inline). */
@@ -385,6 +386,9 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
   const [landing, setLanding] = useState<LandingMode>(savedLanding);
   const [approver, setApprover] = useState<ApproverRule>(savedApprover);
   const [intentsInRepo, setIntentsInRepo] = useState(settings.intentsInRepo);
+  // A server from before the steward sends no `steward`: off.
+  const savedSteward = Boolean(settings.steward);
+  const [steward, setSteward] = useState(savedSteward);
   const [redo, setRedo] = useState<RedoPolicy>(settings.redo ?? "agent-first");
   const [wait, setWait] = useState(String(settings.redoWaitMinutes ?? 15));
   const { busy, error, setError, save } = useSave(projectId, onSaved);
@@ -394,14 +398,16 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
     setLanding(savedLanding);
     setApprover(savedApprover);
     setIntentsInRepo(settings.intentsInRepo);
+    setSteward(savedSteward);
     setRedo(settings.redo ?? "agent-first");
     setWait(String(settings.redoWaitMinutes ?? 15));
-  }, [savedLanding, savedApprover, settings.intentsInRepo, settings.redo, settings.redoWaitMinutes]);
+  }, [savedLanding, savedApprover, settings.intentsInRepo, savedSteward, settings.redo, settings.redoWaitMinutes]);
 
   const dirty =
     landing !== savedLanding ||
     approver !== savedApprover ||
     intentsInRepo !== settings.intentsInRepo ||
+    steward !== savedSteward ||
     redo !== (settings.redo ?? "agent-first") ||
     (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15));
   const submit = () => {
@@ -411,7 +417,7 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
       return;
     }
     // `landing` replaces the old `autoLand`: the server keeps `autoLand` equal to it, so the form never writes `autoLand`.
-    void save({ landing, approver, intentsInRepo, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
+    void save({ landing, approver, intentsInRepo, steward, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
   };
 
   return (
@@ -432,6 +438,8 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
           disabled={!owner}
           onChange={(e) => setIntentsInRepo(e.target.checked)}
         />
+        <Checkbox label={STEWARD_LABEL} checked={steward} disabled={!owner} onChange={(e) => setSteward(e.target.checked)} />
+        <p className="np__help">{stewardHelp(steward)}</p>
       </div>
       <div className="st-row">
         <Field label="When the work of an outside agent cannot merge" help={REDO_HELP[redo]}>

@@ -189,6 +189,13 @@ export class Db {
       .toArray()
       .map((r) => r.attempt_id);
   }
+  /** The queue with the time each work copy entered it, oldest first (the steward reads it). */
+  queueEntries(): { attemptId: string; at: number }[] {
+    return this.sql
+      .exec<{ attempt_id: string; at: number }>("SELECT attempt_id, at FROM queue ORDER BY at ASC")
+      .toArray()
+      .map((r) => ({ attemptId: r.attempt_id, at: Number(r.at) }));
+  }
 
   /* main commits in order */
   /** Add a commit that became main. A commit that is in the list already keeps its place. Returns its place. */
