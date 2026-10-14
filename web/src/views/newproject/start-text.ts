@@ -17,6 +17,8 @@ export const SOURCES: { kind: StartKind; icon: IconName; title: string; text: st
 ];
 
 export const DESCRIBE_LABEL = "Describe what you want to build";
+/** The line under the field while "Next" cannot work: it says what turns the button on. */
+export const DESCRIBE_WAIT = "Describe the project to continue.";
 export const DESCRIBE_HINT = "gitring picks a template, writes the first task and starts an agent. You can change each choice.";
 export const NEW_PROJECT_LEDE = "Describe it, start from a template, or bring your code. Agents start at once.";
 export const CONNECT_GITHUB_NOTE = "to import your repositories. It is optional.";

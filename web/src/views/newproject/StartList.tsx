@@ -11,7 +11,7 @@ import { Icon } from "../../design/icons";
 import { githubConnectUrl } from "../../state/github";
 import type { MeWithInstall } from "../../state/account";
 import { GithubMark } from "./marks";
-import { CONNECT_GITHUB_NOTE, DESCRIBE_HINT, DESCRIBE_LABEL, SOURCES, type StartKind } from "./start-text";
+import { CONNECT_GITHUB_NOTE, DESCRIBE_HINT, DESCRIBE_LABEL, DESCRIBE_WAIT, SOURCES, type StartKind } from "./start-text";
 
 export type { StartKind } from "./start-text";
 
@@ -62,15 +62,18 @@ export function StartList({ me, description, onDescription, onDescribe, onPick, 
             value={description}
             onChange={(e) => onDescription(e.target.value)}
             placeholder="A JSON API for my shop, with tests"
-            aria-describedby={`${uid}-describe-hint`}
+            aria-describedby={`${uid}-describe-wait ${uid}-describe-hint`}
             autoComplete="off"
             enterKeyHint="next"
             maxLength={4000}
           />
-          <Button type="submit" variant="primary" iconRight="arrow-right" disabled={!description.trim()}>
+          <Button type="submit" variant="primary" iconRight="arrow-right" disabled={!description.trim()} aria-describedby={`${uid}-describe-wait`}>
             Next
           </Button>
         </div>
+        <p className="np-describe__wait" id={`${uid}-describe-wait`}>
+          {description.trim() ? "" : DESCRIBE_WAIT}
+        </p>
         <p className="np-describe__hint" id={`${uid}-describe-hint`}>
           {DESCRIBE_HINT}
         </p>
