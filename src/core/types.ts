@@ -788,7 +788,7 @@ export interface RadarPair {
   b: string;
   range: Range;
   closing: boolean;
-  /** Last course-check verdict that involved both. */
+  /** Last course-check verdict that involved both ("clear" for a pair that is too far apart to collide). */
   verdict?: Verdict;
   updatedAt: Millis;
 }

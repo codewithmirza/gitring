@@ -77,6 +77,9 @@ export class Db {
   putRadar(a: string, b: string, doc: unknown): void {
     this.sql.exec("INSERT OR REPLACE INTO radar (a, b, json) VALUES (?, ?, ?)", a, b, JSON.stringify(doc));
   }
+  deleteRadar(a: string, b: string): void {
+    this.sql.exec("DELETE FROM radar WHERE a = ? AND b = ?", a, b);
+  }
 
   all<T>(table: DocTable | "landings" | "radar"): T[] {
     return this.sql

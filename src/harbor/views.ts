@@ -133,11 +133,12 @@ export function knownMemberOf(definedIn: Readonly<Record<string, readonly string
 /**
  * The import graph of one course check: main, plus the import edges of the changed and new files of
  * the work copies in the check. An import that a work copy adds, and a file that it creates, then
- * count for the range (3 and 4) before they reach main.
+ * count for the range (3 and 4) before they reach main. The files in `skip` (the check files that
+ * gitring writes into each work copy) add no edges: they are not the work of an agent.
  */
-export function checkGraph(main: MainView, copies: Iterable<AttemptView>): ImportGraph {
+export function checkGraph(main: MainView, copies: Iterable<AttemptView>, skip: ReadonlySet<string> = new Set()): ImportGraph {
   const extra: [string, string][] = [];
-  for (const v of copies) if (v.imports) extra.push(...v.imports);
+  for (const v of copies) for (const e of v.imports ?? []) if (!skip.has(e[0])) extra.push(e);
   // The same edges as the last check: the same graph, so that its memo of distances stays.
   const key = extra.map(([a, b]) => `${a}\u0000${b}`).sort().join("\u0001");
   const last = lastCheckGraph.get(main.graph);

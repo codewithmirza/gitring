@@ -99,6 +99,8 @@ function regionKey(c: { kind: T.CorrectionKind; constraints: T.Correction["const
 }
 
 const MAX_CHECKS = 300;
+/** Above this many radar pairs, a check forgets the pairs of work that left the traffic (see trimRadar). */
+const MAX_RADAR_PAIRS = 2000;
 const TERMINAL: ReadonlySet<T.AttemptStatus> = new Set(["landed", "abandoned", "alternate", "failed", "stale"]);
 /** Default built-in AI agent starts per hour for the whole deployment (AI_AGENTS_PER_HOUR overrides). */
 const LLM_STARTS_PER_HOUR = 40;
@@ -1506,7 +1508,7 @@ export class HarborMaster extends DurableObject<Env> {
       if (pr) previous.set(v.attempt.id, pr.range);
     }
     // Main plus the imports that the work copies of this check add (new files included).
-    const graph = checkGraph(main, views.values());
+    const graph = checkGraph(main, views.values(), this.checkPaths());
     const measured = measureTraffic(incoming, traffic, graph, previous);
     const cands = pickCandidates(measured, 3).map((c) => ({
       view: c.view,
@@ -1602,23 +1604,26 @@ export class HarborMaster extends DurableObject<Env> {
     this.emit({ type: "check", check });
 
     // Radar: record range and closing for every measured pair, near or far, so that the next check sees a far
-    // pair come closer. A candidate pair gets the verdict of this check. A far pair keeps its last verdict, and
-    // it is written only when its range or closing changes.
+    // pair come closer. A candidate pair gets the verdict of this check. A far pair is too far apart to collide:
+    // "clear". A near pair after the 20 candidates keeps its last verdict. A pair that is not a candidate is
+    // written only when it changes.
     const pairs: T.RadarPair[] = [];
     const candidateIds = new Set(cands.map((c) => c.view.attempt.id));
     for (const m of measured) {
       const id = m.view.attempt.id;
       const before = this.radar.get(pairKey(a.id, id));
       const candidate = candidateIds.has(id);
-      if (!candidate && before && before.range === m.range && before.closing === m.closing) continue;
+      const far = m.range > 3 && !m.closing;
+      const verdict = candidate ? check.verdict : far ? "clear" : before?.verdict;
+      if (!candidate && before && before.range === m.range && before.closing === m.closing && before.verdict === verdict) continue;
       const pair: T.RadarPair = { a: a.id, b: id, range: m.range, closing: m.closing, updatedAt: Date.now() };
-      const verdict = candidate ? check.verdict : before?.verdict;
       if (verdict) pair.verdict = verdict;
       this.radar.set(pairKey(pair.a, pair.b), pair);
       this.db.putRadar(...sortPair(pair.a, pair.b), pair);
       pairs.push(pair);
     }
     if (pairs.length) this.emit({ type: "radar", pairs });
+    this.trimRadar();
 
     this.stats.courseChecks += 1;
     if (check.verdict === "clear") this.stats.clear += 1;
@@ -1663,6 +1668,23 @@ export class HarborMaster extends DurableObject<Env> {
     }
     this.persistStats();
     return check;
+  }
+
+  /**
+   * The radar keeps far pairs too, so it grows with each check. Above `max` pairs, it forgets each pair with a
+   * side that left the traffic for good (merged, stopped, replaced): no check and no view reads those pairs again.
+   */
+  private trimRadar(max = MAX_RADAR_PAIRS): void {
+    if (this.radar.size <= max) return;
+    const gone = (id: string): boolean => {
+      const x = this.attempts.get(id);
+      return !x || TERMINAL.has(x.status);
+    };
+    for (const [key, pair] of this.radar) {
+      if (!gone(pair.a) && !gone(pair.b)) continue;
+      this.radar.delete(key);
+      this.db.deleteRadar(...sortPair(pair.a, pair.b));
+    }
   }
 
   /** The change requests of the flagged pairs of a "merge-intents" check (the duplicate pair is not one of them). */

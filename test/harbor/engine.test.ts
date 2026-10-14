@@ -72,6 +72,28 @@ describe("the radar and closing pairs", () => {
     const check = await lastCheck(world, r);
     expect(check.facts.map((f) => [f.otherAttemptId, f.range, f.closing, f.previousRange])).toEqual([[a, 4, true, 5]]);
   });
+
+  it("marks a far pair as clear, and forgets the pairs of stopped work when the radar is full", async () => {
+    const world = await project();
+    const a = await declare(world, { files: ["src/a.js"] });
+    const r = await declare(world, { files: ["README.md"] });
+    const z = await declare(world, { files: ["src/z.js"] });
+    const pairOf = async (x: string, y: string) => (await world.harbor.state()).radar.find((p) => [p.a, p.b].sort().join() === [x, y].sort().join());
+    // Far pairs are measured, not checked: no conflict is possible, so the people see "No conflict".
+    expect(await pairOf(a, r)).toMatchObject({ range: 5, closing: false, verdict: "clear" });
+    expect(await pairOf(z, r)).toMatchObject({ range: 5, verdict: "clear" });
+    await world.harbor.giveUp(r, "Done.");
+    // Under the limit, the radar keeps every pair.
+    (world.harbor as unknown as { trimRadar(max?: number): void }).trimRadar();
+    expect(await pairOf(a, r)).toBeDefined();
+    // Over the limit, it forgets the pairs of the stopped work only, also in storage.
+    (world.harbor as unknown as { trimRadar(max?: number): void }).trimRadar(0);
+    expect(await pairOf(a, r)).toBeUndefined();
+    expect(await pairOf(z, r)).toBeUndefined();
+    expect(await pairOf(a, z)).toBeDefined();
+    world.restart();
+    expect((await world.harbor.state()).radar.map((p) => [p.a, p.b].sort().join())).toEqual([[a, z].sort().join()]);
+  });
 });
 
 describe("plans that name the functions they call (uses)", () => {
@@ -196,6 +218,21 @@ describe("the import graph and plan names", () => {
     const check = await lastCheck(world, y);
     // new.js imports z.js: one import apart, although main has no new.js.
     expect(check.facts.map((f) => [f.otherAttemptId, f.range])).toEqual([[x, 3]]);
+  });
+
+  it("adds no edges for the check files that gitring writes into a work copy", async () => {
+    const world = await project();
+    // The check of the task imports a.js and z.js. It is not the work of the agent.
+    const task = await world.harbor.createIntent({
+      title: "Round the prices",
+      goal: "Round every price.",
+      checks: [{ path: "tests/round.test.js", content: 'import { f } from "../src/a.js";\nimport { z } from "../src/z.js";\nexport const t = f(z);\n' }],
+    });
+    const x = await declare(world, { files: ["src/a.js"], intentId: task.id });
+    const y = await declare(world, { files: ["src/z.js"] });
+    const pair = (await world.harbor.state()).radar.find((p) => [p.a, p.b].sort().join() === [x, y].sort().join());
+    // With the edges of the check file, a.js and z.js would be two imports apart (range 4).
+    expect(pair).toMatchObject({ range: 5 });
   });
 
   it("follows tsconfig paths on main", async () => {
