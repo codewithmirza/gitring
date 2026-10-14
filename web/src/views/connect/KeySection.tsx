@@ -9,7 +9,7 @@ import { openSignIn } from "../../app/ui";
 import { Link } from "../../app/router";
 import { Icon } from "../../design/icons";
 import { type ConnectInfo } from "../../state/api";
-import { Section, useRemembered } from "./shared";
+import { Way, useRemembered } from "./shared";
 
 type KeyClient = "claude-code" | "codex" | "cursor" | "other";
 const KEY_TABS: { id: KeyClient; label: string }[] = [
@@ -46,9 +46,10 @@ export function KeySection({ info }: { info: ConnectInfo }) {
 
   const cursor = JSON.stringify({ mcpServers: { gitring: { url: info.mcpUrl, headers: { Authorization: "Bearer ${env:GITRING_KEY}" } } } }, null, 2);
   return (
-    <Section
+    <Way
       id="cx-keys"
-      title="Use an API key instead"
+      title="Use an API key"
+      note="For scripts, and for agent apps that cannot sign in."
       aside={
         <>
           <p>For scripts, hooks and MCP clients without OAuth. A key acts as you: it can do what your roles allow on each project. Keep it in an environment variable.</p>
@@ -103,6 +104,6 @@ export function KeySection({ info }: { info: ConnectInfo }) {
       <TabPanel idPrefix="cxk" id="other" active={tab === "other"} className="cx__panel">
         <CodeBlock label="MCP endpoint (streamable HTTP, header Authorization: Bearer <key>)" code={info.mcpUrl} copyLabel="Copy URL" />
       </TabPanel>
-    </Section>
+    </Way>
   );
 }

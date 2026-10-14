@@ -1,11 +1,11 @@
 /*
  * The styles of the connect page.
- * They cover the connector card, API keys, the flow diagram and copyable commands. Type sizes here: 11, 13, 15, 28.
+ * They cover the agent choice, the copy field, the folded ways, API keys and the flow diagram. Type sizes here: 11, 13, 15, 28.
  */
 
 .connect { max-width: 1200px; }
 
-/* ───────────── the connector card ───────────── */
+/* ───────────── the agent choice ───────────── */
 .cx-hero {
   display: grid;
   gap: var(--s-4);
@@ -19,7 +19,7 @@
 .cx-hero__text { display: grid; gap: var(--s-2); }
 .cx-hero__text p { margin: 0; max-width: 66ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
 .cx-hero .b-tabs { margin-top: var(--s-2); }
-.cx-url { display: flex; gap: var(--s-2); min-width: 0; max-width: 760px; }
+.cx-url { display: flex; align-items: flex-start; gap: var(--s-2); min-width: 0; max-width: 760px; }
 .cx-url__input {
   flex: 1;
   min-width: 0;
@@ -31,7 +31,11 @@
   color: var(--ink-1);
   font-size: var(--t-sm);
 }
-.cx-url .b-btn { height: 40px; }
+/* A command wraps, so that a phone never scrolls sideways. */
+.cx-url__cmd { height: auto; min-height: 40px; margin: 0; padding: var(--s-3); white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--lh-sm); }
+.cx-url__cmd code { display: block; font: inherit; }
+.cx-url__cmd .tok-p { color: var(--ink-3); user-select: none; }
+.cx-url .b-btn { height: 40px; flex: none; }
 .cx-steps { display: grid; gap: var(--s-2); margin: 0; padding-left: 22px; max-width: 70ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
 .cx-steps li::marker { color: var(--ink-3); font-family: var(--font-agent); }
 .cx-steps strong { font-weight: 600; }
@@ -61,6 +65,7 @@
 .cx-live__text strong { font-weight: 600; color: var(--ink-1); }
 .cx-live__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .cx-live__more { display: inline-block; margin-top: var(--s-1); font-size: var(--t-xs); }
+/* A still dot: the line itself changes when an agent signs in. Nothing loops. */
 .cx-live__wait {
   flex: none;
   width: 8px;
@@ -69,19 +74,35 @@
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-tint);
-  animation: cx-breathe 1.8s ease-in-out infinite;
 }
-@keyframes cx-breathe { 50% { opacity: .35; } }
 
-/* Under the connector: what a merge question is, and two other addresses (closed at first). */
-.cx-after { display: grid; gap: var(--s-2); min-width: 0; padding-top: var(--s-4); border-top: 1px solid var(--line); }
-.cx-after__title { margin: 0 0 var(--s-1); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--ink-1); }
+/* ───────────── more ways: each one folded ───────────── */
+.cx-more-ways { display: grid; gap: var(--s-4); margin-top: var(--s-10); min-width: 0; }
+.cx-ways { border-top: 1px solid var(--line); min-width: 0; }
+.cx-way { border-bottom: 1px solid var(--line); min-width: 0; }
+.cx-way__sum {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 300px) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  min-height: 48px;
+  padding: var(--s-3) 0;
+  list-style: none;
+  cursor: pointer;
+}
+.cx-way__sum::-webkit-details-marker { display: none; }
+.cx-way__title { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
+.cx-way__note { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.cx-way__sum:hover .cx-way__title { text-decoration: underline; text-underline-offset: 3px; }
+.cx-way__chevron { color: var(--ink-3); transition: transform var(--dur-1) var(--ease-out); }
+.cx-way[open] > .cx-way__sum .cx-way__chevron { transform: rotate(90deg); }
+.cx-way__body { padding: var(--s-2) 0 var(--s-8) calc(14px + var(--s-4)); min-width: 0; }
+.cx-way__body--cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--s-8); }
 .cx-lines { display: grid; gap: var(--s-2); margin: 0; padding-left: 20px; max-width: 70ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
 .cx-lines li::marker { color: var(--ink-3); }
 .cx-lines + .cx-more { margin-top: var(--s-2); }
-.cx-more__body { display: grid; gap: var(--s-3); min-width: 0; padding-bottom: var(--s-3); }
 
-/* ───────────── sections ───────────── */
+/* ───────────── the flow diagram ───────────── */
 .flowfig { margin: 0; padding: var(--s-6); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); min-width: 0; }
 .flow { display: block; width: 100%; height: auto; overflow: visible; }
 .flow * { vector-effect: non-scaling-stroke; }
@@ -105,21 +126,13 @@
 .flow__arrowhead--magenta { fill: var(--magenta); }
 .flow__returnlabel { font-family: var(--font-agent); font-size: 11px; fill: var(--magenta); paint-order: stroke; stroke: var(--surface-1); stroke-width: 5px; stroke-linejoin: round; }
 
-.cx {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: var(--s-8);
-  padding: var(--s-8) 0;
-  border-top: 1px solid var(--line);
-}
-.cx-hero + .cx { margin-top: var(--s-9); }
-.cx--wide { grid-template-columns: minmax(0, 1fr); gap: var(--s-4); }
+/* ───────────── the text and code of a way ───────────── */
 .cx__text { display: grid; gap: var(--s-3); align-content: start; }
 .cx__text p { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); max-width: 52ch; }
 .cx__note { display: flex; align-items: baseline; gap: var(--s-2); margin: 0; color: var(--ink-3) !important; font-size: var(--t-xs) !important; line-height: var(--lh-xs); }
 .cx__note .b-icon { flex: none; transform: translateY(2px); }
 .cx__code { display: grid; gap: var(--s-3); min-width: 0; align-content: start; }
-.cx__panel { display: grid; gap: var(--s-3); padding-top: var(--s-3); min-width: 0; }
+.cx__panel { display: grid; gap: var(--s-4); padding-top: var(--s-3); min-width: 0; }
 .cx__panel[hidden] { display: none; }
 .cx__step { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); max-width: 70ch; }
 .cx__steps { display: grid; gap: var(--s-2); margin: 0; padding-left: 20px; max-width: 52ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
@@ -134,20 +147,25 @@
 .tools li span:last-child { color: var(--ink-2); }
 
 @media (max-width: 960px) {
-  .cx { grid-template-columns: 1fr; gap: var(--s-4); }
+  .cx-way__body--cols { grid-template-columns: 1fr; gap: var(--s-4); }
 }
 @media (max-width: 760px) {
   .flowfig { padding: var(--s-4); }
   .tools li { grid-template-columns: 1fr; gap: 2px; }
+  .cx-way__sum { grid-template-columns: 14px minmax(0, 1fr); gap: 2px var(--s-3); }
+  .cx-way__note { grid-column: 2; }
+  .cx-way__body { padding-left: 0; }
 }
 @media (max-width: 600px) {
   .cx-hero { padding: var(--s-4); margin-left: calc(-1 * var(--s-1)); margin-right: calc(-1 * var(--s-1)); }
-  .cx-url { flex-direction: column; }
+  .cx-url { flex-direction: column; align-items: stretch; }
   .cx-url__input, .cx-url .b-btn { height: 44px; }
-  .cx-url__input { font-size: 16px; }
+  .cx-url__cmd { height: auto; }
+  .cx-url__input:not(.cx-url__cmd) { font-size: 16px; }
   .connect .b-btn { min-height: 44px; }
   .connect .b-tab { height: 44px; }
+  .cx-way__sum { min-height: 56px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cx-live__wait { animation: none; }
+  .cx-way__chevron { transition: none; }
 }
