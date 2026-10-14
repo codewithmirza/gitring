@@ -12,8 +12,9 @@ import { dropInboxItem, refreshInbox, type InboxItem } from "../../state/inbox";
 export function WaitingQuestion({ item, more }: { item: InboxItem; more: number }) {
   const titleId = useId();
   const sending = useAnswering(item.approvalId ?? "");
-  const isMerge = (item.kind === "approval" || item.kind === "stopped") && item.attemptId && item.approvalId;
-  const yes = item.actions.find((a) => a.primary) ?? item.actions[0];
+  // The yes of a merge question is the same action that the inbox sends: the action with the id "approve".
+  const yes = item.actions.find((a) => a.id === "approve");
+  const isMerge = Boolean(yes && item.attemptId && item.approvalId);
 
   const answer = async () => {
     if (!item.attemptId || !item.approvalId) return;
@@ -39,7 +40,7 @@ export function WaitingQuestion({ item, more }: { item: InboxItem; more: number 
         {isMerge ? (
           <>
             <Button size="sm" variant="primary" icon="merge" busy={sending === "approve"} aria-describedby={titleId} onClick={() => void answer()}>
-              {yes?.label ?? "Yes, merge"}
+              {yes?.label}
             </Button>
             <Link to={item.link} className="pj-ask__link">
               See the change
