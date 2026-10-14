@@ -52,6 +52,27 @@ describe("the push keys of the deployment", () => {
     }
   });
 
+  it("refuse long or odd push addresses", () => {
+    expect(pushEndpointOk(`https://push.example.org/${"a".repeat(1000)}`)).toBe(false);
+    for (const bad of ["https://[::1]/x", "https://169.254.169.254/x", "https://2130706433/x", "https://printer.local/x", "https://intranet/x"]) {
+      expect(pushEndpointOk(bad), bad).toBe(false);
+    }
+  });
+
+  it("send with a time limit and do not follow a redirect", async () => {
+    const k = await makeKeys();
+    const seen: RequestInit[] = [];
+    const redirect = (async (_url: string, init: RequestInit) => (seen.push(init), new Response(null, { status: 302, headers: { location: "https://10.0.0.1/x" } }))) as unknown as typeof fetch;
+    expect(await sendPush(k, "https://push.example.org/a", redirect)).toBe("failed");
+    expect(seen[0].redirect).toBe("manual");
+    expect(seen[0].signal).toBeInstanceOf(AbortSignal);
+    const hang = ((_url: string, init: RequestInit) => Promise.reject(new Error(init.signal!.aborted ? "aborted" : "no timeout"))) as unknown as typeof fetch;
+    const spy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => AbortSignal.abort());
+    expect(await sendPush(k, "https://push.example.org/a", hang)).toBe("failed");
+    expect(spy).toHaveBeenCalledWith(10_000);
+    spy.mockRestore();
+  });
+
   it("send an empty push, and say when the device is gone", async () => {
     const k = await makeKeys();
     const seen: { url: string; init: RequestInit }[] = [];

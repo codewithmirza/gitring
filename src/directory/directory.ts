@@ -245,14 +245,14 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** The device sign-in that waits for the user code that this person typed on /device. */
-  async oauthDevice(userCode: string, userId: string): Promise<{ ok: true; device: PendingDevice } | { ok: false; reason: "unknown" | "locked" }> {
-    return this.oauth.deviceLookup(userCode, userId);
+  async oauthDevice(userCode: string, userId: string, address?: string): Promise<{ ok: true; device: PendingDevice } | { ok: false; reason: "unknown" | "locked" }> {
+    return this.oauth.deviceLookup(userCode, userId, address);
   }
 
   /** The person allows the device sign-in, or not. Null when the code does not wait any more. */
-  async oauthDeviceDecide(userCode: string, userId: string, allow: boolean): Promise<PendingDevice | null> {
+  async oauthDeviceDecide(userCode: string, userId: string, allow: boolean, address?: string): Promise<PendingDevice | null | "locked"> {
     if (!this.userInfo(userId)) return null;
-    return this.oauth.deviceDecide(userCode, userId, allow);
+    return this.oauth.deviceDecide(userCode, userId, allow, address);
   }
 
   /* ════════════════════ sealed config ════════════════════ */
@@ -1020,12 +1020,15 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** Remove a passkey. One way to sign in always stays: a person without identities keeps one passkey. */
-  async removePasskey(userId: string, id: string): Promise<void> {
+  async removePasskey(userId: string, id: string, keepToken?: string): Promise<void> {
     const rows = this.passkeyRows(userId);
     if (!rows.some((r) => r.id === id)) throw new Error("You have no passkey with this id.");
     const identities = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM identities WHERE user_id = ?", userId).one().n;
     if (rows.length === 1 && identities === 0) throw new Error("This passkey is your only way to sign in. Add another passkey or sign-in first.");
     this.sql.exec("DELETE FROM passkeys WHERE id = ? AND user_id = ?", id, userId);
+    // A lost or stolen device may hold a session: end the sessions of this person, except the one that removes the passkey.
+    if (keepToken) this.sql.exec("DELETE FROM sessions WHERE user_id = ? AND hash <> ?", userId, await sha256B64url(keepToken));
+    else this.sql.exec("DELETE FROM sessions WHERE user_id = ?", userId);
   }
 
   /* ════════════════════ people ════════════════════ */

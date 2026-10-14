@@ -284,6 +284,23 @@ describe("passkeys of a signed-in person", () => {
     await refusal(signIn(dir, key), /does not know this passkey/);
   });
 
+  it("ends the other sessions of a person when a passkey goes", async () => {
+    const dir = make();
+    const { key, user, token } = await createAccount(dir);
+    const second = await SoftAuthenticator.create();
+    const o = await dir.passkeyRegisterOptions({ ...RP, userId: user.id });
+    await dir.passkeyRegister(o.state, await second.register(o.options, ORIGIN), { origin: ORIGIN, userId: user.id });
+    const other = (await signIn(dir, key)).token;
+    const mine = (await signIn(dir, second)).token;
+    const sam = await createAccount(dir, "Sam");
+    await dir.removePasskey(user.id, key.credentialId, mine);
+    expect(await dir.sessionUser(other)).toBeNull();
+    expect(await dir.sessionUser(token!)).toBeNull();
+    expect((await dir.sessionUser(mine))?.id).toBe(user.id);
+    // Sessions of other people stay.
+    expect((await dir.sessionUser(sam.token!))?.id).toBe(sam.user.id);
+  });
+
   it("lets a person with a GitHub sign-in remove the only passkey", async () => {
     const dir = make();
     const gh = await githubSignIn(dir, { id: 7, login: "robin" });

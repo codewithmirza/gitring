@@ -157,7 +157,7 @@ export function deviceRoutes(app: Hono<HonoEnv>): void {
     const code = normalizeUserCode(typed);
     if (p.via !== "session" || !p.user) return signInPage(c, code, c.req.query("signin_error"));
     if (!typed) return codeFormPage(p.user);
-    const found = await directory(c.env).oauthDevice(typed, p.user.id);
+    const found = await directory(c.env).oauthDevice(typed, p.user.id, clientAddress(c.req.raw));
     if (!found.ok) {
       if (found.reason === "locked") return lockedPage();
       return codeFormPage(p.user, code ? "This code does not work. It expired, or it is not the code of your device. Check it and type it again." : "A code has 8 letters, for example BCDF-GHJK.", 400);
@@ -174,7 +174,8 @@ export function deviceRoutes(app: Hono<HonoEnv>): void {
       return page(TITLE, `<h1>Open this page in the same browser</h1><p>Type the code again on this page.</p><p><a class="btn" href="/device">Continue</a></p>`, 400);
     }
     const allow = form.decision === "allow";
-    const d = await directory(c.env).oauthDeviceDecide(form.code ?? "", p.user.id, allow);
+    const d = await directory(c.env).oauthDeviceDecide(form.code ?? "", p.user.id, allow, clientAddress(c.req.raw));
+    if (d === "locked") return lockedPage();
     if (!d) return goneCodePage();
     const name = d.builtin ? "The gitring command line" : `The app “${esc(d.clientName)}”`;
     return allow
