@@ -26,6 +26,7 @@ import { ADDS, CHANGES, READS, callOf, defineTool, fail, makeContext, newsFor, p
 import { GITHUB_CHECK_HOW, GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
 import { answerNote, answerPlace, askCodec, askInChat, isWaiting, statusReply, takeAnswer } from "./mcp-approval";
 import { PROJECT_TOOLS } from "./mcp-projects";
+import { HISTORY_TOOLS } from "./mcp-history";
 
 /** The version that the server tells to clients. */
 export const MCP_VERSION = "0.9.2";
@@ -365,6 +366,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     },
   }),
   ...PROJECT_TOOLS,
+  ...HISTORY_TOOLS,
 ];
 
 const INSTRUCTIONS =

@@ -10,6 +10,8 @@ import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
 import { DEFAULT_SETTINGS, isLandingMode, noTestRan, withDefaults } from "../core/types";
 import { Db } from "./store";
+import { DerivedHistory } from "./derived";
+import type { CompareAnswer, HistoryAnswer, SearchAnswer, WhyAnswer } from "../core/history";
 import { readTimeline } from "./timeline";
 import type { TimelinePage } from "../core/timeline";
 import { CHECK_RUN, callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
@@ -2905,6 +2907,12 @@ export class HarborMaster extends DurableObject<Env> {
       };
       this.landings.push(landing);
       this.db.putLanding(landing, note);
+      // The history of main follows in the background; a fault there never stops the merge record.
+      try {
+        this.derived.landed(touched.length);
+      } catch (e) {
+        console.warn("history", errorLine(e));
+      }
     }
     a.status = "landed";
     a.mergeWait = undefined;
@@ -4202,6 +4210,62 @@ export class HarborMaster extends DurableObject<Env> {
     const commit = await this.backend.readCommit(p.repo.name, ref);
     if (!commit) return null;
     return (await this.treeText(p.repo.name, commit.treeHash)).text.get(normPath(path)) ?? null;
+  }
+
+  /* ════════════════════════════ history questions (derived data: ./derived.ts) ════════════════════════════ */
+
+  private derivedData?: DerivedHistory;
+  private get derived(): DerivedHistory {
+    this.derivedData ??= new DerivedHistory({
+      sql: this.ctx.storage.sql,
+      main: () => {
+        const p = this.project;
+        return p && !p.importing && p.mainSha && p.mainTree ? { repo: p.repo.name, sha: p.mainSha, tree: p.mainTree } : undefined;
+      },
+      landings: () => this.landings,
+      note: (id) => this.db.landingNote(id),
+      callsign: (agentId) => this.agents.get(agentId)?.callsign ?? agentId,
+      title: (intentId) => this.intents.get(intentId)?.title ?? intentId,
+      commit: (sha) => this.backend.readCommit(this.requireProject().repo.name, sha),
+      readTree: async (tree) => {
+        const hit = this.treeCache.get(tree);
+        if (hit) return hit;
+        const entries = await this.backend.readTree(this.requireProject().repo.name, tree);
+        if (entries) this.treeCache.set(tree, entries);
+        return entries;
+      },
+      text: (blob) => this.readText(this.requireProject().repo.name, blob),
+      treeText: (tree) => this.treeText(this.requireProject().repo.name, tree),
+      workCopy: async (id) => {
+        const a = this.attempts.get(id);
+        if (!a) return undefined;
+        const view = await this.attemptView(a);
+        const deleted = view.changed.filter((c) => c.head === null).map((c) => c.path);
+        return { attempt: a, files: view.files, deleted, callsign: this.callsign(a.id) ?? a.agentId, title: this.intents.get(a.intentId)?.title ?? a.intentId };
+      },
+      background: (work) => this.ctx.waitUntil(work.catch((e) => console.warn("history", errorLine(e)))),
+    });
+    return this.derivedData;
+  }
+
+  /** Why a line (or a file) is what it is on main, a commit of main or a work copy. */
+  async why(input: { path: string; line?: number; ref?: string }): Promise<WhyAnswer> {
+    return this.derived.why(input);
+  }
+
+  /** The changes of a file or a folder, or of main, the newest first. */
+  async pathHistory(input: { path?: string; limit?: number }): Promise<HistoryAnswer> {
+    return this.derived.history(input);
+  }
+
+  /** Find a text in the files of main. */
+  async searchCode(input: { query: string; path?: string; limit?: number }): Promise<SearchAnswer> {
+    return this.derived.search(input);
+  }
+
+  /** The changes between two versions (main, a commit id or a work copy id), for all files or under a path. */
+  async compareRefs(from: string, to: string, path?: string): Promise<CompareAnswer> {
+    return this.derived.compare(from, to, path);
   }
 
   /** Files for a live preview: "main" or an attempt id. */

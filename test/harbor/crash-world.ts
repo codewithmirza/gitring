@@ -109,7 +109,8 @@ export class CrashWorld {
         },
       }),
     };
-    this.env = { ARTIFACTS_NAMESPACE: "gitring", LOADER, DIRECTORY: directory, DRYDOCK: drydock, ...extraEnv };
+    // A secret, as production has one: a webhook needs it for its signing secret.
+    this.env = { ARTIFACTS_NAMESPACE: "gitring", GITRING_SECRET: "crash-world-secret-0123456789abcdef", LOADER, DIRECTORY: directory, DRYDOCK: drydock, ...extraEnv };
   }
 
   /** Make the project (one commit on main). The worker runner runs the tests unless `runner` is "container". */

@@ -181,6 +181,8 @@ export function isObjectReset(err: unknown): boolean {
 const AGAIN: ReadonlySet<string> = new Set([
   "ensure", "openIntents", "log", "traffic", "read", "list", "state", "tree", "file", "attemptDiff", "status",
   "write", "submit", "ack", "check", "update", "news",
+  // History questions (src/worker/mcp-history.ts): reads.
+  "why", "pathHistory", "searchCode", "compareRefs",
 ]);
 
 /** What an agent does after a restart stopped a call that is not safe to send again (gitring tools). */

@@ -34,7 +34,7 @@ const GITHUB_NAMES = [
   "issue_read",
   "issue_write",
 ];
-const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_templates", "gitring_traffic"];
+const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_templates", "gitring_traffic", "gitring_why", "gitring_history", "gitring_search", "gitring_diff"].sort();
 const URL_OF = { gitring: `${ORIGIN}/mcp`, github: `${ORIGIN}/mcp/github`, readonly: `${ORIGIN}/mcp/readonly` } as const;
 
 describe("resource rules", () => {

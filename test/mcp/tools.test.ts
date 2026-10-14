@@ -11,8 +11,9 @@ import { steViolations } from "../coord/ste";
 import { World } from "../github/harness";
 import { callTool, legacyClient, makeProject, metadataProblems, modernCall, MODERN } from "./support";
 
-const NAMES = ["gitring_intents", "gitring_declare", "gitring_log", "gitring_traffic", "gitring_read", "gitring_list", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update", "gitring_status", "gitring_wait", "gitring_create_project", "gitring_templates", "gitring_clone"];
-const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_templates", "gitring_traffic"];
+const HISTORY = ["gitring_why", "gitring_history", "gitring_search", "gitring_diff"];
+const NAMES = ["gitring_intents", "gitring_declare", "gitring_log", "gitring_traffic", "gitring_read", "gitring_list", "gitring_write", "gitring_check", "gitring_submit", "gitring_ack", "gitring_update", "gitring_status", "gitring_wait", "gitring_create_project", "gitring_templates", "gitring_clone", ...HISTORY];
+const READ_ONLY = ["gitring_intents", "gitring_list", "gitring_read", "gitring_status", "gitring_templates", "gitring_traffic", ...HISTORY].sort();
 
 describe("tool definitions", () => {
   it("has the gitring tools, each name once", () => {

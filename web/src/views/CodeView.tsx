@@ -49,6 +49,7 @@ import { languageOf } from "./code/highlight";
 import { absoluteUrl, codeUrl, goCode, useCodeLocation, type CodeLocation } from "./code/links";
 import { FileFinder, LinePicker, MoreMenu, RefPicker, type RefOption } from "./code/pickers";
 import { CloneButton } from "./code/CloneButton";
+import { LineHistory } from "./code/LineHistory";
 import { allFolders, ancestors, baseName, buildTree, flattenTree, foldersToShow, looksBinary } from "./code/tree";
 import type { DiffFile } from "../state/api";
 import "./code/code.css";
@@ -795,6 +796,8 @@ export function CodeView() {
       </>
     );
   const refText = info.kind === "main" ? `main ${shortSha(mainSha)}` : info.kind === "work" ? `the work copy of ${info.wc.callsign}` : info.kind === "commit" ? `commit ${shortSha(info.sha)}` : loc.ref;
+  /** The version that "Why line N?" asks about. */
+  const whyRef = info.kind === "work" ? info.ref : info.kind === "commit" ? info.sha : "main";
 
   // A member asks the agent of an active work copy to change lines of its diff.
   const askAgent = info.kind === "work" && canAct && mayRequestLines(info.attempt) ? lineRequester(projectId, info.attempt.id, info.wc.callsign) : undefined;
@@ -1129,6 +1132,7 @@ export function CodeView() {
                 }}
               />
               <span className="cv-filehead__acts">
+                <LineHistory projectId={projectId} refName={whyRef} path={path} line={loc.lines?.[0] ?? null} version={fileVersion} now={now} />
                 <button
                   type="button"
                   className="cv-tool"

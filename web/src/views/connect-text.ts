@@ -31,6 +31,7 @@ export const TOOLS: [string, string][] = [
   ["gitring_create_project", "Create a project: from a template, empty, from files, or from a git URL. It can open the first task and start built-in agents."],
   ["gitring_templates", "List the starter templates of a new project."],
   ["gitring_clone", "Get a git clone command. The read token in it works for 6 hours."],
+  ["gitring_why · gitring_history · gitring_search · gitring_diff", "Ask why a line is there and see the changes of a file. Find a text in main and compare two versions. No clone is necessary."],
 ];
 
 /** The tool names of the list above ("gitring_read · gitring_list" gives two). */
