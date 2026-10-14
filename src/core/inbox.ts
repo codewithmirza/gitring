@@ -82,6 +82,16 @@ export const REDO_OPTIONS: readonly QuestionOption[] = [
   { id: "park", label: "Pause the task" },
 ];
 
+/** The one answer to a note of the steward: the person saw it, and the note closes. */
+export const STEWARD_OPTIONS: readonly QuestionOption[] = [{ id: "seen", label: "Seen" }];
+
+/** What a person decides on a question, in a few words. */
+export function questionHeadline(kind: Question["kind"]): string {
+  if (kind === "escalation") return "Which work adapts?";
+  if (kind === "steward") return "A note from the steward";
+  return "The work did not merge";
+}
+
 /** "a, b, c" for up to three names, then "and N more". */
 function listOf(items: string[], max = 3): string {
   if (items.length <= max) return items.join(", ");
@@ -167,7 +177,7 @@ function questionItem(i: InboxInput, q: Question, title: string): InboxItem {
     project: i.project,
     intentId: q.intentId,
     title,
-    headline: q.kind === "escalation" ? "Which work adapts?" : "The work did not merge",
+    headline: questionHeadline(q.kind),
     why: q.facts,
     at: q.askedAt,
     attemptId: q.attemptIds[0],

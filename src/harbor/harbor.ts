@@ -19,7 +19,8 @@ import { hmacSha256Hex, seal, sha256Hex, unseal } from "../directory/crypto";
 import { deliverWebhook, newWebhookSecret, SECRET_SEAL, secretHint } from "./webhooks";
 import { approvalLine, approvalNeeded, approvalPath, canDecide, riskSigns } from "../core/approvals";
 import { pushKeys } from "../worker/push";
-import { canAnswerQuestion, escalationFacts, escalationOptions, inboxOf, REDO_OPTIONS, taskPath, type InboxItem } from "../core/inbox";
+import { canAnswerQuestion, escalationFacts, escalationOptions, inboxOf, REDO_OPTIONS, STEWARD_OPTIONS, taskPath, type InboxItem } from "../core/inbox";
+import { stewardFindings, stewardModel, wordFinding } from "./steward";
 import { atLeast, type Role } from "../core/accounts";
 import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
@@ -130,6 +131,10 @@ const LLM_STARTS_PER_USER_HOUR = 12;
 const LANDING_LEASE_MS = 5 * 60_000;
 /** One merge starts at most this many times (crashes included). Then a person decides. */
 const MAX_LANDING_STARTS = 4;
+/** The steward counts the facts this often while agents work (project setting `steward`). */
+const STEWARD_EVERY_MS = 3 * 60_000;
+/** The model words at most this many new findings in one sweep (each call can take seconds). */
+const STEWARD_WORDS_PER_SWEEP = 3;
 /** What people and agents read when the gitring test harness ran no test (nothing is verified). */
 const NO_TEST_RAN = "No test ran. A person must decide to merge.";
 /** The UTF-8 byte order mark as text. gitring's text of a file never starts with it (TextDecoder takes it away). */
@@ -1440,6 +1445,8 @@ export class HarborMaster extends DurableObject<Env> {
     }
 
     await this.refreshFootprint(attempt);
+    // A work copy is in flight: the steward (when on) watches from now on.
+    await this.armSteward();
     let check = await this.courseCheck(attempt.id, "declare");
     // A duplicate of a new intent joins the existing intent as another attempt (best-of-N).
     if (check?.verdict === "merge-intents" && createdIntent) {
@@ -2367,7 +2374,8 @@ export class HarborMaster extends DurableObject<Env> {
       agentId: a.agentId,
       intentId: a.intentId,
       message: `${this.callsign(a.id)} tests: ${run.passed}/${run.passed + run.failed} pass${run.error ? ` (${run.error.slice(0, 120)})` : ""}.`,
-      data: { checkRunId: run.id, ok: run.ok },
+      // The tests that failed, by name: the steward reads the runs of a work copy from the log.
+      data: { checkRunId: run.id, ok: run.ok, failed: run.cases.filter((c) => !c.ok).slice(0, 8).map((c) => ({ file: c.file, name: c.name })) },
     });
     return run;
   }
@@ -2547,6 +2555,8 @@ export class HarborMaster extends DurableObject<Env> {
     ];
     const queueAt = this.queueWakeAt();
     if (queueAt !== undefined) times.push(queueAt);
+    const stewardAt = this.stewardWakeAt();
+    if (stewardAt !== undefined) times.push(stewardAt);
     return times.length ? Math.min(...times) : undefined;
   }
 
@@ -3447,8 +3457,79 @@ export class HarborMaster extends DurableObject<Env> {
     }
     // The merge queue: queued work copies run, and a merge that a stopped object began starts again.
     await this.driveQueue();
+    // The steward: every few minutes while agents work, count the facts and put a new finding in the inbox.
+    await this.stewardSweep();
     const next = this.nextWake();
     if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, next));
+  }
+
+  /* ════════════════════════════ the steward ════════════════════════════ */
+
+  /** The steward works only while agents work: a work copy in flight, or work in the merge queue. */
+  private stewardActive(): boolean {
+    const p = this.project;
+    if (!p?.settings.steward || p.importing) return false;
+    return [...this.attempts.values()].some((a) => ACTIVE.has(a.status)) || this.db.queue().length > 0;
+  }
+
+  /** When the next sweep of the steward is due (undefined: the steward is off, or no agent works). */
+  private stewardWakeAt(): number | undefined {
+    if (!this.stewardActive()) return undefined;
+    return (this.db.getMeta<number>("stewardAt") ?? Date.now()) + STEWARD_EVERY_MS;
+  }
+
+  /** Make sure the alarm comes by the next sweep of the steward (the setting turned on, or a work copy started). */
+  private async armSteward(): Promise<void> {
+    const at = this.stewardWakeAt();
+    if (at === undefined) return;
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, at));
+  }
+
+  /**
+   * One sweep of the steward (harbor/steward.ts): count the facts, and put each new finding in the inbox as a
+   * question of kind "steward" with the one answer "Seen". The facts decide; the model only words the first
+   * sentence, and the template sentence stands when it fails. One fact gives one open note: a fact with an
+   * open note is not asked again, and a fact that a person saw comes back only when its measure doubled.
+   */
+  private async stewardSweep(force = false): Promise<void> {
+    if (!this.stewardActive()) return;
+    const now = Date.now();
+    const last = this.db.getMeta<number>("stewardAt") ?? 0;
+    if (!force && now - last < STEWARD_EVERY_MS) return;
+    this.db.setMeta("stewardAt", now);
+    const findings = stewardFindings({
+      now,
+      attempts: [...this.attempts.values()],
+      agents: [...this.agents.values()],
+      intents: [...this.intents.values()],
+      corrections: [...this.corrections.values()],
+      logs: this.logs,
+      landings: this.landings,
+      queue: this.db.queueEntries(),
+    });
+    const notes = [...this.questions.values()].filter((q) => q.kind === "steward");
+    const ask = stewardModel(this.env.AI);
+    let worded = 0;
+    for (const f of findings) {
+      if (notes.some((q) => q.status === "open" && q.fact === f.key)) continue;
+      const seen = notes.filter((q) => q.status !== "open" && q.fact === f.key).sort((x, y) => x.updatedAt - y.updatedAt).at(-1);
+      if (seen && f.measure < 2 * Math.max(1, seen.measure ?? 1)) continue;
+      let facts = f.facts;
+      if (worded < STEWARD_WORDS_PER_SWEEP) {
+        worded += 1;
+        const sentence = await wordFinding(ask, f);
+        if (sentence) facts = [sentence, ...f.facts];
+      }
+      // The sweep waited for the model: the project may have closed meanwhile.
+      if (!this.project) return;
+      const at = Date.now();
+      const q: T.Question = { id: newId("q"), kind: "steward", status: "open", intentId: f.intentId, attemptIds: f.attemptIds, fact: f.key, measure: f.measure, facts, options: [...STEWARD_OPTIONS], askedAt: at, updatedAt: at };
+      this.putQuestion(q);
+      notes.push(q);
+      this.addLog({ kind: "system", ...(f.attemptIds[0] ? { attemptId: f.attemptIds[0] } : {}), ...(f.intentId ? { intentId: f.intentId } : {}), message: `The steward noticed: ${facts[0]}` });
+      this.questionAsked(q);
+    }
   }
 
   private async startVessel(a: T.Attempt, agent: T.AgentInfo, rederiveOf?: string): Promise<void> {
@@ -3801,11 +3882,17 @@ export class HarborMaster extends DurableObject<Env> {
     this.ctx.waitUntil(send.then(() => undefined).catch((e) => console.warn("push failed", errorLine(e))));
   }
 
-  /** The escalation questions of a work copy that closed have no use: nobody can adapt now. */
+  /**
+   * The escalation questions of a work copy that closed have no use: nobody can adapt now. A note of the
+   * steward closes when every work copy it names closed: the anomaly is over.
+   */
   private closeQuestionsOf(a: T.Attempt): void {
     for (const q of this.questions.values()) {
-      if (q.status !== "open" || q.kind !== "escalation" || !q.attemptIds.includes(a.id)) continue;
-      this.putQuestion({ ...q, status: "closed", closed: `The work of ${this.callsign(a.id) ?? "an agent"} closed. ${closedBecause(a.status)}` });
+      if (q.status !== "open" || !q.attemptIds.includes(a.id)) continue;
+      if (q.kind === "escalation") this.putQuestion({ ...q, status: "closed", closed: `The work of ${this.callsign(a.id) ?? "an agent"} closed. ${closedBecause(a.status)}` });
+      else if (q.kind === "steward" && q.attemptIds.every((id) => id === a.id || TERMINAL.has(this.attempts.get(id)?.status as T.AttemptStatus))) {
+        this.putQuestion({ ...q, status: "closed", closed: "The work of this note closed." });
+      }
     }
   }
 
@@ -3869,6 +3956,9 @@ export class HarborMaster extends DurableObject<Env> {
       const d = q.drafts?.[option.id];
       const sent = d ? this.personDecided(d, note, decision.id, 90, true) : undefined;
       message = d ? (sent ? `${option.label}. ${this.callsign(d.attemptId) ?? "The agent"} gets a change request.` : `${option.label}. The work that adapts is closed, so no change request went out.`) : "Both agents continue. Nothing changes.";
+    } else if (q.kind === "steward") {
+      // A note of the steward: "Seen" closes it, and nothing else changes.
+      message = "The note is closed.";
     } else {
       try {
         if (option.id === "park") {
@@ -4975,6 +5065,8 @@ export class HarborMaster extends DurableObject<Env> {
     }
     this.db.setMeta("project", p);
     this.addLog({ kind: "system", message: `Settings change: ${Object.keys(patch).join(", ")}.` });
+    // The steward turned on: its first sweep comes with the next alarm.
+    if (patch.steward) await this.armSteward();
     if (githubChanged) {
       if (g.mode !== "off" && g.repo) this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
       else this.setGithub(await this.githubStatus());
@@ -5369,6 +5461,7 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
   if (raw.approver === "sender" || raw.approver === "owner") out.approver = raw.approver;
   if (typeof raw.intentsInRepo === "boolean") out.intentsInRepo = raw.intentsInRepo;
   if (typeof raw.allowUntested === "boolean") out.allowUntested = raw.allowUntested;
+  if (typeof raw.steward === "boolean") out.steward = raw.steward;
   const fanout = num(raw.fanout, 1, 4);
   if (fanout !== undefined) out.fanout = Math.round(fanout);
   if (raw.decisionModel === "clef" || raw.decisionModel === "clef-flash" || raw.decisionModel === "rules") out.decisionModel = raw.decisionModel;
