@@ -15,6 +15,7 @@ The hooks, in call order:
 - `useCodeActions.ts`: the keys, the links to copy or open elsewhere, and the tab title.
 - `describeRef.tsx`: the label and the plain words of the ref on screen (a plain function).
 - `renderMain.tsx`: what the right side shows (a plain function).
+- `whyLine.ts`: the line that "Why?" asks about, and the scroll of a line into the strip above the phone sheet.
 
 The panes and parts:
 

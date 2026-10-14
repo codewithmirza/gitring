@@ -2,7 +2,7 @@
  * A sheet from the bottom of a phone screen. It holds the "Why line N?" answer or the history of a file.
  * It does not cover the line that it explains: the code gets room above it, and the line scrolls into that strip.
  * Tapping the code does not close it, so a person can tap another line number and read the next answer.
- * Close with the button or Escape. The sheet is not modal. Used by LineHistory.tsx. Styles: styles/sheet.css.
+ * Close with the button or Escape. The sheet is not modal. Used by LineHistory.tsx. Styles: history.css.
  */
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
