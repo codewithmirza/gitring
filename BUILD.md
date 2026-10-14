@@ -7,7 +7,8 @@ Last update: 14 Oct 2026, evening. All workstreams of the agentic-first build ar
 ## Branches
 
 - `agentic` is the integration branch. Every finished workstream merges into it as soon as it passes.
-- `main` follows `agentic` by fast-forward after each merge, and is pushed to GitHub at once (Mirza decided this on 14 Oct 2026, so that a usage limit never traps the work on one computer). Deploys are still Mirza's decision.
+- `main` is production. Cloudflare Workers Builds watches the GitHub repo and, for each commit on `main`, runs `npm run build` and `npx wrangler deploy`. So push to `main` only code that passed typecheck, build and the full suite, then run the public checks (`/api/health`, unsigned `/mcp` answers 401, the OAuth discovery documents).
+- For checkpoints use `integrate`, `agentic` and the `ws/*` branches. They do not deploy. A usage limit must never trap work on one computer: push these branches often.
 - Push `agentic`, `main` and every `ws/*` branch after each commit: `git push origin main agentic ws/<name>`. Push each branch by name; never `--all` or `--mirror` (the repo policy). Nothing under `private/` is ever tracked.
 - `ws/<name>` branches hold one workstream each. Worktrees live in `.claude/worktrees/ws-<name>` (git-ignored); `node_modules` there is a junction to the main checkout.
 
