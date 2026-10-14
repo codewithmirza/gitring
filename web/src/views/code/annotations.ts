@@ -1,5 +1,6 @@
 /**
- * Marks for the code view, from the live project state only (no requests):
+ * Marks for the code view, from the live project state only.
+ * The page makes no request for them. They show:
  *   - which active work copies change or plan each file, and the lines they change (hunks);
  *   - change requests that keep an agent out of lines (avoidRegions);
  *   - the last merge that changed each file.

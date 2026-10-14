@@ -1,4 +1,7 @@
-/** Formatting helpers. Numbers are always shown in the agent voice (mono) by callers. */
+/**
+ * Formatting helpers: short hashes, times, sizes, counts, and the plain words for statuses and verdicts.
+ * Callers show numbers in the agent voice (mono).
+ */
 import type { ApprovalStatus, AttemptStatus, CorrectionKind, CourseCheck, IntentStatus, LandingMethod, Range, RuleOfTheRoad, Verdict } from "../../../src/core/types";
 
 export function shortSha(sha: string | undefined | null, n = 7): string {

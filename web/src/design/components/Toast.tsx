@@ -1,6 +1,6 @@
 /**
- * Toasts: short messages at the bottom right. They close after 6 s.
- * They wait while the pointer is on them. Escape closes the newest.
+ * Toasts: short messages at the bottom right.
+ * They close after 6 s. They wait while the pointer is on them. Escape closes the newest.
  */
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { Icon, type IconName } from "../icons";

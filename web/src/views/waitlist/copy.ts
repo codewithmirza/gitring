@@ -1,6 +1,6 @@
 /**
- * The words of the waitlist pages in one place, so a test can check each sentence (test/web/waitlist-copy.test.ts):
- * plain words, at most 20 words in a sentence, no "-ing" forms.
+ * The words of the waitlist pages in one place, so a test can check each sentence.
+ * The test is test/web/waitlist-copy.test.ts: plain words, at most 20 words in a sentence, no "-ing" forms.
  */
 
 export const LANDING = {

@@ -1,13 +1,10 @@
 /**
- * Replay: the real history of a project, played back on the map with the inside of gitring visible.
- *
- * Tasks appear, plans draw their course, each conflict check shows its candidates on the distance ladder
- * with the facts, the rule, the model and the verdict, change requests fly to their agents, tests run
- * alone and then on main plus the work, the merge queue gives its lease, the work composes onto main, the
- * commit gets its why-record, and the other work moves onto the new main. One plain caption per step.
- *
- * Address: /replay?project=<id>. For a recording: &autoplay=1&speed=<1–120>&kiosk=1 (kiosk hides the app
- * bar and the controls; &theme=night picks a theme).
+ * The replay page: the real history of a project, played back on the map.
+ * It shows the inside of gitring. Tasks appear, plans draw their course, and each conflict check shows its candidates on
+ * the distance ladder with the facts, the rule, the model and the verdict. Change requests fly to their agents, tests run,
+ * the merge queue gives its lease, the work composes onto main, the commit gets its why-record, and the other work moves
+ * onto the new main. One plain caption for each step.
+ * Address: /replay?project=<id>. For a recording: &autoplay=1&speed=<1–120>&kiosk=1 (kiosk hides the app bar and the controls; &theme=night picks a theme).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileNode } from "../../../src/core/types";

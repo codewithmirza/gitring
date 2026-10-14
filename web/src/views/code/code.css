@@ -1,7 +1,8 @@
 /*
- * Code view. Type sizes: 11, 13. Code is 13/20 (12/20 on phones).
- * Syntax colors are checked for 4.5:1 against the code background, the selected line and the diff
- * backgrounds in Day, Dusk and Night. Comments are also italic, so they do not depend on color.
+ * The styles of the code page.
+ * Type sizes: 11, 13. Code is 13/20 (12/20 on phones).
+ * Syntax colors are checked for 4.5:1 against the code background, the selected line and the diff backgrounds in Day, Dusk
+ * and Night. Comments are also italic, so they do not depend on color.
  * This file lists the files of styles/ in the order of the cascade. The order is part of the look: never reorder.
  */
 

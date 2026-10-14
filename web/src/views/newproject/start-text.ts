@@ -1,6 +1,7 @@
 /**
- * The words of the first view of a new project (StartList and the describe step). Pure, so a unit test
- * keeps them plain (ASD-STE100) and GitHub in its place: one import among others, never the first.
+ * The words of the first view of a new project (StartList and the describe step).
+ * The module is pure, so a unit test keeps the words plain (ASD-STE100) and keeps GitHub in its place: one import among
+ * others, never the first.
  */
 import type { IconName } from "../../design/icons";
 

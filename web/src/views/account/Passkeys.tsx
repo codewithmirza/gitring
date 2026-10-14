@@ -1,5 +1,6 @@
 /**
- * The passkeys of the person: the list, add a passkey, rename and remove. A passkey needs no outside account.
+ * The passkeys of the person: the list, add a passkey, rename and remove.
+ * A passkey needs no outside account.
  */
 import { useRef, useState, type FormEvent } from "react";
 import type { PasskeyInfo } from "../../../../src/core/accounts";

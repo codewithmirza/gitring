@@ -1,6 +1,6 @@
 /**
- * /design — the living style guide. It renders the real tokens and components, so it
- * cannot drift from the product.
+ * The style guide page (/design): it renders the real tokens and components, so it cannot drift from the product.
+ * This file puts the page together. The parts are in design/ (read design/README.md).
  */
 import { Button, Dialog, Field, Textarea } from "../design/components";
 import { Icon, Mark } from "../design/icons";

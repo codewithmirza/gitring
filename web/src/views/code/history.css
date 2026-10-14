@@ -1,6 +1,6 @@
 /*
- * "Why line N?" and "History" panels of the code view (LineHistory.tsx). Type sizes: 11, 13, 15.
- * Colors come from the theme tokens only, so Day, Dusk and Night work without rules of their own.
+ * The styles of the "Why line N?" and "History" panels of the code view (LineHistory.tsx).
+ * Type sizes: 11, 13, 15. Colors come from the theme tokens only, so Day, Dusk and Night work without rules of their own.
  */
 .lh-card { display: grid; gap: var(--s-2); width: min(440px, calc(100vw - 40px)); padding: var(--s-3); font-size: var(--t-sm); }
 .lh-eyebrow { font-size: var(--t-xs); color: var(--ink-3); }

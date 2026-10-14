@@ -1,5 +1,5 @@
 /**
- * The status lists and the lookup maps of one project: intents, work copies, agents, checks, merges and answers by id.
+ * The status lists and the lookup maps of one project: tasks, work copies, agents, checks, merges and answers by id.
  * Read by every selector that joins two kinds of record. Rebuilds only when one of the lists changes.
  */
 import type {

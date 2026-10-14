@@ -1,6 +1,6 @@
 /**
- * Labels that only the lazy views use (the code view and the history). They live here and not in
- * state/format, so the first download of the app does not carry them.
+ * Labels that only the lazy views use (the code view and the history).
+ * They live here and not in state/format, so the first download of the app does not carry them.
  */
 
 /** "line 12" or "lines 10–18". */

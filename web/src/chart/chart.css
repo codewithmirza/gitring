@@ -1,4 +1,7 @@
-/* Chart primitives. Hairlines are non-scaling. */
+/*
+ * The styles of the map: sea, land, parcels, vessels, course lines, distance lines, buoys and the HTML overlays.
+ * Hairlines are non-scaling.
+ */
 
 .c-chart {
   position: relative;

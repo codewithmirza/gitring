@@ -1,6 +1,6 @@
 /**
- * The whole app of a person that the waitlist gate keeps out. Nothing else of gitring shows.
- * A visitor sees the landing page and the sign-in step. A signed-in person sees the interest page.
+ * The whole app of a person that the waitlist gate keeps out.
+ * Nothing else of gitring shows. A visitor sees the landing page and the sign-in step. A signed-in person sees the interest page.
  */
 import { useEffect } from "react";
 import { Button } from "../../design/components";

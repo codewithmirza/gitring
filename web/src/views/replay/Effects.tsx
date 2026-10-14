@@ -1,10 +1,10 @@
 /**
- * Map effects of the replay, in screen space above the map: a plan draws its course, a conflict check
- * sweeps and reaches its candidates, a change request flies to its agent as a magenta diamond, tests ring
- * the work copy, a commit ripples over the files it changed.
+ * The map effects of the replay, in screen space above the map.
+ * A plan draws its course. A conflict check sweeps and reaches its candidates. A change request flies to its agent as a
+ * magenta diamond. Tests ring the work copy. A commit ripples over the files it changed.
  *
- * React renders an effect once when it starts and once when it ends. In between, the frame callback of the
- * replay clock paints it: it writes a few geometry and paint attributes on the effect's own elements.
+ * React renders an effect once when it starts and once when it ends. In between, the frame callback of the replay clock paints
+ * it: it writes a few geometry and paint attributes on the effect's own elements.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ReplayClock } from "./clock";

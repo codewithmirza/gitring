@@ -1,6 +1,6 @@
 /**
- * A button that asks for a second click in place before an action with a big effect. No modal dialog.
- * It goes back to the first state after a short time, on Escape, or on Keep.
+ * A button that asks for a second click in place before an action with a big effect.
+ * There is no modal dialog. It goes back to the first state after a short time, on Escape, or on Keep.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";

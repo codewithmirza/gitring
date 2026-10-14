@@ -1,7 +1,7 @@
 /**
- * "Clone" in the code bar (members): a git clone command with a read token for 6 hours. The token goes
- * in an HTTP header, never in the URL or in .git/config. gitring makes the token only when the person
- * asks for the command (a click), not when the panel opens.
+ * "Clone" in the code bar (members): a git clone command with a read token for 6 hours.
+ * The token goes in an HTTP header, never in the URL or in .git/config.
+ * gitring makes the token only when the person asks for the command (a click), not when the panel opens.
  */
 import { useEffect, useState } from "react";
 import { Button, CodeBlock, Popover, usePopover } from "../../design/components";

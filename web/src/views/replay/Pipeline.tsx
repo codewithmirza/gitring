@@ -1,8 +1,8 @@
 /**
- * "Inside gitring": the pipeline of the engine, one station per stage, with the stage of the current step
- * lit, and below it a card with the facts of the latest step that has facts to show (the conflict check
- * with its distance ladder, rule, model and verdict; the tests; the merge queue; the compose; the commit
- * and its why-record).
+ * The "Inside gitring" panel: the pipeline of the engine, one station for each stage.
+ * The stage of the current step is lit. Below the pipeline, a card shows the facts of the latest step that has facts to
+ * show: the conflict check with its distance ladder, rule, model and verdict; the tests; the merge queue; the compose;
+ * the commit and its why-record.
  */
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { AgentInfo, CheckRun, CourseCheck, Range } from "../../../../src/core/types";

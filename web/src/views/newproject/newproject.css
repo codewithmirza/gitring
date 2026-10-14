@@ -1,7 +1,7 @@
 /*
- * New project: the anchored panel with a tail, the source combobox, the guess step, sign-in choices,
- * inline confirms and the repository field. Type sizes: 10, 11, 13, 15. Hairlines, not shadows; only the
- * panel (an overlay) has --shadow-overlay.
+ * The styles of the new-project picker.
+ * They cover the anchored panel with a tail, the source combobox, the guess step, sign-in choices, inline confirms and the
+ * repository field. Type sizes: 10, 11, 13, 15. Hairlines, not shadows: only the panel (an overlay) has --shadow-overlay.
  */
 
 /* ───────────── anchored panel ───────────── */

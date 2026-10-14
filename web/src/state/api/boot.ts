@@ -1,7 +1,7 @@
 /**
- * Boots the app state: the person, the project list and the project of the address. Holds the one live client.
- * Called by main.tsx (boot) and by App.tsx after each navigation (syncProject). Never load a second project here:
- * a link to another project reloads the page, so the socket and the store start clean.
+ * Boots the app state: the person, the project list and the project of the address.
+ * It holds the one live client. Called by main.tsx (boot) and by App.tsx after each navigation (syncProject).
+ * Never load a second project here: a link to another project reloads the page, so the socket and the store start clean.
  */
 import type { ProjectInfo } from "../../../../src/core/accounts";
 import { store } from "../store";

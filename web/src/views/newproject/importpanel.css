@@ -1,4 +1,7 @@
-/* The overview panel while main is empty (ImportPanel). The main look of .importpanel lives in chart.css. */
+/*
+ * The styles of the overview panel that shows while main is empty (ImportPanel).
+ * The main look of .importpanel lives in chart.css.
+ */
 .importpanel__acts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .importpanel__error {
   display: flex;

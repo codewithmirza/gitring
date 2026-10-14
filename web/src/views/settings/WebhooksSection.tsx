@@ -1,6 +1,6 @@
 /**
- * The Webhooks section of the settings: where gitring sends signed events. At most five, https only.
- * The words come from ../webhook-copy.ts.
+ * The Webhooks section of the settings: where gitring sends signed events.
+ * At most five, https only. The words come from ../webhook-copy.ts.
  */
 import { useEffect, useId, useState } from "react";
 import { Button, Checkbox, CodeBlock, Field, Input, Select } from "../../design/components";

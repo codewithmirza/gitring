@@ -1,6 +1,6 @@
 /**
- * Accounts in the UI: who is signed in, the projects they can see, API keys, members, and project
- * creation. Every call goes to the Worker; nothing here keeps fake data.
+ * The account state of the UI: who is signed in, their projects, API keys, members and project creation.
+ * Every call goes to the Worker. Nothing here keeps fake data.
  */
 import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } from "../../../src/core/accounts";
 import { atLeast } from "../../../src/core/accounts";

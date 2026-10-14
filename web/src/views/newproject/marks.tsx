@@ -1,6 +1,7 @@
 /**
- * Icons of the new-project flow. The GitHub mark is the one of the design system (Primer Octicons
- * "mark-github", unchanged, black or white by theme); it is decorative next to a text label.
+ * The icons of the new-project flow.
+ * The GitHub mark is the one of the design system (Primer Octicons "mark-github", unchanged, black or white by theme).
+ * It is decorative next to a text label.
  */
 import { GitHubMark } from "../../design/brand/marks";
 

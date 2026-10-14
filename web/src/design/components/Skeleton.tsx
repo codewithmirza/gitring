@@ -1,6 +1,6 @@
 /**
- * Grey loading shapes in the layout of the content that loads. They show only after 200 ms.
- * A fast load shows nothing.
+ * Grey loading shapes in the layout of the content that loads.
+ * They show only after 200 ms. A fast load shows nothing.
  */
 import type { CSSProperties } from "react";
 

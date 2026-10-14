@@ -1,8 +1,8 @@
 /**
- * "/projects": the person's projects and the public ones. "New project" grows a panel from the button
- * (a description, then the sources); a person without projects sees that picker right on the page.
- * The project list comes from the boot request; this page asks again only when the tab comes back
- * after a minute or more.
+ * The /projects page: the projects of the person, and the public ones.
+ * The "New project" button grows a panel from the button (a description, then the sources). A person without projects
+ * sees that picker right on the page.
+ * The project list comes from the boot request. This page asks again only when the tab comes back after a minute or more.
  */
 import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { Button, EmptyState } from "../design/components";

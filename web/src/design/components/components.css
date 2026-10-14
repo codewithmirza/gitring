@@ -1,5 +1,6 @@
 /*
- * Styles of the design system components. Hairlines, not shadows. Only overlays have --shadow-overlay.
+ * The styles of the design system components.
+ * Hairlines, not shadows: only overlays have --shadow-overlay.
  * This file lists the files of styles/ in the order of the cascade. The order is part of the look: never reorder.
  * Read styles/README.md for what each file holds.
  */

@@ -1,7 +1,7 @@
 /**
- * A work copy against its base: one file, or every changed file. Unified rows with old and new line
- * numbers, colors for the code, and collapsed unchanged lines. Long diffs show their first rows and a
- * button for the rest.
+ * A work copy against its base, as one file or as every changed file.
+ * It shows unified rows with old and new line numbers, colors for the code, and collapsed unchanged lines.
+ * Long diffs show their first rows and a button for the rest.
  */
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { inSelection, LineRequestForm, parseUnified, pickLine, type LineRequestInput, type LineSelection } from "../../design/components";

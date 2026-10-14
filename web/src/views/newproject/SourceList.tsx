@@ -1,10 +1,10 @@
 /**
- * The person's GitHub repositories, the last group of the new-project picker (GitHub is one import
- * among others). A WAI-ARIA combobox with a list that is always shown: focus stays in the text field,
+ * The person's GitHub repositories, the last group of the new-project picker.
+ * GitHub is one import among others. The list is a WAI-ARIA combobox that is always shown: focus stays in the text field,
  * ↑/↓ move through the rows, Enter picks, Escape closes the panel.
  *
- * Rows: an import row for pasted text (on top: a GitHub repository, or any https git URL), then the
- * repositories (filtered in memory; a server search only when GitHub had more than the list).
+ * Rows: an import row for pasted text (on top: a GitHub repository, or any https git URL), then the repositories
+ * (filtered in memory; a server search only when GitHub had more than the list).
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { GithubRepo } from "../../../../src/core/accounts";

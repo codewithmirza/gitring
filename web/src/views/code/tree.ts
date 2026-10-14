@@ -1,6 +1,6 @@
 /**
- * The file tree of the code view, without the DOM: build folders from a flat file list, flatten the
- * visible rows (for a virtual list), filter, and a fuzzy file finder.
+ * The file tree of the code view, without the DOM.
+ * It builds folders from a flat file list, flattens the visible rows (for a virtual list), filters, and has a fuzzy file finder.
  */
 import type { FileNode } from "../../../../src/core/types";
 

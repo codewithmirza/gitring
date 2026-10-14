@@ -1,7 +1,7 @@
 /**
- * The file tree: a virtual list (only the rows on screen exist in the page), so thousands of files stay
- * fast. WAI-ARIA tree pattern: one tab stop; ↑/↓ move, → opens a folder or moves into it, ← closes a
- * folder or moves to its parent, Home/End, Enter or Space opens a file or toggles a folder.
+ * The file tree: a virtual list, so thousands of files stay fast.
+ * Only the rows on screen exist in the page. It follows the WAI-ARIA tree pattern: one tab stop; ↑/↓ move, → opens a folder
+ * or moves into it, ← closes a folder or moves to its parent, Home/End, Enter or Space opens a file or toggles a folder.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import type { FileTouch } from "../../../../src/core/types";

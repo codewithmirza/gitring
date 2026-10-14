@@ -1,5 +1,6 @@
 /**
- * The line scanner for CSS: selectors, properties, values, at-rules and block comments. HTML uses it for <style> blocks.
+ * The line scanner for CSS: selectors, properties, values, at-rules and block comments.
+ * HTML uses it for <style> blocks.
  */
 import { COM, FN, KW, NUM, OP, PLAIN, PROP, PUNC, SEL, STR, VAR } from "./classes";
 import type { LineFn } from "./emit";

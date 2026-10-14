@@ -1,6 +1,6 @@
 /**
- * Account UI in the shell: the project switcher, the person menu, the sign-in panel and the
- * "you can only view" banner. Each one is a popover that grows from its button: no modal dialogs.
+ * The account parts of the shell: the project switcher, the person menu, the sign-in panel and the view-only banner.
+ * Each one is a popover that grows from its button. There are no modal dialogs.
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ProjectInfo, Provider, SignInKind } from "../../../src/core/accounts";

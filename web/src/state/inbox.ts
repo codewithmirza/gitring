@@ -1,10 +1,10 @@
 /**
- * The inbox of the signed-in person: what waits for them in every project where they may act (GET
- * /api/me/inbox), the preference "where do you answer merge questions" (/api/me/prefs), the answers to
+ * The inbox of the signed-in person: what waits for them in every project where they may act.
+ * It reads GET /api/me/inbox, the preference "where do you answer merge questions" (/api/me/prefs), the answers to
  * questions, and push notifications for this device (/api/me/push and the service worker /sw.js).
  *
- * The inbox has no live socket of its own: it loads again every 20 seconds while the page shows, when the
- * page shows again, and soon after the open project changes (its socket brings that news).
+ * The inbox has no live socket of its own. It loads again every 20 seconds while the page shows, when the page shows again,
+ * and soon after the open project changes (its socket brings that news).
  */
 import { useSyncExternalStore } from "react";
 import type { InboxItem } from "../../../src/core/inbox";

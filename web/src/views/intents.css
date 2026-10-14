@@ -1,4 +1,7 @@
-/* Task view: spec + compare lanes. Type sizes here: 11, 13, 15, 28. */
+/*
+ * The styles of the task page: the spec and the compare lanes.
+ * Type sizes here: 11, 13, 15, 28.
+ */
 
 .intents-view {
   display: grid;

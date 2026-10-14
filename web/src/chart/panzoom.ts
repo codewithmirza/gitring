@@ -1,6 +1,6 @@
 /**
- * Pan and zoom for the chart: pointer drag, two-finger pinch, wheel (mouse wheel zooms,
- * trackpad scroll pans, trackpad pinch zooms), double click, and keyboard.
+ * Pan and zoom for the chart: pointer drag, two-finger pinch, wheel, double click and keyboard.
+ * The mouse wheel zooms, the trackpad scroll pans and the trackpad pinch zooms.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type RefObject } from "react";
 import type { Rect } from "./layout";

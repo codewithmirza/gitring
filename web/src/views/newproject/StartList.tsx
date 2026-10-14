@@ -1,8 +1,8 @@
 /**
- * The first view of a new project. On top, one field: "Describe what you want to build" (gitring picks a
- * template, writes the first task and starts a built-in agent; the next step shows each choice). Then
- * the sources, in this order: Template, Empty, Upload a folder, Push with git, Import from a git URL.
- * The person's GitHub repositories come last, as one import among others: the list when GitHub is
+ * The first view of a new project: one field to describe the project, then the list of sources.
+ * The field says "Describe what you want to build". gitring picks a template, writes the first task and starts a built-in
+ * agent; the next step shows each choice. The sources come in this order: Template, Empty, Upload a folder, Push with git,
+ * Import from a git URL. The person's GitHub repositories come last, as one import among others: the list when GitHub is
  * connected, else a small "Connect GitHub" link.
  */
 import { useEffect, useId, useRef, type FormEvent, type ReactNode } from "react";

@@ -1,6 +1,7 @@
 /**
- * The line scanner for JavaScript and TypeScript, with JSX. One state carries template strings and JSX nesting over lines.
- * It is one state machine, so it stays in one file. HTML uses it for <script> blocks.
+ * The line scanner for JavaScript and TypeScript, with JSX.
+ * One state carries template strings and JSX nesting from line to line. It is one state machine, so it stays in one file.
+ * HTML uses it for <script> blocks.
  */
 import { ATTR, COM, FN, KW, LIT, META, NUM, OP, PLAIN, PROP, PUNC, RE, STR, TAG, TYPE } from "./classes";
 import type { LineFn } from "./emit";

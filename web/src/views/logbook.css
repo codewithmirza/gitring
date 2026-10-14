@@ -1,4 +1,7 @@
-/* History: the list of merges and the merge record. Type sizes here: 11, 13, 15, 28. */
+/*
+ * The styles of the history page: the list of merges and the merge record.
+ * Type sizes here: 11, 13, 15, 28.
+ */
 
 .logbook { min-height: 100%; }
 .logbook.no-detail .logbook__list { max-width: 1240px; margin: 0 auto; padding: var(--s-8) var(--s-8) var(--s-10); }

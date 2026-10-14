@@ -1,7 +1,7 @@
 /**
- * A GitHub repository field with a list of the person's repositories (WAI-ARIA combobox with a popup
- * listbox). Typing filters the list; ↓ opens it; Enter picks; Escape closes it, then puts the saved
- * value back. The person can also type "owner/name" or a github.com URL.
+ * A GitHub repository field with a list of the person's repositories.
+ * It is a WAI-ARIA combobox with a popup listbox. Typing filters the list; ↓ opens it; Enter picks; Escape closes it,
+ * then puts the saved value back. The person can also type "owner/name" or a github.com URL.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { GithubRepo } from "../../../../src/core/accounts";

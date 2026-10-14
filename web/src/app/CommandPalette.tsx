@@ -1,7 +1,7 @@
 /**
- * Command palette (Ctrl+K or ⌘K, and "/"): jump to projects, tasks, agents, files and pages, or run an
- * action. It searches what the page already has in memory; it sends no request while you type.
- * It is a popover under the Search button in the top bar (a sheet on phones), not a modal.
+ * The command palette: jump to projects, tasks, agents, files and pages, or run an action.
+ * Open it with Ctrl+K or ⌘K, or with the "/" key. It is a popover under the Search button (a sheet on phones), not a modal.
+ * It searches what the page already has in memory. It sends no request while you type.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Popover, toast } from "../design/components";

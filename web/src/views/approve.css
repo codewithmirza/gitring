@@ -1,6 +1,7 @@
 /*
- * The approve page: the facts of one work copy, and the answer. Wide screens: the facts on the left, the
- * answer on the right (it stays in view). Narrow screens: one column, and the answer is a bar at the bottom.
+ * The styles of the approve page: the facts of one work copy, and the answer.
+ * Wide screens: the facts on the left, the answer on the right (it stays in view). Narrow screens: one column, and the answer
+ * is a bar at the bottom.
  * Type sizes: 11, 13, 15, 28 (20 on phones). Colors come from the theme tokens only.
  */
 

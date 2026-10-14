@@ -1,7 +1,8 @@
 /**
- * The replay map: the chart of the project (the same layers as the overview map) with the world of the
- * current step, and the effects layer above it. The camera is fixed: it frames every island that the
- * history touches, so the picture does not move while it plays (good for a recording).
+ * The replay map: the chart of the project, with the world of the current step on it.
+ * It uses the same layers as the overview map, with the effects layer above them.
+ * The camera is fixed: it frames every island that the history touches, so the picture does not move while it plays
+ * (good for a recording).
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { FileNode } from "../../../../src/core/types";

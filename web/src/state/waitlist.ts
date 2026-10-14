@@ -1,6 +1,6 @@
 /**
- * The waitlist in the UI: keep, change and take back the choice of a pack. The gate itself comes with
- * GET /api/me (me.waitlist), so the store always knows if the person may use gitring.
+ * The waitlist in the UI: keep, change and take back the choice of a pack.
+ * The gate itself comes with GET /api/me (me.waitlist), so the store always knows if the person may use gitring.
  */
 import type { PlanId } from "../../../src/core/plans";
 import type { WaitlistEntry } from "../../../src/core/waitlist";

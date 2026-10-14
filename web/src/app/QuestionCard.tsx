@@ -1,7 +1,8 @@
 /**
- * One question for a person (contract C4): which work adapts after an escalated conflict check, or what
- * happens with work that did not merge. The decisions list and the inbox show this same card, with the
- * answers in place (no modal). A note is optional; it goes to the agent with the change request.
+ * One question for a person, with the answers in place.
+ * It asks which work adapts after an escalated conflict check, or what happens with work that did not merge (contract C4).
+ * The decisions list and the inbox show this same card. There is no modal. A note is optional: it goes to the agent
+ * with the change request.
  */
 import { useId, useState } from "react";
 import type { QuestionResult } from "../../../src/core/types";

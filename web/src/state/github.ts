@@ -1,12 +1,9 @@
 /**
- * GitHub data for the web app: the person's repositories, the guesses for a new project from one of
- * them, the GitHub sync of a project, and the apps (MCP clients) that the person allowed through OAuth.
- * The shared request layer is here too; project creation and cloning are in ./projects.
+ * GitHub data for the web app: repositories, new-project guesses, project sync and the apps allowed through OAuth.
+ * The shared request layer is here too. Project creation and cloning are in ./projects.
  *
- * Requests:
- *   - identical GET requests in flight share one fetch;
- *   - answers that rarely change stay in a small cache for a short time (TTL per call);
- *   - each caller can abort its own wait; the fetch stops when no caller waits any more.
+ * Requests: identical GETs in flight share one fetch. Answers that rarely change stay in a small cache (a TTL for each call).
+ * Each caller can abort its own wait. The fetch stops when no caller waits any more.
  * The browser never holds GitHub tokens: the Worker keeps and refreshes them.
  */
 import { useEffect, useRef, useState } from "react";
