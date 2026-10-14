@@ -37,6 +37,8 @@ import { cloneHelp, createProjectFor, ProjectError, type CreateProjectInput } fr
 import { forgetRoles, roleOf } from "./roles";
 import type { SeedFile } from "../harbor/harbor";
 import { historyRoutes } from "./history-routes";
+import { gateBlock, gateBlockMcp } from "./gate";
+import { waitlistRoutes } from "./waitlist";
 
 export { HarborMaster } from "../harbor/harbor";
 import { hookKey, viewerState } from "../harbor/harbor";
@@ -92,6 +94,9 @@ app.use("*", async (c, next) => {
   const p = await resolvePrincipal(c.env, c.req.raw);
   if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Account → API keys)." }, 401);
   c.set("principal", p);
+  // The waitlist gate: a person who is not allowed reaches the waitlist pages only (src/worker/gate.ts).
+  const stopped = gateBlock(c.env, p, path);
+  if (stopped) return stopped;
   const who = p.user?.id ?? (p.via === "operator" ? "operator" : null);
   if (kind === "api" && (await overLimit(c.env, "api", who ?? clientAddress(c.req.raw)))) return tooMany();
   if (kind === "hook" && (await overLimit(c.env, "hook", await hookLimitKey(c.req.raw, who)))) return tooMany();
@@ -168,6 +173,7 @@ app.get("/api/health", async (c) =>
 );
 
 authRoutes(app);
+waitlistRoutes(app);
 oauthRoutes(app);
 deviceRoutes(app);
 githubRoutes(app);
@@ -729,6 +735,17 @@ app.get("/api/projects/:p/settings", async (c) => {
   }
 });
 
+/** Use of a project in a month (counters only: merges, container test runs, built-in agent tokens). */
+app.get("/api/projects/:p/usage", async (c) => {
+  try {
+    const { id } = await access(c, c.req.param("p"), "member");
+    const month = c.req.query("month");
+    return c.json(await directory(c.env).usageOf(id, month && /^d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : undefined));
+  } catch (e) {
+    return err(c, e);
+  }
+});
+
 /** The settings that decide when a person must say yes before a merge. */
 const APPROVAL_SETTINGS = ["landing", "approver", "autoLand", "allowUntested"] as const;
 
@@ -1043,6 +1060,8 @@ export default {
       if (hasCredential(request) && (await overLimit(env, "cred", clientAddress(request)))) return tooMany(60, true);
       const p = await resolvePrincipal(env, request, { oauth: true, resource: resourceOf(url.origin, MCP_PATH[set]) });
       if (await overLimit(env, "mcp", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(request)))) return tooMany(60, true);
+      const waiting = gateBlockMcp(env, p);
+      if (waiting) return waiting;
       if (!p.user && p.via !== "operator") {
         // MCP authorization: the challenge points the client to the protected resource metadata, and the
         // client signs the person in with OAuth. Scripts and hooks send a personal API key instead.
@@ -1094,6 +1113,7 @@ export default {
       path.startsWith("/.well-known/") ||
       path === "/setup" ||
       path.startsWith("/setup/") ||
+      path.startsWith("/admin/") ||
       path === "/privacy" ||
       path === "/terms"
     ) {

@@ -2372,6 +2372,7 @@ export class HarborMaster extends DurableObject<Env> {
       .budgetTake(p.ownerId ?? null, 1, perOwner, global, "checks")
       .catch(() => ({ granted: 1, retryAt: 0 }));
     if (!budget.granted) return budgetWait(key, scope, budget.retryAt);
+    this.countUse("testRuns");
     const dock = this.env.DRYDOCK.get(this.env.DRYDOCK.idFromName(`${p.id}:${attemptId}`));
     let res: DrydockResult;
     let left: string[] = [];
@@ -3349,6 +3350,7 @@ export class HarborMaster extends DurableObject<Env> {
       };
       this.landings.push(landing);
       this.db.putLanding(landing, note);
+      this.countUse("merges");
       // The history of main follows in the background; a fault there never stops the merge record.
       try {
         this.derived.landed(touched.length);
@@ -4186,6 +4188,13 @@ export class HarborMaster extends DurableObject<Env> {
       this.addLog({ kind: "system", message: `The AI agent budget for this hour is used. ${n - res.granted} agent${n - res.granted === 1 ? "" : "s"} start at ${clock(res.retryAt)} UTC.` });
     }
     return res;
+  }
+
+  /** Metering hook: add to a counter of use of this project (merges, container test runs). A counter never stops work. */
+  private countUse(kind: "merges" | "testRuns" | "agentTokens", n = 1): void {
+    const id = this.project?.id;
+    if (!id) return;
+    void Promise.resolve(this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory")).usageAdd(id, kind, n)).catch(() => undefined);
   }
 
   private async scheduleBudgetRetry(at: number): Promise<void> {

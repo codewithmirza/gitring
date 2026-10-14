@@ -15,6 +15,7 @@ import { passkeyLabel } from "../directory/passkeys";
 import { privacyBody, termsBody } from "./legal";
 import { isCrossSiteWrite } from "./csrf";
 import { clientAddress, overLimit, tooMany } from "./limits";
+import { gateOn } from "../core/waitlist";
 
 export const SESSION_COOKIE = "__Host-gitring";
 const SESSION_MAX_AGE_S = 30 * 24 * 3600;
@@ -575,6 +576,7 @@ export function authRoutes(app: Hono<HonoEnv>): void {
       providers: { github: Boolean(info.providers.github), google: Boolean(info.providers.google) },
       setupNeeded: !info.providers.github && !info.providers.google,
       ...(info.github ? { github: info.github } : {}),
+      ...(info.waitlist ? { waitlist: info.waitlist } : {}),
       githubInstallUrl: info.providers.github?.installUrl ?? null,
     };
     return c.json(me, 200, { "cache-control": "private, no-store" });
@@ -607,6 +609,12 @@ async function passkeyGuard(c: C): Promise<Response | null> {
   return null;
 }
 
+/** Does this gitring have Google or GitHub sign-in? */
+async function hasOutsideSignIn(c: C): Promise<boolean> {
+  const p = await directory(c.env).providers().catch(() => null);
+  return Boolean(p?.github || p?.google);
+}
+
 /** The RP id of WebAuthn is the host name of the request; the origin must match too. */
 function relyingParty(c: C): { origin: string; rpId: string } {
   const u = new URL(c.req.url);
@@ -630,6 +638,10 @@ function passkeyRoutes(app: Hono<HonoEnv>): void {
     const body = await c.req.json<{ name?: unknown }>().catch(() => ({}) as { name?: unknown });
     // A browser session adds the passkey to its person. Without one, the passkey makes a new account.
     const userId = p.via === "session" && p.user ? p.user.id : undefined;
+    // With the waitlist gate on, new accounts start with Google or GitHub, when this gitring has them.
+    if (!userId && gateOn(c.env) && (await hasOutsideSignIn(c))) {
+      return jsonAnswer({ error: "New accounts start with Google or GitHub while gitring has a waitlist.", code: "waitlist" }, 403);
+    }
     try {
       const res = await directory(c.env).passkeyRegisterOptions({ ...relyingParty(c), ...(userId ? { userId } : { name: String(body.name ?? "") }) });
       return jsonAnswer({ options: res.options, mode: userId ? "add" : "create" }, 200, [passkeyCookie(res.state)]);

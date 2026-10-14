@@ -37,6 +37,14 @@ export interface Env {
   GITRING_OWNERS?: string;
   /** Optional operator key for scripts: `Authorization: Bearer <GITRING_KEY>` acts as the deployment. */
   GITRING_KEY?: string;
+  /**
+   * Secret: the waitlist gate. Emails (comma-separated) that may use gitring. Everybody else who signs in
+   * sees the waitlist page only. Set it with `wrangler secret put ALLOWLIST_EMAILS`. Unset (and no
+   * WAITLIST_ENABLED): no gate, and gitring behaves as it does on a self-hosted deployment.
+   */
+  ALLOWLIST_EMAILS?: string;
+  /** Variable: "true" turns the gate on (also with an empty allowlist, then only owners get in); "false" turns it off. */
+  WAITLIST_ENABLED?: string;
   /** Optional contact (email address) on the privacy and terms pages. */
   GITRING_CONTACT?: string;
   /** Optional: verify signatures of a plain GitHub repository webhook (X-Hub-Signature-256) on /hooks/github. */

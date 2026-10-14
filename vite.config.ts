@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { cpSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -58,9 +58,24 @@ export function staticHeaders(): Plugin {
   };
 }
 
+/**
+ * The product video and its poster live in web/public/media (the landing page of the waitlist reads
+ * /media/gitring-product.mp4). The build copies the folder into the static assets, next to public/.
+ */
+export function copyMedia(): Plugin {
+  return {
+    name: "gitring-copy-media",
+    apply: "build",
+    writeBundle(options, bundle) {
+      if (!bundle["index.html"] || !options.dir || !existsSync("web/public/media")) return;
+      cpSync("web/public/media", join(options.dir, "media"), { recursive: true });
+    },
+  };
+}
+
 export default defineConfig({
   root: ".",
-  plugins: [react(), cloudflare(), staticHeaders()],
+  plugins: [react(), cloudflare(), staticHeaders(), copyMedia()],
   build: { outDir: "dist" },
   environments: {
     client: {

@@ -15,6 +15,7 @@ import type { Env } from "../worker/env";
 import type * as T from "../core/types";
 import { chat, contextBudget, lastChatError, parseJsonLoose, type ChatMessage, type ToolDef } from "../platform/ai/models";
 import type { HarborMaster } from "../harbor/harbor";
+import { tokenWeight } from "../core/plans";
 
 /** The HarborMaster RPC surface a vessel uses (typed as the class; RPC serializes tuples as arrays). */
 type HarborApi = Pick<HarborMaster, "declare" | "log" | "write" | "read" | "list" | "check" | "submit" | "ack" | "brief" | "attemptDiff" | "giveUp">;
@@ -66,6 +67,14 @@ const MIN_TOOL_CHARS = 2_000;
 
 export class Vessel extends DurableObject<Env> {
   private st?: VesselState;
+
+  /** Metering hook: the tokens of a model call, counted for the project. One token of a dearer model counts more. */
+  private countTokens(c: VesselConfig, usage: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number } | undefined): void {
+    const n = usage?.total_tokens ?? (usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0);
+    if (!n) return;
+    const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"));
+    void Promise.resolve(dir.usageAdd(c.projectId, "agentTokens", Math.round(n * tokenWeight(c.model)))).catch(() => undefined);
+  }
 
   private harbor(projectId: string): HarborApi {
     return this.env.HARBOR.get(this.env.HARBOR.idFromName(projectId)) as unknown as HarborApi;
@@ -173,6 +182,7 @@ export class Vessel extends DurableObject<Env> {
         timeoutMs: 240_000,
         reasoning: "high",
       });
+      this.countTokens(c, plan?.usage);
       if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
       const course = parseJsonLoose<{ plan?: string[]; files?: string[]; symbols?: string[]; approach?: string }>(plan?.message.content) ?? {};
       const res = await h.declare({
@@ -209,6 +219,7 @@ export class Vessel extends DurableObject<Env> {
         return true;
       }
       st.failStreak = 0;
+      this.countTokens(c, res.usage);
       const msg = res.message;
       st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
       if (!msg.tool_calls?.length) {

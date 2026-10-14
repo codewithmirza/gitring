@@ -9,6 +9,8 @@
  *   projects + members   project registry and roles (owner, member, viewer); invites by login or email
  *   config               sealed (AES-GCM) provider credentials: the GitHub App and the Google client
  *   budgets              rolling one-hour windows of built-in AI agent starts (per user and global)
+ *   waitlist + allowed   the waitlist gate (src/core/waitlist.ts): what waiting people chose, and who the owner let in
+ *   usage                counters of use for each project and month (merges, container test runs, agent tokens)
  *   prefs + push_subs    the preferences of a person, and the devices that get push notifications
  *
  * The HarborMaster of each project holds the project's state; the Directory only knows that it exists.
@@ -21,6 +23,8 @@ import type { ProjectSource } from "../core/types";
 import { rand } from "../harbor/ids";
 import { githubAppJwt, randomToken, sameString, seal, sha256B64url, unseal } from "./crypto";
 import { OAuthStore, type JsonObject, type PendingDevice, type PendingRequest, type TokenAnswer } from "./oauth";
+import { cleanAllowEntry, cleanNote, gateOn, listed, parseAllowlist, waitlistReport, type WaitlistEntry, type WaitlistReport, type WaitlistState } from "../core/waitlist";
+import { isPlanId, type PlanId } from "../core/plans";
 import { pushEndpointOk, pushKeys, sendPush } from "../worker/push";
 import { credentialIdOf, PASSKEY_ALGS, PASSKEY_SCHEMA, PasskeyError, signCountOk, userHandleOf, verifyAssertion, verifyRegistration, type NewPasskey, type PasskeyAlg } from "./passkeys";
 
@@ -48,6 +52,11 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS push_subs_user ON push_subs (user_id)`,
   // A login in GITRING_OWNERS stays with the account that used it first (logins can change hands).
   `CREATE TABLE IF NOT EXISTS owner_pins (handle TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL, pinned_at INTEGER NOT NULL)`,
+  // The waitlist gate: one record for each person who chose a pack, and the people that an owner let in.
+  `CREATE TABLE IF NOT EXISTS waitlist (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE, email TEXT, name TEXT NOT NULL, provider TEXT NOT NULL, pack TEXT NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS allowed (entry TEXT PRIMARY KEY, added_by TEXT, added_at INTEGER NOT NULL)`,
+  // Use of each project in each month ("YYYY-MM"). Counters only: nothing here charges anyone.
+  `CREATE TABLE IF NOT EXISTS usage (project_id TEXT NOT NULL, month TEXT NOT NULL, merges INTEGER NOT NULL DEFAULT 0, test_runs INTEGER NOT NULL DEFAULT 0, agent_tokens INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (project_id, month))`,
   // The public sample left the product (2026-10-10): archive its project.
   `UPDATE projects SET archived = 1 WHERE id = 'demo' AND source LIKE '%"sample"%'`,
 ];
@@ -114,6 +123,8 @@ type UserRow = {
   created_at: number;
   last_seen: number;
 };
+
+type WaitlistRow = { id: string; user_id: string; email: string | null; name: string; provider: string; pack: string; note: string; created_at: number; updated_at: number };
 
 type ProjectRow = {
   id: string;
@@ -723,9 +734,11 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** The providers and the GitHub connection of a person, in one call (GET /api/me). */
-  async meInfo(userId: string | null): Promise<{ providers: ProvidersInfo; github?: A.GithubConnection }> {
+  async meInfo(userId: string | null): Promise<{ providers: ProvidersInfo; github?: A.GithubConnection; waitlist?: WaitlistState }> {
     const providers = await this.providers();
-    return { providers, ...(userId ? { github: await this.githubConnection(userId) } : {}) };
+    const waitlist = this.waitlistState(userId);
+    // A person that the gate keeps out has no use for their GitHub connection: skip the lookup.
+    return { providers, ...(waitlist ? { waitlist } : {}), ...(userId && (!waitlist || waitlist.allowed) ? { github: await this.githubConnection(userId) } : {}) };
   }
 
   /**
@@ -1077,7 +1090,121 @@ export class Directory extends DurableObject<Env> {
       .toArray()
       .map((i) => ({ provider: i.provider, login: i.login ?? undefined, email: i.email ?? undefined }));
     const passkeys = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM passkeys WHERE user_id = ?", userId).one().n;
-    return { id: u.id, name: u.name, email: u.email ?? undefined, avatar: u.avatar ?? undefined, identities, passkeys, admin: this.isAdmin(u.id) };
+    const admin = this.isAdmin(u.id);
+    return { id: u.id, name: u.name, email: u.email ?? undefined, avatar: u.avatar ?? undefined, identities, passkeys, admin, allowed: this.allowedFor(u.id, admin) };
+  }
+
+  /* ════════════════════ the waitlist gate ════════════════════ */
+
+  /** The emails of a person (the account and every sign-in), lowercase. Providers send verified emails only. */
+  private emailsOf(userId: string): string[] {
+    const own = this.sql.exec<{ email: string | null }>("SELECT email FROM users WHERE id = ?", userId).toArray()[0]?.email;
+    const rest = this.sql.exec<{ email: string | null }>("SELECT email FROM identities WHERE user_id = ?", userId).toArray().map((r) => r.email);
+    return [...new Set([own, ...rest].filter((e): e is string => Boolean(e)).map((e) => e.toLowerCase()))];
+  }
+
+  /**
+   * May this person use gitring? Always, when the deployment has no gate. With a gate: owners, people with
+   * a verified email in ALLOWLIST_EMAILS, and people that an owner let in (an email or "user:<account id>").
+   */
+  private allowedFor(userId: string, admin = this.isAdmin(userId)): boolean {
+    if (!gateOn(this.env)) return true;
+    if (admin) return true;
+    const entries = [...this.emailsOf(userId), `user:${userId.toLowerCase()}`];
+    if (listed(parseAllowlist(this.env.ALLOWLIST_EMAILS), entries)) return true;
+    return entries.some((e) => this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM allowed WHERE entry = ?", e).one().n > 0);
+  }
+
+  private entryRow(r: WaitlistRow): WaitlistEntry {
+    return { id: r.id, userId: r.user_id, email: r.email, name: r.name, provider: r.provider, pack: (isPlanId(r.pack) ? r.pack : "explorer") as PlanId, note: r.note, createdAt: r.created_at, updatedAt: r.updated_at };
+  }
+
+  /** The gate for the web app: absent without a gate. A visitor (no person) is not allowed. */
+  waitlistState(userId: string | null): WaitlistState | undefined {
+    if (!gateOn(this.env)) return undefined;
+    const row = userId ? this.sql.exec<WaitlistRow>("SELECT * FROM waitlist WHERE user_id = ?", userId).toArray()[0] : undefined;
+    return { gate: true, allowed: userId ? this.allowedFor(userId) : false, entry: row ? this.entryRow(row) : null };
+  }
+
+  /** Keep the choice of a person (a new record, or a change of the old one). */
+  waitlistSet(userId: string, pack: unknown, note: unknown): WaitlistEntry {
+    if (!isPlanId(pack)) throw new Error("Pick one of the packs.");
+    const u = this.sql.exec<UserRow>("SELECT * FROM users WHERE id = ?", userId).toArray()[0];
+    if (!u) throw new Error("Unknown user.");
+    const email = this.emailsOf(userId)[0] ?? null;
+    const provider = this.sql.exec<{ provider: string }>("SELECT provider FROM identities WHERE user_id = ? ORDER BY rowid DESC LIMIT 1", userId).toArray()[0]?.provider ?? "passkey";
+    const now = Date.now();
+    this.sql.exec(
+      "INSERT INTO waitlist (id, user_id, email, name, provider, pack, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET email = excluded.email, name = excluded.name, provider = excluded.provider, pack = excluded.pack, note = excluded.note, updated_at = excluded.updated_at",
+      `w_${rand(10)}`,
+      userId,
+      email,
+      u.name,
+      provider,
+      pack,
+      cleanNote(note),
+      now,
+      now,
+    );
+    return this.entryRow(this.sql.exec<WaitlistRow>("SELECT * FROM waitlist WHERE user_id = ?", userId).one());
+  }
+
+  /** A person takes their interest back: the record goes. */
+  waitlistRemove(userId: string): boolean {
+    const had = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM waitlist WHERE user_id = ?", userId).one().n > 0;
+    this.sql.exec("DELETE FROM waitlist WHERE user_id = ?", userId);
+    return had;
+  }
+
+  /** Every record, counts for each pack and the monthly value of the choices (for the owner). */
+  waitlistAdmin(): WaitlistReport {
+    const rows = this.sql.exec<WaitlistRow>("SELECT * FROM waitlist ORDER BY created_at ASC").toArray();
+    return waitlistReport(rows.map((r) => ({ ...this.entryRow(r), allowed: this.allowedFor(r.user_id) })));
+  }
+
+  /** The people that an owner let in (the secret ALLOWLIST_EMAILS is separate and not listed here). */
+  allowedList(): { entry: string; addedBy: string | null; addedAt: number }[] {
+    return this.sql
+      .exec<{ entry: string; added_by: string | null; added_at: number }>("SELECT entry, added_by, added_at FROM allowed ORDER BY added_at ASC")
+      .toArray()
+      .map((r) => ({ entry: r.entry, addedBy: r.added_by, addedAt: r.added_at }));
+  }
+
+  allowedAdd(raw: unknown, by: string | null): string {
+    const entry = cleanAllowEntry(raw);
+    if (!entry) throw new Error("Give an email address, or an account id like user:u_0123456789.");
+    const n = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM allowed").one().n;
+    if (n >= 2000) throw new Error("The list has 2,000 people. Remove some first.");
+    this.sql.exec("INSERT OR IGNORE INTO allowed (entry, added_by, added_at) VALUES (?, ?, ?)", entry, by, Date.now());
+    return entry;
+  }
+
+  allowedRemove(raw: unknown): boolean {
+    const entry = cleanAllowEntry(raw);
+    if (!entry) return false;
+    const had = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM allowed WHERE entry = ?", entry).one().n > 0;
+    this.sql.exec("DELETE FROM allowed WHERE entry = ?", entry);
+    return had;
+  }
+
+  /* ════════════════════ use of each project (counters only) ════════════════════ */
+
+  /** Add to a counter of a project for this month. Never throws: a counter must not stop a merge or a test. */
+  usageAdd(projectId: string, kind: "merges" | "testRuns" | "agentTokens", n = 1): void {
+    try {
+      const amount = Math.max(0, Math.min(1e9, Math.round(Number(n) || 0)));
+      if (!amount || !projectId) return;
+      const col = kind === "merges" ? "merges" : kind === "testRuns" ? "test_runs" : "agent_tokens";
+      const month = new Date().toISOString().slice(0, 7);
+      this.sql.exec(`INSERT INTO usage (project_id, month, ${col}) VALUES (?, ?, ?) ON CONFLICT (project_id, month) DO UPDATE SET ${col} = ${col} + excluded.${col}`, projectId, month, amount);
+    } catch {
+      /* a counter is never worth a failure */
+    }
+  }
+
+  usageOf(projectId: string, month = new Date().toISOString().slice(0, 7)): { month: string; merges: number; testRuns: number; agentTokens: number } {
+    const r = this.sql.exec<{ merges: number; test_runs: number; agent_tokens: number }>("SELECT merges, test_runs, agent_tokens FROM usage WHERE project_id = ? AND month = ?", projectId, month).toArray()[0];
+    return { month, merges: r?.merges ?? 0, testRuns: r?.test_runs ?? 0, agentTokens: r?.agent_tokens ?? 0 };
   }
 
   async sessionUser(token: string): Promise<A.UserInfo | null> {
