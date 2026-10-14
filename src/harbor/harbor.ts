@@ -18,6 +18,8 @@ import { CHECK_RUN, callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import { hmacSha256Hex, seal, sha256Hex, unseal } from "../directory/crypto";
 import { deliverWebhook, newWebhookSecret, SECRET_SEAL, secretHint } from "./webhooks";
 import { approvalLine, approvalNeeded, approvalPath, canDecide, riskSigns } from "../core/approvals";
+import { changeMeaning } from "../core/analysis/meaning";
+import { checkFolderRules, planNotes, planRefusal, sanitizeFolderRules } from "../core/coord/folder-rules";
 import { pushKeys } from "../worker/push";
 import { canAnswerQuestion, escalationFacts, escalationOptions, inboxOf, REDO_OPTIONS, STEWARD_OPTIONS, taskPath, type InboxItem } from "../core/inbox";
 import { stewardFindings, stewardModel, wordFinding } from "./steward";
@@ -1135,8 +1137,10 @@ export class HarborMaster extends DurableObject<Env> {
     if (!this.mainView) await this.loadMain().catch(() => undefined);
     const view = await this.attemptView(a);
     const managed = this.checkPaths();
-    const { footprint } = footprintOf(view.changed.filter((c) => !managed.has(c.path)), new Set(view.files.keys()), this.footprintOptions());
+    const own = view.changed.filter((c) => !managed.has(c.path));
+    const { footprint } = footprintOf(own, new Set(view.files.keys()), this.footprintOptions());
     a.footprint = footprint;
+    a.meaning = changeMeaning(own, view.opaque.map((c) => c.path));
     let additions = 0;
     let deletions = 0;
     for (const t of Object.values(footprint.files)) {
@@ -1377,6 +1381,12 @@ export class HarborMaster extends DurableObject<Env> {
       // A new plan for the same work copy keeps the time of the first plan: R4 compares the true order.
       declaredAt: attempt?.course.declaredAt ?? now,
     };
+    // The rules by folder: a plan that touches files only other people's agents may change is refused here,
+    // before any work exists. The other rules go into the answer as plain sentences.
+    const ruled = checkFolderRules(p.settings.folderRules, course.files, (attempt?.sender ?? personOf(input.by))?.id);
+    const refusal = planRefusal(ruled);
+    if (refusal) throw new Error(refusal);
+    const rules = planNotes(ruled);
     if (!attempt) {
       const id = newId("a");
       attempt = {
@@ -1468,6 +1478,7 @@ export class HarborMaster extends DurableObject<Env> {
       },
       workspace,
       clearance: clr,
+      ...(rules.length ? { rules } : {}),
       protocol: PROTOCOL,
     };
   }
@@ -2453,7 +2464,7 @@ export class HarborMaster extends DurableObject<Env> {
     });
     if (approvalAsked) {
       this.webhook("approval", { attemptId: a.id, approval: approvalAsked, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
-      this.notifyPeople(approvalAsked.approver ? [approvalAsked.approver.id] : [], "approval");
+      this.notifyPeople(approvalAsked.approver ? [approvalAsked.approver.id] : [], "approval", Boolean(approvalAsked.ownerOnly));
     }
     return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked, ...this.mayAnswerOf(a, call.viewer) } : {}), clearance: this.clearanceFor(a.id) };
   }
@@ -3600,8 +3611,11 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /** Does this work need a person before it merges? The project setting, the signs of the change and the rivals decide. */
-  private async approvalFor(a: T.Attempt, f: { untested: boolean; competing: number; picked: boolean }): Promise<{ reason: T.ApprovalReason; why: string[] } | null> {
-    const need = approvalNeeded({ mode: this.requireProject().settings.landing, untested: f.untested && !f.picked, competing: f.picked ? 0 : f.competing, signs: riskSigns(a) });
+  private async approvalFor(a: T.Attempt, f: { untested: boolean; competing: number; picked: boolean }): Promise<{ reason: T.ApprovalReason; why: string[]; ownerOnly?: boolean } | null> {
+    const settings = this.requireProject().settings;
+    // The rules by folder see every changed file, binary files included.
+    const rules = checkFolderRules(settings.folderRules, Object.keys(a.meaning?.files ?? a.footprint.files), a.sender?.id);
+    const need = approvalNeeded({ mode: settings.landing, untested: f.untested && !f.picked, competing: f.picked ? 0 : f.competing, signs: riskSigns(a), rules });
     if (!need) return null;
     // The same work that a person said yes to: no second question.
     if (a.approval?.status === "approved" && a.approval.digest && (await this.digestOf(a)) === a.approval.digest) return null;
@@ -3609,14 +3623,15 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /** Ask a person to say yes. The work copy stays "ready" and does not merge until the answer comes. */
-  private async askApproval(a: T.Attempt, need: { reason: T.ApprovalReason; why: string[] }): Promise<T.Approval> {
+  private async askApproval(a: T.Attempt, need: { reason: T.ApprovalReason; why: string[]; ownerOnly?: boolean }): Promise<T.Approval> {
     const approval: T.Approval = {
       id: newId("ap"),
       status: "waiting",
       reason: need.reason,
       why: need.why,
       digest: await this.digestOf(a),
-      ...(a.sender ? { approver: a.sender } : {}),
+      // A rule by folder asks for an owner: the sender of the agent is not the one who answers.
+      ...(need.ownerOnly ? { ownerOnly: true } : a.sender ? { approver: a.sender } : {}),
       askedAt: Date.now(),
     };
     a.approval = approval;
@@ -3632,7 +3647,8 @@ export class HarborMaster extends DurableObject<Env> {
     return approval;
   }
 
-  private approverWords(ap: Pick<T.Approval, "approver">): string {
+  private approverWords(ap: Pick<T.Approval, "approver" | "ownerOnly">): string {
+    if (ap.ownerOnly) return "An owner of the project";
     return ap.approver?.name ?? "A person of the project";
   }
 
@@ -3716,7 +3732,7 @@ export class HarborMaster extends DurableObject<Env> {
         "refused",
         !atLeast(who.role, "member")
           ? "You need the member role to answer."
-          : rule === "owner" || !ap.approver
+          : rule === "owner" || ap.ownerOnly || !ap.approver
             ? "Only an owner of the project can answer this."
             : `Only ${ap.approver.name} (who sent the agent) or an owner of the project can answer this.`,
       );
@@ -3873,11 +3889,11 @@ export class HarborMaster extends DurableObject<Env> {
    * who may answer when no person sent the work. The Directory knows the people and their devices. Without
    * the push keys of the deployment, nothing goes out.
    */
-  private notifyPeople(users: string[], kind: "approval" | "question"): void {
+  private notifyPeople(users: string[], kind: "approval" | "question", ownerOnly = false): void {
     const p = this.project;
     // Push is off without the keys of the deployment: no call to the Directory then.
     if (!p || !this.env.DIRECTORY || !pushKeys(this.env)) return;
-    const need = p.settings.approver === "owner" ? "owner" : "member";
+    const need = p.settings.approver === "owner" || ownerOnly ? "owner" : "member";
     const send = (async () => this.directory().pushInbox(p.id, { users: need === "owner" ? [] : users, need, kind }))();
     this.ctx.waitUntil(send.then(() => undefined).catch((e) => console.warn("push failed", errorLine(e))));
   }
@@ -5514,6 +5530,7 @@ function sanitizeSettings(raw: Partial<T.ProjectSettings>, modelOk: (m: string) 
   if (raw.redo === "agent-first" || raw.redo === "agent-only" || raw.redo === "builtin") out.redo = raw.redo;
   const wait = num(raw.redoWaitMinutes, 5, 120);
   if (wait !== undefined) out.redoWaitMinutes = Math.round(wait);
+  if (Array.isArray(raw.folderRules)) out.folderRules = sanitizeFolderRules(raw.folderRules);
   if (Array.isArray(raw.webhooks)) {
     // Outbound webhooks: https to a public host (gitring posts to it from the server).
     out.webhooks = raw.webhooks

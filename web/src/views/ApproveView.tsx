@@ -276,7 +276,8 @@ function Question({ attempt }: { attempt: Attempt }) {
   const mine = answered && approval && answered.approvalId === approval.id ? answered.result : null;
   const phase = phaseOf(attempt, landing ?? mine?.landing);
   const mayAnswer = canDecide(approval, { id: me?.id, role }, rule);
-  const reason = cannotAnswerText({ signedIn: Boolean(me), role }, approval?.approver, rule);
+  // A question for owners only (a rule by folder) has the words of the "owner" rule.
+  const reason = cannotAnswerText({ signedIn: Boolean(me), role }, approval?.approver, approval?.ownerOnly ? "owner" : rule);
   const callsign = agent?.callsign ?? attempt.agentId.toUpperCase();
   const title = intent?.title ?? "Unknown task";
   const mergeUntil = attempt.mergeWait?.until ?? mine?.waits?.until;

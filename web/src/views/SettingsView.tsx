@@ -7,7 +7,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, InlineConfirm, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
-import type { ApproverRule, CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, ProjectSettings, RedoPolicy, SettingsAnswer, WebhookInput } from "../../../src/core/types";
+import type { ApproverRule, CheckSettings, FolderRule, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, Person, ProjectSettings, RedoPolicy, SettingsAnswer, WebhookInput } from "../../../src/core/types";
+import { MAX_FOLDER_RULES } from "../../../src/core/coord/folder-rules";
 import { githubRepoName } from "../../../src/core/repo-rules";
 import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess, useMe, type MeWithInstall } from "../state/account";
 import { isAbort, pullFromGithub, sendToGithub, syncStatus } from "../state/github";
@@ -15,7 +16,22 @@ import { useStore } from "../state/store";
 import { ago, shortSha } from "../state/format";
 import { Link } from "../app/router";
 import { RepoSelect } from "./newproject/RepoSelect";
-import { APPROVAL_EVENT_NOTE, APPROVER_CHOICES, APPROVER_LEGEND, LANDING_CHOICES, LANDING_LEGEND, WEBHOOK_EVENTS, approverOf, landingOf, untestedHelp } from "./approval-copy";
+import {
+  APPROVAL_EVENT_NOTE,
+  APPROVER_CHOICES,
+  APPROVER_LEGEND,
+  FOLDER_RULES_HELP,
+  FOLDER_RULES_LEGEND,
+  FOLDER_RULE_CHOICES,
+  LANDING_CHOICES,
+  LANDING_LEGEND,
+  WEBHOOK_EVENTS,
+  approverOf,
+  folderRulesOf,
+  landingOf,
+  untestedHelp,
+  type FolderRuleKind,
+} from "./approval-copy";
 import { ChoiceList } from "./ChoiceList";
 import { SECRET_ONCE, SIGNATURE_HELP, secretLine } from "./webhook-copy";
 import { STEWARD_LABEL, stewardHelp } from "./steward-copy";
@@ -300,7 +316,7 @@ export function SettingsView() {
       )}
       {settings && (
         <>
-          <MergingSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} />
+          <MergingSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} members={members} />
           <ChecksSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} />
           <GithubSection projectId={projectId} owner={owner} settings={settings} onSaved={setSettings} imported={imported} me={me} />
           {full ? (
@@ -379,10 +395,23 @@ const REDO_HELP: Record<RedoPolicy, string> = {
   builtin: "A built-in agent does the task again at once. The work of built-in agents always goes back to a built-in agent.",
 };
 
-function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
+/** One rule by folder as the form edits it (`key` keeps the row stable while the list changes). */
+interface RuleRow {
+  key: string;
+  pattern: string;
+  kind: FolderRuleKind;
+  members: Person[];
+}
+
+let ruleSeq = 0;
+const newRuleRow = (r?: FolderRule): RuleRow => ({ key: `r${++ruleSeq}`, pattern: r?.pattern ?? "", kind: r?.rule ?? "owner-yes", members: r?.rule === "members" ? r.members : [] });
+const ruleOf = (r: RuleRow): FolderRule => (r.kind === "members" ? { pattern: r.pattern.trim(), rule: "members", members: r.members } : { pattern: r.pattern.trim(), rule: r.kind });
+
+function MergingSection({ projectId, owner, settings, onSaved, members }: SectionProps & { members: MemberInfo[] | null }) {
   // A server from before `landing` sends only `autoLand`; a server from before `approver` sends neither.
   const savedLanding = landingOf(settings);
   const savedApprover = approverOf(settings);
+  const savedRules = JSON.stringify(folderRulesOf(settings));
   const [landing, setLanding] = useState<LandingMode>(savedLanding);
   const [approver, setApprover] = useState<ApproverRule>(savedApprover);
   const [intentsInRepo, setIntentsInRepo] = useState(settings.intentsInRepo);
@@ -391,6 +420,8 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
   const [steward, setSteward] = useState(savedSteward);
   const [redo, setRedo] = useState<RedoPolicy>(settings.redo ?? "agent-first");
   const [wait, setWait] = useState(String(settings.redoWaitMinutes ?? 15));
+  const [rules, setRules] = useState<RuleRow[]>(() => folderRulesOf(settings).map((r) => newRuleRow(r)));
+  const [tried, setTried] = useState(false);
   const { busy, error, setError, save } = useSave(projectId, onSaved);
 
   // Reset the form only when these values change on the server (a save in another section keeps this draft).
@@ -401,23 +432,37 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
     setSteward(savedSteward);
     setRedo(settings.redo ?? "agent-first");
     setWait(String(settings.redoWaitMinutes ?? 15));
-  }, [savedLanding, savedApprover, settings.intentsInRepo, savedSteward, settings.redo, settings.redoWaitMinutes]);
+    setRules(folderRulesOf(settings).map((r) => newRuleRow(r)));
+    setTried(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedLanding, savedApprover, settings.intentsInRepo, savedSteward, settings.redo, settings.redoWaitMinutes, savedRules]);
 
+  const change = (key: string, patch: Partial<RuleRow>) => setRules((l) => l.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const badRule = (r: RuleRow) => !r.pattern.trim() || (r.kind === "members" && !r.members.length);
+  // The people a "members" rule can name: members and owners who signed in once (a pending invite has no account yet).
+  const people: Person[] = (members ?? []).filter((m) => m.userId && !m.pending && m.role !== "viewer").map((m) => ({ id: m.userId!, name: m.name }));
   const dirty =
     landing !== savedLanding ||
     approver !== savedApprover ||
     intentsInRepo !== settings.intentsInRepo ||
     steward !== savedSteward ||
     redo !== (settings.redo ?? "agent-first") ||
-    (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15));
+    (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15)) ||
+    JSON.stringify(rules.map(ruleOf)) !== savedRules;
   const submit = () => {
     const minutes = Number(wait);
     if (redo === "agent-first" && (!Number.isInteger(minutes) || minutes < 5 || minutes > 120)) {
       setError("Give a wait time from 5 to 120 minutes.");
       return;
     }
+    setTried(true);
+    if (rules.some(badRule)) {
+      setError("Each rule needs a pattern. A rule for members needs at least one member.");
+      return;
+    }
     // `landing` replaces the old `autoLand`: the server keeps `autoLand` equal to it, so the form never writes `autoLand`.
     void save({ landing, approver, intentsInRepo, steward, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
+    void save({ landing, approver, intentsInRepo, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}), folderRules: rules.map(ruleOf) }, "Merge settings saved");
   };
 
   return (
@@ -427,6 +472,60 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
       </h2>
       <ChoiceList legend={LANDING_LEGEND} choices={LANDING_CHOICES} value={landing} onChange={setLanding} disabled={!owner} />
       <ChoiceList legend={APPROVER_LEGEND} choices={APPROVER_CHOICES} value={approver} onChange={setApprover} disabled={!owner} />
+      <fieldset className="st-rules" disabled={!owner}>
+        <legend className="b-field__label st-choice__legend">{FOLDER_RULES_LEGEND}</legend>
+        <p className="np__help">{FOLDER_RULES_HELP}</p>
+        {rules.length === 0 && <p className="np__help">No rules yet: the choices above decide for every folder.</p>}
+        <ul className="st-rules__list">
+          {rules.map((r, i) => (
+            <li key={r.key} className="st-rule">
+              <div className="st-row">
+                <Field label={`Rule ${i + 1}: folder or pattern`} error={tried && !r.pattern.trim() ? "Give a folder or a pattern, for example migrations/**." : undefined}>
+                  <Input className="voice-agent" value={r.pattern} onChange={(e) => change(r.key, { pattern: e.target.value })} placeholder="migrations/**" autoComplete="off" spellCheck={false} />
+                </Field>
+                <Field label="Who says yes" help={FOLDER_RULE_CHOICES.find((c) => c.value === r.kind)?.help}>
+                  <Select value={r.kind} onChange={(e) => change(r.key, { kind: e.target.value as FolderRuleKind })}>
+                    {FOLDER_RULE_CHOICES.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              {r.kind === "members" && (
+                <fieldset className="st-hook__events">
+                  <legend className="b-field__label">Members</legend>
+                  {people.length === 0 && <span className="np__help">No member has signed in yet.</span>}
+                  {people.map((m) => (
+                    <Checkbox
+                      key={m.id}
+                      label={m.name}
+                      checked={r.members.some((x) => x.id === m.id)}
+                      onChange={(e) => change(r.key, { members: e.target.checked ? [...r.members.filter((x) => x.id !== m.id), m] : r.members.filter((x) => x.id !== m.id) })}
+                    />
+                  ))}
+                  {tried && !r.members.length && <span className="st-error">Choose at least one member.</span>}
+                </fieldset>
+              )}
+              {owner && (
+                <div className="st-actions">
+                  <Button size="sm" variant="ghost" icon="close" onClick={() => setRules((l) => l.filter((x) => x.key !== r.key))}>
+                    Remove
+                  </Button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        {owner && (
+          <div className="st-actions">
+            <Button size="sm" icon="plus" disabled={rules.length >= MAX_FOLDER_RULES} onClick={() => setRules((l) => [...l, newRuleRow()])} title={rules.length >= MAX_FOLDER_RULES ? `At most ${MAX_FOLDER_RULES} rules.` : undefined}>
+              Add a rule
+            </Button>
+          </div>
+        )}
+      </fieldset>
       <div className="st-checks">
         <Checkbox
           label={

@@ -107,6 +107,9 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 .st-repo { display: grid; gap: var(--s-2); max-width: 560px; }
 .st-repo__info { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 .st-repo__warn { color: var(--caution); }
+.st-rules { display: grid; gap: var(--s-3); max-width: 640px; min-width: 0; margin: var(--s-3) 0 0; padding: 0; border: 0; }
+.st-rules__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
+.st-rule { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); }
 .st-hooks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
 .st-hook { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); }
 .st-hook__events { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-5); margin: 0; padding: 0; border: 0; min-width: 0; }

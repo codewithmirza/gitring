@@ -405,6 +405,8 @@ export interface ApprovalItem {
   reason: ApprovalReason;
   /** The person who answers. Absent: any member. An owner can always answer. */
   approver?: Person;
+  /** Only an owner answers: a rule by folder asks for the yes of an owner. */
+  ownerOnly?: boolean;
   askedAt: number;
   /** The signed-in person may answer this question (canDecide). */
   mayAnswer: boolean;
@@ -506,6 +508,7 @@ const queueMemo = memo(
         why: ap.why,
         reason: ap.reason,
         approver: ap.approver,
+        ...(ap.ownerOnly ? { ownerOnly: true } : {}),
         askedAt: ap.askedAt,
         mayAnswer: canDecide(ap, who, rule),
         attemptIds: [a.id],

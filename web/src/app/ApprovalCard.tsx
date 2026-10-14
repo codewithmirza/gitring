@@ -90,7 +90,7 @@ export function ApprovalCard({ item, variant, onOpen, focusReview }: ApprovalCar
             </Button>
           </>
         ) : (
-          <span className="apcard__waits">Waits for {waitsFor(item.approver, rule)}</span>
+          <span className="apcard__waits">Waits for {waitsFor(item.approver, item.ownerOnly ? "owner" : rule)}</span>
         )}
       </div>
       {noteOpen && item.mayAnswer && (

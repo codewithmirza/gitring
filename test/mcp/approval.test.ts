@@ -181,7 +181,7 @@ describe("a client that can show a form: gitring asks in the chat", () => {
     const { form, state } = await question(id);
     expect(form.method).toBe("elicitation/create");
     expect(form.params.mode).toBe("form");
-    expect(form.params.message).toMatch(/^Merge "Shout" into main\? 2 files, \+\d+ -0\. \d+ of \d+ tests pass\. This project asks a person before every merge\./);
+    expect(form.params.message).toMatch(/^Merge "Shout" into main\? 2 files, \+\d+ -0\. \d+ of \d+ tests pass. [A-Z][^.]*. This project asks a person before every merge\./);
     expect(form.params.requestedSchema.required).toEqual(["answer"]);
     expect(form.params.requestedSchema.properties.answer.oneOf).toEqual([
       { const: "approve", title: "Yes, merge it" },
