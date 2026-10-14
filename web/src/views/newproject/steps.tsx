@@ -284,7 +284,7 @@ export function DescribeStep({ step, form, setForm, onBack, onStep, returnTo }: 
         <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} />
       </div>
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
-      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} disabled={empty} why={empty ? "Describe the project first." : undefined} />
+      <Submit busy={busy} label={busy ? "Please wait…" : "Create project"} disabled={empty} why={empty ? "Describe the project first." : undefined} />
     </form>
   );
 }
@@ -332,7 +332,7 @@ export function TemplateStep({ form, setForm, onBack, onStep, returnTo }: StepPr
         <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} />
       </div>
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
-      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} />
+      <Submit busy={busy} label={busy ? "Please wait…" : "Create project"} />
     </form>
   );
 }
@@ -570,7 +570,7 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
         )}
       </div>
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
-      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} disabled={loading} why={loading ? "gitring reads the repository." : undefined} />
+      <Submit busy={busy} label={busy ? "Please wait…" : "Create project"} disabled={loading} why={loading ? "gitring reads the repository." : undefined} />
     </form>
   );
 }
@@ -645,7 +645,7 @@ export function UrlStep({ step, form, setForm, onBack, onStep, returnTo }: StepP
       </div>
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
       <p className="np-step__note">Cloudflare Artifacts imports the repository with its history. A large repository takes some minutes.</p>
-      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} />
+      <Submit busy={busy} label={busy ? "Please wait…" : "Create project"} />
     </form>
   );
 }
@@ -730,7 +730,7 @@ export function UploadStep({ upload, form, setForm, onBack, onStep, onChooseFold
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
       <Submit
         busy={busy !== null}
-        label={busy === "read" ? `Reading ${plan?.keep.length ?? 0} files…` : busy === "create" ? "Creating the project…" : "Create project"}
+        label={busy === "read" ? "Please wait…" : busy === "create" ? "Please wait…" : "Create project"}
         disabled={!plan || tooBig || none}
         why={!plan ? "Choose a folder first." : undefined}
       />
@@ -787,7 +787,7 @@ export function PlainStep({ kind, form, setForm, onBack, onStep, returnTo }: Ste
         <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} />
       </div>
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
-      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} />
+      <Submit busy={busy} label={busy ? "Please wait…" : "Create project"} />
     </form>
   );
 }

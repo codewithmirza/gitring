@@ -118,7 +118,7 @@ function clientFor(projectId: string | undefined) {
  * waits until the first one is done.
  */
 export async function answerApproval(input: AnswerInput): Promise<AnswerResult> {
-  if (sending.has(input.approvalId)) return { ok: false, error: "gitring is sending your answer." };
+  if (sending.has(input.approvalId)) return { ok: false, error: "gitring sends your answer." };
   setSending(input.approvalId, input.answer);
   try {
     const note = input.answer === "send-back" ? input.note?.trim() || undefined : undefined;

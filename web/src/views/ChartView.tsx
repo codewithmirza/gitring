@@ -28,11 +28,11 @@ function MapLoading() {
     return () => clearTimeout(t);
   }, []);
   return (
-    <div className="c-chart c-chart--loading" role="status" aria-label="Loading the map">
+    <div className="c-chart c-chart--loading" role="status" aria-label="Please wait for the map">
       {slow && (
         <div className="c-chart__wait">
           <ChartFrameArt size={88} />
-          <span>Loading the map…</span>
+          <span>Please wait for the map…</span>
         </div>
       )}
     </div>

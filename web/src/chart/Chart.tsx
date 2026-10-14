@@ -625,7 +625,7 @@ export const VesselLayer = memo(function VesselLayer({
         if (!p) return null;
         const near = v.ranges.find((r) => r.range <= 2);
         const label = `${v.callsign}, ${v.model}. ${ATTEMPT_STATUS_TEXT[v.status]}${v.file ? ` in ${v.file}` : ", no file changed yet"}. Task: ${v.intentTitle}.${
-          near ? ` Distance ${near.range}: ${RANGE_TEXT[near.range as Range]}${near.closing ? ", moving closer" : ""}.` : ""
+          near ? ` Distance ${near.range}: ${RANGE_TEXT[near.range as Range]}${near.closing ? ", closer now" : ""}.` : ""
         }${v.corrections.length ? ` ${v.corrections.length} ${v.corrections.length === 1 ? "change request" : "change requests"}.` : ""}`;
         return (
           <Vessel

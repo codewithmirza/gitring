@@ -681,7 +681,7 @@ const SYNC_STATE: Record<GithubSyncState, { tone: BadgeTone; icon: IconName; tex
   "not-linked": { tone: "neutral", icon: "ring", text: "No repository" },
   "no-app": { tone: "caution", icon: "info", text: "No GitHub App" },
   "not-installed": { tone: "caution", icon: "info", text: "App not installed" },
-  pending: { tone: "accent", icon: "clock", text: "Sending" },
+  pending: { tone: "accent", icon: "clock", text: "On its way" },
   ok: { tone: "clear", icon: "check", text: "In sync" },
   blocked: { tone: "danger", icon: "cross", text: "Stopped" },
   error: { tone: "danger", icon: "cross", text: "Error" },
@@ -709,7 +709,7 @@ const PULL_STATE: Record<PullStatus["state"], { tone: BadgeTone; icon: IconName;
   merged: { tone: "clear", icon: "merge", text: "Brought in" },
   conflict: { tone: "caution", icon: "info", text: "Needs a task" },
   error: { tone: "danger", icon: "cross", text: "Error" },
-  pending: { tone: "accent", icon: "clock", text: "Reading" },
+  pending: { tone: "accent", icon: "clock", text: "Not read yet" },
 };
 
 function pullOf(status: GithubSyncStatus | null): PullStatus | undefined {

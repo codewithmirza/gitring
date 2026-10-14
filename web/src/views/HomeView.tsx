@@ -206,7 +206,7 @@ export function HomeView() {
     el?.scrollIntoView({ block: "start" });
   }, [accountReady, leave]);
 
-  if (!accountReady || leave) return <SkeletonPage label="Opening gitring" />;
+  if (!accountReady || leave) return <SkeletonPage label="Please wait" />;
 
   return (
     <div className="home">
@@ -216,7 +216,7 @@ export function HomeView() {
           gitring
         </p>
         <h1 className="home__title" id="home-title" tabIndex={-1}>
-          Many coding agents. One codebase. No merge fights.
+          Many agents. One codebase. No merge fights.
         </h1>
         <p className="home__lede">
           gitring checks the plan of each agent before it writes code. It sends a change request instead of a rejection. It merges work only when the tests

@@ -219,7 +219,7 @@ export function InboxView() {
         </p>
       )}
       {!items ? (
-        <SkeletonRows rows={3} label="Loading the inbox" />
+        <SkeletonRows rows={3} label="Please wait for the inbox" />
       ) : items.length === 0 ? (
         <EmptyState text="Nothing waits for you. The agents work, and gitring merges what passes the tests." action={<Link to="/projects">Open the projects</Link>} />
       ) : (

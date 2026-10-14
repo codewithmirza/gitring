@@ -57,7 +57,7 @@ const VesselRow = memo(function VesselRow({
               <span key={r.other} className="vrow__range">
                 <RangeIndicator range={r.range} closing={r.closing} corrected={r.corrected} showText={false} to={names.get(r.other)} />
                 <span className="voice-agent ink-3">{names.get(r.other)}</span>
-                {r.closing && <span className="vrow__closing">moving closer</span>}
+                {r.closing && <span className="vrow__closing">closer now</span>}
               </span>
             ))}
             {v.corrections.length > 0 && (

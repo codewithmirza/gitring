@@ -98,7 +98,7 @@ function Connection() {
   const canAct = useCanAct();
   const pop = usePopover();
   const [busy, setBusy] = useState(false);
-  let text = "Connecting";
+  let text = "Not linked yet";
   let tone = "neutral";
   let help = "gitring loads the project.";
   if (mode === "live" && conn === "open") {
@@ -106,7 +106,7 @@ function Connection() {
     tone = "clear";
     help = "Changes arrive at once over a live connection. The page does not ask the server again.";
   } else if (conn === "reconnecting" || conn === "offline") {
-    text = conn === "offline" ? "Offline" : "Reconnecting";
+    text = conn === "offline" ? "Offline" : "Link lost";
     tone = "caution";
     help = error ?? "The live connection dropped. gitring connects again by itself.";
   }

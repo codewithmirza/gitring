@@ -635,7 +635,7 @@ export function worldAt(script: ReplayScript, index: number): World {
     const add = (from: string, to: string) => linksBy.set(from, [...(linksBy.get(from) ?? []), { other: to, range: p.range, closing: p.closing, verdict: p.verdict, corrected: isCorrected }]);
     add(p.a, p.b);
     add(p.b, p.a);
-    if (p.range <= 2) ranges.push({ key, a: p.a, b: p.b, range: p.range, closing: p.closing, tone: rangeTone(p.range, isCorrected), label: `${RANGE_TEXT[p.range]}${p.closing ? " · moving closer" : ""}` });
+    if (p.range <= 2) ranges.push({ key, a: p.a, b: p.b, range: p.range, closing: p.closing, tone: rangeTone(p.range, isCorrected), label: `${RANGE_TEXT[p.range]}${p.closing ? " · closer now" : ""}` });
   }
 
   // The newest change request of a work copy replaces the older ones that it supersedes.

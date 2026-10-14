@@ -7,7 +7,7 @@ interface RangeIndicatorProps {
   range: Range;
   closing?: boolean;
   corrected?: boolean;
-  /** Show "moving closer" as text (the arrow is always there when the work moves closer). */
+  /** Show "closer now" as text (the arrow is always there when the work moves closer). */
   showText?: boolean;
   to?: string;
 }
@@ -18,7 +18,7 @@ interface RangeIndicatorProps {
  */
 export function RangeIndicator({ range, closing, corrected, showText = true, to }: RangeIndicatorProps) {
   const tone = corrected ? "correction" : range <= 1 ? "danger" : range <= 3 ? "caution" : "neutral";
-  const label = `${distanceLabel(range)}${closing ? ", moving closer" : ""}${corrected ? ", change request sent" : ""}${to ? `, to ${to}` : ""}`;
+  const label = `${distanceLabel(range)}${closing ? ", closer now" : ""}${corrected ? ", change request sent" : ""}${to ? `, to ${to}` : ""}`;
   return (
     <span className={`b-range b-range--${tone}`} role="img" aria-label={label} title={label}>
       <Icon name={corrected ? "buoy" : "range"} />
@@ -26,7 +26,7 @@ export function RangeIndicator({ range, closing, corrected, showText = true, to 
       {closing && <Icon name="closing" />}
       {closing && showText && (
         <span className="b-range__closing" aria-hidden="true">
-          moving closer
+          closer now
         </span>
       )}
     </span>

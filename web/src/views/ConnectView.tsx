@@ -347,7 +347,7 @@ function cursorLink(url: string): string {
 
 const NO_AGENTS: AgentInfo[] = [];
 
-/** "Waiting for an agent" until an app signs in through OAuth; then the apps and the agents that work here. */
+/** "Not yet linked" until an app signs in through OAuth; then the apps and the agents that work here. */
 function LiveStatus({ client }: { client: Client }) {
   const me = useMe();
   const signedIn = Boolean(me?.user);
@@ -446,7 +446,7 @@ function LiveStatus({ client }: { client: Client }) {
         <>
           <span className="cx-live__wait" aria-hidden="true" />
           <span className="cx-live__text">
-            {grants === null && !missing ? "gitring looks for connected agents…" : `Waiting for ${want}. This line changes when your agent signs in.`}
+            {grants === null && !missing ? "gitring looks for connected agents…" : `gitring waits for ${want}. This line changes when your agent signs in.`}
           </span>
         </>
       )}

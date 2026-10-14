@@ -443,7 +443,7 @@ export class HarborMaster extends DurableObject<Env> {
       // An empty repo: the owner pushes an existing repository with plain git. gitring adopts the push.
       draft.importing = { url: "git push", startedAt: Date.now(), push: true, tokenIds: [] };
       this.db.setMeta("project", draft);
-      this.addLog({ kind: "system", message: `Repository ready in Cloudflare Artifacts (${repoName}). Waiting for the first git push.` });
+      this.addLog({ kind: "system", message: `Repository ready in Cloudflare Artifacts (${repoName}). gitring waits for the first git push.` });
       await this.ctx.storage.setAlarm(Date.now() + 15_000);
       const state = await this.state();
       this.emit({ type: "snapshot", state });
@@ -829,7 +829,7 @@ export class HarborMaster extends DurableObject<Env> {
   async cloneAccess(): Promise<{ remote: string; token: string; expiresAt: string; branch: string }> {
     const p = this.requireProject();
     if (p.importing?.error) throw new Error(`The import did not finish: ${p.importing.error}`);
-    if (p.importing) throw new Error(p.importing.push ? "This project waits for its first git push. Clone it after the push." : "The repository is still importing. Try again in a minute.");
+    if (p.importing) throw new Error(p.importing.push ? "This project waits for its first git push. Clone it after the push." : "The repository import is not done. Try again in a minute.");
     const tok = await this.backend.createToken(p.repo.name, "read", 6 * 3600);
     const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name));
     if (!tok || !remote) throw new Error("gitring cannot give a clone remote now. Try again.");
@@ -1045,7 +1045,7 @@ export class HarborMaster extends DurableObject<Env> {
 
   private async loadMain(): Promise<MainView> {
     const p = this.requireProject();
-    if (p.importing) throw new Error(p.importing.error ? `The import failed: ${p.importing.error}` : "The repository is still importing. Try again in a minute.");
+    if (p.importing) throw new Error(p.importing.error ? `The import failed: ${p.importing.error}` : "The repository import is not done. Try again in a minute.");
     if (this.mainView && this.mainView.sha === p.mainSha) return this.mainView;
     if (this.mainLoading) return this.mainLoading;
     this.mainLoading = (async () => {
@@ -2124,7 +2124,7 @@ export class HarborMaster extends DurableObject<Env> {
       message:
         `Conflict check (${TRIGGER_WORD[trigger] ?? trigger}): ${VERDICT_WORD[check.verdict] ?? check.verdict}. ` +
         (cands.length ? `${cands.length} other work ${cands.length > 1 ? "copies" : "copy"} near, closest at distance ${closest}` : "No other work near") +
-        (closing.length ? `, coming closer: ${closing.join(", ")}` : "") +
+        (closing.length ? `, closer now: ${closing.join(", ")}` : "") +
         ` · ${source === "rules" ? "rules" : "AI model"} ${latencyMs} ms`,
       data: { checkId: check.id, source, latencyMs },
     });
@@ -2529,15 +2529,28 @@ export class HarborMaster extends DurableObject<Env> {
     const baseTree = await this.treeText(this.requireProject().repo.name, a.baseTree);
     const reader = await this.workReader(a, view, [forkTree, baseTree]);
     const changes: FileChange[] = [];
-    for (const ch of diffSnapshots(baseTree.snapshot, view.snapshot)) {
-      const e = view.snapshot.get(ch.path);
+    const own = diffSnapshots(baseTree.snapshot, view.snapshot);
+    const write = async (path: string, e: { sha: string; mode: string } | undefined) => {
       if (!e) {
-        changes.push({ path: ch.path, content: null });
-        continue;
+        changes.push({ path, content: null });
+        return;
       }
-      if (e.mode === "160000") continue; // a submodule entry cannot be written
+      if (e.mode === "160000") return; // a submodule entry cannot be written
       const content = (await reader.readText(e.sha)) ?? (await reader.readBytes(e.sha));
-      if (content !== null) changes.push({ path: ch.path, content, mode: e.mode });
+      if (content !== null) changes.push({ path, content, mode: e.mode });
+    };
+    for (const ch of own) await write(ch.path, view.snapshot.get(ch.path));
+    // A fork from before the lazy fork was made at an older base, and the work was planned again onto a newer main.
+    // Its tip lacks what main got since: write those paths too, where the work did not change them.
+    if (forkTip && (await this.forkLagsBase(a, tip))) {
+      const touched = new Set(own.map((c) => c.path));
+      for (const path of new Set([...forkTree.snapshot.keys(), ...baseTree.snapshot.keys()])) {
+        if (touched.has(path)) continue;
+        const b = baseTree.snapshot.get(path);
+        const f = forkTree.snapshot.get(path);
+        if (b?.sha === f?.sha && b?.mode === f?.mode) continue;
+        await write(path, b);
+      }
     }
     if (!changes.length) return;
     const agent = this.agents.get(a.agentId);
@@ -2552,6 +2565,29 @@ export class HarborMaster extends DurableObject<Env> {
     a.headSha = res.sha;
     this.putAttempt(a);
     this.addLog({ kind: "push", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The work of ${agent?.callsign} is in its work copy ${a.fork.repo} at ${res.sha.slice(0, 7)}.`, files: changes.map((c) => c.path) });
+  }
+
+  /**
+   * True when the fork tip is older than the base of the work: walking back from the tip reaches an ancestor of the
+   * base before it reaches the base. A fork that main moved past (the lazy fork) has the base in its history.
+   */
+  private async forkLagsBase(a: T.Attempt, tip: string): Promise<boolean> {
+    const main = this.requireProject().repo.name;
+    const older = new Set<string>();
+    try {
+      for (let sha: string | undefined = a.baseSha, n = 0; sha && n < 500; n++) {
+        older.add(sha);
+        sha = (await this.backend.readCommit(main, sha))?.parents[0];
+      }
+      for (let sha: string | undefined = tip, n = 0; sha && n < 500; n++) {
+        if (sha === a.baseSha) return false;
+        if (older.has(sha)) return true;
+        sha = (await this.backend.readCommit(a.fork.repo, sha))?.parents[0];
+      }
+    } catch {
+      return false;
+    }
+    return false;
   }
 
   private enqueueLanding(a: T.Attempt): void {
@@ -4463,7 +4499,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (expect.approvalId && expect.approvalId !== ap.id) return out("withdrawn", "This question is old. The work changed, and gitring asked again. Open the new question.");
     if (ap.status === "withdrawn") return out("withdrawn", `This question is closed. ${ap.closed ?? ""}`.trim());
     if (ap.status !== "waiting") return out("already", `${ap.answer?.by.name ?? "A person"} ${ap.status === "approved" ? "said yes to" : "sent back"} this work already.`);
-    if (a.status !== "ready") return out("withdrawn", "This work is not waiting any more.");
+    if (a.status !== "ready") return out("withdrawn", "This work does not wait for an answer any more.");
     // The work must be what the question showed.
     if (ap.digest && (await this.digestOf(a)) !== ap.digest) {
       if (a.approval === ap && ap.status === "waiting") {
@@ -5461,7 +5497,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (!sameLink()) return;
     const since = this.githubSince(repo);
     if (!since) {
-      return this.setPull(repo, { state: "error", message: "gitring does not know which GitHub commit main came from. Bringing changes in works for projects imported from GitHub.", at: Date.now() });
+      return this.setPull(repo, { state: "error", message: "gitring does not know which GitHub commit main came from. You can bring changes in only for projects imported from GitHub.", at: Date.now() });
     }
     const st0 = this.gh(repo);
     this.setPull(repo, { ...(st0.pull ?? { message: "" }), state: "pending", message: "gitring reads the GitHub changes.", at: Date.now() });
@@ -6457,7 +6493,7 @@ const TRIGGER_WORD: Record<T.CourseCheck["trigger"], string> = { declare: "plan"
 const DECISION_WORD: Record<T.DecisionKind, string> = { pick: "chose a work copy", "send-back": "sent work back", rederive: "redo", amend: "changed the goal", park: "paused the task", "approve-checks": "approved the tests", "resolve-escalation": "decided" };
 
 function taskStatusWord(s: T.IntentStatus): string {
-  const words: Partial<Record<T.IntentStatus, string>> = { landed: "merged", parked: "paused", "merged-into": "joined to another task", judging: "waiting for a person", underway: "in work", landing: "merging", draft: "a draft" };
+  const words: Partial<Record<T.IntentStatus, string>> = { landed: "merged", parked: "paused", "merged-into": "joined to another task", judging: "needs a person", underway: "in work", landing: "merging", draft: "a draft" };
   return words[s] ?? s;
 }
 

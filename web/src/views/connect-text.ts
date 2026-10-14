@@ -65,7 +65,7 @@ export function flowText(info: Pick<ConnectInfo, "inputs">, githubOn: boolean): 
     .join("; ");
   return (
     `In: Claude connects as a connector, and Claude Code, Codex and Cursor connect through MCP; any git client pushes into a work copy; ${apps}. ` +
-    "gitring runs a conflict check on each plan and each change, sends change requests back to the agents, and rebases active work onto each new main. " +
+    "gitring runs a conflict check on each plan and each change. It sends change requests to the agents. It moves active work onto each new main. " +
     "It runs the tests. It merges the work when the tests pass, and a person says yes when the project asks. " +
     "A merge is a fast-forward, a 3-way merge or a redo. gitring writes the history as a git note on each merge commit. " +
     `Out: main in Cloudflare Artifacts${githubOn ? ", GitHub (a pull request or main)" : ""}, webhooks (JSON or Slack messages) and live updates for the web pages.`

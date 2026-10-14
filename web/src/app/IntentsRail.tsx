@@ -106,7 +106,7 @@ const IntentRow = memo(function IntentRow({
   );
 });
 
-/** A task on its way to the server ("Sending…"), or one that did not arrive (with Edit). */
+/** A task on its way to the server ("On its way"), or one that did not arrive (with Edit). */
 function PendingRow({ p, projectId }: { p: PendingTask; projectId: string }) {
   const edit = () => {
     if (p.draft) {
@@ -126,7 +126,7 @@ function PendingRow({ p, projectId }: { p: PendingTask; projectId: string }) {
           {p.state === "sending" ? (
             <>
               <span className="irow__spin" aria-hidden="true" />
-              Sending…
+              On its way
             </>
           ) : (
             <>
