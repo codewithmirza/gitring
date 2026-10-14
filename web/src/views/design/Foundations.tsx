@@ -9,8 +9,8 @@ import { MotionDemo } from "./demos";
 import { Section, Specimen } from "./layout";
 import type { DesignState } from "./useDesignState";
 
-export function Foundations({ m }: { m: DesignState }) {
-  const { iconNames } = m;
+export function Foundations({ samples }: { samples: DesignState }) {
+  const { iconNames } = samples;
   return (
     <>
       <Section

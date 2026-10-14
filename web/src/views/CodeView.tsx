@@ -17,8 +17,8 @@ import "./code/code.css";
 export { codeHref } from "./code/links";
 
 export function CodeView() {
-  const m = useCodeView();
-  const { showTree, narrow, phonePanel, projectName, path, markAt, setMarkAt, lanes, now } = m;
+  const model = useCodeView();
+  const { showTree, narrow, phonePanel, projectName, path, markAt, setMarkAt, lanes, now } = model;
   return (
     <div className={["cv", showTree ? "has-tree" : "no-tree", narrow ? "is-narrow" : ""].join(" ")} data-panel={narrow ? phonePanel : undefined}>
       <h1 className="vh" tabIndex={-1}>
@@ -26,12 +26,12 @@ export function CodeView() {
         {path ? `: ${path}` : ""}
       </h1>
 
-      <CodeToolbar m={m} />
+      <CodeToolbar model={model} />
 
       <div className="cv-body">
-        <TreePane m={m} />
+        <TreePane model={model} />
 
-        <FilePane m={m} />
+        <FilePane model={model} />
       </div>
 
       <Popover anchor={markAt?.el ?? null} open={Boolean(markAt)} onClose={() => setMarkAt(null)} label={`Who works on line ${markAt?.line ?? ""}`} align="start">

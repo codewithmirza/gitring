@@ -8,12 +8,12 @@ import { FileFinder, RefPicker } from "../pickers";
 import { CloneButton } from "../CloneButton";
 import type { CodeViewModel } from "./model";
 
-export function CodeToolbar({ m }: { m: CodeViewModel }) {
+export function CodeToolbar({ model }: { model: CodeViewModel }) {
   const {
     showTree, narrow, setPhonePanel, phonePanel, setTreeOn, treeOn, refBtn, refOpen, refText, setRefOpen, refLabel, refOptions,
     chooseRef, diffMode, loc, findBtn, findOpen, setFindOpen, allPaths, finderMarks, hrefOf, openPath, diffFiles, treeReady, files,
     canAct, projectId, importing, info,
-  } = m;
+  } = model;
   const isWork = info.kind === "work";
   return (
     <div className="cv-bar" role="toolbar" aria-label="Code">

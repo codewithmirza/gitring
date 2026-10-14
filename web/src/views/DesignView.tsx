@@ -13,8 +13,8 @@ import "../chart/chart.css";
 import "./design.css";
 
 export function DesignView() {
-  const m = useDesignState();
-  const { dialog, setDialog } = m;
+  const samples = useDesignState();
+  const { dialog, setDialog } = samples;
   return (
     <div className="ds">
       <nav className="ds-toc" aria-label="Style guide sections">
@@ -49,9 +49,9 @@ export function DesignView() {
           </div>
         </header>
 
-        <Foundations m={m} />
+        <Foundations samples={samples} />
 
-        <ComponentsSection m={m} />
+        <ComponentsSection samples={samples} />
 
         <ChartAndRules />
       </div>

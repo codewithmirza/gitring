@@ -39,8 +39,8 @@ import { Section, Specimen } from "./layout";
 import { AGENT, AGENT2, CASES, CHECK, corr, DIFF, LOGS, names, run } from "./sample-data";
 import type { DesignState } from "./useDesignState";
 
-export function ComponentsSection({ m }: { m: DesignState }) {
-  const { seg, setSeg, tab, setTab, setDialog } = m;
+export function ComponentsSection({ samples }: { samples: DesignState }) {
+  const { seg, setSeg, tab, setTab, setDialog } = samples;
   return (
     <Section id="components" title="Components" lede="Each component has default, hover, focus-visible, active and disabled states. Loading uses a hairline progress rule, not a spinner.">
       <Specimen title="Button" note="32px (md) and 24px (sm). Verb + noun labels. Disabled buttons stay focusable (aria-disabled)." wide>

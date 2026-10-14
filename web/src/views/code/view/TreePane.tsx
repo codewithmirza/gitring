@@ -7,11 +7,11 @@ import { ancestors } from "../tree";
 import { TreeSkeleton } from "./Skeletons";
 import type { CodeViewModel } from "./model";
 
-export function TreePane({ m }: { m: CodeViewModel }) {
+export function TreePane({ model }: { model: CodeViewModel }) {
   const {
     showTree, filter, setFilter, setExpanded, path, showTreeSkel, rows, fileMarks, folders, onToggle, openPath, hrefOf, diffMode,
     prefetch, refText, loc, listReady, dFilter,
-  } = m;
+  } = model;
   return (
     <aside className="cv-tree" aria-label="Files" hidden={!showTree}>
       <div className="cv-tree__head">

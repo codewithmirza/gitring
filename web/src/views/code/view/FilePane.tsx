@@ -10,12 +10,12 @@ import { ancestors } from "../tree";
 import { ContextStrip } from "./ContextStrip";
 import type { CodeViewModel } from "./model";
 
-export function FilePane({ m }: { m: CodeViewModel }) {
+export function FilePane({ model }: { model: CodeViewModel }) {
   const {
     path, diffMode, info, setExpanded, narrow, setPhonePanel, setTreeOn, text, lineBtn, lineOpen, setLineOpen, lineCount, copied,
     selectLines, setFlash, jumpTo, projectId, whyRef, loc, fileVersion, now, wrap, setWrap, copyPermalink, githubHref, copy,
     rawHref, marks, lastMerges, own, main, files,
-  } = m;
+  } = model;
   const fileSize = path ? files.find((f) => f.path === path)?.size : undefined;
   const crumbs = path ? path.split("/") : [];
   return (

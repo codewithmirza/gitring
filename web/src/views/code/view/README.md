@@ -1,6 +1,6 @@
 # code/view
 
-The parts of the code page. `../../CodeView.tsx` puts them together: it calls `useCodeView()` and draws four panes.
+The parts of the code page. `../../CodeView.tsx` puts them together: it calls `useCodeView()` and draws the toolbar, the tree pane, the file pane and the mark popover.
 
 How it works: `model.ts` calls the hooks in order and returns one model. Each hook owns one concern and reads the results of the hooks before it. Each pane reads what it needs from the model.
 
