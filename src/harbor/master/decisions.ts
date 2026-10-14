@@ -15,6 +15,28 @@ import { HUMAN } from "../support/helpers";
 import { METHOD_WORD, copyStatusWord } from "../support/words";
 import { HarborSubmit } from "./submit";
 
+// ───── Types ─────
+
+/** The person who answers, with the role that the Worker checked. */
+type Who = { id: string; name: string; role: Role };
+
+/** The result of an answer to a question about a work copy. */
+type ApprovalOut = (outcome: T.ApprovalResult["outcome"], message: string, extra?: Partial<T.ApprovalResult>) => T.ApprovalResult;
+
+/** What an answer to the approval of a work copy knows, for the steps that follow the checks. */
+interface Answering {
+  a: T.Attempt;
+  ap: T.Approval;
+  intent: T.Intent;
+  who: Who;
+  by: T.Actor;
+  note: string;
+  answer: NonNullable<T.Approval["answer"]>;
+  where: string;
+  sign: { attemptId: string; task: string; agent: string | undefined; line: string; link: string };
+  out: ApprovalOut;
+}
+
 export abstract class HarborDecisions extends HarborSubmit {
   // ───── Merge ─────
 
@@ -90,6 +112,25 @@ export abstract class HarborDecisions extends HarborSubmit {
     const ap = a.approval;
     if (!ap) throw new Error("This work copy has no question to answer.");
     const out = (outcome: T.ApprovalResult["outcome"], message: string, extra: Partial<T.ApprovalResult> = {}): T.ApprovalResult => ({ attemptId, outcome, approval: a.approval ?? ap, status: a.status, message, ...extra });
+    const blocked = await this.refuseAnswer(a, ap, p, who, expect, out);
+    if (blocked) return blocked;
+    // Another answer can come in while the work is read: the first one counts.
+    if (a.approval !== ap || ap.status !== "waiting") return this.decide(attemptId, input, who, how, expect, origin);
+    const intent = this.intents.get(a.intentId)!;
+    const by: T.Actor = { kind: "human", id: who.id, name: who.name };
+    const note = String(input.note ?? "").trim().slice(0, 1000);
+    const answer = { by: { id: who.id, name: who.name }, how, ...(note ? { note } : {}), at: Date.now() };
+    const where = how === "chat" ? " in the chat of the agent" : how === "cli" ? " with the gitring command line" : "";
+    const sign = { attemptId: a.id, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) };
+    const turn: Answering = { a, ap, intent, who, by, note, answer, where, sign, out };
+    if (input.answer === "approve") return this.approveWork(turn);
+    return this.sendWorkBack(turn);
+  }
+
+  // ───── The steps of an answer ─────
+
+  /** Checks that this person may answer this question now. Answers the refusal, or undefined when the answer may go on. */
+  protected async refuseAnswer(a: T.Attempt, ap: T.Approval, p: T.Project, who: Who, expect: { approvalId?: string }, out: ApprovalOut): Promise<T.ApprovalResult | undefined> {
     if (!canDecide(ap, who, p.settings.approver)) {
       const rule = p.settings.approver;
       return out(
@@ -113,24 +154,23 @@ export abstract class HarborDecisions extends HarborSubmit {
       }
       return out("withdrawn", "The agent changed the work after the question. gitring asks again when the agent submits.");
     }
-    // Another answer can come in while the work is read: the first one counts.
-    if (a.approval !== ap || ap.status !== "waiting") return this.decide(attemptId, input, who, how, expect, origin);
-    const intent = this.intents.get(a.intentId)!;
-    const by: T.Actor = { kind: "human", id: who.id, name: who.name };
-    const note = String(input.note ?? "").trim().slice(0, 1000);
-    const answer = { by: { id: who.id, name: who.name }, how, ...(note ? { note } : {}), at: Date.now() };
-    const where = how === "chat" ? " in the chat of the agent" : how === "cli" ? " with the gitring command line" : "";
-    const sign = { attemptId: a.id, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) };
+    return undefined;
+  }
 
-    if (input.answer === "approve") {
+  /** "approve": the yes is stored first, then the work goes to the merge queue. */
+  protected async approveWork(t: Answering): Promise<T.ApprovalResult> {
+    const { a, ap, intent, who, by, note, answer, where, sign, out } = t;
       a.approval = { ...ap, status: "approved", answer };
       this.putAttempt(a); // the answer is stored before the merge starts
       this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} says yes to the work of ${this.callsign(a.id)} on "${intent.title}"${where}.` });
       this.webhook("approval", { ...sign, approval: a.approval });
       const res = await this.landWork(a.id, note || "Approved.", by);
       return out("approved", res.message, { ...(res.landing ? { landing: res.landing } : {}), ...(res.waits ? { waits: res.waits } : {}) });
-    }
+  }
 
+  /** "send-back": a built-in agent does the task again with the note. An outside agent gets the note as a change request. */
+  protected async sendWorkBack(t: Answering): Promise<T.ApprovalResult> {
+    const { a, ap, intent, who, by, note, answer, where, sign, out } = t;
     // Send back.
     a.approval = { ...ap, status: "sent-back", answer };
     const decision = this.recordDecision({ kind: "send-back", intentId: a.intentId, attemptIds: [a.id], by, rationale: note || "Sent back without a note." });

@@ -9,12 +9,12 @@ import { noTestRan } from "../../core/types";
 import { approvalLine } from "../../core/approvals";
 import { RepoConflictError, type CommitMeta } from "../../platform/repo/backend";
 import { applyFileChanges } from "../../core/git/snapshot";
-import { compose } from "../../core/land/compose";
-import { withoutChanges } from "../../core/land/carry";
+import { compose, type ComposeResult } from "../../core/land/compose";
+import { withoutChanges, type NotCarried } from "../../core/land/carry";
 import { landingMessage, landingNote, intentFile, parseTrailers } from "../../core/logbook";
 import { textEligible } from "../../core/repo-rules";
 import { CHECK_RUN, newId } from "../ids";
-import { failureSummary, type MainView } from "../views";
+import { failureSummary, type AttemptView, type MainView } from "../views";
 import { GITRING_AUTHOR, LANDING_LEASE_MS, MAX_LANDING_STARTS, NO_TEST_RAN } from "../support/constants";
 import type { LandingRun, TrainPiece } from "../support/types";
 import { HarborMainTests } from "./main-tests";
@@ -102,14 +102,51 @@ export abstract class HarborMerge extends HarborMainTests {
     const p = this.requireProject();
     const intent = this.intents.get(a.intentId)!;
     const agent = this.agents.get(a.agentId)!;
+    if (await this.stopsBeforeMerge(a)) return "done";
+    const intentBefore = intent.status;
+    a.status = "landing";
+    intent.status = "landing";
+    this.putAttempt(a);
+    this.putIntent(intent);
+    const { main, view, result, left } = await this.composeWork(a, p);
+    if (!result.clean) {
+      await this.markStale(a, `${result.conflicts.length} conflict${result.conflicts.length > 1 ? "s" : ""} on the new main: ${result.conflicts.map((c) => `${c.path} (${c.reason})`).join(", ")}`);
+      return "done";
+    }
+    // Post-merge test mode: the tests of the work passed at submit, so the work merges now, and main is tested
+    // after the merge (see testMain). Work whose tests did not run goes the usual way: tests first.
+    const testsAfter = this.testsAfterMerge(a);
+    const run = await this.testBeforeMerge({ a, p, main, view, result, left, intentBefore, testsAfter });
+    if (run === "wait" || run === "done") return run;
+    const { method, applied, message, note, changes } = this.landingParts({ a, p, intent, agent, result, run, testsAfter });
+    let committed: { sha: string; tree: string };
+    try {
+      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes, message, note, author: GITRING_AUTHOR });
+    } catch (err) {
+      // Main is not where gitring thinks: a run that stopped after its commit, or a commit from outside gitring.
+      // A second try on the same main fails the same way. Catch up with the real main, then compose and test again.
+      if ((err instanceof RepoConflictError || String(err).includes("RepoConflict")) && attempt < 1 && (await this.catchUpMain(a))) {
+        return this.landOne(a, attempt + 1);
+      }
+      throw err;
+    }
+    await this.recordLanding(a, { committed, before: main.sha, method, applied, run, message, note, touched: result.touched, left, testsWhen: testsAfter ? "after" : "before" });
+    if (testsAfter) this.scheduleMainTests();
+    return "done";
+  }
+
+  // ───── The steps of one merge ─────
+
+  /** The gates of a merge that no queue can open. True: the merge stops here and the work copy is done for this round. */
+  protected async stopsBeforeMerge(a: T.Attempt): Promise<boolean> {
     // A run that stopped after its commit: main has the merge. Finish the record, do not commit twice.
     const held = await this.mainHolds(a);
     if (held) {
       await this.finishFromMain(a, held);
-      return "done";
+      return true;
     }
     // A question that a person has not answered: nothing merges. This is the rule, whatever put the work in the queue.
-    if (a.approval?.status === "waiting") return "done";
+    if (a.approval?.status === "waiting") return true;
     // A yes counts for the work that the person saw. If the work changed since, the yes does not count.
     if (a.approval?.status === "approved" && a.approval.digest && (await this.digestOf(a)) !== a.approval.digest) {
       a.approval = { ...a.approval, status: "withdrawn", closed: "The agent changed the work after the yes." };
@@ -117,13 +154,13 @@ export abstract class HarborMerge extends HarborMainTests {
       this.putAttempt(a);
       this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${this.callsign(a.id)} stops: the work changed after the yes. The agent must submit again.` });
       this.refreshJudging(a.intentId);
-      return "done";
+      return true;
     }
-    const intentBefore = intent.status;
-    a.status = "landing";
-    intent.status = "landing";
-    this.putAttempt(a);
-    this.putIntent(intent);
+    return false;
+  }
+
+  /** Composes the work onto the new main. The work that cannot go in is the "left" part. */
+  protected async composeWork(a: T.Attempt, p: T.Project): Promise<{ main: MainView; view: AttemptView; result: ComposeResult; left: NotCarried[] }> {
     const main = await this.loadMain();
     const base = await this.treeText(p.repo.name, a.baseTree);
     const view = await this.attemptView(a);
@@ -133,13 +170,12 @@ export abstract class HarborMerge extends HarborMainTests {
     const left = [...view.notCarried, ...large];
     const work = large.length ? withoutChanges(base.snapshot, view.snapshot, large.map((n) => n.path)) : view.snapshot;
     const result = await compose({ base: base.snapshot, main: main.snapshot, attempt: work, readText: reader.readText, readBytes: reader.readBytes });
-    if (!result.clean) {
-      await this.markStale(a, `${result.conflicts.length} conflict${result.conflicts.length > 1 ? "s" : ""} on the new main: ${result.conflicts.map((c) => `${c.path} (${c.reason})`).join(", ")}`);
-      return "done";
-    }
-    // Post-merge test mode: the tests of the work passed at submit, so the work merges now, and main is tested
-    // after the merge (see testMain). Work whose tests did not run goes the usual way: tests first.
-    const testsAfter = this.testsAfterMerge(a);
+    return { main, view, result, left };
+  }
+
+  /** The tests of main plus the work, before the merge. A string: the merge ends here ("wait": the test budget is used). */
+  protected async testBeforeMerge(f: { a: T.Attempt; p: T.Project; main: MainView; view: AttemptView; result: ComposeResult; left: NotCarried[]; intentBefore: T.IntentStatus; testsAfter: boolean }): Promise<T.CheckRun | "wait" | "done"> {
+    const { a, p, main, view, result, left, intentBefore, testsAfter } = f;
     let run: T.CheckRun;
     if (testsAfter) run = a.checks!;
     else {
@@ -162,6 +198,12 @@ export abstract class HarborMerge extends HarborMainTests {
         return "done";
       }
     }
+    return run;
+  }
+
+  /** The words of the commit and of the why-record, and the change list. */
+  protected landingParts(f: { a: T.Attempt; p: T.Project; intent: T.Intent; agent: T.AgentInfo; result: ComposeResult; run: T.CheckRun; testsAfter: boolean }): { method: T.LandingMethod; applied: T.Correction[]; message: string; note: string; changes: ComposeResult["changes"] } {
+    const { a, p, intent, agent, result, run, testsAfter } = f;
     const method: T.LandingMethod = a.lineage.generation > 1 ? "rederive" : result.method;
     const applied = a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status !== "superseded");
     const courseChecks = this.db.checksFor<T.CourseCheck>(a.id);
@@ -173,20 +215,7 @@ export abstract class HarborMerge extends HarborMainTests {
     }
     const message = landingMessage({ intent, attempt: a, agent, method, corrections: applied, checks: run, testsAfter });
     const note = landingNote({ intent, attempt: a, agent, method, corrections: applied, courseChecks, checks: run, decision, testsAfter });
-    let committed: { sha: string; tree: string };
-    try {
-      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes, message, note, author: GITRING_AUTHOR });
-    } catch (err) {
-      // Main is not where gitring thinks: a run that stopped after its commit, or a commit from outside gitring.
-      // A second try on the same main fails the same way. Catch up with the real main, then compose and test again.
-      if ((err instanceof RepoConflictError || String(err).includes("RepoConflict")) && attempt < 1 && (await this.catchUpMain(a))) {
-        return this.landOne(a, attempt + 1);
-      }
-      throw err;
-    }
-    await this.recordLanding(a, { committed, before: main.sha, method, applied, run, message, note, touched: result.touched, left, testsWhen: testsAfter ? "after" : "before" });
-    if (testsAfter) this.scheduleMainTests();
-    return "done";
+    return { method, applied, message, note, changes };
   }
 
   /** Post-merge test mode, and the tests of the work passed at submit: the work merges now, main is tested after. */

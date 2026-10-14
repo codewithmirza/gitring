@@ -17,6 +17,26 @@ import { errorLine } from "../support/helpers";
 import { METHOD_WORD } from "../support/words";
 import { HarborGithub } from "./github";
 
+// ───── Types ─────
+
+/** What a finished commit of a merge tells recordLanding. */
+interface LandingDone {
+  committed: { sha: string; tree: string };
+  before: string;
+  method: T.LandingMethod;
+  applied: T.Correction[];
+  run: T.CheckRun;
+  message: string;
+  note: string;
+  touched: string[];
+  /** Parts of the work that gitring did not merge. */
+  left?: NotCarried[];
+  /** The merge rode in a train. */
+  train?: T.Landing["train"];
+  /** When the tests of main plus the work ran. */
+  testsWhen?: T.TestsWhen;
+}
+
 export abstract class HarborMergeRecord extends HarborGithub {
   /**
    * A commit on main that gitring did not record becomes gitring's main: a commit from outside gitring, or
@@ -46,35 +66,33 @@ export abstract class HarborMergeRecord extends HarborGithub {
    * It is safe to run again: a work copy that the record has already counts once. The writes up to the
    * first await are one step, so a stop never leaves half of them.
    */
-  protected async recordLanding(
-    a: T.Attempt,
-    done: {
-      committed: { sha: string; tree: string };
-      before: string;
-      method: T.LandingMethod;
-      applied: T.Correction[];
-      run: T.CheckRun;
-      message: string;
-      note: string;
-      touched: string[];
-      /** Parts of the work that gitring did not merge. */
-      left?: NotCarried[];
-      /** The merge rode in a train. */
-      train?: T.Landing["train"];
-      /** When the tests of main plus the work ran. */
-      testsWhen?: T.TestsWhen;
-    },
-  ): Promise<void> {
-    const { committed, before, method, applied, run, message, note, touched, left = [], train, testsWhen } = done;
+  protected async recordLanding(a: T.Attempt, done: LandingDone): Promise<void> {
     const p = this.requireProject();
     const intent = this.intents.get(a.intentId)!;
     const agent = this.agents.get(a.agentId)!;
+    this.advanceMain(p, done);
+    const { landing, counted } = this.saveLanding(a, intent, done);
+    this.markLanded(a, intent, agent, done.committed);
+    this.settleLanding(done.applied, done.method, counted);
+    await this.announceLanding(a, intent, agent, landing, done);
+  }
+
+  // ───── The steps of a merge record ─────
+
+  /** Main moves to the new commit, unless the project record already has it. */
+  protected advanceMain(p: T.Project, done: LandingDone): void {
+    const { committed, before } = done;
     if (p.mainSha === before) {
       p.mainSha = committed.sha;
       p.mainTree = committed.tree;
       this.db.setMeta("project", p);
       this.appendMainSeq(committed.sha);
     }
+  }
+
+  /** The landing record, with its why-record. A landing that exists already is not made again, and not counted again. */
+  protected saveLanding(a: T.Attempt, intent: T.Intent, done: LandingDone): { landing: T.Landing; counted: boolean } {
+    const { committed, before, method, applied, run, message, note, touched, train, testsWhen } = done;
     let landing = this.landings.find((l) => l.attemptId === a.id && l.mainAfter === committed.sha);
     const counted = !!landing;
     if (!landing) {
@@ -103,6 +121,11 @@ export abstract class HarborMergeRecord extends HarborGithub {
         console.warn("history", errorLine(e));
       }
     }
+    return { landing, counted };
+  }
+
+  /** The work copy, the task and the agent are over. The other work copies of the task stay as alternatives. */
+  protected markLanded(a: T.Attempt, intent: T.Intent, agent: T.AgentInfo, committed: { sha: string; tree: string }): void {
     a.status = "landed";
     a.mergeWait = undefined;
     a.landedAt = Date.now();
@@ -122,6 +145,9 @@ export abstract class HarborMergeRecord extends HarborGithub {
         this.stopVessel(s.id).catch(() => {});
       }
     }
+  }
+
+  protected settleLanding(applied: T.Correction[], method: T.LandingMethod, counted: boolean): void {
     // The agent did not confirm these change requests before the merge: they close, they are not "acknowledged".
     for (const c of applied) {
       if (c.status === "pending" || c.status === "delivered") {
@@ -135,6 +161,12 @@ export abstract class HarborMergeRecord extends HarborGithub {
     }
     if (method === "rederive") this.stats.rederives += 0; // counted when the re-derive starts
     this.persistStats();
+  }
+
+  /** The events, the log, the webhook, the GitHub sync, the change requests for the work nearby, and the wake of waiting agents. */
+  protected async announceLanding(a: T.Attempt, intent: T.Intent, agent: T.AgentInfo, landing: T.Landing, done: LandingDone): Promise<void> {
+    const { committed, method, run, touched, left = [] } = done;
+    const p = this.requireProject();
     const newMain = await this.loadMain();
     this.emit({ type: "landing", landing });
     this.emit({ type: "main", sha: newMain.sha, tree: newMain.tree, files: newMain.files, imports: newMain.imports });
