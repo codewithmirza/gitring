@@ -339,7 +339,7 @@ export function WhyTrail({ id }: { id: string }) {
               )}
             </dl>
             {message.hasTrailers && <CodeBlock code={landing.message} label="Full commit message" copyLabel="Copy full message" />}
-            {noteText && <CodeBlock code={noteText} label="refs/notes/gitring" copyLabel="Copy record" />}
+            {noteText && <CodeBlock code={noteText} label="refs/notes/gitring" copyLabel="Copy merge record" />}
           </details>
         </Step>
       </ol>
