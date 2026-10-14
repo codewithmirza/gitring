@@ -6,7 +6,7 @@ A review has two parts: what the agent **sees** (real screenshots of the running
 
 Run `node scripts/shots.mjs`. It starts a local gitring, signs in with a test passkey, makes a project with real agents at work, and saves one PNG for each screen, theme and size in `tmp/shots/` (the folder is not in git). Read the PNGs with an image viewer. Then run the same script after each change and compare.
 
-- A full run takes about 20 minutes. For one screen use `--only tasks`, for one theme `--themes night`, for one size `--sizes phone`. `--full` adds a tall picture of the whole page.
+- A full run takes about 25 minutes. For one screen use `--only tasks`, for one theme `--themes night`, for one size `--sizes phone`. `--full` adds a tall picture of the whole page.
 - The ids of the screens, and the states that each one shows, are in `SCREENS.md`. The tool also makes the states: empty (`tasks-new-project`), loading (`tasks-loading`), lost connection (`overview-offline`), a long name, a long goal (`task-long`) and 80 rows (`tasks-many`).
 - `tmp/shots/index.json` has one record for each picture, with its summary. `tmp/shots/details/<name>.json` has the measurements. Use them to find where to look: the contrast of text, controls smaller than 24 px, sideways scroll, type sizes, code names, long sentences, all-caps text, and focus rings (the first 12 stops of the Tab key; the tool says a ring shows when the picture of the area changes with the focus).
 

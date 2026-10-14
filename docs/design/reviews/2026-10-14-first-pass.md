@@ -17,7 +17,7 @@ There is no S1 finding. There are 11 S2 findings and 15 S3 findings.
 - **Result:** 246 pictures: 41 screens, 3 themes (day, dusk, night), 2 sizes (desktop 1440x900, phone 390x844). All 246 rendered. The names are `<screen>-<theme>-<size>.png` in `tmp/shots/`. A picture that is named in a finding shows the problem in the day theme unless the finding says another theme. `-full.png` is the whole page.
 - **Measures used:** `tmp/shots/details/<name>.json` (contrast, small controls, sideways scroll, type sizes, words, focus rings). I read each number against the picture.
 - **What the shots cannot show:** motion (the tool runs with reduced motion) and a screen reader. They also cannot show the states that `SCREENS.md` marks "not seen". Those are a history with 200 merges, the pages of a viewer and a member, an empty inbox, a failed passkey, a GitHub step, and a merge that somebody else answered. They are not reviewed.
-- **Limits of the measures:** the contrast test skips text on pictures. The focus test looks at the first 12 stops of the Tab key.
+- **Limits of the measures:** the contrast test skips text on pictures. The focus test looks at the first 12 stops of the Tab key, and on a page that holds a row or a drawing it compares two pictures of the area.
 
 ## Score table
 
@@ -44,7 +44,7 @@ There is no S1 finding. There are 11 S2 findings and 15 S3 findings.
 
 Notes on the scores:
 
-- **Keyboard (6):** every one of the first 12 Tab stops shows a ring on the six screens that were measured with the picture test (`overview`, `tasks`, `history`, `code-file`, `palette`, `landing`, desktop and phone). A skip link exists and the focus moves to the heading when the page changes. The other screens were measured with an older test that read one style and found no stop without a ring either. The labels are read from the code. No screen reader ran.
+- **Keyboard (6):** the tool presses Tab up to 12 times on each of the 246 pictures and compares the picture of the focused area with and without the focus. Every stop that was in the window showed a ring: no stop without a ring. A skip link exists, and the focus moves to the heading when the page changes. On 69 pictures the page has fewer than 12 stops. The labels are read from the code. No screen reader ran.
 - **Themes (7):** Day, Dusk and Night all pass the contrast test, with two exceptions that do not depend on the theme (finding 18 and finding 9: a disabled button and a disabled-looking tool). Night is not Day turned upside down: the map keeps its colors and the diff keeps its meaning (see "Not changed"). Two more cases miss 4.5 to 1 by 0.02: the minus sign of the diff and the stage name in the replay (4.48 to 1).
 - **Motion (8):** the pictures are still. The CSS has ten `infinite` animations (spinners, the shimmer of skeletons, and the pulse `cx-breathe` on the Connect page). The tokens say "no loops". I did not score the check.
 - **States (4):** a 2 needs a seen empty state, a seen error state and a seen long or many-row state. Few screens have all three. A 1 does not say that the state is bad. It says that the state was not seen or is only half there.
@@ -279,7 +279,7 @@ Leave these as they are. They are the reasons that the app does not look generic
 - **The lost-connection state:** "The server is not reachable. gitring tries again in 4 s." says what happened and what happens next (`overview-offline-day-desktop.png`).
 - **Loading skeletons in the shape of the page** (`tasks-loading-day-desktop.png`).
 - **The numbers of the strip carry a source** (the `Stat` component with `source`), and the page shows no vanity number.
-- **Focus.** A visible ring on every stop that was measured, a skip link, and the focus moves to the heading of a new page.
+- **Focus.** A visible ring on every stop of all 246 pictures (the map, the history rows and the buttons too), a skip link, and the focus moves to the heading of a new page.
 - **The words.** The measure found no code name (intent, attempt, vessel, harbor, landing, logbook, course, correction) in the running text of any screen, apart from the webhook reference of Connect, the path `.gitring/intents/` in Settings, and the raw record and ids of finding 25. GitHub never comes first: the git step names it last in a list of hosts, its Settings section comes after Merging and Tests, and the sign-in panel puts passkeys first and outside accounts after "or" (read in `SignInChoices`; the local run has no outside account).
 - **Hairlines, not shadows,** on the cards and the panels, and no gradient, no sparkle icon, no emoji.
 

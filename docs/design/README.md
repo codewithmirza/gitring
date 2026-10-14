@@ -18,7 +18,7 @@ The agent runs the shots, looks at the pictures, scores the screens, and writes 
 ## The commands
 
 ```bash
-node scripts/shots.mjs                                  # every screen, 3 themes, 2 sizes (about 20 minutes)
+node scripts/shots.mjs                                  # every screen, 3 themes, 2 sizes (about 25 minutes)
 node scripts/shots.mjs --only tasks,approve             # two screens (about 1 minute)
 node scripts/shots.mjs --themes night --sizes phone     # one theme, one size
 node scripts/shots.mjs --full                           # also a tall picture of each whole page
