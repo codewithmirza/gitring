@@ -9,7 +9,7 @@ import { checkFolderRules, planNotes, planRefusal } from "../../core/coord/folde
 import { merge3 } from "../../core/text/merge3";
 import { contextBudget } from "../../platform/ai/models";
 import { newId, repoSafe } from "../ids";
-import { ACTIVE, PROTOCOL } from "../views";
+import { ACTIVE, PROTOCOL, type MainView } from "../views";
 import { checkAck } from "../ack-check";
 import { rankForBrief } from "../support/brief-rank";
 import { GITRING_AUTHOR, TERMINAL } from "../support/constants";
@@ -18,15 +18,46 @@ import type { Brief, CallInfo } from "../support/types";
 import { copyStatusWord, taskStatusWord } from "../support/words";
 import { HarborCourseCheck } from "./course-check";
 
+/** What an agent sends to gitring_declare, with the fields that the Worker and the Claude Code hook add. */
+type DeclareCall = T.DeclareInput & { attemptId?: string; projectId?: string; workdir?: string; by?: T.Actor };
+
 export abstract class HarborProtocol extends HarborCourseCheck {
   // ───── Declare a plan ─────
 
-  async declare(input: T.DeclareInput & { attemptId?: string; projectId?: string; workdir?: string; by?: T.Actor }): Promise<T.DeclareResult> {
+  async declare(input: DeclareCall): Promise<T.DeclareResult> {
     await this.ensure(input.projectId);
     const p = this.requireProject();
     const main = await this.loadMain();
     const agent = this.upsertAgent(input.agent ?? {});
 
+    const resolved = await this.intentForDeclare(input, agent);
+    let intent = resolved.intent;
+    const createdIntent = resolved.createdIntent;
+
+    const mode = input.mode ?? "api";
+    let attempt = input.attemptId ? this.attempts.get(input.attemptId) : undefined;
+    const now = Date.now();
+    const { course, rules } = this.planForDeclare(input, p, attempt, now);
+    attempt = this.openAttempt({ input, p, main, intent, agent, attempt, course, mode, now });
+    this.registerDeclared(input, agent, intent, attempt, course, mode);
+    const workspace = await this.declareWorkspace(attempt, intent, mode);
+
+    await this.refreshFootprint(attempt);
+    // A work copy is in flight: the steward (when on) watches from now on.
+    await this.armSteward();
+    let check = await this.courseCheck(attempt.id, "declare");
+    // A duplicate of a new intent joins the existing intent as another attempt (best-of-N).
+    if (check?.verdict === "merge-intents" && createdIntent) {
+      check = await this.mergeDuplicate(attempt, intent, check);
+      intent = this.intents.get(attempt.intentId)!;
+    }
+    return this.declareResult(attempt, agent, intent, workspace, rules);
+  }
+
+  // ───── The steps of a declare ─────
+
+  /** The task of the plan: an existing one, or a new one that the agent describes. A task that is over is refused. */
+  protected async intentForDeclare(input: DeclareCall, agent: T.AgentInfo): Promise<{ intent: T.Intent; createdIntent: boolean }> {
     let intent: T.Intent | undefined = input.intentId ? this.intents.get(input.intentId) : undefined;
     let createdIntent = false;
     if (!intent && input.newIntent) {
@@ -40,10 +71,11 @@ export abstract class HarborProtocol extends HarborCourseCheck {
     if (intent.status === "landed" || intent.status === "parked") {
       throw new Error(`The task "${intent.title}" is ${taskStatusWord(intent.status)}. Choose an open task.`);
     }
+    return { intent, createdIntent };
+  }
 
-    const mode = input.mode ?? "api";
-    let attempt = input.attemptId ? this.attempts.get(input.attemptId) : undefined;
-    const now = Date.now();
+  /** The plan as stored, and the sentences of the folder rules. A plan that a rule forbids is refused here, before any work exists. */
+  protected planForDeclare(input: DeclareCall, p: T.Project, attempt: T.Attempt | undefined, now: number): { course: T.Course; rules: ReturnType<typeof planNotes> } {
     const uses = [...new Set((input.uses ?? []).map(String))].slice(0, 100);
     const course: T.Course = {
       plan: (input.plan ?? []).slice(0, 20).map(String),
@@ -60,6 +92,13 @@ export abstract class HarborProtocol extends HarborCourseCheck {
     const refusal = planRefusal(ruled);
     if (refusal) throw new Error(refusal);
     const rules = planNotes(ruled);
+    return { course, rules };
+  }
+
+  /** A new work copy for the plan, or the changed plan of the work copy that exists. */
+  protected openAttempt(f: { input: DeclareCall; p: T.Project; main: MainView; intent: T.Intent; agent: T.AgentInfo; attempt: T.Attempt | undefined; course: T.Course; mode: T.Attempt["mode"]; now: number }): T.Attempt {
+    const { input, p, main, intent, agent, course, mode, now } = f;
+    let { attempt } = f;
     if (!attempt) {
       const id = newId("a");
       attempt = {
@@ -87,6 +126,11 @@ export abstract class HarborProtocol extends HarborCourseCheck {
       attempt.mode = mode;
       attempt.intentId = intent.id;
     }
+    return attempt;
+  }
+
+  /** Saves the agent, the work copy and the task, and logs the plan. */
+  protected registerDeclared(input: DeclareCall, agent: T.AgentInfo, intent: T.Intent, attempt: T.Attempt, course: T.Course, mode: T.Attempt["mode"]): void {
     agent.status = "underway";
     agent.attemptId = attempt.id;
     this.putAgent(agent);
@@ -109,7 +153,9 @@ export abstract class HarborProtocol extends HarborCourseCheck {
       message: `${agent.callsign} sends a plan for "${intent.title}": ${course.approach || course.plan[0] || "no approach given"}`,
       files: course.files,
     });
+  }
 
+  protected async declareWorkspace(attempt: T.Attempt, intent: T.Intent, mode: T.Attempt["mode"]): Promise<T.DeclareResult["workspace"]> {
     // Fork: git mode needs the remote now. Api mode makes no fork: the work lives in gitring's own
     // storage as a changeset over main. A fork is made later, on demand (`workCopyRemote`).
     let workspace: T.DeclareResult["workspace"] = { mode, baseSha: attempt.baseSha };
@@ -124,16 +170,10 @@ export abstract class HarborProtocol extends HarborCourseCheck {
         tokenExpiresAt: tok?.expiresAt,
       };
     }
+    return workspace;
+  }
 
-    await this.refreshFootprint(attempt);
-    // A work copy is in flight: the steward (when on) watches from now on.
-    await this.armSteward();
-    let check = await this.courseCheck(attempt.id, "declare");
-    // A duplicate of a new intent joins the existing intent as another attempt (best-of-N).
-    if (check?.verdict === "merge-intents" && createdIntent) {
-      check = await this.mergeDuplicate(attempt, intent, check);
-      intent = this.intents.get(attempt.intentId)!;
-    }
+  protected declareResult(attempt: T.Attempt, agent: T.AgentInfo, intent: T.Intent, workspace: T.DeclareResult["workspace"], rules: ReturnType<typeof planNotes>): T.DeclareResult {
     const clr = this.clearanceFor(attempt.id);
     return {
       attemptId: attempt.id,

@@ -20,6 +20,9 @@ import { seedChanges } from "../support/seed";
 import type { SeedFile } from "../support/seed";
 import { HarborTasks } from "./tasks";
 
+/** What the Worker sends to start a project. */
+type InitOptions = { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] };
+
 export abstract class HarborImport extends HarborTasks {
   // ───── Start a project ─────
 
@@ -34,7 +37,27 @@ export abstract class HarborImport extends HarborTasks {
    * Imports run in the background: the project shows "importing" until Artifacts is done. After an
    * import, a push or an upload, gitring guesses the test commands (see guessTests).
    */
-  async init(opts: { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] }): Promise<T.ProjectState> {
+  async init(opts: InitOptions): Promise<T.ProjectState> {
+    const { source, repoName, draft } = this.draftProject(opts);
+
+    // A public repository (any git host, or GitHub): Artifacts imports it with its history.
+    if (source.kind === "git" || (source.kind === "github" && !source.private)) return this.importPublicRepo(opts, source, draft, repoName);
+
+    // A private GitHub repository: gitring reads one commit through the GitHub App (Artifacts imports
+    // public remotes only), in the background.
+    if (source.kind === "github") return this.importPrivateGithub(opts, source, draft, repoName);
+
+    const handle = await this.backend.ensureRepo(repoName, { description: `gitring project ${opts.projectId}` });
+    draft.repo.remote = handle.remote;
+
+    if (source.kind === "push") return this.waitForPush(repoName, draft);
+    return this.seedProject(opts, source, draft, repoName);
+  }
+
+  // ───── The steps of a start ─────
+
+  /** The new project in memory, with its first settings. A project id that comes back starts clean. */
+  protected draftProject(opts: InitOptions): { source: T.ProjectSource; repoName: string; draft: T.Project } {
     const generation = (this.db.getMeta<number>("generation") ?? 0) + 1;
     const source: T.ProjectSource = opts.source ?? { kind: "empty" };
     if (source.kind === "sample") throw new Error("The sample left gitring. Import a repository, upload a folder, push with git, or start empty.");
@@ -67,57 +90,55 @@ export abstract class HarborImport extends HarborTasks {
     // A project id that comes back (a project that was not made, then made again) starts clean: the
     // choice of the tests, the agents that wait for an import and the fix task belong to the old project.
     for (const key of ["checksSet", "launchAfterImport", "pullTestTask"]) this.db.setMeta(key, undefined);
+    return { source, repoName, draft };
+  }
 
-    // A public repository (any git host, or GitHub): Artifacts imports it with its history.
-    if (source.kind === "git" || (source.kind === "github" && !source.private)) {
-      const url = source.kind === "git" ? normalizeGitUrl(source.url) : `https://github.com/${source.repo}`;
-      const branch = source.branch;
-      const res = await this.env.ARTIFACTS.import({
-        source: { url, ...(branch ? { branch } : {}), depth: 200 },
-        target: { name: repoName, opts: { description: `gitring project ${opts.projectId} (import of ${url})` } },
-      });
-      draft.repo.remote = res.remote;
-      draft.repo.defaultBranch = branch || res.defaultBranch || "main";
-      draft.importing = { url, startedAt: Date.now(), ...(source.kind === "github" ? { github: { repo: source.repo, branch: branch ?? "", snapshot: false } } : {}) };
-      this.db.setMeta("project", draft);
-      this.addLog({ kind: "system", message: `Import starts: ${url} into Cloudflare Artifacts (${repoName}).` });
-      await this.ctx.storage.setAlarm(Date.now() + 2000);
-      const state = await this.state();
-      this.emit({ type: "snapshot", state });
-      return state;
-    }
+  protected async importPublicRepo(opts: InitOptions, source: Extract<T.ProjectSource, { kind: "git" | "github" }>, draft: T.Project, repoName: string): Promise<T.ProjectState> {
+    const url = source.kind === "git" ? normalizeGitUrl(source.url) : `https://github.com/${source.repo}`;
+    const branch = source.branch;
+    const res = await this.env.ARTIFACTS.import({
+      source: { url, ...(branch ? { branch } : {}), depth: 200 },
+      target: { name: repoName, opts: { description: `gitring project ${opts.projectId} (import of ${url})` } },
+    });
+    draft.repo.remote = res.remote;
+    draft.repo.defaultBranch = branch || res.defaultBranch || "main";
+    draft.importing = { url, startedAt: Date.now(), ...(source.kind === "github" ? { github: { repo: source.repo, branch: branch ?? "", snapshot: false } } : {}) };
+    this.db.setMeta("project", draft);
+    this.addLog({ kind: "system", message: `Import starts: ${url} into Cloudflare Artifacts (${repoName}).` });
+    await this.ctx.storage.setAlarm(Date.now() + 2000);
+    const state = await this.state();
+    this.emit({ type: "snapshot", state });
+    return state;
+  }
 
-    // A private GitHub repository: gitring reads one commit through the GitHub App (Artifacts imports
-    // public remotes only), in the background.
-    if (source.kind === "github") {
-      const handle = await this.backend.ensureRepo(repoName, { description: `gitring project ${opts.projectId} (import of github.com/${source.repo})` });
-      draft.repo.remote = handle.remote;
-      draft.repo.defaultBranch = source.branch || "main";
-      draft.importing = { url: `https://github.com/${source.repo}`, startedAt: Date.now(), github: { repo: source.repo, branch: source.branch ?? "", snapshot: true } };
-      // Private code: the project stays private, whatever happens to the link later.
-      draft.privateCode = { repo: source.repo, at: Date.now() };
-      this.db.setMeta("project", draft);
-      this.addLog({ kind: "system", message: `Import starts: github.com/${source.repo} (private) through the gitring GitHub App.` });
-      await this.ctx.storage.setAlarm(Date.now() + 200);
-      const state = await this.state();
-      this.emit({ type: "snapshot", state });
-      return state;
-    }
-
-    const handle = await this.backend.ensureRepo(repoName, { description: `gitring project ${opts.projectId}` });
+  protected async importPrivateGithub(opts: InitOptions, source: Extract<T.ProjectSource, { kind: "github" }>, draft: T.Project, repoName: string): Promise<T.ProjectState> {
+    const handle = await this.backend.ensureRepo(repoName, { description: `gitring project ${opts.projectId} (import of github.com/${source.repo})` });
     draft.repo.remote = handle.remote;
+    draft.repo.defaultBranch = source.branch || "main";
+    draft.importing = { url: `https://github.com/${source.repo}`, startedAt: Date.now(), github: { repo: source.repo, branch: source.branch ?? "", snapshot: true } };
+    // Private code: the project stays private, whatever happens to the link later.
+    draft.privateCode = { repo: source.repo, at: Date.now() };
+    this.db.setMeta("project", draft);
+    this.addLog({ kind: "system", message: `Import starts: github.com/${source.repo} (private) through the gitring GitHub App.` });
+    await this.ctx.storage.setAlarm(Date.now() + 200);
+    const state = await this.state();
+    this.emit({ type: "snapshot", state });
+    return state;
+  }
 
-    if (source.kind === "push") {
-      // An empty repo: the owner pushes an existing repository with plain git. gitring adopts the push.
-      draft.importing = { url: "git push", startedAt: Date.now(), push: true, tokenIds: [] };
-      this.db.setMeta("project", draft);
-      this.addLog({ kind: "system", message: `Repository ready in Cloudflare Artifacts (${repoName}). gitring waits for the first git push.` });
-      await this.ctx.storage.setAlarm(Date.now() + 15_000);
-      const state = await this.state();
-      this.emit({ type: "snapshot", state });
-      return state;
-    }
+  protected async waitForPush(repoName: string, draft: T.Project): Promise<T.ProjectState> {
+    // An empty repo: the owner pushes an existing repository with plain git. gitring adopts the push.
+    draft.importing = { url: "git push", startedAt: Date.now(), push: true, tokenIds: [] };
+    this.db.setMeta("project", draft);
+    this.addLog({ kind: "system", message: `Repository ready in Cloudflare Artifacts (${repoName}). gitring waits for the first git push.` });
+    await this.ctx.storage.setAlarm(Date.now() + 15_000);
+    const state = await this.state();
+    this.emit({ type: "snapshot", state });
+    return state;
+  }
 
+  /** The first commit of a new project: a README, an uploaded folder or a template. */
+  protected async seedProject(opts: InitOptions, source: T.ProjectSource, draft: T.Project, repoName: string): Promise<T.ProjectState> {
     const uploaded = source.kind === "upload" ? seedChanges(opts.files ?? []) : [];
     if (source.kind === "upload" && !uploaded.length) throw new Error("The folder has no files to upload.");
     const changes =

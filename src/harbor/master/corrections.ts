@@ -14,6 +14,9 @@ import { SYSTEM, regionKey, severityOf, sortPair } from "../support/helpers";
 import { KIND_WORD } from "../support/words";
 import { HarborClearance } from "./clearance";
 
+/** The words and the limits of a change request that the coordination code drafted (see draftCorrection). */
+type DraftedCorrection = { kind: T.CorrectionKind; message: string; constraints: T.Correction["constraints"] };
+
 export abstract class HarborCorrections extends HarborClearance {
   // ───── Pairs ─────
 
@@ -52,7 +55,7 @@ export abstract class HarborCorrections extends HarborClearance {
   protected issueCorrection(
     attemptId: string,
     standOnAttemptId: string | undefined,
-    drafted: { kind: T.CorrectionKind; message: string; constraints: T.Correction["constraints"] },
+    drafted: DraftedCorrection,
     rule: T.RuleOfTheRoad | "human",
     checkId: string,
     severity = 50,
@@ -74,24 +77,7 @@ export abstract class HarborCorrections extends HarborClearance {
     for (const id of target.corrections) {
       const old = this.corrections.get(id);
       if (regions && old && standOnAttemptId && old.kind === "region" && old.status !== "superseded" && old.standOnAttemptId && old.standOnAttemptId !== standOnAttemptId && regionKey(old) === regions) {
-        const first = this.attempts.get(old.standOnAttemptId);
-        if (first && ACTIVE.has(first.status)) {
-          if (!old.alsoStandOn?.includes(standOnAttemptId)) {
-            // The request names the work copy that was declared last. The agent waits for that one, so the agents in a row
-            // go one after the other (each waits for the one before it). If it named the first one, all would wake together.
-            const joined = this.attempts.get(standOnAttemptId);
-            if (joined && joined.course.declaredAt > first.course.declaredAt) {
-              old.alsoStandOn = [...(old.alsoStandOn ?? []), old.standOnAttemptId];
-              old.standOnAttemptId = standOnAttemptId;
-              old.message = drafted.message;
-              old.constraints = drafted.constraints;
-            } else {
-              old.alsoStandOn = [...(old.alsoStandOn ?? []), standOnAttemptId];
-            }
-            this.putCorrection(old);
-          }
-          return undefined;
-        }
+        if (this.joinRegionRequest(old, standOnAttemptId, drafted)) return undefined;
       }
       if (event && old && old.kind === drafted.kind && old.standOnAttemptId === standOnAttemptId && old.status !== "superseded") {
         // The same words, and the agent did not read them yet: it gets them once.
@@ -120,6 +106,39 @@ export abstract class HarborCorrections extends HarborClearance {
       old.status = "superseded";
       this.putCorrection(old);
     }
+    const corr = this.openCorrection(attemptId, standOnAttemptId, drafted, rule, checkId, severity, target);
+    this.amendSpecForInterface(drafted, target, corr, attemptId);
+    this.logCorrection(drafted, target, corr, attemptId, standOnAttemptId);
+    return corr;
+  }
+
+  // ───── The steps of a change request ─────
+
+  /** A work copy that edits lines which a live "same lines" request names joins that request. True: it joined, and no new request is made. */
+  protected joinRegionRequest(old: T.Correction, standOnAttemptId: string, drafted: DraftedCorrection): boolean {
+    const first = this.attempts.get(old.standOnAttemptId!);
+    if (first && ACTIVE.has(first.status)) {
+      if (!old.alsoStandOn?.includes(standOnAttemptId)) {
+        // The request names the work copy that was declared last. The agent waits for that one, so the agents in a row
+        // go one after the other (each waits for the one before it). If it named the first one, all would wake together.
+        const joined = this.attempts.get(standOnAttemptId);
+        if (joined && joined.course.declaredAt > first.course.declaredAt) {
+          old.alsoStandOn = [...(old.alsoStandOn ?? []), old.standOnAttemptId!];
+          old.standOnAttemptId = standOnAttemptId;
+          old.message = drafted.message;
+          old.constraints = drafted.constraints;
+        } else {
+          old.alsoStandOn = [...(old.alsoStandOn ?? []), standOnAttemptId];
+        }
+        this.putCorrection(old);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** The new change request, saved and counted. It goes to the agent with its next answer. */
+  protected openCorrection(attemptId: string, standOnAttemptId: string | undefined, drafted: DraftedCorrection, rule: T.RuleOfTheRoad | "human", checkId: string, severity: number, target: T.Attempt): T.Correction {
     const corr: T.Correction = {
       id: newId("cr"),
       attemptId,
@@ -137,7 +156,10 @@ export abstract class HarborCorrections extends HarborClearance {
     this.putAttempt(target);
     this.putCorrection(corr);
     this.stats.corrections += 1;
+    return corr;
+  }
 
+  protected amendSpecForInterface(drafted: DraftedCorrection, target: T.Attempt, corr: T.Correction, attemptId: string): void {
     // An interface change binds every attempt of the intent: amend the living spec with the new signature.
     if (drafted.kind === "interface" && drafted.constraints.useSignatures?.length) {
       const intent = this.intents.get(target.intentId);
@@ -158,6 +180,9 @@ export abstract class HarborCorrections extends HarborClearance {
         this.putIntent(intent);
       }
     }
+  }
+
+  protected logCorrection(drafted: DraftedCorrection, target: T.Attempt, corr: T.Correction, attemptId: string, standOnAttemptId: string | undefined): void {
     this.addLog({
       kind: "correction",
       attemptId,
@@ -169,7 +194,6 @@ export abstract class HarborCorrections extends HarborClearance {
       data: { correctionId: corr.id },
     });
     this.webhook("correction", { correction: corr, callsign: this.callsign(attemptId) });
-    return corr;
   }
 
   // ───── Questions about a pair ─────

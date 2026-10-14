@@ -159,111 +159,120 @@ export class Vessel extends DurableObject<Env> {
   /* ───────────────────────── LLM ───────────────────────── */
 
   private async llmStep(st: VesselState): Promise<boolean> {
+    if (st.phase === "start") return this.planStep(st);
+    if (st.phase === "working") return this.workStep(st);
+    if (st.phase === "submitted") return this.submitStep(st);
+    return false;
+  }
+
+  /** The first step: read the brief, ask the model for a plan, and declare it. */
+  private async planStep(st: VesselState): Promise<boolean> {
     const c = st.config;
     const h = this.harbor(c.projectId);
-
-    if (st.phase === "start") {
-      // A model with a large context (GLM 5.3) gets far more file text in its first prompt.
-      const brief = await h.brief(c.attemptId, c.intentId, { model: c.model });
-      let prior = "";
-      if (c.rederiveOf) {
-        try {
-          const diff = await h.attemptDiff(c.rederiveOf);
-          prior = diff.files.map((f) => f.diff).join("\n").slice(0, 12_000);
-        } catch {
-          /* no prior diff */
-        }
+    // A model with a large context (GLM 5.3) gets far more file text in its first prompt.
+    const brief = await h.brief(c.attemptId, c.intentId, { model: c.model });
+    let prior = "";
+    if (c.rederiveOf) {
+      try {
+        const diff = await h.attemptDiff(c.rederiveOf);
+        prior = diff.files.map((f) => f.diff).join("\n").slice(0, 12_000);
+      } catch {
+        /* no prior diff */
       }
-      st.messages = [
-        { role: "system", content: systemPrompt(c.callsign, brief.runner) },
-        { role: "user", content: briefPrompt(brief, prior) },
-      ];
-      // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low"), so the
-      // call gets more time (up to 16,384 reasoning tokens before the answer).
-      const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
-        maxTokens: 1200,
-        temperature: 0.2,
-        timeoutMs: 240_000,
-        reasoning: "high",
-      });
-      this.countTokens(c, plan?.usage);
-      if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
-      const course = parseJsonLoose<{ plan?: string[]; files?: string[]; symbols?: string[]; approach?: string }>(plan?.message.content) ?? {};
-      const res = await h.declare({
-        attemptId: c.attemptId,
-        intentId: c.intentId,
-        agent: { id: c.agentId, kind: "builtin", model: c.model },
-        plan: (course.plan ?? ["Read the code", "Change the code", "Run the checks"]).slice(0, 8),
-        files: course.files ?? brief.intent.scope?.paths ?? [],
-        symbols: course.symbols ?? [],
-        approach: course.approach ?? `Implement "${brief.intent.title}".`,
-        mode: "api",
-      });
-      st.messages.push({ role: "assistant", content: `My plan: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
-      st.messages.push({ role: "user", content: clearanceText(res.clearance) + "\nNow do the work with the tools." });
-      // The clearance text holds its change requests: the model sees them in its next turn.
-      this.show(st, res.clearance.corrections ?? []);
-      st.phase = "working";
+    }
+    st.messages = [
+      { role: "system", content: systemPrompt(c.callsign, brief.runner) },
+      { role: "user", content: briefPrompt(brief, prior) },
+    ];
+    // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low"), so the
+    // call gets more time (up to 16,384 reasoning tokens before the answer).
+    const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
+      maxTokens: 1200,
+      temperature: 0.2,
+      timeoutMs: 240_000,
+      reasoning: "high",
+    });
+    this.countTokens(c, plan?.usage);
+    if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
+    const course = parseJsonLoose<{ plan?: string[]; files?: string[]; symbols?: string[]; approach?: string }>(plan?.message.content) ?? {};
+    const res = await h.declare({
+      attemptId: c.attemptId,
+      intentId: c.intentId,
+      agent: { id: c.agentId, kind: "builtin", model: c.model },
+      plan: (course.plan ?? ["Read the code", "Change the code", "Run the checks"]).slice(0, 8),
+      files: course.files ?? brief.intent.scope?.paths ?? [],
+      symbols: course.symbols ?? [],
+      approach: course.approach ?? `Implement "${brief.intent.title}".`,
+      mode: "api",
+    });
+    st.messages.push({ role: "assistant", content: `My plan: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
+    st.messages.push({ role: "user", content: clearanceText(res.clearance) + "\nNow do the work with the tools." });
+    // The clearance text holds its change requests: the model sees them in its next turn.
+    this.show(st, res.clearance.corrections ?? []);
+    st.phase = "working";
+    return true;
+  }
+
+  /** One turn of work: the model answers with tool calls, and the tools run. False: the vessel is done. */
+  private async workStep(st: VesselState): Promise<boolean> {
+    const c = st.config;
+    if (st.step > MAX_LLM_STEPS) {
+      st.phase = "submitted";
       return true;
     }
-
-    if (st.phase === "working") {
-      if (st.step > MAX_LLM_STEPS) {
-        st.phase = "submitted";
-        return true;
-      }
-      const budget = contextBudget(c.model);
-      const turn = withOpenRequests(trimMessages(st.messages, budget.turnChars), st.open ?? []);
-      const res = await chat(this.env.AI as never, c.model, turn, { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000, reasoning: "low" });
-      if (!res) {
-        st.failStreak = (st.failStreak ?? 0) + 1;
-        st.lastError = `model call failed: ${lastChatError ?? "no answer"}`;
-        // Rate limits on paid models: wait longer before the next turn.
-        if (/429|rate|capacity|busy|3040|5035/i.test(lastChatError ?? "")) await new Promise((r) => setTimeout(r, 12_000));
-        return true;
-      }
-      st.failStreak = 0;
-      this.countTokens(c, res.usage);
-      const msg = res.message;
-      st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
-      if (!msg.tool_calls?.length) {
-        st.messages.push({ role: "user", content: "Use the tools. Write the files with write_file, run run_checks, then call submit." });
-        this.showNew(st);
-        return true;
-      }
-      // All the tool answers of one turn share a limit too (a model can call read_file many times in one turn).
-      let room = budget.turnToolChars;
-      for (const call of msg.tool_calls) {
-        const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments), msg.content);
-        const text = out.text.slice(0, Math.min(budget.toolChars, Math.max(MIN_TOOL_CHARS, room)));
-        room -= text.length;
-        st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: text });
-        if (out.done) {
-          st.phase = "done";
-          return false;
-        }
-      }
-      // The model wrote files after it saw a change request: it acted on the request.
-      await this.ackActed(st);
-      const recent = st.messages.slice(-8).filter((m) => m.role === "tool").map((m) => m.name);
-      if (recent.filter((n) => n === "write_file").length >= 2 && !recent.includes("run_checks")) {
-        st.messages.push({ role: "user", content: "Run run_checks now. The checks are the contract: make every assertion pass." });
-      }
+    const budget = contextBudget(c.model);
+    const turn = withOpenRequests(trimMessages(st.messages, budget.turnChars), st.open ?? []);
+    const res = await chat(this.env.AI as never, c.model, turn, { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000, reasoning: "low" });
+    if (!res) {
+      st.failStreak = (st.failStreak ?? 0) + 1;
+      st.lastError = `model call failed: ${lastChatError ?? "no answer"}`;
+      // Rate limits on paid models: wait longer before the next turn.
+      if (/429|rate|capacity|busy|3040|5035/i.test(lastChatError ?? "")) await new Promise((r) => setTimeout(r, 12_000));
+      return true;
+    }
+    st.failStreak = 0;
+    this.countTokens(c, res.usage);
+    const msg = res.message;
+    st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
+    if (!msg.tool_calls?.length) {
+      st.messages.push({ role: "user", content: "Use the tools. Write the files with write_file, run run_checks, then call submit." });
       this.showNew(st);
       return true;
     }
-
-    if (st.phase === "submitted") {
-      if (st.submits >= MAX_SUBMITS) return false;
-      st.submits += 1;
-      // The step limit sends the work, not the model: a request that the model did not act on stays open
-      // (the model did not say that it needs no change).
-      await this.ackActed(st);
-      const res = await h.submit(c.attemptId, "Work complete.");
-      this.absorb(st, res.clearance);
-      return res.next === "fix-checks" && st.submits < MAX_SUBMITS ? (st.phase = "working", true) : false;
+    // All the tool answers of one turn share a limit too (a model can call read_file many times in one turn).
+    let room = budget.turnToolChars;
+    for (const call of msg.tool_calls) {
+      const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments), msg.content);
+      const text = out.text.slice(0, Math.min(budget.toolChars, Math.max(MIN_TOOL_CHARS, room)));
+      room -= text.length;
+      st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: text });
+      if (out.done) {
+        st.phase = "done";
+        return false;
+      }
     }
-    return false;
+    // The model wrote files after it saw a change request: it acted on the request.
+    await this.ackActed(st);
+    const recent = st.messages.slice(-8).filter((m) => m.role === "tool").map((m) => m.name);
+    if (recent.filter((n) => n === "write_file").length >= 2 && !recent.includes("run_checks")) {
+      st.messages.push({ role: "user", content: "Run run_checks now. The checks are the contract: make every assertion pass." });
+    }
+    this.showNew(st);
+    return true;
+  }
+
+  /** The step limit sends the work to the merge, or a submit that came back with failing checks sends it again. */
+  private async submitStep(st: VesselState): Promise<boolean> {
+    const c = st.config;
+    const h = this.harbor(c.projectId);
+    if (st.submits >= MAX_SUBMITS) return false;
+    st.submits += 1;
+    // The step limit sends the work, not the model: a request that the model did not act on stays open
+    // (the model did not say that it needs no change).
+    await this.ackActed(st);
+    const res = await h.submit(c.attemptId, "Work complete.");
+    this.absorb(st, res.clearance);
+    return res.next === "fix-checks" && st.submits < MAX_SUBMITS ? (st.phase = "working", true) : false;
   }
 
   /** One tool call of the model. `said`: the text of the model in the same turn (the reason for a submit). */
