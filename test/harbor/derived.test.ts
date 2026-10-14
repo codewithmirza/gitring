@@ -280,6 +280,33 @@ describe("line blame", () => {
     expect(kept.step?.sha).toBe(m1);
     await expect(h.why({ path: "a.js", ref: "a_nope" })).rejects.toThrow('Unknown version "a_nope". Use main, a commit id or a work copy id.');
   });
+
+  it("answers a line of a merged work copy from its merge, and says when a work copy stopped", async () => {
+    p = new Project();
+    await p.start({ "a.js": lines("one") });
+    const base = { sha: p.main.sha, tree: p.main.tree };
+    const merged = await p.commit({ "a.js": lines("one", "two") });
+    // The work copy of the first merge (a_1), with its files as they were at the merge.
+    const wc = (status: string, id: string): WorkCopyFiles => ({
+      attempt: { id, baseSha: base.sha, baseTree: base.tree, status, course: { plan: ["Add two"], files: ["a.js"], symbols: [], approach: "Append.", declaredAt: 1 } } as unknown as T.Attempt,
+      files: new Map([["a.js", lines("one", "two")]]),
+      deleted: [],
+      callsign: "Robin-1",
+      title: "Task in1",
+    });
+    p.work.set("a_1", wc("landed", "a_1"));
+    p.work.set("a_x", wc("abandoned", "a_x"));
+    const h = new DerivedHistory(p.source());
+    const done = await h.why({ path: "a.js", line: 2, ref: "a_1" });
+    expect(done.ref).toBe("a_1");
+    expect(done.work).toBeUndefined();
+    expect(done.step).toMatchObject({ sha: merged, kind: "merge" });
+    expect(done.record?.task.title).toBe("Task in1");
+    expect(done.summary).toBe(`The work copy of Robin-1 merged in commit ${merged.slice(0, 7)}. Line 2 of a.js on commit ${merged.slice(0, 7)}. It came from the task "Task in1". Robin-1 merged it on 1970-01-01 (commit ${merged.slice(0, 7)}).`);
+    const stopped = await h.why({ path: "a.js", line: 2, ref: "a_x" });
+    expect(stopped.summary).toBe('Line 2 of a.js on the work copy of Robin-1. The work copy of Robin-1 wrote it for the task "Task in1". That work did not merge.');
+    for (const t of [done.summary, stopped.summary]) expect(steViolations(t)).toEqual([]);
+  });
 });
 
 describe("cost and order", () => {

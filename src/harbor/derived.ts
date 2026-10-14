@@ -596,6 +596,12 @@ export class DerivedHistory {
     const wc = await this.src.workCopy(id);
     if (!wc) throw new Error(`Unknown version "${id}". Use main, a commit id or a work copy id.`);
     const a = wc.attempt;
+    // A merged work copy: its lines are in the merge commit, with the record of that merge.
+    const landing = a.status === "landed" ? this.src.landings().find((l) => l.attemptId === a.id) : undefined;
+    if (landing) {
+      const res = await this.why({ path, line, ref: landing.mainAfter });
+      return { ...res, ref: id, summary: `The work copy of ${wc.callsign} merged in commit ${short(landing.mainAfter)}. ${res.summary}` };
+    }
     const version = versionWords(id, wc.callsign);
     const head = wc.files.get(path) ?? null;
     if (head === null) throw new Error(`${path} is not in ${version}.`);

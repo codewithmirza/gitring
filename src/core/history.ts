@@ -312,10 +312,13 @@ export function stepWords(s: HistoryStep): string {
   return `It came with commit ${short(s.sha)} ("${s.subject}") on ${dayOf(s.at)}. Main moved to that commit without a merge of gitring.`;
 }
 
+/** Statuses of a work copy that stopped without a merge. */
+const STOPPED: ReadonlySet<string> = new Set(["abandoned", "alternate", "failed", "stale"]);
+
 /** The summary of a why answer for one line. */
 export function whyLineWords(a: { path: string; line: number; version: string; step?: HistoryStep; work?: WorkLine }): string {
   const head = `Line ${a.line} of ${a.path} on ${a.version}.`;
-  if (a.work) return `${head} The work copy of ${a.work.callsign} wrote it for the task "${a.work.title}". It is not merged yet.`;
+  if (a.work) return `${head} The work copy of ${a.work.callsign} wrote it for the task "${a.work.title}". ${STOPPED.has(a.work.status) ? "That work did not merge." : "It is not merged yet."}`;
   if (!a.step) return `${head} gitring does not know which change wrote it.`;
   return `${head} ${stepWords(a.step)}`;
 }

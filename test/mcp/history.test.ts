@@ -106,6 +106,8 @@ describe("history tools", () => {
     const search = await gr("gitring_search", { query: "greet(" });
     expect(search.isError, search.text).toBe(false);
     const found = jsonOf(search.text);
+    // The SQLite of the project object has FTS5 (as Durable Object SQLite has).
+    expect(found.engine).toBe("fts5");
     expect(found.files.map((f: { path: string }) => f.path).sort()).toEqual(["src/greet.js", "tests/greet.test.js"]);
     expect(found.files.find((f: { path: string }) => f.path === "src/greet.js").matches).toEqual([{ line: 1, text: "export function greet(name) {" }]);
     expect(steViolations(headline(search.text))).toEqual([]);
