@@ -114,6 +114,19 @@ describe("change requests on the way to a person are never lost", () => {
     expect(textOf(again)).not.toContain(`[${cr.id}]`);
   });
 
+  it("wait again when the person never answers the form: the next call of the agent holds them", async () => {
+    const id = await shoutWork();
+    const cr = await lineRequest(id);
+    const first = await call("gitring_submit", { project, attemptId: id, summary: "Add shout" }, { capabilities: FORMS });
+    expect(resultOf(first)?.resultType).toBe("input_required");
+    // The client never sends the second call. The agent calls another tool later: the request is there.
+    const next = await gr("gitring_status", { attemptId: id });
+    expect(next.text).toMatch(/^GITRING CHANGE REQUEST/);
+    expect(next.text).toContain(`[${cr.id}]`);
+    // It reaches the agent once: the call after that does not hold it again.
+    expect((await gr("gitring_status", { attemptId: id })).text).not.toContain(`[${cr.id}]`);
+  });
+
   it("are in the answer of create_pull_request (GitHub-compatible tools)", async () => {
     await gh("push_files", { branch: "feature/shout", message: "Shout", files: [{ path: "src/shout.js", content: SHOUT }, { path: "tests/shout.test.js", content: SHOUT_TEST }] });
     const st = await world.call("GET", `/api/projects/${project}/state`, { key });
@@ -138,9 +151,13 @@ describe("where a person answers merge questions (approvalsIn)", () => {
   });
 
   it("lets a key make it stricter, but not undo 'app': an agent with the key cannot loosen it", async () => {
+    // A key cannot choose "agent" either: that stops the push notifications of merge questions.
+    expect((await setPrefs("agent", { key })).status).toBe(403);
+    expect((await setPrefs("both", { key })).json).toEqual({ approvalsIn: "both" });
     expect((await setPrefs("app", { key })).json).toEqual({ approvalsIn: "app" });
     const loosen = await setPrefs("both", { key });
     expect(loosen.status).toBe(403);
+    expect(steViolations(String(loosen.json.error).replace(/"[^"]*"/g, ""))).toEqual([]);
     expect((await world.call("GET", "/api/me/prefs", { key })).json).toEqual({ approvalsIn: "app" });
     expect((await setPrefs("agent")).json).toEqual({ approvalsIn: "agent" });
   });
@@ -267,5 +284,14 @@ describe("push notifications for the inbox", () => {
     expect(res.json).toEqual({ available: false, devices: 0 });
     const sub = await world.call("POST", "/api/me/push", { headers: cookie(session), body: { endpoint: "https://push.example.org/send/abc" } });
     expect(sub.status).toBe(400);
+  });
+
+  it("are turned on and off only in the app: an agent with the key cannot stop them", async () => {
+    const body = { endpoint: "https://push.example.org/send/abc" };
+    expect((await world.call("POST", "/api/me/push", { key, body })).status).toBe(403);
+    const off = await world.call("DELETE", "/api/me/push", { key, body });
+    expect(off.status).toBe(403);
+    expect(off.json.error).toBe("Turn off push notifications in the gitring app.");
+    expect((await world.call("DELETE", "/api/me/push", { headers: cookie(session), body })).json).toEqual({ devices: 0 });
   });
 });

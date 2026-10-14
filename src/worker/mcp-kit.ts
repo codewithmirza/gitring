@@ -37,6 +37,7 @@ export type HarborApi = Pick<
   | "createIntent"
   | "status"
   | "decide"
+  | "holdCorrections"
 >;
 
 /** The four MCP hints. Every tool sets all four: directories need a read-only or a destructive hint on each tool. */

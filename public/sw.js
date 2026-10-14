@@ -43,9 +43,14 @@ self.addEventListener("notificationclick", (event) => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const w of windows) {
         if (new URL(w.url).origin !== self.location.origin) continue;
-        await w.focus();
-        if ("navigate" in w) await w.navigate(url);
-        return;
+        try {
+          await w.focus();
+          // A window that this worker does not control cannot navigate: then a new window opens.
+          if ("navigate" in w && (await w.navigate(url))) return;
+        } catch {
+          /* open a new window below */
+        }
+        break;
       }
       await self.clients.openWindow(url);
     })(),

@@ -216,16 +216,17 @@ app.delete("/api/keys/:id", async (c) => {
 app.get("/api/me/prefs", async (c) => c.json(await directory(c.env).prefs(needUser(c).id)));
 
 /**
- * Where the person answers merge questions (contract C3). A key can make the rule stricter ("app"). Only the
- * person in the gitring app (a browser session) can loosen "app": an agent that holds the key must not undo it.
+ * Where the person answers merge questions (contract C3). A key can only make the rule strict ("app"). Only the
+ * person in the gitring app (a browser session) can choose another place: an agent that holds the key must not
+ * loosen the rule, or stop the push notifications of merge questions ("agent").
  */
 app.put("/api/me/prefs", async (c) => {
   try {
     const user = needUser(c);
     const body = await c.req.json<Partial<A.PersonPrefs>>().catch(() => ({}) as Partial<A.PersonPrefs>);
     const dir = directory(c.env);
-    if (body.approvalsIn !== undefined && body.approvalsIn !== "app" && c.get("principal").via !== "session" && (await dir.prefs(user.id)).approvalsIn === "app") {
-      throw new HTTPError(403, "Only you can change this, in the gitring app. A key cannot change it from \"In the gitring app\".");
+    if (body.approvalsIn !== undefined && body.approvalsIn !== "app" && c.get("principal").via !== "session" && (await dir.prefs(user.id)).approvalsIn !== body.approvalsIn) {
+      throw new HTTPError(403, "Only you can change this, in the gitring app. A key can only choose \"In the gitring app\".");
     }
     return c.json(await dir.setPrefs(user.id, body.approvalsIn !== undefined ? { approvalsIn: body.approvalsIn } : {}));
   } catch (e) {
@@ -269,10 +270,14 @@ app.post("/api/me/push", async (c) => {
   }
 });
 
-/** A device stops push notifications. Without an endpoint, every device of the person stops. */
+/**
+ * A device stops push notifications. Without an endpoint, every device of the person stops. Only in the gitring
+ * app: an agent that holds the key must not stop the notifications of the person.
+ */
 app.delete("/api/me/push", async (c) => {
   try {
     const user = needUser(c);
+    if (c.get("principal").via !== "session") throw new HTTPError(403, "Turn off push notifications in the gitring app.");
     const body = await c.req.json<{ endpoint?: unknown }>().catch(() => ({}) as { endpoint?: unknown });
     return c.json(await directory(c.env).pushUnsubscribe(user.id, typeof body.endpoint === "string" ? body.endpoint : undefined));
   } catch (e) {

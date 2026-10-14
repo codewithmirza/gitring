@@ -72,6 +72,13 @@ describe("questions in the decisions list", () => {
     const q = selectJudgmentQueue(state({ questions: [question({ status: "answered" }), question({ id: "q_2", status: "closed" })] }), { id: SAM.id, role: "member" });
     expect(q).toEqual([]);
   });
+
+  it("shows no old escalation item after a person answered: the check that asked is still the latest one", () => {
+    const check = { id: "cc_1", attemptId: "a1", verdict: "escalate", at: 30 } as CourseCheck;
+    for (const status of ["answered", "closed"] as const) {
+      expect(selectJudgmentQueue(state({ questions: [question({ status })], checks: [check] }), { id: SAM.id, role: "member" }), status).toEqual([]);
+    }
+  });
 });
 
 describe("live events of questions", () => {
@@ -106,6 +113,8 @@ describe("the inbox page", async () => {
 
   it("explains each place to answer merge questions in short sentences", () => {
     expect(Object.keys(APPROVALS_IN_TEXT)).toEqual(["agent", "app", "both"]);
+    // The Directory sends no merge push to a person who answers in the chat only: the help says so.
+    expect(APPROVALS_IN_TEXT.agent.help).toContain("You get no push notification for merge questions.");
     for (const { label, help } of Object.values(APPROVALS_IN_TEXT)) {
       expect(steViolations(label)).toEqual([]);
       expect(steViolations(help)).toEqual([]);
@@ -155,7 +164,7 @@ describe("line requests on a diff", () => {
 
 describe("the service worker (public/sw.js)", () => {
   /** Run the service worker with a fake `self`; answers its listeners and the notifications it showed. */
-  function load(inbox: unknown, ok = true) {
+  function load(inbox: unknown, ok = true, windows: unknown[] = []) {
     const listeners = new Map<string, (e: unknown) => void>();
     const shown: { title: string; options: Record<string, unknown> }[] = [];
     const opened: string[] = [];
@@ -163,7 +172,7 @@ describe("the service worker (public/sw.js)", () => {
       location: { origin: "https://gitring.test" },
       addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, fn),
       skipWaiting: () => undefined,
-      clients: { claim: async () => undefined, matchAll: async () => [], openWindow: async (u: string) => void opened.push(u) },
+      clients: { claim: async () => undefined, matchAll: async () => windows, openWindow: async (u: string) => void opened.push(u) },
       registration: { showNotification: async (title: string, options: Record<string, unknown>) => void shown.push({ title, options }) },
     };
     const fetcher = async (url: string) => {
@@ -193,5 +202,19 @@ describe("the service worker (public/sw.js)", () => {
     expect(sw.shown[0]).toMatchObject({ title: "gitring", options: { body: "Open the inbox to see what waits for you." } });
     await sw.fire("notificationclick", { notification: { close: () => undefined, data: { url: "/inbox" } } });
     expect(sw.opened).toEqual(["/inbox"]);
+  });
+
+  it("shows /inbox in an open window of gitring, or in a new window when that window cannot go there", async () => {
+    const went: string[] = [];
+    const tap = { notification: { close: () => undefined, data: { url: "/inbox" } } };
+    const open = { url: "https://gitring.test/tasks", focus: async () => undefined, navigate: async (u: string) => (went.push(u), {}) };
+    const sw = load(null, false, [{ url: "https://other.test/", focus: async () => undefined, navigate: async () => ({}) }, open]);
+    await sw.fire("notificationclick", tap);
+    expect([went, sw.opened]).toEqual([["/inbox"], []]);
+    // A window that this worker does not control refuses to navigate: a new window opens.
+    const stuck = { url: "https://gitring.test/tasks", focus: async () => undefined, navigate: async () => Promise.reject(new TypeError("Not controlled.")) };
+    const sw2 = load(null, false, [stuck]);
+    await sw2.fire("notificationclick", tap);
+    expect(sw2.opened).toEqual(["/inbox"]);
   });
 });

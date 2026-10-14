@@ -165,7 +165,8 @@ function requestsNote(n: number): string {
  * The question for the person, as a form in the chat of the agent. Absent when gitring cannot ask here (the client
  * cannot show a form, the person is not known, the person may not answer, or the person answers in the gitring app
  * only): the caller then gives the link. `again`: the change requests that the first answer delivered. The state
- * carries them, so the answer of the second call holds them again (the agent reads only that answer).
+ * carries them, so the answer of the second call holds them again (the agent reads only that answer). They also
+ * wait again in the project object, so the next call of the agent holds them when the person never answers.
  */
 export async function askInChat(ctx: ToolContext, req: ServerContext, h: Access, st: T.WorkStatus, opts: { place?: A.ApprovalsIn; again?: string[] } = {}): Promise<InputRequiredResult | undefined> {
   const me = ctx.who.user;
@@ -173,6 +174,8 @@ export async function askInChat(ctx: ToolContext, req: ServerContext, h: Access,
   if (opts.place === "app" || !ctx.ask || !me || !ap || !isWaiting(st) || st.mayAnswer === false || !clientCanAsk(req)) return undefined;
   const state: AskState = { v: 1, project: h.id, attemptId: st.attemptId, approvalId: ap.id, user: me.id, ...(opts.again?.length ? { cr: opts.again.slice(0, 20) } : {}) };
   const requestState = await ctx.ask.mint(state, req);
+  // The agent does not read this answer: its change requests wait again (for the second call, or the next call).
+  if (st.clearance.corrections.length) await h.stub.holdCorrections(st.attemptId, st.clearance.corrections.map((c) => c.id));
   return inputRequired({
     inputRequests: {
       [QUESTION_KEY]: inputRequired.elicit({

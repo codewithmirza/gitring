@@ -13,11 +13,17 @@ const FILES = [
   { path: "tests/a.test.js", text: 'import { test, expect } from "../harness/test.js";\ntest("a", () => expect(1).toBe(1));\n' },
 ];
 
+/** Runs once while the decision model thinks (the model can take a while: other calls come in that time). */
+let duringCheck: (() => Promise<unknown>) | null = null;
+
 /** A decision model that cannot decide: a coin-flip collision, a semantic risk, and no side that clearly adapts. */
 function unsureModel() {
   return {
     run: async (_name: string, req: { questions?: Record<string, unknown> }) => {
       if (!req.questions) return { response: "" };
+      const during = duringCheck;
+      duringCheck = null;
+      if (during) await during();
       const answers: Record<string, unknown> = { duplicate: { type: "noul", noul: 0.05 } };
       for (const id of Object.keys(req.questions)) {
         if (id.startsWith("collide.")) answers[id] = { type: "noul", noul: 0.5 };
@@ -57,6 +63,7 @@ async function start(settings: Record<string, unknown> = {}) {
 }
 
 afterEach(() => {
+  duringCheck = null;
   vi.unstubAllGlobals();
 });
 
@@ -118,6 +125,56 @@ describe("an escalated conflict check asks a person which work adapts", () => {
     // The order of the question stays: b asked first.
     expect(qs[0].attemptIds).toEqual([b, a]);
     expect(hooks.filter((h) => h.event === "question")).toHaveLength(1);
+  });
+
+  it("does not ask again for a pair that a person answered: 'No conflict' stands", async () => {
+    await start();
+    const a = await plan("Round the price");
+    const b = await plan("Add a tax to the price");
+    const q = open()[0];
+    await world.harbor.answerQuestion(q.id, { option: "both" }, OWNER);
+    const seen = (await world.harbor.state()).checks.map((c) => c.id);
+    await world.harbor.write({ attemptId: a, files: [{ path: "src/price.js", content: "export function price(n) {\n  return Math.round(n);\n}\n" }] });
+    await world.settle();
+    // The pair escalates again, and gitring does not ask the person again.
+    const again = (await world.harbor.state()).checks.filter((c) => !seen.includes(c.id) && [a, b].includes(c.attemptId));
+    expect(again.map((c) => c.verdict)).toContain("escalate");
+    expect([...inner().questions.keys()]).toEqual([q.id]);
+    expect(open()).toEqual([]);
+    expect([...inner().corrections.values()]).toEqual([]);
+  });
+
+  it("keeps the side that a person chose when the pair escalates again: no new question", async () => {
+    await start();
+    const a = await plan("Round the price");
+    const b = await plan("Add a tax to the price");
+    const q = open()[0];
+    // "first": b continues, a adapts.
+    await world.harbor.answerQuestion(q.id, { option: "first" }, OWNER);
+    const seen = (await world.harbor.state()).checks.map((c) => c.id);
+    await world.harbor.write({ attemptId: a, files: [{ path: "src/price.js", content: "export function price(n) {\n  return Math.round(n);\n}\n" }] });
+    await world.settle();
+    const again = (await world.harbor.state()).checks.filter((c) => !seen.includes(c.id) && [a, b].includes(c.attemptId));
+    expect(again.map((c) => c.verdict)).toContain("escalate");
+    expect([...inner().questions.keys()]).toEqual([q.id]);
+    expect(open()).toEqual([]);
+    // Only a gets change requests, and each one says that a person decided.
+    const all = [...inner().corrections.values()];
+    expect(all.length).toBeGreaterThan(0);
+    for (const c of all) expect(c).toMatchObject({ attemptId: a, standOnAttemptId: b, rule: "human" });
+    for (const c of all) expect(c.message).toMatch(/^A person decided: \S+ continues, and your work adapts\./);
+  });
+
+  it("asks nothing when a work copy of the pair closes while the decision model thinks", async () => {
+    await start();
+    const a = await plan("Round the price");
+    duringCheck = () => world.harbor.giveUp(a, "Not needed.");
+    const b = await plan("Add a tax to the price");
+    const st = await world.harbor.state();
+    expect(st.checks.filter((c) => c.attemptId === b).at(-1)?.verdict).toBe("escalate");
+    expect(st.attempts.find((x) => x.id === a)?.status).toBe("failed");
+    // A question about a closed work copy would stay open for ever: nobody can adapt.
+    expect(open()).toEqual([]);
   });
 
   it("sends the change request to the side that adapts when a person answers", async () => {

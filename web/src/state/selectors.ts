@@ -463,12 +463,13 @@ const queueMemo = memo(
     const attemptsById = byId(attempts);
     const who = { id: userId || null, role: (role || null) as Role | null };
 
-    // One item for each open question. A question names its work copies: the older items for them do not show.
+    // One item for each open question. A question names its work copies: the older items for them do not show,
+    // also after a person answered it (the check that asked stays the latest check of the work copy).
     const asked = new Set<string>();
     const askedTasks = new Set<string>();
     for (const q of questions) {
-      if (q.status !== "open") continue;
       for (const id of q.attemptIds) asked.add(id);
+      if (q.status !== "open") continue;
       if (q.kind === "redo") askedTasks.add(q.intentId);
       out.push({
         key: `q:${q.id}`,

@@ -10,7 +10,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
  * Security Policy allows the inline scripts of the built index.html by their SHA-256 hashes, so the
  * policy stays right when index.html changes.
  */
-function staticHeaders(): Plugin {
+export function staticHeaders(): Plugin {
   return {
     name: "gitring-static-headers",
     apply: "build",

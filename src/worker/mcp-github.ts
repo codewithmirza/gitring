@@ -676,7 +676,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     description:
       "GitHub-compatible: ask for a merge of your branch into main. base must be main. gitring runs the tests first. " +
       "The answer says: queued, merged, waits for a person, or the tests failed. " +
-      "Sometimes a person must say yes first. Then gitring asks the person. It asks in this chat if the client can show a question. If not, the answer has a link to the gitring app. " +
+      "Sometimes a person must say yes first. Then gitring asks the person. It asks in this chat if the client can show a question and the person allows it. If not, the answer has a link to the gitring app. " +
       "Wait for the person. Do not change the branch. Call merge_pull_request to see the answer. " +
       "After a failure, fix the files and call this tool again. gitring has no draft pull requests and no reviewers.",
     inputSchema: {

@@ -3165,7 +3165,21 @@ export class HarborMaster extends DurableObject<Env> {
     };
     const a = inc.attempt.id;
     const b = oth.attempt.id;
-    const old = [...this.questions.values()].find((q) => q.status === "open" && q.kind === "escalation" && q.attemptIds.includes(a) && q.attemptIds.includes(b));
+    // The decision model can take a while: a work copy that closed in the meantime has nothing to adapt.
+    if (![a, b].every((id) => ACTIVE.has(this.attempts.get(id)?.status as T.AttemptStatus))) return;
+    const pair = (q: T.Question) => q.kind === "escalation" && q.attemptIds.includes(a) && q.attemptIds.includes(b);
+    const old = [...this.questions.values()].find((q) => q.status === "open" && pair(q));
+    // A person answered for this pair already: the answer stands, and gitring does not ask again.
+    const answered = old ? undefined : [...this.questions.values()].filter((q) => q.status === "answered" && pair(q)).sort((x, y) => x.updatedAt - y.updatedAt).at(-1);
+    if (answered) {
+      const chosen = answered.drafts?.[answered.answer?.option ?? ""];
+      // "No conflict: both continue": nothing to do. Else the side that the person chose adapts again (a new request only when the conflict grows).
+      if (!chosen) return;
+      const [giveWay, standOn] = chosen.attemptId === a ? [inc, oth] : [oth, inc];
+      const d = draftCorrection(giveWay, standOn, facts, "R4-first-declared-stands-on", giveWay === inc ? "incoming" : "other");
+      this.personDecided({ attemptId: giveWay.attempt.id, standOnAttemptId: standOn.attempt.id, kind: d.kind, message: d.message, constraints: d.constraints }, answered.answer?.note, checkId, severityOf(facts), false);
+      return;
+    }
     // An open question keeps its order: its first work copy stays "first".
     const incomingFirst = !old || old.attemptIds[0] === a;
     const [first, second] = incomingFirst ? [inc, oth] : [oth, inc];
@@ -3238,6 +3252,27 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /**
+   * The change request after a person chose which work adapts (rule "human"). `d` is the drafted request for the
+   * side that adapts; the note of the person goes with it. `event`: the answer itself (always news for the agent);
+   * a later check of the same pair sends the request again only when the conflict grows.
+   */
+  private personDecided(d: NonNullable<T.Question["drafts"]>[string], note: string | undefined, checkId: string, severity: number, event: boolean): T.Correction | undefined {
+    return this.issueCorrection(
+      d.attemptId,
+      d.standOnAttemptId,
+      {
+        kind: d.kind,
+        message: `A person decided: ${this.callsign(d.standOnAttemptId) ?? "the other agent"} continues, and your work adapts.${note ? ` Note: ${note}` : ""} ${d.message}`,
+        constraints: note ? { ...d.constraints, notes: [...(d.constraints.notes ?? []), note] } : d.constraints,
+      },
+      "human",
+      checkId,
+      severity,
+      event,
+    );
+  }
+
+  /**
    * A person answers a question. The first valid answer counts; the same answer again changes nothing.
    *   escalation  "first" or "second": the side that adapts gets the change request ("a person decided").
    *               "both": nothing changes, and the question closes.
@@ -3268,21 +3303,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (q.kind === "escalation") {
       const decision = this.recordDecision({ kind: "resolve-escalation", intentId: q.intentId, attemptIds: q.attemptIds, by, rationale });
       const d = q.drafts?.[option.id];
-      const sent = d
-        ? this.issueCorrection(
-            d.attemptId,
-            d.standOnAttemptId,
-            {
-              kind: d.kind,
-              message: `A person decided: ${this.callsign(d.standOnAttemptId) ?? "the other agent"} continues, and your work adapts.${note ? ` Note: ${note}` : ""} ${d.message}`,
-              constraints: note ? { ...d.constraints, notes: [...(d.constraints.notes ?? []), note] } : d.constraints,
-            },
-            "human",
-            decision.id,
-            90,
-            true,
-          )
-        : undefined;
+      const sent = d ? this.personDecided(d, note, decision.id, 90, true) : undefined;
       message = d ? (sent ? `${option.label}. ${this.callsign(d.attemptId) ?? "The agent"} gets a change request.` : `${option.label}. The work that adapts is closed, so no change request went out.`) : "Both agents continue. Nothing changes.";
     } else {
       try {
@@ -3401,6 +3422,21 @@ export class HarborMaster extends DurableObject<Env> {
     if (!extra.length) return clr;
     const corrections = [...notices(extra, (id) => this.callsign(id)), ...clr.corrections];
     return this.withQuestions(a, { ...clr, corrections, advice: adviceFor(clr.verdict, corrections.length, clr.traffic) });
+  }
+
+  /**
+   * gitring asks a person in the chat of the agent (a form), so the agent does not read that answer: its change
+   * requests wait again. The answer of the second call holds them, or the next call of the agent when the person
+   * never answers the form.
+   */
+  async holdCorrections(attemptId: string, ids: string[]): Promise<void> {
+    for (const id of new Set(ids)) {
+      const c = this.corrections.get(id);
+      if (!c || c.attemptId !== attemptId || c.status !== "delivered") continue;
+      c.status = "pending";
+      c.deliveredAt = undefined;
+      this.putCorrection(c);
+    }
   }
 
   /**

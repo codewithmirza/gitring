@@ -166,7 +166,7 @@ export function requestChange(projectId: string, attemptId: string, input: { pat
 /* ───────────── where the person answers merge questions ───────────── */
 
 export const APPROVALS_IN_TEXT: Record<ApprovalsIn, { label: string; help: string }> = {
-  agent: { label: "In the agent's chat", help: "gitring asks you in the chat of the agent, when the agent can show a question. If not, you get a link." },
+  agent: { label: "In the agent's chat", help: "gitring asks you in the chat of the agent, when the agent can show a question. If not, you get a link. You get no push notification for merge questions." },
   app: { label: "In the gitring app", help: "gitring never asks in the chat of an agent. You answer here, in the inbox. No agent can answer for you." },
   both: { label: "In both", help: "gitring asks in the chat of the agent when it can, and the question is also in your inbox here." },
 };
