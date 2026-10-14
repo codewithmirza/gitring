@@ -238,10 +238,10 @@ Two cases need a person in every choice: no test ran (the work is not verified),
 
 **What keeps the question honest**
 
-- No tool says yes. The routes that answer (`POST /api/projects/:p/attempts/:id/decide` and `/land`) and the approval settings need a browser session. A personal key or an OAuth token (what an agent holds) cannot call them.
+- No tool says yes. The routes that answer (`POST /api/projects/:p/attempts/:id/decide` and `/land`) and the approval settings need a browser session. A personal key or the OAuth token of an app (what an agent holds) cannot call them. One exception: `decide` takes an answer from the [gitring command line](#the-command-line-for-people) when the person answers merge questions outside the app.
 - A yes is for one version of the work. gitring ties the question to the content of the changed files. When the agent changes the work, the question closes, and the next `gitring_submit` asks again.
 - The question in chat travels through the client as `requestState`. gitring signs it with `GITRING_SECRET`, ties it to the person, and lets it expire after one hour. The project object checks again who may answer, which question waits, and that the work did not change.
-- Limit: a program that holds the credentials of the person can send the answer by itself. Approvals protect against an agent that runs away and against a merge by mistake. They do not protect against a program that holds a person's key.
+- Limit: a program that holds the credentials of the person can send the answer by itself. This includes the sign-in of the gitring command line when the person answers outside the app. Approvals protect against an agent that runs away and against a merge by mistake. They do not protect against a program that holds a person's key.
 
 A project can send an `approval` event to a webhook (Settings → Webhooks) when a question starts and when it is answered, for example to Slack.
 
@@ -293,7 +293,7 @@ gitring speaks MCP (streamable HTTP) at `https://<your-worker>/mcp`. Add it as a
 | VS Code (Copilot agent mode) | Command Palette → MCP: Add Server → HTTP → the URL. Or `.vscode/mcp.json` → `{ "servers": { "gitring": { "type": "http", "url": "https://<your-worker>/mcp" } } }`. If VS Code does not start the sign-in, send a personal API key in `headers`. |
 | Gemini CLI | `gemini mcp add --transport http gitring https://<your-worker>/mcp`, then `/mcp auth gitring`. Sign-in needs a browser on the same computer. Without one, add `--header "Authorization: Bearer $GITRING_KEY"`. |
 
-OAuth 2.1 details: protected resource metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and one for each endpoint below), server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, dynamic client registration (RFC 7591) and client ID metadata documents, authorization code with PKCE (S256 only), tokens bound to the endpoint that the client names in the `resource` parameter (RFC 8707), revocation (RFC 7009). A token for `<origin>/mcp` does not work at `<origin>/mcp/github`, and the other way round. A client that sends no `resource` gets a token for `/mcp` only. Access tokens last one hour. Refresh tokens last 30 days and rotate at each use: each sign-in of an app is one token family, and a refresh token that comes back after its rotation ends that family. Only hashes of codes and tokens are stored. Account → Connected apps shows each app with its last use; Revoke ends its tokens.
+OAuth 2.1 details: protected resource metadata (RFC 9728) at `/.well-known/oauth-protected-resource/mcp` (and one for each endpoint below), server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, dynamic client registration (RFC 7591) and client ID metadata documents, authorization code with PKCE (S256 only), the device authorization grant (RFC 8628) for the [gitring command line](#the-command-line-for-people), tokens bound to the endpoint that the client names in the `resource` parameter (RFC 8707), revocation (RFC 7009). A token for `<origin>/mcp` does not work at `<origin>/mcp/github`, and the other way round. A client that sends no `resource` gets a token for `/mcp` only. Access tokens last one hour. Refresh tokens last 30 days and rotate at each use: each sign-in of an app is one token family, and a refresh token that comes back after its rotation ends that family. Only hashes of codes and tokens are stored. Account → Connected apps shows each app with its last use; Revoke ends its tokens.
 
 Scripts and hooks send a personal API key instead (Account → API keys): `Authorization: Bearer gk_…`.
 
@@ -345,6 +345,28 @@ Two modes:
 { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command",
   "command": "curl -s -X POST -H 'content-type: application/json' -H \"Authorization: Bearer $GITRING_KEY\" --data-binary @- 'https://<your-worker>/hooks/claude/<project-id>'" } ] } ] } }
 ```
+
+### The command line for people
+
+`cli/gitring.mjs` is a small command line for people. It needs Node 20 or later and no other package. In a clone of this repository, run `npm link` once. Then the command `gitring` works in every folder.
+
+| Command | What it does |
+|---|---|
+| `gitring login --server https://<your-worker>` | Signs you in with a code. Open the page that it shows, sign in to gitring, check the code and allow it. |
+| `gitring projects` | Lists your projects. |
+| `gitring new <name> [--template t] [--describe "…"]` | Makes a project. With `--describe`, gitring also makes the first task, and a built-in agent starts on it. |
+| `gitring clone <project> [folder]` | Clones a project with git. git gets the read token in the environment. The token does not go into the folder. |
+| `gitring tasks <project>` | Lists the open tasks of a project. |
+| `gitring task <project> "title" "goal"` | Makes a task. Agents can take it. |
+| `gitring inbox` | Lists what waits for you in all your projects. |
+| `gitring yes <item>`, `gitring back <item> "note"` | Answers a merge question from the inbox. The note tells the agent what to change. |
+| `gitring watch <project>` | Shows the log of a project live. |
+
+The sign-in is the OAuth device authorization grant (RFC 8628). The command line calls `POST /oauth/device_authorization`. Then it asks `/oauth/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until you answer. The page `/device` works only after you sign in. It shows the code and the address that started the sign-in. It tells you to allow only a sign-in that you started. Your answer is bound to the browser that showed the page.
+
+The token is for `/mcp`. It also works for the REST routes of the commands above. It does not work for other routes, for example keys, settings, members or deletion. The command line keeps it in `credentials.json` in your config folder, and only you can read the file (mode 0600). `gitring logout` ends the sign-in. Account → Connected apps shows the command line, and Revoke ends its tokens and its live logs. Scripts set `GITRING_URL` and `GITRING_TOKEN` (a personal API key) instead of a sign-in.
+
+Answers from the command line count as your answers only when you answer merge questions outside the gitring app. You choose this in Account → Merge questions: "In the agent's chat" or "In both". With "In the gitring app", the command line shows the link of the question in the app. An older gitring server does not have all commands. Then the command line says: "This gitring server is too old for this command."
 
 ### Claude Code plugin
 
@@ -414,7 +436,7 @@ Rights: linking a repository needs read rights on GitHub; turning sync on needs 
 - Sign-ins are bound to the browser that started them (a cookie with the OAuth state); an OAuth consent is bound the same way. Browser sessions cannot make cross-site writes.
 - Rate limits per Cloudflare location (Workers Rate Limiting): sign-in starts and client registration 20 a minute per address, OAuth token calls 120, MCP 3000 a minute per person, the API 1200, and 6000 credential lookups a minute per address (keys and cookies that are not valid stop at the edge). New OAuth clients: 30 an hour per address.
 - The OAuth consent page names the address that gets the app's code (a registered app can call itself anything); the Allow button works after one second. A request that cannot go on shows a page, not a redirect.
-- A key or an OAuth token (what an agent holds) cannot call the routes that say yes to a merge, merge work, or change the approval settings. Only a browser session can. A yes in the chat form travels in a signed request that is tied to the person and expires after one hour. See [Approvals](#approvals-a-person-says-yes).
+- A key or an OAuth token (what an agent holds) cannot call the routes that say yes to a merge, merge work, or change the approval settings. Only a browser session can. The gitring command line can answer a merge question only when the person answers outside the app. A yes in the chat form travels in a signed request that is tied to the person and expires after one hour. See [Approvals](#approvals-a-person-says-yes).
 - A change of access closes the live connections that it concerns (a removed member, a project that turns private, a sign-out): each one connects again and gets its role checked.
 - Imports, outbound webhooks and client metadata documents go to public hosts only (no IP addresses, no local names).
 - The web app has a strict Content Security Policy (inline scripts allowed by hash only); server pages allow no scripts except one by nonce. Live previews of agent code run sandboxed and can set no cookies or other headers on the gitring origin.
@@ -434,6 +456,7 @@ src/drydock     Drydock: test containers; Seawall: their outbound network filter
 src/platform    Artifacts backend, GitHub (client, repository lists, imports, sync, pulls), Workers AI calls,
                 Dynamic Worker tests and previews
 src/worker      routes, sign-in, OAuth server for MCP clients, MCP server, GitHub routes, rate limits, hooks
+cli             gitring, the command line for people (plain Node, no dependency)
 web/src         React web app and its design system (/design opens it in local development)
 scripts         palette.py prints the colors of the day, dusk and night themes with their contrast ratios
 local           start script and Worker entry for the run with no Cloudflare account (wrangler.local.jsonc)
