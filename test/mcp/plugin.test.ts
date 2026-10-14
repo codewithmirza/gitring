@@ -4,16 +4,17 @@
  * address is written into a file, and the hook sends the right request and never blocks the agent.
  * (`claude plugin validate` checks the format of the same files.)
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync, chmodSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { GITRING_TOOLS } from "../../src/worker/mcp";
 import { steViolations } from "../coord/ste";
 
-const ROOT = new URL("../../", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PLUGIN = join(ROOT, "plugins/gitring");
 const HOOK = join(PLUGIN, "hooks/gitring-hook.sh");
 const json = (path: string) => JSON.parse(readFileSync(path, "utf8"));
@@ -107,7 +108,9 @@ describe("hook", () => {
     expect(group.hooks[0].command).toContain("${CLAUDE_PLUGIN_ROOT}/hooks/gitring-hook.sh");
     // Shell form: it must not use ${user_config.*} (Claude Code refuses that); it reads CLAUDE_PLUGIN_OPTION_* instead.
     expect(group.hooks[0].command).not.toContain("user_config");
-    expect(statSync(HOOK).mode & 0o111).not.toBe(0);
+    // Windows file systems have no exec bit: there, the mode that git records is the one that ships.
+    if (process.platform === "win32") expect(execFileSync("git", ["ls-files", "-s", relative(ROOT, HOOK).replaceAll("\\", "/")], { cwd: ROOT, encoding: "utf8" })).toMatch(/^100755 /);
+    else expect(statSync(HOOK).mode & 0o111).not.toBe(0);
   });
 
   /** A local stand-in for gitring: records each request, answers with `reply`. */
