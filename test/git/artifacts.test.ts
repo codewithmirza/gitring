@@ -9,7 +9,7 @@ import type { GitHttpRequest, GitHttpResponse, HttpClient } from "isomorphic-git
 import webHttp from "isomorphic-git/http/web";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EMPTY_TREE_SHA, utf8 } from "../../src/core/git/objects";
-import { ArtifactsBackend, artifactsErrorCode, tokenSecret } from "../../src/platform/repo/artifacts";
+import { ArtifactsBackend, artifactsErrorCode, fannedNotePath, tokenSecret } from "../../src/platform/repo/artifacts";
 import { type CommitInput, RepoConflictError } from "../../src/platform/repo/backend";
 import { GitStore, MemoryObjectStore } from "../support/git-emulator/store";
 import { FakeArtifacts, type GitHttpServer, gitIn, startGitHttpServer } from "./fake-artifacts";
@@ -370,8 +370,8 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     const err = await be.commit({ repo: "orphan", branch: "main", parent: c1.sha, message: "mine", author, changes: [{ path: "b.txt", content: "b" }], note: "note of mine\n" }).catch((e: unknown) => e);
     expect(racer).toMatch(/^[0-9a-f]{40}$/);
     expect(err).toBeInstanceOf(RepoConflictError);
-    // The notes ref had the note of the lost commit for a moment. Now only the note of c1 is left.
-    expect(gitIn(binding, "orphan", ["ls-tree", "-r", "--name-only", "refs/notes/gitring"])).toBe(c1.sha);
+    // The notes ref had the note of the lost commit for a moment. Now only the note of c1 is left (in the fan-out layout).
+    expect(gitIn(binding, "orphan", ["ls-tree", "-r", "--name-only", "refs/notes/gitring"])).toBe(fannedNotePath(c1.sha));
     expect(gitIn(binding, "orphan", ["rev-list", "--count", "refs/notes/gitring"])).toBe("3");
     expect(await be.readNote("orphan", c1.sha)).toBe("note of 1\n");
     git(["fsck", "--strict", "--no-dangling"], { cwd: bare("orphan") });

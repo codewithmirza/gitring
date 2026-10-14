@@ -1437,11 +1437,11 @@ export class HarborMaster extends DurableObject<Env> {
       files: course.files,
     });
 
-    // Fork: git mode needs the remote now; api mode forks in the background.
+    // Fork: git mode needs the remote now. Api mode makes no fork: the work lives in gitring's own
+    // storage as a changeset over main. A fork is made later, on demand (`workCopyRemote`).
     let workspace: T.DeclareResult["workspace"] = { mode, baseSha: attempt.baseSha };
-    const forkJob = this.ensureFork(attempt, intent);
     if (mode === "git") {
-      await forkJob;
+      await this.ensureFork(attempt, intent);
       const tok = await this.backend.createToken(attempt.fork.repo, "write", 6 * 3600);
       workspace = {
         mode,
@@ -1450,8 +1450,6 @@ export class HarborMaster extends DurableObject<Env> {
         token: tok?.token,
         tokenExpiresAt: tok?.expiresAt,
       };
-    } else {
-      this.ctx.waitUntil(forkJob.catch((e) => console.warn("fork failed", String(e))));
     }
 
     await this.refreshFootprint(attempt);
@@ -2409,7 +2407,6 @@ export class HarborMaster extends DurableObject<Env> {
     a.summary = summary ? String(summary).slice(0, 600) : a.summary;
     a.status = "submitted";
     this.putAttempt(a);
-    await this.flushToFork(a).catch((e) => console.warn("flush to fork failed", String(e)));
     const run = await this.check(a.id);
     // Parts of the work that gitring does not merge: the agent hears it now, not after the merge.
     const left = await this.leftOut(a);
@@ -2469,7 +2466,18 @@ export class HarborMaster extends DurableObject<Env> {
     return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked, ...this.mayAnswerOf(a, call.viewer) } : {}), clearance: this.clearanceFor(a.id) };
   }
 
-  /** API-mode work becomes a real commit in the attempt's Artifacts fork. */
+  /**
+   * The remote of a work copy for a person or a tool that needs real git (a clone of the work, a branch read).
+   * Api-mode work copies have no fork until now: this makes the fork and puts the work into it as one commit.
+   */
+  async workCopyRemote(attemptId: string): Promise<{ repo: string; remote: string; headSha?: string }> {
+    const a = this.mustAttempt(attemptId);
+    await this.flushToFork(a);
+    const remote = a.fork.remote ?? (await this.backend.remoteUrl(a.fork.repo)) ?? "";
+    return { repo: a.fork.repo, remote, ...(a.headSha ? { headSha: a.headSha } : {}) };
+  }
+
+  /** API-mode work becomes a real commit in the attempt's Artifacts fork (made when it is needed, not at submit). */
   private async flushToFork(a: T.Attempt): Promise<void> {
     if (a.mode !== "api") return;
     const intent = this.intents.get(a.intentId)!;
