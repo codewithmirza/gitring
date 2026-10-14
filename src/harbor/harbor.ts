@@ -1257,13 +1257,18 @@ export class HarborMaster extends DurableObject<Env> {
     };
   }
 
-  async read(attemptId: string, path: string): Promise<{ path: string; content: string | null }> {
+  /**
+   * A file of a work copy. Every member can read it. Only a read of the agent (the person who sent it, or a call
+   * from inside gitring) is an answer of the agent and the base of its next write of the file.
+   */
+  async read(attemptId: string, path: string, call: CallInfo = {}): Promise<{ path: string; content: string | null }> {
     const a = this.mustAttempt(attemptId);
-    this.heard(a);
+    const mine = this.sentBy(a, call.viewer);
+    if (mine) this.heard(a);
     const view = await this.attemptView(a);
     const p = normPath(path);
     const content = view.files.get(p) ?? null;
-    if (a.mode === "api" && !TERMINAL.has(a.status)) {
+    if (mine && a.mode === "api" && !TERMINAL.has(a.status)) {
       this.db.setSeen(a.id, p, content);
       this.db.setMustRead(a.id, p, false);
     }
@@ -1289,17 +1294,17 @@ export class HarborMaster extends DurableObject<Env> {
     return { content: m.content, merged: m.content !== content };
   }
 
-  async list(attemptId: string, dir?: string): Promise<string[]> {
+  async list(attemptId: string, dir?: string, call: CallInfo = {}): Promise<string[]> {
     const a = this.mustAttempt(attemptId);
-    this.heard(a);
+    if (this.sentBy(a, call.viewer)) this.heard(a);
     const view = await this.attemptView(a);
     const prefix = dir ? normPath(dir).replace(/\/?$/, "/") : "";
     return [...view.files.keys()].filter((p) => !prefix || p.startsWith(prefix)).sort();
   }
 
-  async traffic(attemptId: string): Promise<T.TrafficReport> {
+  async traffic(attemptId: string, call: CallInfo = {}): Promise<T.TrafficReport> {
     const a = this.mustAttempt(attemptId);
-    this.heard(a);
+    if (this.sentBy(a, call.viewer)) this.heard(a);
     const main = await this.loadMain();
     const vessels = this.trafficFor(a);
     const seqList = this.db.getMeta<string[]>("mainSeq") ?? [];
@@ -3146,7 +3151,8 @@ export class HarborMaster extends DurableObject<Env> {
     this.rememberOrigin(call.origin);
     const a = this.mustAttempt(attemptId);
     const returned = a.returned; // heard() clears it
-    this.heard(a);
+    // A member who did not send the agent looks: that is not an answer of the agent.
+    if (this.sentBy(a, call.viewer)) this.heard(a);
     const intent = this.intents.get(a.intentId)!;
     const ap = a.approval;
     const landing = this.landings.find((l) => l.attemptId === a.id);
@@ -4067,15 +4073,17 @@ export class HarborMaster extends DurableObject<Env> {
   async wait(attemptId: string, opts: CallInfo & { seconds?: number } = {}): Promise<T.WaitResult> {
     const a = this.mustAttempt(attemptId);
     this.mayChange(a, opts.viewer);
-    this.heard(a);
+    // An owner who did not send the agent can wait too, but the change requests stay for the agent.
+    const mine = this.sentBy(a, opts.viewer);
+    if (mine) this.heard(a);
     const asked = Number(opts.seconds ?? WAIT_SECONDS.default);
     const seconds = Number.isFinite(asked) ? Math.max(0, Math.min(WAIT_SECONDS.max, asked)) : WAIT_SECONDS.default;
-    const ready = TERMINAL.has(a.status) || a.corrections.some((id) => this.corrections.get(id)?.status === "pending");
+    const ready = TERMINAL.has(a.status) || (mine && a.corrections.some((id) => this.corrections.get(id)?.status === "pending"));
     const heardOf = ready || !seconds ? [] : await this.waitFor(a, seconds * 1000);
     const now = this.mustAttempt(attemptId);
-    const clr = this.clearanceFor(now.id);
+    const clr = this.clearanceFor(now.id, mine);
     // The change requests of the answer are the news: also those that waited before the call, and not those that changed again.
-    const events = [...heardOf.filter((e) => e.kind !== "change-request"), ...clr.corrections.map((n) => requestEvent(n.id, n.kind))];
+    const events = mine ? [...heardOf.filter((e) => e.kind !== "change-request"), ...clr.corrections.map((n) => requestEvent(n.id, n.kind))] : heardOf;
     if (ready && TERMINAL.has(now.status)) events.push(statusEvent(now.status));
     return { attemptId, status: now.status, events, clearance: clr, message: this.waitMessage(now, events, clr) };
   }

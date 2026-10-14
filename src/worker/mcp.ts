@@ -21,8 +21,8 @@ import type { Env } from "./env";
 import { atLeast } from "../core/accounts";
 import { noTestRan } from "../core/types";
 import { actorOf, directory, type Principal } from "./auth";
-import { MCP_PATH, type McpSet } from "../directory/oauth";
-import { ADDS, CHANGES, READS, callOf, defineTool, fail, makeContext, plain, readOnlyTools, registerTools, text, VERDICT_WORD, withClearance, withNews, writeAnswer, type ToolDef } from "./mcp-kit";
+import { MCP_PATH, SCOPE_READ, type McpSet } from "../directory/oauth";
+import { ADDS, CHANGES, READS, callOf, defineTool, fail, makeContext, newsFor, plain, readOnlyTools, registerTools, text, VERDICT_WORD, withClearance, withNews, writeAnswer, type ToolDef } from "./mcp-kit";
 import { GITHUB_CHECK_HOW, GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
 import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
 
@@ -144,8 +144,8 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     async run(ctx, args) {
       try {
         const h = await ctx.access(args.project);
-        const res = await h.stub.traffic(args.attemptId);
-        const clr = await h.stub.news(args.attemptId, callOf(ctx, h));
+        const res = await h.stub.traffic(args.attemptId, callOf(ctx, h));
+        const clr = await newsFor(ctx, h, args.attemptId);
         const near = res.vessels.length;
         const merged = res.landedSinceBase.length;
         return text(withClearance(res, clr), `${near} ${near === 1 ? "work copy" : "work copies"} near you. ${merged} ${merged === 1 ? "task" : "tasks"} merged after your work copy started.`, clr ?? undefined);
@@ -164,8 +164,8 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     async run(ctx, args) {
       try {
         const h = await ctx.access(args.project);
-        const r = await h.stub.read(args.attemptId, args.path);
-        return withNews(plain(r.content ?? `The file ${r.path} does not exist.`), await h.stub.news(args.attemptId, callOf(ctx, h)));
+        const r = await h.stub.read(args.attemptId, args.path, callOf(ctx, h));
+        return withNews(plain(r.content ?? `The file ${r.path} does not exist.`), await newsFor(ctx, h, args.attemptId));
       } catch (e) {
         return fail(e);
       }
@@ -181,8 +181,8 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     async run(ctx, args) {
       try {
         const h = await ctx.access(args.project);
-        const r = await h.stub.list(args.attemptId, args.dir);
-        return withNews(plain(r.join("\n")), await h.stub.news(args.attemptId, callOf(ctx, h)));
+        const r = await h.stub.list(args.attemptId, args.dir, callOf(ctx, h));
+        return withNews(plain(r.join("\n")), await newsFor(ctx, h, args.attemptId));
       } catch (e) {
         return fail(e);
       }
@@ -224,7 +224,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       try {
         const h = await ctx.access(args.project);
         const run = await h.stub.check(args.attemptId, callOf(ctx, h));
-        const clr = await h.stub.news(args.attemptId, callOf(ctx, h));
+        const clr = await newsFor(ctx, h, args.attemptId);
         const headline = run.wait
           ? run.wait.message
           : noTestRan(run)
@@ -321,7 +321,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       try {
         const h = await ctx.access(args.project);
         const res = await h.stub.update(args.attemptId, callOf(ctx, h));
-        const clr = await h.stub.news(args.attemptId, callOf(ctx, h));
+        const clr = await newsFor(ctx, h, args.attemptId);
         return text(withClearance(res, clr), res.message, clr ?? undefined);
       } catch (e) {
         return fail(e);
@@ -382,7 +382,9 @@ async function createServer(env: Env, who: Principal, set: McpSet, origin: strin
   // The key of the questions in chat comes from GITRING_SECRET: every instance of the Worker has the same key.
   const ask = await askCodec(env, who);
   const server = new McpServer({ name: "gitring", version: MCP_VERSION }, { instructions, ...(ask ? { requestState: { verify: ask.verify } } : {}) });
-  registerTools(server, makeContext(env, who, { listHow: set === "github" ? GITHUB_LIST_HOW : undefined, checkHow: set === "github" ? GITHUB_CHECK_HOW : undefined, origin, ask }), tools);
+  // A client that can only read does not take the change requests of a work copy (it cannot confirm them).
+  const readOnly = set === "readonly" || (who.via === "oauth" && who.scope === SCOPE_READ);
+  registerTools(server, makeContext(env, who, { listHow: set === "github" ? GITHUB_LIST_HOW : undefined, checkHow: set === "github" ? GITHUB_CHECK_HOW : undefined, origin, ask, readOnly }), tools);
   return server;
 }
 

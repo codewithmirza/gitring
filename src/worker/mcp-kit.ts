@@ -84,6 +84,11 @@ export interface ToolContext {
   origin: string;
   /** Signs the state of a question in chat. Absent: gitring never asks in chat (it gives a link instead). */
   ask?: RequestStateCodec<AskState>;
+  /**
+   * The client can only read (the read-only endpoint, or a token with the scope mcp:read). It cannot confirm a
+   * change request, so its reads do not take the change requests: they stay for the agent.
+   */
+  readOnly?: boolean;
   /** The project object, after a role check (member to act, viewer to read). */
   access(raw: string | undefined, need?: A.Role): Promise<{ id: string; stub: HarborApi; role: A.Role }>;
 }
@@ -95,6 +100,11 @@ export interface ToolContext {
  */
 export function callOf(ctx: ToolContext, h: { role: A.Role }): CallInfo {
   return { origin: ctx.origin, ...(ctx.who.user ? { viewer: { id: ctx.who.user.id, role: h.role } } : {}) };
+}
+
+/** The new change requests of a work copy, for the answer of a tool that only reads (see HarborMaster.news). */
+export async function newsFor(ctx: ToolContext, h: { stub: HarborApi; role: A.Role }, attemptId: string): Promise<T.Clearance | null> {
+  return ctx.readOnly ? null : h.stub.news(attemptId, callOf(ctx, h));
 }
 
 /** What a tool answers: a result, or a question for the person (MCP 2026-07-28: the client asks, then calls the tool again). */
@@ -229,7 +239,7 @@ export function retryAfterReset<T extends object>(make: () => T, sleep: (ms: num
   });
 }
 
-export function makeContext(env: Env, who: Principal, opts: { listHow?: string; checkHow?: string; origin?: string; ask?: RequestStateCodec<AskState> } = {}): ToolContext {
+export function makeContext(env: Env, who: Principal, opts: { listHow?: string; checkHow?: string; origin?: string; ask?: RequestStateCodec<AskState>; readOnly?: boolean } = {}): ToolContext {
   const listHow = opts.listHow ?? LIST_HOW;
   const checkHow = opts.checkHow ?? CHECK_HOW;
   return {
@@ -237,6 +247,7 @@ export function makeContext(env: Env, who: Principal, opts: { listHow?: string; 
     who,
     origin: opts.origin ?? "",
     ask: opts.ask,
+    readOnly: opts.readOnly,
     async access(raw, need = "member") {
       const id = String(raw ?? "").trim();
       if (!PROJECT_ID.test(id)) throw new Error(`Give the project id (lowercase letters, digits and dashes). ${listHow}`);

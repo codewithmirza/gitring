@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nodeLoader, type NodeLoader } from "../checks/node-loader";
 import { steViolations } from "../coord/ste";
 import { World } from "../github/harness";
-import { callTool, makeProject, modernCall } from "./support";
+import { callTool, makeProject, modernCall, oauthTokens } from "./support";
 
 const GREET = 'export function greet(name) {\n  return "Hello, " + name + "!";\n}\n';
 /** A test that passes for any change: the merges in these tests do not wait for a person. */
@@ -144,6 +144,28 @@ describe("change requests in the answers that only read", () => {
     const [, news] = await blocks("gitring_read", { attemptId: id, path: "src/shout.js" });
     expect(news).toContain("Use a longer name.");
   });
+
+  it("does not give the change requests to a client that can only read: they stay for the agent", async () => {
+    await askBeforeMerge();
+    const { id } = await plan("Shout", ["src/shout.js"]);
+    await gr("gitring_write", { attemptId: id, files: [{ path: "src/shout.js", content: "export const shout = 1;\n" }] });
+    await sentBack(id, "Use a longer name.");
+    // The read-only endpoint cannot confirm a change request: the read gives the file alone.
+    const ro = await callTool(world, key, "gitring_read", { project, attemptId: id, path: "src/shout.js" }, "/mcp/readonly");
+    expect(ro.isError, ro.text).toBe(false);
+    expect(ro.rpc.body.result.content.map((c: { text: string }) => c.text)).toEqual(["export const shout = 1;\n"]);
+    const traffic = await callTool(world, key, "gitring_traffic", { project, attemptId: id }, "/mcp/readonly");
+    expect(traffic.text).not.toMatch(/GITRING CHANGE REQUEST/);
+    // The same for a token with the scope mcp:read on the full endpoint.
+    const { userId } = await world.signIn("alice");
+    const token = (await oauthTokens(world, userId, undefined, "mcp:read")).access_token;
+    const scoped = await callTool(world, token, "gitring_read", { project, attemptId: id, path: "src/shout.js" });
+    expect(scoped.isError, scoped.text).toBe(false);
+    expect(scoped.rpc.body.result.content).toHaveLength(1);
+    // The agent gets it on the full endpoint.
+    const [, news] = await blocks("gitring_read", { attemptId: id, path: "src/shout.js" });
+    expect(news).toContain("Use a longer name.");
+  });
 });
 
 describe("gitring_wait", () => {
@@ -226,6 +248,25 @@ describe("gitring_wait", () => {
     expect(moved.message).toMatch(/^Main moved to [0-9a-f]{7}: "Shout" merged\.$/);
     expect(moved.mainSha).toBe((await state()).project.mainSha);
     expect(steViolations(words(res.text))).toEqual([]);
+  });
+
+  it("wakes the agents that wait when changes of a linked repository come into main", async () => {
+    world.person("alice", 1).access.set("robin/shop", { read: true, push: true });
+    const linked = await world.linkedProject("alice");
+    const d = await callTool(world, linked.key, "gitring_declare", { project: linked.id, newIntent: { title: "Shout", goal: "Shout." }, plan: ["Shout"], files: ["src/shout.js"], symbols: [], approach: "New file." });
+    const id = /work copy (a_\w+)/.exec(d.text)?.[1] ?? "";
+    expect(id, d.text).not.toBe("");
+    const waitingOn = () => (world.harbor(linked.id) as unknown as { waiters: Map<string, Set<unknown>> }).waiters;
+    const waiting = callTool(world, linked.key, "gitring_wait", { project: linked.id, attemptId: id, seconds: 30 });
+    await vi.waitFor(() => expect(waitingOn().size).toBe(1), { timeout: 5000, interval: 10 });
+    world.gh.push({ "docs.md": "# docs\n" }, "Docs");
+    expect((await world.hook("push", "d-1", { ref: "refs/heads/main", repository: { full_name: "robin/shop", default_branch: "main" } })).status).toBe(202);
+    const res = await waiting;
+    const moved = jsonOf(res.text).events.find((e: { kind: string }) => e.kind === "main-moved");
+    expect(moved, res.text).toBeDefined();
+    expect(moved.message).toMatch(/^Main moved to [0-9a-f]{7}: GitHub changes \(robin\/shop\)\.$/);
+    expect(moved.mainSha).toBe((await world.harbor(linked.id).state()).project.mainSha);
+    await world.settle();
   });
 
   it("is a tool that changes state: the read-only endpoint does not have it", async () => {
@@ -344,5 +385,51 @@ describe("work copy owners", () => {
     const mine = await world.call("POST", `/hooks/claude/${project}`, { key, body: edit });
     expect(mine.status).toBe(200);
     expect((await gr("gitring_read", { attemptId: id, path: "src/shout.js" })).text).toBe("export const shout = 2;\n");
+  });
+
+  it("counts a hook edit of the sender as an answer of the agent, and not the reads or the hook of another member", async () => {
+    const { id } = await plan("Shout", ["src/shout.js"]);
+    // gitring gave the work back to the agent of alice: it waits for an answer, then a built-in agent takes the task.
+    const h = world.harbor(project) as unknown as { attempts: Map<string, { returned?: unknown }>; putAttempt(a: unknown): void; db: { seen(id: string, path: string): string | null | undefined } };
+    const at = h.attempts.get(id)!;
+    at.returned = { at: Date.now(), until: Date.now() + 15 * 60_000, reason: "Main moved.", policy: "agent-first" };
+    h.putAttempt(at);
+    const edit = { attemptId: id, cwd: "/work/shop", tool_name: "Edit", tool_input: { file_path: "/work/shop/src/greet.js", old_string: "Hello", new_string: "Hi" } };
+
+    // Bob looks at the work copy, and his hook sends an edit: the work still waits for the agent of alice.
+    for (const name of ["gitring_read", "gitring_list", "gitring_traffic", "gitring_status"]) {
+      const res = await gr(name, { attemptId: id, path: "src/greet.js" }, bob.key);
+      expect(res.isError, `${name}: ${res.text}`).toBe(false);
+    }
+    expect((await world.call("POST", `/hooks/claude/${project}`, { key: bob.key, body: edit })).json).toEqual({});
+    expect(h.attempts.get(id)!.returned).toBeDefined();
+    // The read of bob is not the text that the agent of alice saw: her next write merges against her own read.
+    expect(h.db.seen(id, "src/greet.js")).toBeUndefined();
+    await gr("gitring_read", { attemptId: id, path: "src/greet.js" });
+    expect(h.db.seen(id, "src/greet.js")).toBe(GREET);
+    at.returned = { at: Date.now(), until: Date.now() + 15 * 60_000, reason: "Main moved.", policy: "agent-first" };
+    h.putAttempt(at);
+
+    // The hook of alice reports an edit of her agent: that is an answer, and the work stays with the agent.
+    expect((await world.call("POST", `/hooks/claude/${project}`, { key, body: edit })).status).toBe(200);
+    expect(h.attempts.get(id)!.returned).toBeUndefined();
+  });
+
+  it("lets an owner wait on the work copy of another person, and the change requests stay for that agent", async () => {
+    await askBeforeMerge();
+    const his = await plan("Whisper", ["src/whisper.js"], [], bob.key);
+    await gr("gitring_write", { attemptId: his.id, files: [{ path: "src/whisper.js", content: "export const whisper = 1;\n" }] }, bob.key);
+    const sub = await gr("gitring_submit", { attemptId: his.id, summary: "Done" }, bob.key);
+    const back = await world.call("POST", `/api/projects/${project}/attempts/${his.id}/decide`, { headers: cookie(session), body: { approvalId: jsonOf(sub.text).approval.id, answer: "send-back", note: "Say it softly." } });
+    expect(back.status, back.text).toBe(200);
+    // Alice is an owner: she may wait on the work copy of bob, but the change request is not for her.
+    const owner = await gr("gitring_wait", { attemptId: his.id, seconds: 1 });
+    expect(owner.isError, owner.text).toBe(false);
+    expect(owner.text).not.toMatch(/GITRING CHANGE REQUEST/);
+    expect(jsonOf(owner.text).events).toEqual([]);
+    // The agent of bob gets it at once.
+    const agent = await gr("gitring_wait", { attemptId: his.id, seconds: 30 }, bob.key);
+    expect(agent.text).toMatch(/^GITRING CHANGE REQUEST/);
+    expect(agent.text).toContain("Say it softly.");
   });
 });

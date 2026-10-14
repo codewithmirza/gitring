@@ -30,7 +30,7 @@ import type * as T from "../core/types";
 import type { Role } from "../core/accounts";
 import { approvalPath } from "../core/approvals";
 import { actorOf, directory, type Principal } from "./auth";
-import { ADDS, CHANGES, READS, callOf, defineTool, fail, joinClearance, plain, text, VERDICT_WORD, withNews, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
+import { ADDS, CHANGES, READS, callOf, defineTool, fail, joinClearance, newsFor, plain, text, VERDICT_WORD, withNews, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
 import { answerNote, approvalView, askInChat, statusHeadline, takeAnswer } from "./mcp-approval";
 
 /** Said in the error of a bad project id (the gitring tool for it is not in this set). */
@@ -181,7 +181,7 @@ const data = (obj: unknown, headline: string, clr?: T.Clearance): ToolResult => 
 /** The new change requests of a branch of the caller, for the answer of a read (none for main or a commit). */
 async function newsOf(ctx: ToolContext, h: Project, attemptId: string | undefined): Promise<T.Clearance | undefined> {
   if (!attemptId) return undefined;
-  return (await h.stub.news(attemptId, callOf(ctx, h))) ?? undefined;
+  return (await newsFor(ctx, h, attemptId)) ?? undefined;
 }
 
 /* ───────────────────────── a work copy for a branch ───────────────────────── */
@@ -450,7 +450,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const t = await resolve(h, ctx.who, a.ref, a.sha);
         const path = String(a.path ?? "/").replace(/^\/+/, "").replace(/\/+$/, "");
         if (path) {
-          const body = t.attemptId ? (await h.stub.read(t.attemptId, path)).content : await h.stub.file(t.ref, path);
+          const body = t.attemptId ? (await h.stub.read(t.attemptId, path, callOf(ctx, h))).content : await h.stub.file(t.ref, path);
           if (body !== null) return withNews(plain(body), await newsOf(ctx, h, t.attemptId), github);
         }
         const entries = entriesOf((await h.stub.tree(t.ref)).files, path);
