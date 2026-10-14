@@ -1,5 +1,5 @@
 /**
- * Workers AI access: the Clef decision model (course checks) and chat models (vessels, correction polish).
+ * Workers AI access: the Clef decision model (course checks) and chat models (vessels, the test-command guess).
  * Every call has a timeout and never throws to the caller: a failure returns null so the
  * caller can fall back to the deterministic rules.
  */
@@ -72,7 +72,7 @@ export interface ChatResult {
 }
 
 interface ChatCompletion {
-  choices?: { message?: ChatMessage & { reasoning_content?: string }; finish_reason?: string }[];
+  choices?: { message?: ChatMessage & { reasoning_content?: string; reasoning?: string }; finish_reason?: string }[];
   usage?: ChatResult["usage"];
   response?: string; // legacy shape
 }
@@ -85,27 +85,78 @@ export function isGatewayModel(model: string): boolean {
 /** The last chat error (for diagnostics in vessels and logs). */
 export let lastChatError: string | undefined;
 
-/** Model-specific knobs: lower reasoning effort where the model supports it (faster agent turns). */
-function modelOptions(model: string): Record<string, unknown> {
-  if (model.includes("kimi")) return { reasoning_effort: "low" };
-  if (model.includes("gpt-oss")) return { reasoning_effort: "low" };
-  return {};
+/**
+ * How hard a reasoning model thinks before it answers. GLM 5.3 cannot turn reasoning off, and its default is
+ * "max" (slow and costly), so each call names one: "high" for a plan, "low" for a routine tool turn.
+ */
+export type ReasoningEffort = "low" | "high" | "max";
+
+/** GLM 5.3 and GLM 5.3 Flash on Workers AI: 1,048,576 tokens of context; `reasoning_effort` is mandatory. */
+export function isGlm53(model: string): boolean {
+  return /\/glm-5\.3(?:-flash)?$/.test(model);
+}
+
+/**
+ * Reasoning tokens count against the completion limit. Room for them on top of the answer, so that a model
+ * that thinks long still has tokens left for the answer.
+ */
+const REASONING_ROOM: Record<ReasoningEffort, number> = { low: 4096, high: 16_384, max: 32_768 };
+
+/** Model-specific knobs: the reasoning effort and the completion limit, where the model supports them. */
+function modelOptions(model: string, maxTokens: number, effort: ReasoningEffort | undefined): Record<string, unknown> {
+  if (isGlm53(model)) {
+    const e = effort ?? "low";
+    return { reasoning_effort: e, max_completion_tokens: maxTokens + REASONING_ROOM[e] };
+  }
+  // Lower reasoning effort where the model supports it (faster agent turns).
+  if (model.includes("kimi")) return { max_tokens: maxTokens, reasoning_effort: "low" };
+  if (model.includes("gpt-oss")) return { max_tokens: maxTokens, reasoning_effort: "low" };
+  return { max_tokens: maxTokens };
+}
+
+/**
+ * Tool calls as the conversation needs them: function calls only, each with an id (the tool answer names
+ * it) and its arguments as a JSON string. Some models leave out the id or send the arguments as an object.
+ */
+export function cleanToolCalls(calls: unknown): ToolCall[] | undefined {
+  if (!Array.isArray(calls)) return undefined;
+  const out: ToolCall[] = [];
+  for (const raw of calls) {
+    const c = raw as { id?: unknown; function?: { name?: unknown; arguments?: unknown } } | null;
+    const name = c?.function?.name;
+    if (typeof name !== "string" || !name) continue;
+    const args = c!.function!.arguments;
+    out.push({
+      id: typeof c!.id === "string" && c!.id ? c!.id : `call_${out.length + 1}`,
+      type: "function",
+      function: { name, arguments: typeof args === "string" ? args : JSON.stringify(args ?? {}) },
+    });
+  }
+  return out.length ? out : undefined;
 }
 
 export async function chat(
   ai: AiLike | undefined,
   model: string,
   messages: ChatMessage[],
-  opts: { tools?: ToolDef[]; toolChoice?: "auto" | "required" | "none"; maxTokens?: number; temperature?: number; timeoutMs?: number; json?: boolean } = {},
+  opts: {
+    tools?: ToolDef[];
+    toolChoice?: "auto" | "required" | "none";
+    maxTokens?: number;
+    temperature?: number;
+    timeoutMs?: number;
+    json?: boolean;
+    /** For reasoning models (GLM 5.3 needs one): "high" to plan, "low" (the default) for routine turns. */
+    reasoning?: ReasoningEffort;
+  } = {},
 ): Promise<ChatResult | null> {
   if (!ai) return null;
   lastChatError = undefined;
   const t0 = Date.now();
   const input: Record<string, unknown> = {
     messages,
-    max_tokens: opts.maxTokens ?? 4096,
     temperature: opts.temperature ?? 0.2,
-    ...modelOptions(model),
+    ...modelOptions(model, opts.maxTokens ?? 4096, opts.reasoning),
   };
   if (opts.tools?.length) {
     input.tools = opts.tools;
@@ -117,8 +168,10 @@ export async function chat(
     const raw = (await withTimeout(ai.run(model, input, options), opts.timeoutMs ?? 90_000, `chat ${model}`)) as ChatCompletion;
     if (raw?.choices?.[0]?.message) {
       const m = raw.choices[0].message;
+      // Reasoning text (reasoning_content, reasoning) never goes into the conversation: only the answer does.
+      const toolCalls = cleanToolCalls(m.tool_calls);
       return {
-        message: { role: "assistant", content: m.content ?? null, tool_calls: m.tool_calls },
+        message: { role: "assistant", content: typeof m.content === "string" ? m.content : null, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
         finishReason: raw.choices[0].finish_reason ?? "stop",
         usage: raw.usage,
         latencyMs: Date.now() - t0,
@@ -135,6 +188,27 @@ export async function chat(
     console.warn("chat call failed", model, lastChatError);
     return null;
   }
+}
+
+/* ───────────────────────── context budget ───────────────────────── */
+
+/** How much text an agent turn may carry. */
+export interface ContextBudget {
+  /** File text in the brief (the first prompt), in characters. */
+  briefChars: number;
+  /** A larger file stays out of the brief (the agent reads it with a tool). */
+  fileChars: number;
+  /** All the messages of one turn together, in characters (older turns go first). */
+  turnChars: number;
+}
+
+/**
+ * The budget of a model. GLM 5.3 reads 1,048,576 tokens (about 4 characters each): the brief may hold far
+ * more of the repository. Other models keep the old budget. The turn limit keeps the cost of a turn sensible.
+ */
+export function contextBudget(model: string | undefined): ContextBudget {
+  if (model && isGlm53(model)) return { briefChars: 400_000, fileChars: 100_000, turnChars: 800_000 };
+  return { briefChars: 60_000, fileChars: 20_000, turnChars: 240_000 };
 }
 
 /** Extract the first JSON object from a model reply (fenced or bare). */

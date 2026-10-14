@@ -45,4 +45,6 @@ export interface Env {
   RL_MCP?: RateLimit;
   RL_API?: RateLimit;
   RL_CRED?: RateLimit;
+  RL_HOOK?: RateLimit;
+  RL_PREVIEW?: RateLimit;
 }

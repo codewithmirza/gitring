@@ -13,7 +13,8 @@ import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
 import type { HarborMaster } from "../harbor/harbor";
 import { adviceFor } from "../harbor/views";
-import { directory, type Principal } from "./auth";
+import type { Principal } from "./auth";
+import { roleOf } from "./roles";
 
 /** The methods of a project object that tools call. */
 export type HarborApi = Pick<
@@ -204,7 +205,8 @@ export function makeContext(env: Env, who: Principal, opts: { listHow?: string; 
       if (!PROJECT_ID.test(id)) throw new Error(`Give the project id (lowercase letters, digits and dashes). ${listHow}`);
       let found: A.Role = "owner";
       if (who.via !== "operator") {
-        const role = await directory(env).role(id, who.user?.id ?? null);
+        // The same isolate cache as REST (roles.ts): 15 s, cleared at once where REST changes a role.
+        const role = await roleOf(env, id, who.user?.id ?? null);
         if (!role) throw new Error(`Unknown project "${id}", or your key has no access to it.`);
         if (!atLeast(role, need)) throw new Error(`Your key needs the ${need} role on "${id}". Ask an owner of the project.`);
         found = role;

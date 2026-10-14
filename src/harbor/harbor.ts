@@ -10,7 +10,7 @@ import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
 import { DEFAULT_SETTINGS, isLandingMode, noTestRan, withDefaults } from "../core/types";
 import { Db } from "./store";
-import { callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
+import { CHECK_RUN, callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import { hmacSha256Hex, sha256Hex } from "../directory/crypto";
 import { approvalLine, approvalNeeded, approvalPath, canDecide, riskSigns } from "../core/approvals";
 import { atLeast, type Role } from "../core/accounts";
@@ -49,7 +49,7 @@ import { landingMessage, landingNote, intentFile, parseTrailers } from "../core/
 import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, publicHostname, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
 import { packTree, type DrydockResult } from "../drydock/drydock";
-import { callClef, chat } from "../platform/ai/models";
+import { callClef, contextBudget } from "../platform/ai/models";
 import { syncToGithub, type UpstreamMark } from "../platform/github/sync";
 import { githubSnapshot, SNAPSHOT_LIMITS, SnapshotTooLarge } from "../platform/github/tarball";
 import { upstreamChanges } from "../platform/github/upstream";
@@ -1353,18 +1353,24 @@ export class HarborMaster extends DurableObject<Env> {
     return this.clearanceFor(a.id);
   }
 
-  async brief(attemptId: string | undefined, intentId?: string): Promise<Brief> {
+  /**
+   * The first prompt of a built-in agent: the task, the tests, and the text of the files it likely needs, in
+   * rank order. `model` sets the size: a model with a 1M-token context (GLM 5.3) gets far more file text.
+   */
+  async brief(attemptId: string | undefined, intentId?: string, opts: { model?: string } = {}): Promise<Brief> {
     const a = attemptId ? this.attempts.get(attemptId) : undefined;
     const intent = this.intents.get(a?.intentId ?? intentId ?? "");
     if (!intent) throw new Error("Unknown task.");
     const main = await this.loadMain();
     const files = a ? (await this.attemptView(a)).files : main.text;
     const context: Record<string, string> = {};
-    let budget = 60_000;
+    const size = contextBudget(opts.model);
+    let budget = size.briefChars;
     const wanted = new Set([...(intent.scope?.paths ?? []), ...(a?.course.files ?? [])].map(normPath));
     for (const [path, text] of rankForBrief(files, intent, wanted)) {
       if (/(^|\/)tests?\//.test(path) && !intent.checks.some((c) => c.path === path) && !wanted.has(path)) continue;
-      if (text.length > 20_000 || budget - text.length < 0) continue;
+      // A huge file stays out (the agent reads it with read_file when it needs it).
+      if (text.length > size.fileChars || budget - text.length < 0) continue;
       context[path] = text;
       budget -= text.length;
     }
@@ -2142,7 +2148,7 @@ export class HarborMaster extends DurableObject<Env> {
     const word = parseTrailers(commit.message)["Gitring-Method"];
     const method: T.LandingMethod = word === "fast-forward" || word === "rederive" ? word : "merge";
     const applied = a.corrections.map((id) => this.corrections.get(id)).filter((c): c is T.Correction => !!c && c.status !== "superseded");
-    const run: T.CheckRun = a.composedChecks ?? a.checks ?? { id: newId("ck"), subject: commit.treeHash, scope: "composed", ok: true, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now() };
+    const run: T.CheckRun = a.composedChecks ?? a.checks ?? { id: newId(CHECK_RUN), subject: commit.treeHash, scope: "composed", ok: true, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now() };
     const decision = [...this.decisions].reverse().find((d) => d.attemptIds[0] === a.id && d.kind === "pick");
     const note =
       (await this.backend.readNote(p.repo.name, commit.hash).catch(() => null)) ??
@@ -2588,8 +2594,6 @@ export class HarborMaster extends DurableObject<Env> {
     const tok = await this.backend.createToken(p.repo.name, "read", 6 * 3600);
     const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name));
     if (!tok || !remote) throw new Error("gitring cannot give a remote for main now. Try again.");
-    const secret = tok.token.split("?expires=")[0];
-    const auth = `https://x:${secret}@${remote.replace(/^https:\/\//, "")}`;
     return {
       mode: "git",
       mainSha: main.sha,
@@ -2597,8 +2601,8 @@ export class HarborMaster extends DurableObject<Env> {
       remote,
       token: tok.token,
       tokenExpiresAt: tok.expiresAt,
-      commands: [`git pull --no-rebase "${auth}" ${this.branch}`, "# fix conflicts, run the tests, commit", "git push", "# then call gitring_submit"],
-      message: `Main is at ${main.sha.slice(0, 7)}. The token is read-only and ends in 6 hours.`,
+      commands: [gitPullCommand(remote, tok.token, this.branch), "# fix conflicts, run the tests, commit", "git push", "# then call gitring_submit"],
+      message: `Main is at ${main.sha.slice(0, 7)}. The token is read-only and lasts 6 hours.`,
     };
   }
 
@@ -3977,14 +3981,6 @@ export class HarborMaster extends DurableObject<Env> {
     return a;
   }
 
-  /** LLM polish for correction text is optional; templates are the source of truth. */
-  async polish(text: string): Promise<string> {
-    const res = await chat(this.env.AI as never, "@cf/zai-org/glm-4.7-flash", [
-      { role: "system", content: "Rewrite the message in ASD-STE100: short imperative sentences, max 20 words each, active voice. Keep every file name, line number and signature. Output only the message." },
-      { role: "user", content: text },
-    ], { maxTokens: 300, timeoutMs: 8000 });
-    return res?.message.content?.trim() || text;
-  }
 }
 
 /* ════════════════════════════ module helpers ════════════════════════════ */
@@ -3996,6 +3992,15 @@ export class HarborMaster extends DurableObject<Env> {
  */
 export async function hookKey(secret: string, kind: "slack" | "github", projectId: string): Promise<string> {
   return (await hmacSha256Hex(secret, `hook:${kind}:${projectId}`)).slice(0, 32);
+}
+
+/**
+ * The command that merges main into a git work copy. The token goes in an HTTP header and not in the remote
+ * URL: git writes a remote URL to FETCH_HEAD and prints it in errors, and a shell keeps it in its history.
+ */
+export function gitPullCommand(remote: string, token: string, branch: string): string {
+  const secret = token.split("?expires=")[0];
+  return `git -c http.extraHeader="Authorization: Basic ${btoa(`x:${secret}`)}" pull --no-rebase ${remote} ${branch}`;
 }
 
 /** The project state for a viewer: outbound webhook addresses (they can hold secrets) stay with members. */
@@ -4287,7 +4292,7 @@ const STOP_WORDS = new Set(["the", "and", "for", "with", "that", "this", "from",
  */
 export function budgetWait(key: string, scope: T.CheckRun["scope"], retryAt: number): T.CheckRun {
   const message = `The test budget for this hour is used. gitring tries again at ${clock(retryAt)} UTC.`;
-  return { id: newId("cr"), subject: key, scope, ok: false, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now(), runner: "container", error: message, wait: { retryAt, message } };
+  return { id: newId(CHECK_RUN), subject: key, scope, ok: false, passed: 0, failed: 0, cases: [], ms: 0, at: Date.now(), runner: "container", error: message, wait: { retryAt, message } };
 }
 
 export function containerRun(res: DrydockResult, o: { key: string; scope: T.CheckRun["scope"]; cs: T.CheckSettings; ms: number }): T.CheckRun {
@@ -4311,7 +4316,7 @@ export function containerRun(res: DrydockResult, o: { key: string; scope: T.Chec
           ? `The tests took more than ${o.cs.timeoutSec ?? 600} s. gitring stopped them.`
           : undefined;
   return {
-    id: newId("cr"),
+    id: newId(CHECK_RUN),
     subject: o.key,
     scope: o.scope,
     ok: res.ok,
