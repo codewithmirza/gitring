@@ -213,6 +213,20 @@ describe("push notifications for a new question", () => {
       expect(calls).toEqual(keys === k ? [["p_crash", { users: ["u_sam"], need: "member", kind: "question" }]] : []);
     }
   });
+
+  it("ask the Directory to send a push when a merge waits for a yes", async () => {
+    const calls: unknown[][] = [];
+    const k = { VAPID_PUBLIC_KEY: `B${"A".repeat(86)}`, VAPID_PRIVATE_KEY: "A".repeat(43), VAPID_SUBJECT: "mailto:robin@example.org" };
+    const directory = { idFromName: (n: string) => n, get: () => ({ budgetTake: async () => ({ granted: 1, retryAt: 0 }), pushInbox: async (...args: unknown[]) => (calls.push(args), 1) }) };
+    vi.stubGlobal("fetch", async () => new Response("ok"));
+    world = new CrashWorld({ AI: unsureModel(), DIRECTORY: directory, ...k });
+    await world.start({ files: FILES, settings: { decisionModel: "clef-flash", landing: "ask" } });
+    const t = await world.submitTask("alpha");
+    expect(t.next).toBe("awaiting-approval");
+    await world.settle();
+    // No person sent this agent: every member of the project may answer, so the Directory finds them.
+    expect(calls).toEqual([["p_crash", { users: [], need: "member", kind: "approval" }]]);
+  });
 });
 
 describe("work that did not merge and no agent tries again: a person decides", () => {
@@ -283,6 +297,27 @@ describe("work that did not merge and no agent tries again: a person decides", (
     expect(st.intents.find((i) => i.id === a.intentId)?.status).not.toBe("judging");
     expect(st.decisions.at(-1)).toMatchObject({ kind: "rederive", by: { id: OWNER.id } });
     expect(open()).toEqual([]);
+  });
+
+  it("lets the question wait again when the redo cannot start, and the person sees why", async () => {
+    await start({ redo: "builtin" });
+    const t = await world.startTask("beta");
+    const a = inner().attempts.get(t.attemptId)!;
+    a.lineage = { generation: 3 };
+    await inner().markStale(a, "Main changed the same lines.");
+    const q = open()[0];
+    // The repository does not answer: no redo starts.
+    const h = world.harbor as unknown as { loadMain: () => Promise<unknown> };
+    const loadMain = h.loadMain;
+    h.loadMain = () => Promise.reject(new Error("The repository did not answer. Try again."));
+    await expect(world.harbor.answerQuestion(q.id, { option: "redo" }, OWNER)).rejects.toThrow("The repository did not answer. Try again.");
+    expect(inner().questions.get(q.id)?.status).toBe("open");
+    expect([...inner().attempts.values()].some((x) => x.lineage.rederivedFrom === a.id)).toBe(false);
+    h.loadMain = loadMain;
+    expect((await world.harbor.state()).intents.find((i) => i.id === a.intentId)?.status).toBe("judging");
+    // The next answer works.
+    expect((await world.harbor.answerQuestion(q.id, { option: "redo" }, OWNER)).outcome).toBe("answered");
+    expect([...inner().attempts.values()].some((x) => x.lineage.rederivedFrom === a.id)).toBe(true);
   });
 
   it("pauses the task when a person says so", async () => {

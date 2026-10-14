@@ -41,7 +41,7 @@ import {
 import { CodeLines, splitLines, StaticCode, WRAP_MAX, type GutterLane } from "./code/CodeLines";
 import { CodeTree, rowMarksOf, type RowMarks } from "./code/CodeTree";
 import { AllDiffs, FileDiff } from "./code/CodeDiff";
-import { lineRequester } from "../app/lineRequest";
+import { lineRequester, mayRequestLines } from "../app/lineRequest";
 import { CodeLink } from "./code/CodeLink";
 import { resolveRef, useAttemptDiff, useDelayedFlag, useFileText, useHarbor, useTree, type RefInfo } from "./code/data";
 import { languageOf } from "./code/highlight";
@@ -795,7 +795,7 @@ export function CodeView() {
   const refText = info.kind === "main" ? `main ${shortSha(mainSha)}` : info.kind === "work" ? `the work copy of ${info.wc.callsign}` : info.kind === "commit" ? `commit ${shortSha(info.sha)}` : loc.ref;
 
   // A member asks the agent of an active work copy to change lines of its diff.
-  const askAgent = info.kind === "work" && canAct ? lineRequester(projectId, info.attempt.id, info.wc.callsign) : undefined;
+  const askAgent = info.kind === "work" && canAct && mayRequestLines(info.attempt) ? lineRequester(projectId, info.attempt.id, info.wc.callsign) : undefined;
 
   /* ── body of the right side ── */
   const listReady = diffMode ? Boolean(diffFiles) : treeReady;

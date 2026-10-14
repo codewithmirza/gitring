@@ -25,8 +25,8 @@ import { harbor, harborOrNull, onHarbor, type DiffResult } from "../state/api";
 import { ago, ATTEMPT_STATUS_TEXT, METHOD_TEXT, modelShort, plural, shortSha } from "../state/format";
 import { useStore } from "../state/store";
 import { useCanAct } from "../state/account";
-import { byId, indexes, isActiveAttempt, selectIntentGroups } from "../state/selectors";
-import { lineRequester } from "../app/lineRequest";
+import { byId, indexes, selectIntentGroups } from "../state/selectors";
+import { lineRequester, mayRequestLines } from "../app/lineRequest";
 import type { LineRequestInput } from "../design/components";
 import "./intents.css";
 
@@ -417,7 +417,7 @@ function Lane({ attempt: a, all, agent, intent, corrections, checks, names, land
           )}
         </h3>
         <FileList attempt={a} />
-        {showDiff && <LaneDiff attempt={a} onRequest={canAct && isActiveAttempt(a) ? lineRequester(projectId, a.id, callsign) : undefined} />}
+        {showDiff && <LaneDiff attempt={a} onRequest={canAct && mayRequestLines(a) ? lineRequester(projectId, a.id, callsign) : undefined} />}
       </section>
 
       <section className="lane__sec" aria-label="Plan">

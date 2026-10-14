@@ -2283,6 +2283,7 @@ export class HarborMaster extends DurableObject<Env> {
       this.putIntent(intent);
       this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The merge of the work of ${this.callsign(a.id)} stops. ${NO_TEST_RAN}` });
       this.webhook("approval", { attemptId: a.id, approval, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
+      this.notifyPeople(approval.approver ? [approval.approver.id] : [], "approval");
       return "done";
     }
     const method: T.LandingMethod = a.lineage.generation > 1 ? "rederive" : result.method;

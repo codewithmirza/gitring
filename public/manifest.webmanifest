@@ -1,7 +1,7 @@
 {
   "name": "gitring",
   "short_name": "gitring",
-  "description": "Many coding agents, one codebase. Answer merges and questions from your inbox.",
+  "description": "Many agents, one codebase. Answer merges and questions in your inbox.",
   "start_url": "/inbox",
   "scope": "/",
   "display": "standalone",

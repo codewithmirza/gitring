@@ -10,6 +10,8 @@ import { escalationOptions, REDO_OPTIONS } from "../../src/core/inbox";
 import { selectJudgmentQueue, type QuestionItem } from "../../web/src/state/selectors";
 import { reduce } from "../../web/src/state/store";
 import { inSelection, lineRequestProblem, linesText, pickLine } from "../../web/src/design/components/LineRequest";
+import { mayRequestLines } from "../../web/src/app/lineRequest";
+import { ruleLabel } from "../../web/src/state/format";
 import { steViolations } from "../coord/ste";
 
 beforeAll(() => {
@@ -137,6 +139,17 @@ describe("line requests on a diff", () => {
     expect(lineRequestProblem({ path: "a", from: 2, to: 3, text: " " })).toBe("Write what the agent must change.");
     expect(lineRequestProblem({ path: "a", from: 0, to: 3, text: "x" })).toMatch(/^Give the lines/);
     expect(lineRequestProblem({ path: "a", from: 5, to: 3, text: "x" })).toMatch(/^Give the lines/);
+  });
+
+  it("is only for a work copy that the agent still works on", () => {
+    for (const status of ["declared", "underway", "submitted", "checking", "ready", "landing", "rederiving"] as const) expect(mayRequestLines({ status }), status).toBe(true);
+    // A stale copy is over on the server: a redo or a person decides. The other states are over too.
+    for (const status of ["stale", "landed", "abandoned", "alternate", "failed"] as const) expect(mayRequestLines({ status }), status).toBe(false);
+  });
+
+  it("shows the change request of a person with the label 'A person decided'", () => {
+    expect(ruleLabel("human")).toBe("A person decided");
+    expect(steViolations(ruleLabel("human"))).toEqual([]);
   });
 });
 
