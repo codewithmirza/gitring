@@ -4,7 +4,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ProjectInfo, Provider, SignInKind } from "../../../src/core/accounts";
-import { Button, Input, Menu, MenuItem, MenuSeparator, Popover, SkeletonRows, usePopover } from "../design/components";
+import { Button, Input, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, SkeletonRows, usePopover } from "../design/components";
 import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
 import { THEMES, setTheme, useTheme } from "../design/theme";
@@ -13,6 +13,7 @@ import { openProject, signOut, useCanAct, useMe } from "../state/account";
 import { githubSignInUrl, googleSignInUrl, orderedProviders } from "../state/signin";
 import { createAccountWithPasskey, passkeyErrorText, passkeysWork, signInWithPasskey } from "../state/passkey";
 import { Link, linkProps, navigate } from "./router";
+import { useMedia } from "./useMedia";
 import { openSignIn, rememberAfterSignIn, setUi, useUi } from "./ui";
 import { fuzzyScore } from "./palette";
 
@@ -224,23 +225,26 @@ export function UserMenu() {
   );
 }
 
-/** Day, Dusk and Night in the account menu. A phone has no theme control in the bar, so it shows only there (see accounts.css). */
+/**
+ * Day, Dusk and Night in the account menu. A phone has no theme control in the bar, so the choices live here at 600 px
+ * and below. Elsewhere they are left out of the page and not only hidden: the arrow keys of the menu would stop on a hidden item.
+ */
 function ThemeChoices() {
   const theme = useTheme();
+  const phone = useMedia("(max-width: 600px)");
+  if (!phone) return null;
   return (
-    <div className="acct-menu__themes" role="presentation">
+    <>
       <MenuSeparator />
       <div role="group" aria-label="Theme">
-        <div className="acct-menu__label" aria-hidden="true">
-          Theme
-        </div>
+        <MenuLabel>Theme</MenuLabel>
         {THEMES.map((t) => (
           <MenuItem key={t.id} icon={t.id} checked={theme === t.id} keepOpen onSelect={() => setTheme(t.id)}>
             {t.label}
           </MenuItem>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 

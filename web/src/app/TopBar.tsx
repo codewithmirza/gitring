@@ -262,7 +262,8 @@ function Decisions({ route }: { route: Route }) {
   // The approve page answers one question itself: when that is the only one, the count would repeat it.
   const first = rows[0];
   const onlyThisOne = route.name === "approve" && rows.length === 1 && first.kind === "approval" && first.attemptId === route.id;
-  const quiet = rows.length === 0 || onlyThisOne || (trayShowsAll && route.name !== "replay" && route.name !== "approve");
+  // An open list stays: it holds the tray back (decisionsOpen), so the button must not leave while the person answers in it.
+  const quiet = !pop.open && (rows.length === 0 || onlyThisOne || (trayShowsAll && route.name !== "replay" && route.name !== "approve"));
   const merges = mine.every((q) => q.kind === "approval");
   const lead = merges ? `${n} ${n === 1 ? "merge waits" : "merges wait"} for you.` : `${n} ${n === 1 ? "decision needs" : "decisions need"} you.`;
   const others = w > 0 ? ` ${w} ${w === 1 ? "waits" : "wait"} for other people.` : "";
@@ -386,8 +387,11 @@ function StatsStrip() {
   );
 }
 
-/** The theme control. On a phone the cycle button shows only for a person who has no account menu and no project name on the bar. */
-function ThemeControl({ spare }: { spare: boolean }) {
+/**
+ * The theme control. At 600 px and below, the cycle button leaves the bar when the bar needs the room (a project name, or the
+ * account button, whose menu has the themes). A signed-out person with no project still gets the button.
+ */
+function ThemeControl({ hiddenOnPhone }: { hiddenOnPhone: boolean }) {
   const theme = useTheme();
   const i = THEMES.findIndex((t) => t.id === theme);
   const next = THEMES[(i + 1) % THEMES.length];
@@ -404,7 +408,7 @@ function ThemeControl({ spare }: { spare: boolean }) {
   );
   return (
     <>
-      <IconButton className={["topbar__themecycle", spare && "topbar__themecycle--spare"].filter(Boolean).join(" ")} icon={theme} label={`Theme: ${THEMES[i]?.label}. Switch to ${next.label}.`} onClick={() => setTheme(next.id)} tooltip={false} />
+      <IconButton className={["topbar__themecycle", hiddenOnPhone && "topbar__themecycle--phone-hidden"].filter(Boolean).join(" ")} icon={theme} label={`Theme: ${THEMES[i]?.label}. Switch to ${next.label}.`} onClick={() => setTheme(next.id)} tooltip={false} />
       <Segmented<Theme> label="Display theme" value={theme} onChange={setTheme} className="topbar__theme" options={options} />
     </>
   );
@@ -450,7 +454,7 @@ export function TopBar({ route }: { route: Route }) {
           {loaded && <Decisions route={route} />}
           {signedIn && <InboxButton route={route} />}
           <UserMenu />
-          <ThemeControl spare={signedIn || named} />
+          <ThemeControl hiddenOnPhone={signedIn || named} />
         </div>
       </div>
       {chrome && (

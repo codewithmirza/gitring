@@ -9,6 +9,10 @@
 .apcard__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-2); min-width: 0; }
 .apcard__head .apcard__title { flex: 1; min-width: 0; }
 .apcard__head .b-iconbtn { flex: none; margin: calc(-1 * var(--s-1)) calc(-1 * var(--s-2)) 0 0; }
+/* On a touch screen the chevron is a full 32 px target. The negative margins keep the head as tall as the title. */
+@media (pointer: coarse) {
+  .apcard__head .b-iconbtn.b-btn--sm { width: var(--control-md); height: var(--control-md); margin: calc(-1 * var(--s-3)) calc(-1 * var(--s-3) - var(--s-0)) calc(-1 * var(--s-3)) 0; }
+}
 .apcard__facts { display: grid; gap: var(--s-2); min-width: 0; }
 .apcard__title {
   font-size: var(--t-md);
