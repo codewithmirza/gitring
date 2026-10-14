@@ -1,6 +1,6 @@
 # scripts: tools that you run by hand
 
-These scripts help you run, check and load your own gitring. None of them is part of the product. Each one reads the address of your gitring from `GITRING_URL` and a key from `GITRING_KEY`. A script never prints the key.
+These scripts help you run, check and load your own gitring. None of them is part of the product. The scripts that talk to a gitring (`smoke`, `meet`, `load`) read its address from `GITRING_URL` and a key from `GITRING_KEY`. No script prints the key.
 
 ## The files
 
@@ -8,7 +8,7 @@ These scripts help you run, check and load your own gitring. None of them is par
 - `smoke.mjs`: a smoke test for a deployed gitring or the run on your computer. Two scripted agents change one function, and both merge. It prints PASS or FAIL for each check. Run: `npm run smoke` (or `node scripts/smoke.mjs <url> <token>`).
 - `meet.mjs`: three scripted agents meet on one small shop project, and the script prints each real answer. With `--approval`, a third agent needs a person to say yes. Run: `npm run meet -- [--approval] [--wait SECONDS] [--keep]`.
 - `meet-steps.mjs`: the three steps of the story that `meet.mjs` tells.
-- `meet-story.mjs`: the helpers of the story: API calls, the MCP agents that talk, and the waits for the state of the project.
+- `meet-tools.mjs`: what the steps use: API calls, the MCP agents that talk, and the waits for the state of the project.
 - `meet-files.mjs`: the text of the files that the scripted agents write (the starting files are in `examples/shop/`).
 - `load.mjs`: a load test for a deployed gitring. Many agents work at the same time through the real MCP endpoint. It costs money, so it needs `--yes`. Run: `npm run load -- --project <id> --agents 20 --tasks 3 --yes`.
 - `load-agent.mjs`: one scripted agent of the load test: its own connection, and a few tasks one after the other.

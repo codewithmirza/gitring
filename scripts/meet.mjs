@@ -3,12 +3,13 @@
  * Three scripted agents meet on one small shop project, on any gitring. The script prints each real answer.
  * Run: GITRING_URL=<url> GITRING_KEY=<key> npm run meet -- [--approval] [--wait SECONDS] [--keep]
  * It makes one private project and archives it at the end. The agents are scripted: this is not a test of a model.
- * Never print the key. Read next: meet-steps.mjs (the story), meet-story.mjs (the helpers), meet-files.mjs (the texts).
+ * Never print the key. Read next: meet-steps.mjs (the steps of the story), then meet-tools.mjs (what the steps use)
+ * and meet-files.mjs (the texts).
  */
 import { pathToFileURL } from "node:url";
 import { endpointOf } from "./load-lib.mjs";
 import { startTheShop, twoAgentsChangeOneFunction, theSecondAgentWorksOnTheNewMain, aPersonMustSayYes } from "./meet-steps.mjs";
-import { makeStory, makeTalk } from "./meet-story.mjs";
+import { makeStory, makeTalk } from "./meet-tools.mjs";
 
 export const MEET_USAGE = [
   "Usage: GITRING_URL=https://your-gitring.example.com GITRING_KEY=<key> npm run meet -- [--approval] [--wait SECONDS] [--keep]",

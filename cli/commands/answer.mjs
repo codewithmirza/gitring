@@ -1,5 +1,5 @@
 /**
- * The commands yes and back: answer a merge question from the inbox. Yes takes the work. Back sends it to the agent.
+ * The commands yes and back: answer a merge question. Yes lets the work merge. Back sends it to the agent.
  * Called through commands/index.mjs. The server decides if this person may answer from the command line.
  * Never decide for the person. Never answer an item that is not a merge question.
  */

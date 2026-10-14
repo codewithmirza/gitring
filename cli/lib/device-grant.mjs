@@ -22,8 +22,7 @@ export async function requestDeviceCode(ctx, origin) {
   const start = await postForm(ctx, `${origin}/oauth/device_authorization`, { client_id: CLIENT_ID, scope: "mcp", resource: `${origin}/mcp` });
   if (isMissingRoute(start)) throw new CliError(TOO_OLD);
   if (start.status !== 200 || !start.json?.device_code) throw new CliError(`gitring did not start the sign-in. ${errorText(start)}`);
-  const d = start.json;
-  return d;
+  return start.json;
 }
 
 /** Show the page and the code to the person. With --open, open the page when it is a page of the server. */

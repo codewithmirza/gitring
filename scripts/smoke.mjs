@@ -150,9 +150,9 @@ async function checkTwoAgents({ endpoint, key, fetchImpl, pollMs, timeoutSec, ap
   const subA = await A.call("gitring_submit", { attemptId: idA, summary: "slugify drops accents" });
   check("agent A lands on main", Boolean(await waitFor(landed(idA))), subA.text.split(/\n/).slice(0, 3).join(" ").slice(0, 200));
 
-  const upd = await B.call("gitring_update", { attemptId: idB });
+  await B.call("gitring_update", { attemptId: idB });
   await B.call("gitring_read", { attemptId: idB, path: "src/index.js" });
-  const w2 = await B.call("gitring_write", { attemptId: idB, files: [{ path: "src/index.js", content: SLUG_BOTH }, { path: "tests/cut.test.js", content: T_B }, { path: "tests/sep.test.js", content: T_A }] });
+  await B.call("gitring_write", { attemptId: idB, files: [{ path: "src/index.js", content: SLUG_BOTH }, { path: "tests/cut.test.js", content: T_B }, { path: "tests/sep.test.js", content: T_A }] });
   const open = ((await state()).corrections ?? []).filter((c) => c.attemptId === idB && (c.status === "pending" || c.status === "delivered"));
   for (const c of open) await B.call("gitring_ack", { attemptId: idB, correctionId: c.id, note: "Applied on the new main." });
   const chk = await B.call("gitring_check", { attemptId: idB });

@@ -26,6 +26,7 @@ export async function http(ctx, method, url, { headers = {}, body } = {}) {
 
 const FORM = { "content-type": "application/x-www-form-urlencoded", accept: "application/json" };
 
+/** One POST with form fields (the OAuth routes take this form). */
 export function postForm(ctx, url, fields) {
   return http(ctx, "POST", url, { headers: FORM, body: new URLSearchParams(fields).toString() });
 }

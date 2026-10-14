@@ -1,5 +1,5 @@
 /**
- * Says who calls: the server and the credential of one command, and renews an access token that ends soon.
+ * Finds the server and the credential of one command, and renews an access token that ends soon.
  * Called by every command that needs a sign-in, and by rest.mjs and mcp.mjs.
  * Never print a token. A personal API key in GITRING_TOKEN is used as it is and never renewed.
  */

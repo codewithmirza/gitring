@@ -1,5 +1,5 @@
 /**
- * The helpers of the shop story: API calls, the MCP agents that talk, and the waits for the project.
+ * The tools of the shop story: API calls, the MCP agents that talk, and the waits for the project.
  * Called by scripts/meet.mjs and scripts/meet-steps.mjs. makeStory gives the steps everything that they share.
  * Never print the key: every line goes through `out`, which hides it.
  */

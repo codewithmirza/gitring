@@ -1,10 +1,10 @@
 /**
  * The steps of the shop story: one agent starts the shop, two agents change one function, and a person decides.
  * Called by runMeet in scripts/meet.mjs. Each step prints what the agents say and read, with the tools of the real server.
- * Never skip the waits: each step needs the merge of the step before. Read next: meet-story.mjs, meet-files.mjs.
+ * Never skip the waits: each step needs the merge of the step before. Read next: meet-tools.mjs, meet-files.mjs.
  */
 import { BOTH, CART_EUROS, COMMAS, EUROS, FREE, PRICE_TEST, read, T_COMMAS, T_EUROS, T_FREE } from "./meet-files.mjs";
-import { sleep, Stop } from "./meet-story.mjs";
+import { sleep, Stop } from "./meet-tools.mjs";
 
 // ───── 1. One agent starts the shop ─────
 
