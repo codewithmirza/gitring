@@ -2,7 +2,7 @@
  * Rate limits (Workers Rate Limiting bindings): counters per Cloudflare location, keyed by a person or an
  * address. Without a binding (local development, tests) nothing is limited.
  *
- *   RL_AUTH   sign-in starts and client registrations, per address      (20 per minute)
+ *   RL_AUTH   sign-in starts, client registrations and device sign-ins, per address (20 per minute)
  *   RL_TOKEN  OAuth token and revocation calls, per address             (120 per minute)
  *   RL_MCP    MCP calls, per person (or address before sign-in)         (3000 per minute: 24 scripted agents of one person make about 1200 calls a minute)
  *   RL_API    other API calls, per person (or address)                  (1200 per minute)
@@ -80,7 +80,7 @@ export async function hookLimitKey(req: Request, who: string | null): Promise<st
 
 /** Which limit a path falls under (null: none). */
 export function limitFor(_method: string, path: string): LimitKind | null {
-  if (path === "/oauth/register" || path === "/oauth/authorize" || /^\/auth\/[^/]+\/start$/.test(path)) return "auth";
+  if (path === "/oauth/register" || path === "/oauth/authorize" || path === "/oauth/device_authorization" || path === "/device" || /^\/auth\/[^/]+\/start$/.test(path)) return "auth";
   if (path === "/oauth/token" || path === "/oauth/revoke") return "token";
   if ((path.startsWith("/api/") && path !== "/api/health") || path.startsWith("/ws/")) return "api";
   if (path.startsWith("/hooks/")) return "hook";

@@ -11,6 +11,9 @@ describe("rate limits", () => {
     expect(limitFor("POST", "/oauth/register")).toBe("auth");
     expect(limitFor("GET", "/oauth/authorize")).toBe("auth");
     expect(limitFor("GET", "/auth/github/start")).toBe("auth");
+    // The device grant: a program starts a sign-in, and a person types its code.
+    expect(limitFor("POST", "/oauth/device_authorization")).toBe("auth");
+    expect(limitFor("POST", "/device")).toBe("auth");
     expect(limitFor("POST", "/oauth/token")).toBe("token");
     expect(limitFor("POST", "/oauth/revoke")).toBe("token");
     expect(limitFor("GET", "/api/projects")).toBe("api");

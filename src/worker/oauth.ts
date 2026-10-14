@@ -9,6 +9,7 @@
  *   POST /oauth/authorize                              the decision (same-origin form)
  *   POST /oauth/token                                  codes (PKCE S256) and rotating refresh tokens
  *   POST /oauth/revoke                                 RFC 7009
+ *   POST /oauth/device_authorization, GET/POST /device RFC 8628: the device grant (src/worker/device.ts)
  *   GET/DELETE /api/oauth/grants[/:id]                 the apps a person allowed
  *
  * The logic lives in the Directory (src/directory/oauth.ts). A pending authorization is bound to the
@@ -16,8 +17,9 @@
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
-import { directory, esc, forgetPrincipal, lastProvider, page, readCookie, signInChoices, type Principal } from "./auth";
+import { closeUserSockets, directory, esc, forgetPrincipal, lastProvider, page, readCookie, signInChoices, type Principal } from "./auth";
 import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
+import { CLI_CLIENT_ID, DEVICE_GRANT } from "../directory/device";
 import { randomToken, sameString } from "../directory/crypto";
 import { clientAddress } from "./limits";
 
@@ -26,7 +28,7 @@ type C = Context<HonoEnv>;
 
 const REQUEST_COOKIE = "__Host-gitring-oauth";
 
-const CORS: Record<string, string> = {
+export const CORS: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
   "access-control-allow-headers": "authorization, content-type, mcp-protocol-version",
@@ -48,9 +50,11 @@ export function authorizationServerMetadata(o: string) {
     token_endpoint: `${o}/oauth/token`,
     registration_endpoint: `${o}/oauth/register`,
     revocation_endpoint: `${o}/oauth/revoke`,
+    // RFC 8628: programs without a browser (the gitring command line) sign in with a code on /device.
+    device_authorization_endpoint: `${o}/oauth/device_authorization`,
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
+    grant_types_supported: ["authorization_code", "refresh_token", DEVICE_GRANT],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
     revocation_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
@@ -96,7 +100,7 @@ export function mcpScopeChallenge(o: string, path: string = MCP_PATH.gitring, sc
   return `Bearer realm="gitring", error="insufficient_scope", scope="${scope}", resource_metadata="${o}/.well-known/oauth-protected-resource${path}", error_description="This tool changes data. The access token has the scope mcp:read. It needs the scope ${scope}."`;
 }
 
-async function formOf(c: C): Promise<Record<string, string | undefined>> {
+export async function formOf(c: C): Promise<Record<string, string | undefined>> {
   const type = c.req.header("content-type") ?? "";
   if (type.includes("application/json")) {
     const raw = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -326,8 +330,15 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
   app.delete("/api/oauth/grants/:id", async (c) => {
     const u = c.get("principal").user;
     if (!u) return json({ error: "Sign in first." }, 401);
-    const ok = await directory(c.env).oauthRevokeGrant(u.id, c.req.param("id"));
-    if (ok) forgetPrincipal({ userId: u.id });
+    const dir = directory(c.env);
+    const id = c.req.param("id");
+    // Of all apps, only gitring's own command line opens live logs (gitring watch): they close with it.
+    const cli = (await dir.oauthGrants(u.id)).some((g) => g.id === id && g.clientId === CLI_CLIENT_ID);
+    const ok = await dir.oauthRevokeGrant(u.id, id);
+    if (ok) {
+      forgetPrincipal({ userId: u.id });
+      if (cli) c.executionCtx.waitUntil(closeUserSockets(c.env, u.id, 4401));
+    }
     return ok ? new Response(null, { status: 204 }) : json({ error: "Unknown app." }, 404);
   });
 }

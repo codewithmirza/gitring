@@ -592,7 +592,8 @@ export interface Approval {
   /** The person who answers: the sender of the work copy. Absent: any member. Owners can always answer. */
   approver?: Person;
   askedAt: Millis;
-  answer?: { by: Person; how: "app" | "chat"; note?: string; at: Millis };
+  /** how: in the gitring app, in the chat of the agent, or with the gitring command line. */
+  answer?: { by: Person; how: "app" | "chat" | "cli"; note?: string; at: Millis };
   /** Withdrawn: the plain reason. */
   closed?: string;
 }

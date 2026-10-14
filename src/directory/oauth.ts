@@ -10,12 +10,27 @@
  *   tokens      access tokens (1 hour) and refresh tokens (30 days, sliding). Refresh tokens rotate at
  *               each use. A refresh token used again after the grace time revokes the whole grant
  *               (reuse detection, OAuth 2.1 §4.3.1 and the OAuth security BCP).
+ *   devices     the device authorization grant (RFC 8628, src/directory/device.ts): a program gets a token
+ *               when a signed-in person types its user code on /device. 10 minutes, single use.
  *
  * Only SHA-256 hashes of codes and tokens are stored. Runs inside the Directory Durable Object
  * (SQLite); pure enough to test in Node.
  */
 import { randomToken, sameString, sha256B64url } from "./crypto";
 import { publicHostname } from "../core/repo-rules";
+import {
+  CLI_CLIENT_ID,
+  CLI_CLIENT_NAME,
+  DEVICE_GRANT,
+  DEVICE_INTERVAL_S,
+  DEVICE_MISSES_MAX,
+  DEVICE_MISSES_WINDOW_MS,
+  DEVICE_TTL_S,
+  formatUserCode,
+  newDeviceCode,
+  newUserCode,
+  normalizeUserCode,
+} from "./device";
 
 export const ACCESS_TTL_S = 3600;
 export const REFRESH_TTL_S = 30 * 24 * 3600;
@@ -29,6 +44,11 @@ const MAX_REDIRECTS = 10;
 /** New clients (registrations and metadata documents) per hour: per address, and for the whole server. */
 const MAX_CLIENTS_PER_ADDRESS_HOUR = 30;
 const MAX_CLIENTS_PER_HOUR = 3000;
+/** New device sign-ins per hour: per address, and for the whole server. */
+const MAX_DEVICES_PER_ADDRESS_HOUR = 30;
+const MAX_DEVICES_PER_HOUR = 3000;
+/** The grant types of a registered client that names none. */
+const DEFAULT_GRANTS = ["authorization_code", "refresh_token"];
 /** A client that nobody ever allowed is removed after a day; one whose grants are all revoked, after 30 days. */
 const NEVER_ALLOWED_CLIENT_MS = 24 * 3600_000;
 const UNUSED_CLIENT_MS = 30 * 24 * 3600_000;
@@ -36,6 +56,8 @@ const UNUSED_CLIENT_MS = 30 * 24 * 3600_000;
 export const SCOPE = "mcp";
 /** Read only: the tools that only read (their read-only hint says so). */
 export const SCOPE_READ = "mcp:read";
+/** The scopes that a request may name. Only mcp and mcp:read change the access (see accessScope). */
+const KNOWN_SCOPES = new Set([SCOPE, SCOPE_READ, "offline_access", "openid", "profile", "email"]);
 
 /**
  * The access that a request asks for. mcp (or no gitring scope at all: older clients) is the full scope;
@@ -61,6 +83,9 @@ export const OAUTH_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS oauth_tokens (hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL, kind TEXT NOT NULL, resource TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER)`,
   `CREATE INDEX IF NOT EXISTS oauth_tokens_grant ON oauth_tokens (grant_id)`,
   `CREATE INDEX IF NOT EXISTS oauth_tokens_expiry ON oauth_tokens (expires_at)`,
+  // Device sign-ins (RFC 8628). status: pending, allowed, denied or used. hash: of the device code; user_hash: of the user code.
+  `CREATE TABLE IF NOT EXISTS oauth_devices (hash TEXT PRIMARY KEY, user_hash TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, scope TEXT NOT NULL, resource TEXT, status TEXT NOT NULL, user_id TEXT, grant_id TEXT, interval_s INTEGER NOT NULL, polled_at INTEGER, address TEXT, family TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS oauth_devices_created ON oauth_devices (created_at)`,
 ];
 
 /* ───────────────────────── types ───────────────────────── */
@@ -76,7 +101,30 @@ export interface OAuthClient {
   redirectUris: string[];
   /** "none" (public client with PKCE), "client_secret_post" or "client_secret_basic". */
   authMethod: "none" | "client_secret_post" | "client_secret_basic";
-  kind: "dcr" | "cimd";
+  /** builtin: gitring's own command line (no registration). */
+  kind: "dcr" | "cimd" | "builtin";
+  /** The grant types that the client may use. */
+  grantTypes: string[];
+}
+
+/** gitring's own command line: every gitring knows it. It signs in with the device grant only. */
+const CLI_CLIENT: OAuthClient = { clientId: CLI_CLIENT_ID, name: CLI_CLIENT_NAME, redirectUris: [], authMethod: "none", kind: "builtin", grantTypes: [DEVICE_GRANT, "refresh_token"] };
+
+/** A device sign-in that waits for a person, as the /device page shows it. */
+export interface PendingDevice {
+  /** The user code, as people read it ("BCDF-GHJK"). */
+  userCode: string;
+  clientId: string;
+  clientName: string;
+  clientUri?: string;
+  /** True for gitring's own command line. Other clients named themselves: gitring did not check the name. */
+  builtin: boolean;
+  scope: string;
+  resource?: string;
+  /** The address that started the sign-in. */
+  address?: string;
+  createdAt: number;
+  expiresAt: number;
 }
 
 /** A validated authorization request, kept while the person signs in and decides. */
@@ -95,6 +143,24 @@ export interface PendingRequest {
 }
 
 export type OAuthError = { error: string; error_description: string };
+
+/** A row of oauth_devices. */
+interface DeviceRow {
+  hash: string;
+  user_hash: string;
+  client_id: string;
+  scope: string;
+  resource: string | null;
+  status: "pending" | "allowed" | "denied" | "used";
+  user_id: string | null;
+  grant_id: string | null;
+  interval_s: number;
+  polled_at: number | null;
+  address: string | null;
+  family: string | null;
+  created_at: number;
+  expires_at: number;
+}
 
 /** JSON bodies of the endpoints: flat plain data, so that they cross the Durable Object RPC boundary. */
 export type JsonObject = Record<string, string | number | boolean | null | string[]>;
@@ -239,6 +305,8 @@ export class OAuthStore {
   private readonly now: () => number;
   private readonly fetcher: typeof fetch;
   private cleanedAt = 0;
+  /** Wrong user codes on /device per person (see deviceLookup). The Directory is one object, so memory is enough. */
+  private readonly deviceMisses = new Map<string, { n: number; since: number }>();
 
   constructor(deps: OAuthDeps) {
     this.sql = deps.sql;
@@ -256,6 +324,8 @@ export class OAuthStore {
     // The address that made a client known (registration, or the first metadata document fetch): the caps per address.
     const clientCols = this.sql.exec<{ name: string }>("PRAGMA table_info(oauth_clients)").toArray().map((c) => c.name);
     if (!clientCols.includes("address")) this.sql.exec("ALTER TABLE oauth_clients ADD COLUMN address TEXT");
+    // The grant types of a registered client (JSON). None on record: authorization_code and refresh_token.
+    if (!clientCols.includes("grant_types")) this.sql.exec("ALTER TABLE oauth_clients ADD COLUMN grant_types TEXT");
   }
 
   /** Too many new clients in the last hour, from this address or in all. */
@@ -274,17 +344,19 @@ export class OAuthStore {
   async register(raw: unknown, address?: string): Promise<{ status: number; body: JsonObject }> {
     const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
     const uris = Array.isArray(m.redirect_uris) ? m.redirect_uris.filter((u): u is string => typeof u === "string") : [];
-    if (!uris.length) return { status: 400, body: err("invalid_redirect_uri", "Give at least one redirect URI.") };
+    const grants = Array.isArray(m.grant_types) ? m.grant_types : DEFAULT_GRANTS;
+    if (!grants.length || grants.some((g) => g !== "authorization_code" && g !== "refresh_token" && g !== DEVICE_GRANT)) {
+      return { status: 400, body: err("invalid_client_metadata", `gitring supports the grant types authorization_code, refresh_token and ${DEVICE_GRANT}.`) };
+    }
+    // A client that only uses the device grant never gets a redirect: it needs no redirect URI.
+    const codeFlow = grants.includes("authorization_code");
+    if (!uris.length && codeFlow) return { status: 400, body: err("invalid_redirect_uri", "Give at least one redirect URI.") };
     if (uris.length > MAX_REDIRECTS) return { status: 400, body: err("invalid_redirect_uri", `Give at most ${MAX_REDIRECTS} redirect URIs.`) };
     const bad = uris.find((u) => !redirectOk(u) || u.length > 500);
     if (bad) return { status: 400, body: err("invalid_redirect_uri", `This redirect URI is not allowed: ${bad.slice(0, 120)}. Use https, a loopback http address, or an app scheme.`) };
     const method = m.token_endpoint_auth_method === undefined ? "none" : m.token_endpoint_auth_method;
     if (method !== "none" && method !== "client_secret_post" && method !== "client_secret_basic") {
       return { status: 400, body: err("invalid_client_metadata", "token_endpoint_auth_method must be none, client_secret_post or client_secret_basic.") };
-    }
-    const grants = Array.isArray(m.grant_types) ? m.grant_types : ["authorization_code", "refresh_token"];
-    if (grants.some((g) => g !== "authorization_code" && g !== "refresh_token")) {
-      return { status: 400, body: err("invalid_client_metadata", "gitring supports the grant types authorization_code and refresh_token.") };
     }
     const responses = Array.isArray(m.response_types) ? m.response_types : ["code"];
     if (responses.some((r) => r !== "code")) return { status: 400, body: err("invalid_client_metadata", "gitring supports the response type code.") };
@@ -294,8 +366,9 @@ export class OAuthStore {
     const clientId = `gitring-${rand(18)}`;
     const secret = method === "none" ? undefined : `gcs_${randomToken(32)}`;
     const now = this.now();
+    const grantTypes = [...new Set(grants as string[])];
     this.sql.exec(
-      "INSERT INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at, address) VALUES (?, ?, ?, ?, ?, ?, 'dcr', ?, ?)",
+      "INSERT INTO oauth_clients (client_id, secret_hash, name, uri, redirect_uris, auth_method, kind, created_at, address, grant_types) VALUES (?, ?, ?, ?, ?, ?, 'dcr', ?, ?, ?)",
       clientId,
       secret ? await sha256B64url(secret) : null,
       name,
@@ -304,6 +377,7 @@ export class OAuthStore {
       method,
       now,
       address ?? null,
+      JSON.stringify(grantTypes),
     );
     return {
       status: 201,
@@ -314,8 +388,8 @@ export class OAuthStore {
         client_name: name,
         ...(uri ? { client_uri: uri } : {}),
         redirect_uris: uris,
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
+        grant_types: grantTypes,
+        response_types: codeFlow ? ["code"] : [],
         token_endpoint_auth_method: method,
         scope: SCOPE,
       },
@@ -329,14 +403,23 @@ export class OAuthStore {
    */
   async client(clientId: string, address?: string): Promise<OAuthClient | null> {
     if (!clientId || clientId.length > 500) return null;
+    if (clientId === CLI_CLIENT_ID) return CLI_CLIENT;
     const row = this.sql
-      .exec<{ client_id: string; name: string; uri: string | null; redirect_uris: string; auth_method: string; kind: string; fetched_at: number | null }>(
-        "SELECT client_id, name, uri, redirect_uris, auth_method, kind, fetched_at FROM oauth_clients WHERE client_id = ?",
+      .exec<{ client_id: string; name: string; uri: string | null; redirect_uris: string; auth_method: string; kind: string; fetched_at: number | null; grant_types: string | null }>(
+        "SELECT client_id, name, uri, redirect_uris, auth_method, kind, fetched_at, grant_types FROM oauth_clients WHERE client_id = ?",
         clientId,
       )
       .toArray()[0];
-    const cached = row
-      ? { clientId: row.client_id, name: row.name, uri: row.uri ?? undefined, redirectUris: JSON.parse(row.redirect_uris) as string[], authMethod: row.auth_method as OAuthClient["authMethod"], kind: row.kind as OAuthClient["kind"] }
+    const cached: OAuthClient | null = row
+      ? {
+          clientId: row.client_id,
+          name: row.name,
+          uri: row.uri ?? undefined,
+          redirectUris: JSON.parse(row.redirect_uris) as string[],
+          authMethod: row.auth_method as OAuthClient["authMethod"],
+          kind: row.kind as OAuthClient["kind"],
+          grantTypes: row.grant_types ? (JSON.parse(row.grant_types) as string[]) : DEFAULT_GRANTS,
+        }
       : null;
     const age = this.now() - (row?.fetched_at ?? 0);
     if (cached && (cached.kind !== "cimd" || age < CIMD_TTL_MS)) return cached;
@@ -383,7 +466,7 @@ export class OAuthStore {
       this.now(),
       address ?? null,
     );
-    return { clientId, name, uri, redirectUris: uris, authMethod: "none", kind: "cimd" };
+    return { clientId, name, uri, redirectUris: uris, authMethod: "none", kind: "cimd", grantTypes: DEFAULT_GRANTS };
   }
 
   /* ───────────── authorization ───────────── */
@@ -414,12 +497,13 @@ export class OAuthStore {
       reason: e.error_description,
     });
     if (q.response_type !== "code") return back(err("unsupported_response_type", "gitring supports response_type=code."));
+    // An app that registered only the device grant never gets a code.
+    if (!client.grantTypes.includes("authorization_code")) return back(err("unauthorized_client", "This app did not register the grant type authorization_code."));
     if (!q.code_challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(q.code_challenge)) return back(err("invalid_request", "Send a PKCE code_challenge (S256)."));
     if ((q.code_challenge_method ?? "") !== "S256") return back(err("invalid_request", "code_challenge_method must be S256."));
     if (!resourceOk(q.resource, origin)) return back(err("invalid_target", resourceHint(origin)));
     const scopes = (q.scope ?? SCOPE).split(/\s+/).filter(Boolean);
-    const known = new Set([SCOPE, SCOPE_READ, "offline_access", "openid", "profile", "email"]);
-    if (scopes.some((s) => !known.has(s))) return back(err("invalid_scope", `gitring knows the scopes "${SCOPE}" (read and change) and "${SCOPE_READ}" (read only).`));
+    if (scopes.some((s) => !KNOWN_SCOPES.has(s))) return back(err("invalid_scope", `gitring knows the scopes "${SCOPE}" (read and change) and "${SCOPE_READ}" (read only).`));
     const request: PendingRequest = {
       id: `req_${rand(24)}`,
       clientId: client.clientId,
@@ -459,15 +543,7 @@ export class OAuthStore {
     if (!r) return null;
     this.sql.exec("DELETE FROM oauth_requests WHERE id = ?", r.id);
     const now = this.now();
-    const had = this.sql.exec<{ id: string; scope: string }>("SELECT id, scope FROM oauth_grants WHERE user_id = ? AND client_id = ? AND revoked = 0", userId, r.clientId).toArray()[0];
-    let grant = had?.id;
-    if (!grant) {
-      grant = `grant_${rand(18)}`;
-      this.sql.exec("INSERT INTO oauth_grants (id, user_id, client_id, scope, created_at) VALUES (?, ?, ?, ?, ?)", grant, userId, r.clientId, r.scope, now);
-    } else if (!scopeCovers(had.scope, r.scope)) {
-      // The person allowed read only before, and allows read and change now.
-      this.sql.exec("UPDATE oauth_grants SET scope = ? WHERE id = ?", r.scope, grant);
-    }
+    const grant = this.grantFor(userId, r.clientId, r.scope);
     const code = `goc_${randomToken(32)}`;
     this.sql.exec(
       "INSERT INTO oauth_codes (hash, client_id, user_id, grant_id, redirect_uri, challenge, scope, resource, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -482,6 +558,19 @@ export class OAuthStore {
       now + CODE_TTL_MS,
     );
     return withParams(r.redirectUri, { code, state: r.state, iss: origin });
+  }
+
+  /** The grant of a person for a client that the person just allowed: the existing one (made wide enough for `scope`), or a new one. */
+  private grantFor(userId: string, clientId: string, scope: string): string {
+    const had = this.sql.exec<{ id: string; scope: string }>("SELECT id, scope FROM oauth_grants WHERE user_id = ? AND client_id = ? AND revoked = 0", userId, clientId).toArray()[0];
+    if (!had) {
+      const grant = `grant_${rand(18)}`;
+      this.sql.exec("INSERT INTO oauth_grants (id, user_id, client_id, scope, created_at) VALUES (?, ?, ?, ?, ?)", grant, userId, clientId, scope, this.now());
+      return grant;
+    }
+    // The person allowed read only before, and allows read and change now.
+    if (!scopeCovers(had.scope, scope)) this.sql.exec("UPDATE oauth_grants SET scope = ? WHERE id = ?", scope, had.id);
+    return had.id;
   }
 
   /** The person says no. Answers the redirect URL with access_denied. */
@@ -569,7 +658,9 @@ export class OAuthStore {
       return { status: 200, body: await this.issue(row.grant_id, row.scope || SCOPE, row.resource, family), headers: noStore };
     }
 
-    return fail(400, err("unsupported_grant_type", "gitring supports authorization_code and refresh_token."));
+    if (form.grant_type === DEVICE_GRANT) return this.deviceToken(form, client, origin, fail);
+
+    return fail(400, err("unsupported_grant_type", `gitring supports authorization_code, refresh_token and ${DEVICE_GRANT}.`));
   }
 
   /**
@@ -610,6 +701,174 @@ export class OAuthStore {
     this.sql.exec("UPDATE oauth_grants SET last_used = ? WHERE id = ?", now, grantId);
     this.cleanup();
     return { access_token: access, token_type: "Bearer", expires_in: ACCESS_TTL_S, refresh_token: refresh, scope };
+  }
+
+  /* ───────────── device authorization grant (RFC 8628) ───────────── */
+
+  /**
+   * POST /oauth/device_authorization: a program asks for a sign-in. Answers the device code (for the
+   * program), the user code (for the person) and the page where the person types it.
+   */
+  async deviceStart(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string, address?: string): Promise<TokenAnswer> {
+    const noStore = { "cache-control": "no-store", pragma: "no-cache" };
+    const fail = (status: number, e: OAuthError): TokenAnswer => ({ status, body: e, headers: noStore });
+    const auth = await this.authenticateClient(form, basic, address);
+    if (!auth.ok) return fail(401, auth.error);
+    const client = auth.client;
+    if (!client.grantTypes.includes(DEVICE_GRANT)) return fail(400, err("unauthorized_client", `This app may not use the device grant. Register it with the grant type ${DEVICE_GRANT}.`));
+    if (!resourceOk(form.resource, origin)) return fail(400, err("invalid_target", resourceHint(origin)));
+    const scopes = (form.scope ?? SCOPE).split(/\s+/).filter(Boolean);
+    if (scopes.some((s) => !KNOWN_SCOPES.has(s))) return fail(400, err("invalid_scope", `gitring knows the scopes "${SCOPE}" (read and change) and "${SCOPE_READ}" (read only).`));
+    if (this.deviceCapReached(address)) return fail(429, err("temporarily_unavailable", "Too many sign-ins in the last hour. Try again later."));
+    const deviceCode = newDeviceCode();
+    const hash = await sha256B64url(deviceCode);
+    // The token works at one MCP endpoint (RFC 8707): the one that the program names, else /mcp.
+    const resource = (form.resource ? canonicalResource(form.resource, origin) : null) ?? resourceOf(origin);
+    let userCode = "";
+    for (let i = 0; i < 5 && !userCode; i++) {
+      const candidate = newUserCode();
+      const userHash = await sha256B64url(candidate);
+      // No await from the check to the insert: two sign-ins cannot get the same code.
+      if (this.sql.exec("SELECT 1 FROM oauth_devices WHERE user_hash = ?", userHash).toArray().length) continue;
+      const now = this.now();
+      this.sql.exec(
+        "INSERT INTO oauth_devices (hash, user_hash, client_id, scope, resource, status, interval_s, address, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+        hash,
+        userHash,
+        client.clientId,
+        accessScope(scopes),
+        resource,
+        DEVICE_INTERVAL_S,
+        address ?? null,
+        now,
+        now + DEVICE_TTL_S * 1000,
+      );
+      userCode = candidate;
+    }
+    if (!userCode) return fail(503, err("temporarily_unavailable", "gitring could not make a code. Try again."));
+    this.cleanup();
+    const shown = formatUserCode(userCode);
+    return {
+      status: 200,
+      headers: noStore,
+      body: {
+        device_code: deviceCode,
+        user_code: shown,
+        verification_uri: `${origin}/device`,
+        verification_uri_complete: `${origin}/device?code=${shown}`,
+        expires_in: DEVICE_TTL_S,
+        interval: DEVICE_INTERVAL_S,
+      },
+    };
+  }
+
+  /**
+   * The sign-in that waits for the user code that a person typed on /device. Wrong codes count per
+   * person: after DEVICE_MISSES_MAX of them, the page stops for a while ("locked"), so that nobody can
+   * guess the codes of other people.
+   */
+  async deviceLookup(raw: string, userId: string): Promise<{ ok: true; device: PendingDevice } | { ok: false; reason: "unknown" | "locked" }> {
+    if (this.deviceLocked(userId)) return { ok: false, reason: "locked" };
+    const code = normalizeUserCode(raw);
+    const row = code ? this.pendingDevice(await sha256B64url(code)) : undefined;
+    if (!code || !row) {
+      this.deviceMiss(userId);
+      return { ok: false, reason: this.deviceLocked(userId) ? "locked" : "unknown" };
+    }
+    return { ok: true, device: await this.deviceView(row, code) };
+  }
+
+  /** The person allows the sign-in (a grant, as on the consent page) or not. Null when the code does not wait any more. */
+  async deviceDecide(raw: string, userId: string, allow: boolean): Promise<PendingDevice | null> {
+    const code = normalizeUserCode(raw);
+    if (!code) return null;
+    const userHash = await sha256B64url(code);
+    // No await from the read to the write: only the first answer counts.
+    const row = this.pendingDevice(userHash);
+    if (!row) return null;
+    if (allow) {
+      const grant = this.grantFor(userId, row.client_id, row.scope);
+      this.sql.exec("UPDATE oauth_devices SET status = 'allowed', user_id = ?, grant_id = ? WHERE hash = ?", userId, grant, row.hash);
+    } else {
+      this.sql.exec("UPDATE oauth_devices SET status = 'denied', user_id = ? WHERE hash = ?", userId, row.hash);
+    }
+    return this.deviceView(row, code);
+  }
+
+  /** POST /oauth/token with the device grant: the program asks again until the person answers (RFC 8628 §3.4, §3.5). */
+  private async deviceToken(form: Record<string, string | undefined>, client: OAuthClient, origin: string, fail: (status: number, e: OAuthError) => TokenAnswer): Promise<TokenAnswer> {
+    if (!client.grantTypes.includes(DEVICE_GRANT)) return fail(400, err("unauthorized_client", `This app may not use the device grant. Register it with the grant type ${DEVICE_GRANT}.`));
+    const hash = await sha256B64url(form.device_code ?? "");
+    // No await from here to the "used" mark (see the code exchange).
+    const row = this.sql.exec<DeviceRow>("SELECT * FROM oauth_devices WHERE hash = ?", hash).toArray()[0];
+    if (!row) return fail(400, err("invalid_grant", "The device code is not valid."));
+    if (row.client_id !== client.clientId) return fail(400, err("invalid_grant", "The device code belongs to another client."));
+    if (row.status === "used") {
+      // A device code used twice: someone may have copied it. End the sign-in that the first use started.
+      if (row.family) this.revokeFamily(row.family);
+      return fail(400, err("invalid_grant", "The device code was already used."));
+    }
+    const now = this.now();
+    if (row.expires_at < now) return fail(400, err("expired_token", "The code expired. Start the sign-in again."));
+    if (row.status === "denied") return fail(400, err("access_denied", "The person did not allow the sign-in."));
+    if (row.status === "pending") {
+      if (row.polled_at !== null && now - row.polled_at < row.interval_s * 1000) {
+        // The program asks too often: it waits 5 seconds more from now on (RFC 8628 §3.5).
+        this.sql.exec("UPDATE oauth_devices SET interval_s = ?, polled_at = ? WHERE hash = ?", row.interval_s + 5, now, hash);
+        return fail(400, err("slow_down", `Ask less often. Wait ${row.interval_s + 5} seconds between two requests.`));
+      }
+      this.sql.exec("UPDATE oauth_devices SET polled_at = ? WHERE hash = ?", now, hash);
+      return fail(400, err("authorization_pending", "The person did not answer yet."));
+    }
+    const family = `fam_${rand(18)}`;
+    this.sql.exec("UPDATE oauth_devices SET status = 'used', family = ? WHERE hash = ?", family, hash);
+    if (!row.grant_id || !this.grantActive(row.grant_id)) return fail(400, err("invalid_grant", "The person removed this app."));
+    const resource = row.resource ? canonicalResource(row.resource, origin) : resourceOf(origin);
+    return { status: 200, body: await this.issue(row.grant_id, row.scope, resource, family), headers: { "cache-control": "no-store", pragma: "no-cache" } };
+  }
+
+  private pendingDevice(userHash: string): DeviceRow | undefined {
+    return this.sql.exec<DeviceRow>("SELECT * FROM oauth_devices WHERE user_hash = ? AND status = 'pending' AND expires_at >= ?", userHash, this.now()).toArray()[0];
+  }
+
+  private async deviceView(row: DeviceRow, code: string): Promise<PendingDevice> {
+    const client = await this.client(row.client_id);
+    return {
+      userCode: formatUserCode(code),
+      clientId: row.client_id,
+      clientName: client?.name ?? row.client_id,
+      ...(client?.uri ? { clientUri: client.uri } : {}),
+      builtin: row.client_id === CLI_CLIENT_ID,
+      scope: row.scope,
+      ...(row.resource ? { resource: row.resource } : {}),
+      ...(row.address ? { address: row.address } : {}),
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    };
+  }
+
+  /** Too many device sign-ins in the last hour, from this address or in all. */
+  private deviceCapReached(address: string | undefined): boolean {
+    const hourAgo = this.now() - 3600_000;
+    if (address && this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_devices WHERE address = ? AND created_at > ?", address, hourAgo).one().n >= MAX_DEVICES_PER_ADDRESS_HOUR) return true;
+    return this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_devices WHERE created_at > ?", hourAgo).one().n >= MAX_DEVICES_PER_HOUR;
+  }
+
+  private deviceLocked(userId: string): boolean {
+    const m = this.deviceMisses.get(userId);
+    if (!m) return false;
+    if (this.now() - m.since > DEVICE_MISSES_WINDOW_MS) {
+      this.deviceMisses.delete(userId);
+      return false;
+    }
+    return m.n >= DEVICE_MISSES_MAX;
+  }
+
+  private deviceMiss(userId: string): void {
+    const m = this.deviceMisses.get(userId);
+    if (m && this.now() - m.since <= DEVICE_MISSES_WINDOW_MS) m.n++;
+    else this.deviceMisses.set(userId, { n: 1, since: this.now() });
+    if (this.deviceMisses.size > 10_000) this.deviceMisses.clear();
   }
 
   /* ───────────── revocation and validation ───────────── */
@@ -667,7 +926,7 @@ export class OAuthStore {
         userId,
       )
       .toArray()
-      .map((g) => ({ id: g.id, clientId: g.client_id, clientName: g.name ?? g.client_id, ...(g.uri ? { clientUri: g.uri } : {}), scope: g.scope, createdAt: g.created_at, ...(g.last_used ? { lastUsedAt: g.last_used } : {}) }));
+      .map((g) => ({ id: g.id, clientId: g.client_id, clientName: g.name ?? (g.client_id === CLI_CLIENT_ID ? CLI_CLIENT_NAME : g.client_id), ...(g.uri ? { clientUri: g.uri } : {}), scope: g.scope, createdAt: g.created_at, ...(g.last_used ? { lastUsedAt: g.last_used } : {}) }));
   }
 
   /** Revoke a grant of this person. Answers false when the grant is not theirs. */
@@ -702,6 +961,7 @@ export class OAuthStore {
     if (now - this.cleanedAt < 10 * 60_000) return;
     this.cleanedAt = now;
     this.sql.exec("DELETE FROM oauth_requests WHERE expires_at < ?", now);
+    this.sql.exec("DELETE FROM oauth_devices WHERE expires_at < ?", now - 3600_000);
     this.sql.exec("DELETE FROM oauth_codes WHERE expires_at < ?", now - 3600_000);
     this.sql.exec("DELETE FROM oauth_tokens WHERE expires_at < ?", now - 24 * 3600_000);
     this.sql.exec(

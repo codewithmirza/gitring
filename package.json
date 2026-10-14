@@ -5,6 +5,9 @@
   "description": "gitring is a home for code that many coding agents change at the same time. An agent creates a project and sends plans through MCP. gitring compares each plan with the 20 nearest plans, sends change requests instead of rejections, and merges work only when the tests pass. The code lives in Cloudflare Artifacts; GitHub sync is optional.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "gitring": "cli/gitring.mjs"
+  },
   "cloudflare": {
     "bindings": {
       "GITRING_SECRET": {
