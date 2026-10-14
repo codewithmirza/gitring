@@ -394,7 +394,9 @@ function Shell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.name, route.name === "approve" ? route.id : ""]);
 
-  const showNav = needsProject && !kiosk;
+  // A project that the server refused has no pages to go to: the bottom bar of the views stays away.
+  const refused = useStore((s) => s.conn === "blocked");
+  const showNav = needsProject && !kiosk && !refused;
   return (
     <div className={["app", showNav && "app--nav", kiosk && "app--kiosk"].filter(Boolean).join(" ")}>
       <a href="#main" className="skip-link">

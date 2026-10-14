@@ -201,7 +201,7 @@ samp {
 /* Inline code inside running text (agent voice inside system copy). */
 .code-inline {
   font-family: var(--font-agent);
-  font-size: .92em;
+  font-size: 1em; /* the size of the text around it: a scaled size would add a fifth size to a view */
   padding: 0 .25em;
   border-radius: var(--r-1);
   background: var(--surface-2);
@@ -213,19 +213,15 @@ samp {
 /*
  * On a touch screen a link, a checkbox and a small segment button get a hit area of 24 to 32 px. The look stays.
  * A link in a line is an inline box: its padding adds hit area and does not move the lines.
- * A link that is a box (a flex row) gets an invisible layer, because padding would move its neighbors.
+ * A link that is a box (a flex row) gets the same padding, and a negative margin of the same size keeps its neighbors where they were.
  */
 @media (pointer: coarse) {
   a:not([class]) {
     padding-block: 9px;
   }
   :is(a.cv-ctx__act, a.inbox-card__link, a.backlink, a.apcard__review) {
-    position: relative;
-  }
-  :is(a.cv-ctx__act, a.inbox-card__link, a.backlink, a.apcard__review)::after {
-    content: "";
-    position: absolute;
-    inset: -8px -4px;
+    padding-block: 9px;
+    margin-block: -9px;
   }
   input[type="checkbox"],
   input[type="radio"] {

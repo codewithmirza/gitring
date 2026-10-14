@@ -193,6 +193,10 @@
 .chip .b-icon { flex: none; }
 .composer__start { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 28px; font-size: var(--t-sm); color: var(--ink-1); cursor: pointer; }
 .composer__start input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+@media (pointer: coarse) {
+  .composer__start { min-height: 32px; }
+  .composer__start input { width: 24px; height: 24px; }
+}
 .composer__error { display: flex; align-items: baseline; gap: var(--s-1); margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--danger); }
 .composer__error .b-icon { flex: none; transform: translateY(2px); }
 .composer__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }

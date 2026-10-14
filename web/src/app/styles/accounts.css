@@ -6,8 +6,9 @@
   align-items: center;
   gap: var(--s-1);
   min-width: 0;
-  padding: 2px var(--s-2);
-  margin-left: calc(-1 * var(--s-2));
+  /* The hit area is 32 px high, taller than the line of text. The negative margin keeps the layout of the bar. */
+  padding: var(--s-2);
+  margin: calc(-1 * var(--s-2)) 0 calc(-1 * var(--s-2)) calc(-1 * var(--s-2));
   border: 0;
   border-radius: var(--r-2);
   background: transparent;
