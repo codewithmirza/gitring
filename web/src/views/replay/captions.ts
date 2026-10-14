@@ -22,12 +22,12 @@ export const STAGE_NAME: Record<Stage, string> = {
   check: "Conflict check",
   request: "Change request",
   work: "Work",
-  tests: "Tests alone",
-  queue: "Merge queue",
-  composed: "Tests on main + work",
-  compose: "Compose",
-  commit: "Commit + why-record",
-  replot: "Other work moves",
+  tests: "Tests in the work copy",
+  queue: "Waits to merge",
+  composed: "Tests on main with the work",
+  compose: "Combine",
+  commit: "Commit and record",
+  replot: "Other work moves to the new main",
   note: "Note",
 };
 
@@ -42,7 +42,7 @@ export const STAGE_LINE: Record<Stage, string> = {
   queue: "One merge at a time. The first in the queue holds the lease.",
   composed: "The tests run again on main plus the work.",
   compose: "gitring puts the work on main: fast-forward or 3-way merge.",
-  commit: "One commit on main. The why-record goes into git notes.",
+  commit: "One commit on main. The merge record goes into git notes.",
   replot: "Main moved. gitring moves the other work onto the new main.",
   note: "gitring writes a note in the history of the project.",
 };
@@ -150,7 +150,7 @@ export function composeCaption(agent: string, method: LandingMethod): string {
 }
 
 export function commitCaption(title: string, sha: string): string {
-  return `${q(title)} is on main now as commit ${sha.slice(0, 7)}. Its why-record goes into git notes.`;
+  return `${q(title)} is on main now as commit ${sha.slice(0, 7)}. Its merge record goes into git notes.`;
 }
 
 export function replotCaption(agents: string[]): string {
@@ -178,5 +178,5 @@ export function introLine(tasks: number, agents: number, merges: number): string
 }
 
 export function endLine(checks: number, requests: number, merges: number): string {
-  return `${checks} conflict ${checks === 1 ? "check" : "checks"}, ${requests} change ${requests === 1 ? "request" : "requests"}, ${merges} ${merges === 1 ? "merge" : "merges"}. Each merge has a why-record in git notes.`;
+  return `${checks} conflict ${checks === 1 ? "check" : "checks"}, ${requests} change ${requests === 1 ? "request" : "requests"}, ${merges} ${merges === 1 ? "merge" : "merges"}. Each merge has a merge record in git notes.`;
 }

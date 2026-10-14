@@ -402,7 +402,7 @@ function Ripple({ e, geo, register }: ShapeProps) {
       </g>
       {at && <circle ref={ring} cx={at.x} cy={at.y} r={10 * g} strokeWidth={3 * g} />}
       {at && e.step.landing && (
-        <text ref={tag} className="rp-fx-label rp-fx-label--center" x={at.x} y={at.y - 22 * g} fontSize={14 * g} fillOpacity={0} strokeOpacity={0}>
+        <text ref={tag} className="rp-fx-label rp-fx-label--center" x={at.x} y={at.y - 22 * g} fontSize={13 * g} fillOpacity={0} strokeOpacity={0}>
           main {e.step.landing.mainAfter.slice(0, 7)}
         </text>
       )}

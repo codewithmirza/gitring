@@ -43,12 +43,12 @@
 .rp-fx-sweep line { stroke: var(--tone); stroke-dasharray: 6 5; stroke-linecap: round; }
 .rp-fx-sweep line.is-close { stroke-dasharray: none; }
 .rp-fx-sweep rect { fill: var(--bg); stroke: var(--tone); stroke-width: 1.5; }
-.rp-fx-sweep text { fill: var(--tone); font-family: var(--font-agent); font-weight: 700; text-anchor: middle; }
+.rp-fx-sweep text { fill: var(--tone); font-family: var(--font-agent); font-weight: 500; text-anchor: middle; }
 .rp-fx-flight__trail { fill: none; stroke: var(--magenta); stroke-linecap: round; }
 .rp-fx-flight__mark { fill: var(--magenta); stroke: var(--bg); paint-order: stroke; }
 .rp-fx-label {
   font-family: var(--font-agent);
-  font-weight: 700;
+  font-weight: 500;
   fill: var(--tone, var(--magenta));
   paint-order: stroke;
   stroke: var(--bg);
@@ -69,22 +69,48 @@
   .rp-stage__node { width: 14px; height: 14px; }
   .rp-pipe__rail::before { left: 6px; }
   .rp-pipe__packet { left: 2px; }
-  .rp-stage__line { font-size: calc(var(--rp-text) * .92); line-height: 1.3; }
+  .rp-stage__line { line-height: 1.3; }
   .rp-card { gap: calc(var(--rp-text) * .5); padding: calc(var(--rp-pad) * .7); }
   .rp-rung { min-height: 1.6em; padding: 1px 8px; }
-  .rp-score .voice-agent:first-child { font-size: calc(var(--rp-text) * 2.2); }
 }
 
 /* ───────────── small screens ───────────── */
+/*
+ * A phone: the map takes the height that is free. The caption has a fixed height of three lines, so a new step never
+ * resizes the map. "Inside gitring" is one row of stations that scrolls sideways, so no row is cut by the controls.
+ */
 @media (max-width: 900px) {
   .replay {
+    --rp-cap: var(--t-md);
+    --rp-text: var(--t-sm);
+    --rp-small: 12px;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(300px, 1fr) auto minmax(0, 38%) auto;
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 30%) auto;
     grid-template-areas: "stage" "caption" "side" "controls";
   }
+  .replay__caption { display: flex; flex-direction: column; justify-content: flex-end; height: calc(var(--rp-cap) * 3.9 + 20px); padding: var(--s-3) var(--s-4); }
+  .rp-caption { display: block; }
+  .rp-caption__stage { display: inline-block; margin-right: var(--s-3); }
+  .rp-caption__text { display: inline; }
+  .rp-caption__time,
+  .rp-caption__quote,
+  .rp-caption--before { display: none; }
   .replay__side { border-left: 0; border-top: 1px solid var(--line); }
+  .rp-pipe { gap: var(--s-2); padding: var(--s-3) var(--s-4); }
+  .rp-pipe__rail::before,
+  .rp-pipe__packet { display: none; }
+  .rp-pipe__list { display: flex; gap: var(--s-2); overflow-x: auto; padding-bottom: var(--s-1); scrollbar-width: none; }
+  .rp-pipe__list::-webkit-scrollbar { display: none; }
+  .rp-stage { flex: none; display: flex; align-items: center; gap: var(--s-2); min-height: 32px; padding: 0 var(--s-4) 0 var(--s-3); border: 1px solid var(--line); border-radius: 999px; }
+  .rp-stage__node { width: 10px; height: 10px; }
+  .rp-stage__node::after { display: none; }
+  .rp-stage.is-now { border-color: var(--stage); background: color-mix(in oklch, var(--stage) 12%, var(--bg)); }
+  .rp-stage.is-now .rp-stage__node { transform: none; }
+  .rp-stage__line,
+  .rp-stage.is-now .rp-stage__line { display: none; }
+  .rp-pipe__now { display: block; margin: 0; font-size: var(--rp-text); line-height: 1.35; color: var(--ink-2); }
   .rp-tasks { display: none; }
-  .rp-controls { grid-template-columns: auto minmax(0, 1fr); }
+  .rp-controls { grid-template-columns: auto minmax(0, 1fr); gap: var(--s-2) var(--s-4); padding: var(--s-2) var(--s-4); }
   .rp-controls__count { display: none; }
   .rp-controls__speed { grid-column: 1 / -1; justify-self: start; }
 }

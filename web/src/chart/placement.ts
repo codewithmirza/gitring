@@ -14,7 +14,11 @@ export interface Placement {
   offshore: boolean;
 }
 
-export function placeVessels(vessels: VesselModel[], layout: ChartLayout, compact = false): Map<string, Placement> {
+/**
+ * `compact` is for large fleets: glyphs only, in a tight grid.
+ * `dense` is for a phone: most agents are dots, so the stacks are narrow and each dot has room for a 32 px tap target.
+ */
+export function placeVessels(vessels: VesselModel[], layout: ChartLayout, compact = false, dense = false): Map<string, Placement> {
   const spots = new Map<string, { wx: number; wy: number; offshore: boolean; list: VesselModel[] }>();
   for (const v of vessels) {
     let key = "";
@@ -53,12 +57,12 @@ export function placeVessels(vessels: VesselModel[], layout: ChartLayout, compac
     // Compact (large fleets): glyphs only, in a tight grid. Otherwise stacks with room for tags.
     const cols = compact ? Math.ceil(Math.sqrt(n)) : n > 8 ? 3 : n > 4 ? 2 : 1;
     const rows = Math.ceil(n / cols);
-    const gx = compact ? 17 : 106;
-    const gy = compact ? 17 : 26;
+    const gx = compact ? 17 : dense ? 36 : 106;
+    const gy = compact ? 17 : dense ? 32 : 26;
     s.list.forEach((v, i) => {
       const col = compact ? i % cols : Math.floor(i / rows);
       const row = compact ? Math.floor(i / cols) : i % rows;
-      const ox = s.offshore ? (col - (cols - 1) / 2) * (compact ? gx : 104) : 17 + col * gx;
+      const ox = s.offshore ? (col - (cols - 1) / 2) * (compact || dense ? gx : 104) : 17 + col * gx;
       const oy = (row - (rows - 1) / 2) * gy;
       const cur = v.file ? anchorOf(layout, v.file) ?? { x: s.wx, y: s.wy } : { x: s.wx, y: s.wy };
       const prev = v.track.length >= 2 ? anchorOf(layout, v.track[v.track.length - 2]) : null;

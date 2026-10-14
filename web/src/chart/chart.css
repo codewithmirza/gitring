@@ -36,7 +36,7 @@
 .c-frame__bar { fill: var(--line-strong); }
 .c-tick {
   font-family: var(--font-agent);
-  font-size: var(--t-2xs);
+  font-size: var(--t-xs);
   font-weight: 500;
   fill: var(--ink-3);
   paint-order: stroke;
@@ -107,7 +107,7 @@
 .c-rose line { stroke: var(--line-strong); stroke-width: 1; opacity: .75; }
 .c-rose__dark { fill: var(--line-strong); stroke: var(--line-strong); stroke-width: 1; opacity: .8; }
 .c-rose__light { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1; opacity: .8; }
-.c-rose__n { font-family: var(--font-agent); font-size: 12px; font-weight: 500; fill: var(--ink-3); }
+.c-rose__n { font-family: var(--font-agent); font-size: var(--t-xs); font-weight: 500; fill: var(--ink-3); }
 
 /* ───────────── course, wake, waypoints ───────────── */
 .c-tracks { pointer-events: none; }
@@ -141,7 +141,7 @@
 .c-range__bg { fill: var(--bg); stroke: var(--tone); stroke-width: 1; }
 .c-range__text {
   font-family: var(--font-agent);
-  font-size: var(--t-2xs);
+  font-size: var(--t-xs);
   font-weight: 500;
   fill: var(--tone);
 }
@@ -169,7 +169,7 @@
 .c-buoy.is-done .c-buoy__mark { fill: var(--bg); stroke: var(--magenta); stroke-width: 1.5; }
 .c-buoy__label {
   font-family: var(--font-agent);
-  font-size: var(--t-2xs);
+  font-size: var(--t-xs);
   font-weight: 500;
   fill: var(--magenta);
   paint-order: stroke;
@@ -280,7 +280,7 @@
 .c-legend__row { display: flex; align-items: center; gap: var(--s-3); }
 .c-legend__art { flex: none; overflow: visible; }
 .c-legend__art * { vector-effect: non-scaling-stroke; }
-.c-legend__scale { margin-top: 4px; color: var(--ink-3); font-size: var(--t-2xs); line-height: var(--lh-2xs); }
+.c-legend__scale { margin-top: 4px; color: var(--ink-3); font-size: var(--t-xs); line-height: var(--lh-xs); }
 .c-legend--wide .c-legend__scale { grid-column: 1 / -1; }
 
 .c-empty {
@@ -305,6 +305,20 @@
   .c-cartouche { left: var(--s-4); top: var(--s-5); padding: var(--s-1) var(--s-3); gap: 0; }
   .c-cartouche__title { display: none; }
   .c-zoom { right: var(--s-3); bottom: var(--s-3); }
+}
+
+/* A phone: the first screen shows the map, not a card. The title block shrinks to the legend button and opens from it. */
+@media (max-width: 600px) {
+  .c-cartouche:not(.is-open) { padding: 0; border: 0; outline: 0; background: none; }
+  .c-cartouche:not(.is-open) .c-cartouche__meta { display: none; }
+  .c-cartouche:not(.is-open) .c-cartouche__toggle {
+    min-height: 32px;
+    padding: 0 var(--s-4);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-2);
+    background: color-mix(in oklch, var(--bg) 94%, transparent);
+  }
+  .c-cartouche.is-open .c-cartouche__toggle { min-height: 32px; }
 }
 
 /* ───────────── push and import panel on an empty chart ───────────── */

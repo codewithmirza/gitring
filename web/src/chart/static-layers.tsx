@@ -41,7 +41,7 @@ export const Parcels = memo(function Parcels({
   onHover: (p: Parcel | null, e?: RPointerEvent) => void;
   onParcel?: (path: string) => void;
 }) {
-  const fs = 10 / kq;
+  const fs = 11 / kq; // 11 px on the screen: the smallest text
   return (
     <g className="c-parcels">
       {layout.islands.map((i) => (
@@ -54,7 +54,7 @@ export const Parcels = memo(function Parcels({
           {i.parcels.map((p) => {
             const w = (p.x1 - p.x0) * kq;
             const h = (p.y1 - p.y0) * kq;
-            const nameFits = w >= p.name.length * 6 + 8 && h >= 17;
+            const nameFits = w >= p.name.length * 6.6 + 8 && h >= 18;
             const soundFits = nameFits && h >= 32;
             return (
               <g
