@@ -43,6 +43,19 @@ export abstract class HarborSubmit extends HarborQueue {
       return { attemptId, status: a.status, checks: run, next: a.status === "landed" ? "landed" : a.status === "underway" ? "fix-checks" : "landing-queue", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
     }
     const intent = this.intents.get(a.intentId)!;
+    const decided = await this.decideSubmitted(a, run, intent);
+    const { next, approvalAsked } = decided;
+    let { message } = decided;
+    if (left.length) message = `${message} ${notCarriedText(left)}`;
+    this.putAttempt(a);
+    this.announceSubmit(a, intent, message, approvalAsked);
+    return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked, ...this.mayAnswerOf(a, call.viewer) } : {}), clearance: this.clearanceFor(a.id) };
+  }
+
+  // ───── The steps of a submit ─────
+
+  /** What happens to work whose tests ran: back to the agent, a question to a person, or the merge queue. */
+  protected async decideSubmitted(a: T.Attempt, run: T.CheckRun, intent: T.Intent): Promise<{ next: T.SubmitResult["next"]; message: string; approvalAsked?: T.Approval }> {
     let next: T.SubmitResult["next"];
     let message: string;
     let approvalAsked: T.Approval | undefined;
@@ -78,8 +91,11 @@ export abstract class HarborSubmit extends HarborQueue {
         this.enqueueLanding(a);
       }
     }
-    if (left.length) message = `${message} ${notCarriedText(left)}`;
-    this.putAttempt(a);
+    return { next, message, approvalAsked };
+  }
+
+  /** The log line of the submit, and the webhook and push notice of a question. */
+  protected announceSubmit(a: T.Attempt, intent: T.Intent, message: string, approvalAsked?: T.Approval): void {
     this.addLog({
       kind: "submit",
       attemptId: a.id,
@@ -91,7 +107,6 @@ export abstract class HarborSubmit extends HarborQueue {
       this.webhook("approval", { attemptId: a.id, approval: approvalAsked, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) });
       this.notifyPeople(approvalAsked.approver ? [approvalAsked.approver.id] : [], "approval", Boolean(approvalAsked.ownerOnly));
     }
-    return { attemptId, status: a.status, checks: run, next, message, ...(approvalAsked ? { approval: approvalAsked, ...this.mayAnswerOf(a, call.viewer) } : {}), clearance: this.clearanceFor(a.id) };
   }
 
   /**

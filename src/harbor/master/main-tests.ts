@@ -270,67 +270,76 @@ export abstract class HarborMainTests extends HarborMergeRecord {
     this.putIntent(intent);
     const outside = agent.kind !== "builtin" && p.settings.redo !== "builtin";
     if (outside) {
-      const now = Date.now();
-      const minutes = Math.max(5, Math.min(120, Math.round(p.settings.redoWaitMinutes || 15)));
-      a.status = "underway";
-      a.landedAt = undefined;
-      a.composedChecks = undefined;
-      a.returns = (a.returns ?? 0) + 1;
-      a.returned = { at: now, until: now + minutes * 60_000, reason: why, policy: p.settings.redo === "agent-only" ? "agent-only" : "agent-first" };
-      this.putAttempt(a);
-      if (!agent.attemptId || agent.attemptId === a.id) {
-        agent.status = "underway";
-        agent.attemptId = a.id;
-        this.putAgent(agent);
-      }
-      const main = await this.loadMain();
-      let steps: string;
-      if (a.mode === "api") {
-        const moved = await this.replot(a, main).catch((e) => {
-          console.warn("replot failed", a.id, String(e));
-          return undefined;
-        });
-        const again = moved?.reapply.map((r) => r.path) ?? [];
-        steps = `Your work copy is on the new main.${again.length ? ` Read ${again.join(", ")} again, and make your change on the new text.` : ""} Fix the code so that the tests pass. Then call gitring_check and gitring_submit again.`;
-      } else {
-        steps = "Call gitring_update to get the new main. Fix the code so that the tests pass, push, then call gitring_submit again.";
-      }
-      const after = p.settings.redo === "agent-first" ? `If you do not answer in ${minutes} minutes, a built-in agent does the task again.` : `If you do not answer in ${minutes} minutes, a person decides.`;
-      this.issueCorrection(
-        a.id,
-        undefined,
-        { kind: "reverted", message: `gitring reverted the merge of your work on "${intent.title}" (${culprit.mainAfter.slice(0, 7)}): tests failed on main. ${failedText} ${steps} ${after}`, constraints: { notes: failed.slice(0, 5) } },
-        "R1-landed-has-way",
-        "revert",
-        95,
-        true,
-      );
-      await this.scheduleBudgetRetry(now + minutes * 60_000);
-      this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${name} gets its work on "${intent.title}" back with a change request: ${failedText}` });
+      await this.sendRevertedWorkBack({ a, p, intent, agent, culprit, failed, why, failedText, name });
     } else {
       a.status = "stale";
       a.stoppedFor = why;
       this.putAttempt(a);
       await this.rederive(a.id, why, SYSTEM);
     }
-    if (approvedBy) {
-      // Work that a person approved: that person hears about the revert in the inbox.
-      const now = Date.now();
-      const q: T.Question = {
-        id: newId("q"),
-        kind: "revert",
-        status: "open",
-        intentId: a.intentId,
-        attemptIds: [a.id],
-        facts: revertFacts({ title: intent.title, agent: name, approvedBy, mergeSha: culprit.mainAfter, revertSha, failed }),
-        options: [...REVERT_OPTIONS],
-        askedAt: now,
-        updatedAt: now,
-      };
-      this.putQuestion(q);
-      this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `${approvedBy} said yes to the work of ${name}. gitring tells ${approvedBy} about the revert in the inbox.` });
-      this.questionAsked(q);
+    if (approvedBy) this.tellApproverOfRevert({ a, intent, culprit, failed, revertSha, approvedBy, name });
+  }
+
+  /** An outside agent gets its work copy back on the new main, with a change request that names the failed tests. */
+  protected async sendRevertedWorkBack(f: { a: T.Attempt; p: T.Project; intent: T.Intent; agent: T.AgentInfo; culprit: T.Landing; failed: string[]; why: string; failedText: string; name: string }): Promise<void> {
+    const { a, p, intent, agent, culprit, failed, why, failedText, name } = f;
+    const now = Date.now();
+    const minutes = Math.max(5, Math.min(120, Math.round(p.settings.redoWaitMinutes || 15)));
+    a.status = "underway";
+    a.landedAt = undefined;
+    a.composedChecks = undefined;
+    a.returns = (a.returns ?? 0) + 1;
+    a.returned = { at: now, until: now + minutes * 60_000, reason: why, policy: p.settings.redo === "agent-only" ? "agent-only" : "agent-first" };
+    this.putAttempt(a);
+    if (!agent.attemptId || agent.attemptId === a.id) {
+      agent.status = "underway";
+      agent.attemptId = a.id;
+      this.putAgent(agent);
     }
+    const main = await this.loadMain();
+    let steps: string;
+    if (a.mode === "api") {
+      const moved = await this.replot(a, main).catch((e) => {
+        console.warn("replot failed", a.id, String(e));
+        return undefined;
+      });
+      const again = moved?.reapply.map((r) => r.path) ?? [];
+      steps = `Your work copy is on the new main.${again.length ? ` Read ${again.join(", ")} again, and make your change on the new text.` : ""} Fix the code so that the tests pass. Then call gitring_check and gitring_submit again.`;
+    } else {
+      steps = "Call gitring_update to get the new main. Fix the code so that the tests pass, push, then call gitring_submit again.";
+    }
+    const after = p.settings.redo === "agent-first" ? `If you do not answer in ${minutes} minutes, a built-in agent does the task again.` : `If you do not answer in ${minutes} minutes, a person decides.`;
+    this.issueCorrection(
+      a.id,
+      undefined,
+      { kind: "reverted", message: `gitring reverted the merge of your work on "${intent.title}" (${culprit.mainAfter.slice(0, 7)}): tests failed on main. ${failedText} ${steps} ${after}`, constraints: { notes: failed.slice(0, 5) } },
+      "R1-landed-has-way",
+      "revert",
+      95,
+      true,
+    );
+    await this.scheduleBudgetRetry(now + minutes * 60_000);
+    this.addLog({ kind: "stale", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${name} gets its work on "${intent.title}" back with a change request: ${failedText}` });
+  }
+
+  /** Work that a person approved: that person hears about the revert in the inbox. */
+  protected tellApproverOfRevert(f: { a: T.Attempt; intent: T.Intent; culprit: T.Landing; failed: string[]; revertSha: string; approvedBy: string; name: string }): void {
+    const { a, intent, culprit, failed, revertSha, approvedBy, name } = f;
+    const now = Date.now();
+    const q: T.Question = {
+      id: newId("q"),
+      kind: "revert",
+      status: "open",
+      intentId: a.intentId,
+      attemptIds: [a.id],
+      facts: revertFacts({ title: intent.title, agent: name, approvedBy, mergeSha: culprit.mainAfter, revertSha, failed }),
+      options: [...REVERT_OPTIONS],
+      askedAt: now,
+      updatedAt: now,
+    };
+    this.putQuestion(q);
+    this.addLog({ kind: "decision", attemptId: a.id, intentId: a.intentId, message: `${approvedBy} said yes to the work of ${name}. gitring tells ${approvedBy} about the revert in the inbox.` });
+    this.questionAsked(q);
   }
 
   /** Main fails and gitring cannot revert the merge alone: a person decides on the task of that merge. */
