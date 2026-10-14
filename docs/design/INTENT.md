@@ -14,7 +14,7 @@ The person is an **editor**, not a typist and not a referee. The screen must mak
 |---|---|---|
 | A founder or lead with several agents | Start a project and see work move. | A project exists and shows life in under one minute, with no account at another service. |
 | The same person, on a phone, away from the desk | Answer a merge question. | The question, the evidence and the two answers are on one screen. It takes less than 10 seconds. |
-| A teammate who joins | Know what happened while they were away. | History and the why-record answer "what changed and why" without a meeting. |
+| A teammate who joins | Know what happened while they were away. | History and the merge record answer "what changed and why" without a meeting. |
 | An agent's owner | Connect an agent. | One command to copy. Done. |
 | A judge or visitor | Understand the idea in one look. | The first screen shows the idea, not a list of features. |
 
@@ -75,7 +75,7 @@ All words in the product follow ASD-STE100 Simplified Technical English (see `do
 - One instruction in one sentence. At most 20 words for an instruction, 25 for a description.
 - Active voice. Buttons are verb and noun: "Merge work", "Copy command", "Answer".
 - Sentence case. No all-caps labels, except an identifier such as a callsign.
-- One word for one thing. Use the plain names: task, work copy, plan, change request, merge, merge record. The page that lists merges is "History". Do not show the code names (intent, attempt, course, correction, landing, logbook, vessel, harbor) to a person. The words "why-record" and "merge record" mean the same thing: the app says "merge record" (9 places) and only the replay says "why-record" (4 places). Use "merge record".
+- One word for one thing. Use the plain names: task, work copy, plan, change request, merge, merge record. The page that lists merges is "History". Do not show the code names (intent, attempt, course, correction, landing, logbook, vessel, harbor) to a person. The words "why-record" and "merge record" mean the same thing: the app says "merge record" (9 places) and only the replay says "why-record" (5 places). Use "merge record".
 - A product word that a stranger does not know ("train", "steward", "compose") is a code name until the screen explains it in its first sentence. Prefer the plain phrase: "Merge up to 8 work copies in one test run" and not "Largest train".
 - Host names and protocols do not belong in the first minute: "Cloudflare Artifacts", "MCP", "OAuth", "3-way merge". Put them in Settings or in the page that needs them, with the plain meaning first.
 - Name an action the same way in the button, the toast and the history. The button "Merge work" gives the toast "Work merged".

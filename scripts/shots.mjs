@@ -1,13 +1,9 @@
 #!/usr/bin/env node
-// Gives the design agent eyes: it shoots every screen of gitring in every theme and size, with real activity in the project.
-// Run it: node scripts/shots.mjs   (flags: --only, --themes, --sizes, --out, --full, --no-start; see --help)
-//
-// What it does, in order:
-//   1. builds the app when dist/client is old, and starts the local gitring on free ports (npm run dev:local);
-//   2. signs up a test person with a virtual passkey in a real Chromium;
-//   3. makes a project with real agents (scripts/meet.mjs, plus three agents with work in progress);
-//   4. saves one PNG for each screen, theme and size in tmp/shots/, and tmp/shots/index.json with the facts.
-// It stops everything that it started. It never prints or saves the key of the run.
+// Gives the design agent eyes: one picture of every screen, theme and size, with real work in the project.
+// Run it: node scripts/shots.mjs   (flags: --only, --themes, --sizes, --out, --full, --no-start; see --help).
+// Steps: build the app if it is old and start gitring; sign up a test person with a virtual passkey; make a project
+// with real agents (scripts/meet.mjs and three more); shoot each screen, theme and size into tmp/shots/ with index.json.
+// It stops what it started. It never prints or saves the key of the run.
 // Read next: scripts/shots/README.md (the modules), docs/design/README.md (how the design agent uses the shots).
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";

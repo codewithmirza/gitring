@@ -200,7 +200,7 @@ function readFocus() {
   const el = document.activeElement;
   if (!el || el === document.body) return { text: "(nothing)", none: true };
   const box = (el.closest("li, tr, [role=row], [role=listitem], [role=option]") ?? el).getBoundingClientRect();
-  const text = (el.getAttribute("aria-label") || el.textContent || el.getAttribute("placeholder") || el.tagName).trim().replace(/s+/g, " ");
+  const text = (el.getAttribute("aria-label") || el.textContent || el.getAttribute("placeholder") || el.tagName).trim().replace(/\s+/g, " ");
   const inView = box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
   window.__shotsFocused = el;
   return { text: text.slice(0, 40), inView, box: { x: box.x, y: box.y, width: box.width, height: box.height } };

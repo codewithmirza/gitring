@@ -1,4 +1,4 @@
-// Builds the web app when it is old, starts the local gitring the way `npm run dev:local` does, and stops it again.
+// Builds the app when it is old, starts the local gitring like `npm run dev:local`, and stops it again.
 // Used by: scripts/shots.mjs. It must never print the key of the run: the key stays in memory (a log line hides it).
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -91,6 +91,8 @@ export async function startLocal(root, say) {
   child.stderr.on("data", onData);
   const stop = () => killTree(child);
   process.once("exit", stop);
+  // Ctrl-C and a stop signal do not run the exit handler. Without these two lines, wrangler would keep running.
+  for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => process.exit(130));
 
   const started = Date.now();
   while (!(ready && key)) {

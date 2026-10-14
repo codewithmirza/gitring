@@ -45,7 +45,7 @@ There is no S1 finding. There are 11 S2 findings and 15 S3 findings.
 Notes on the scores:
 
 - **Keyboard (6):** the tool presses Tab up to 12 times on each of the 246 pictures and compares the picture of the focused area with and without the focus. Every stop that was in the window showed a ring: no stop without a ring. A skip link exists, and the focus moves to the heading when the page changes. On 69 pictures the page has fewer than 12 stops. The labels are read from the code. No screen reader ran.
-- **Themes (7):** Day, Dusk and Night all pass the contrast test, with two exceptions that do not depend on the theme (finding 18 and finding 9: a disabled button and a disabled-looking tool). Night is not Day turned upside down: the map keeps its colors and the diff keeps its meaning (see "Not changed"). Two more cases miss 4.5 to 1 by 0.02: the minus sign of the diff and the stage name in the replay (4.48 to 1).
+- **Themes (7):** Day, Dusk and Night all pass the contrast test, with two exceptions that fail in all three themes (finding 18 and finding 9: a disabled button and a disabled-looking tool). Night is not Day turned upside down: the map keeps its colors and the diff keeps its meaning (see "Not changed"). In Day only, two more marks miss 4.5 to 1 by 0.02: the plus sign and the minus sign of the diff on the Approve page (4.49 and 4.48 to 1).
 - **Motion (8):** the pictures are still. The CSS has ten `infinite` animations (spinners, the shimmer of skeletons, and the pulse `cx-breathe` on the Connect page). The tokens say "no loops". I did not score the check.
 - **States (4):** a 2 needs a seen empty state, a seen error state and a seen long or many-row state. Few screens have all three. A 1 does not say that the state is bad. It says that the state was not seen or is only half there.
 
@@ -117,7 +117,7 @@ Notes on the scores:
 
 ### 9. S2. "Why this line?" is the idea of the product, and it looks disabled
 
-- **What is wrong:** in a file, the button "Why?" is grey text at 2.5 to 1 contrast and 11 px (`aria-disabled` until a line is selected). Only a tooltip says "Select a line number first". The answer, once a line is selected, is very good: the merge, the task, the plan and the tests of that line.
+- **What is wrong:** in a file, the button "Why?" is grey text at 2.5 to 1 contrast in Day (3.4 to 1 in Dusk and Night) and 11 px (`aria-disabled` until a line is selected). Only a tooltip says "Select a line number first". The answer, once a line is selected, is very good: the merge, the task, the plan and the tests of that line.
 - **Why a person cares:** "understand why a change is in the code" is the third act of the editor, and this is how a person does it. Nobody finds it.
 - **Fix:** let a click on a line number open the answer at once. Keep "Why?" always enabled: with no line selected it selects the line under the caret, or the first line that an agent changed.
 - **File:** `web/src/views/code/LineHistory.tsx` (the button at lines 200 to 213), `web/src/views/CodeView.tsx` (the toolbar), `web/src/views/code/code.css` (`.cv-tool`).
@@ -133,7 +133,7 @@ Notes on the scores:
 
 ### 11. S2. On a phone the map labels cover each other
 
-- **What is wrong:** the flags SKUA-5, GANNET-3 and ALBATROSS-1 overlap; "lines" and "same lines" are cut. The map is the one bold thing of gitring, and it is the first screen of a project.
+- **What is wrong:** the flags SKUA-5, GANNET-3 and ALBATROSS-1 overlap; "lines" and "same lines" are cut. On a desktop it happens in a smaller way: the flag GANNET-3 sits on the label "/ root" (`overview-day-desktop.png`). The map is the one bold thing of gitring, and it is the first screen of a project.
 - **Why a person cares:** the map answers "who works near whom". On a phone it shows a pile of flags, and the person cannot read the one that matters.
 - **Fix:** at 600 px and below, show a callsign flag only for the selected agent and for each agent that has a change request. Show the others as dots with a tap target. Move the legend card out of the first screen.
 - **File:** `web/src/chart/layout.ts` (the placement of flags and labels), `web/src/chart/Chart.tsx`, `web/src/chart/chart.css`.
@@ -245,10 +245,10 @@ Notes on the scores:
 
 ### 25. S3. The same thing has three names, and some words are not plain
 
-- **What is wrong:** the record of a merge is "merge record" in 9 places, "why-record" in 4 places (all in the replay), and "History" as the page. The answer button says "Yes, merge" in the tray and the inbox, and "Yes, merge it" on the Approve page. The tests say "Alone" on the Approve and Task pages; only the History explains it ("Alone, in the work copy"). The History shows internal ids next to people's names ("HERON-2 continues → PETREL-9 adapts cr_xl3k2j"), and the commit message shows the trailers `Gitring-Intent`, `Gitring-Attempt`, `Gitring-Corrections`.
+- **What is wrong:** the record of a merge is "merge record" in 9 places, "why-record" in 5 places (all in the replay), and "History" as the page. The answer button says "Yes, merge" in the tray and the inbox, and "Yes, merge it" on the Approve page. The tests say "Alone" on the Approve and Task pages; only the History explains it ("Alone, in the work copy"). The History shows internal ids next to people's names ("HERON-2 continues → PETREL-9 adapts cr_xl3k2j"), and the commit message shows the trailers `Gitring-Intent`, `Gitring-Attempt`, `Gitring-Corrections`.
 - **Why a person cares:** a person learns a name once. A second name makes the person think that there is a second thing.
 - **Fix:** use "merge record" everywhere (INTENT.md now says so). Use "Yes, merge" on both pages. Write "Tests in the work copy" for "Alone". Show the ids only when a person opens "Show the raw record".
-- **File:** `web/src/views/replay/captions.ts` (lines 29, 45, 153, 181), `web/src/views/ApproveView.tsx`, `web/src/design/components/EvidenceBar.tsx`, `web/src/views/LogbookView.tsx`.
+- **File:** `web/src/views/replay/captions.ts` (lines 29, 45, 153, 181), `web/src/views/replay/Pipeline.tsx` (line 363), `web/src/views/ApproveView.tsx`, `web/src/design/components/EvidenceBar.tsx`, `web/src/views/LogbookView.tsx`.
 - **Evidence:** `replay-playing-day-desktop.png`, `approve-day-desktop.png`, `history-entry-day-desktop-full.png`.
 
 ### 26. S3. The start page shows a drawing of the idea, and "Sign in" for a person who has no account

@@ -1,4 +1,4 @@
-// The list of screens to shoot: the route of each, and the clicks that bring it into the state that a person sees.
+// The list of screens to shoot: each route, and the clicks that make the state a person sees.
 // Used by: scripts/shots.mjs. A prepare step must act like a person (click, type, press a key). It must not call the API.
 // A screen needs one phase: "out" (signed out), "empty" (signed in, no project yet) or "project" (signed in, with the seed).
 import path from "node:path";
@@ -153,7 +153,7 @@ export const SCREENS = [
   { id: "tasks-loading", phase: "project", route: (ids) => inProject("/tasks", ids), loading: true, before: slowState(8000), about: "The tasks while the project state is still on its way." },
   { id: "overview-offline", phase: "project", route: (ids) => inProject("/overview", ids), before: lostState, about: "The overview when the connection to the project fails." },
   { id: "history", phase: "project", route: (ids) => inProject("/history", ids), about: "The list of merges." },
-  { id: "history-entry", phase: "project", route: (ids) => inProject(`/history/${ids.landing}`, ids), about: "The why-record of one merge." },
+  { id: "history-entry", phase: "project", route: (ids) => inProject(`/history/${ids.landing}`, ids), about: "The merge record of one merge." },
   { id: "approve", phase: "project", route: (ids) => inProject(`/approve/${ids.attempt}`, ids), about: "The page where a person answers a merge question." },
   { id: "code", phase: "project", route: (ids) => inProject("/code", ids), about: "The code view with no file open." },
   { id: "code-file", phase: "project", route: (ids) => inProject("/code/main/src/price.js", ids), about: "One file, with the agents that work on it." },
