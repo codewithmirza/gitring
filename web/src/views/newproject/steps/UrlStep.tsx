@@ -77,7 +77,7 @@ export function UrlStep({ step, form, setForm, onBack, onStep, returnTo }: StepP
         <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} hint={form.visibility === undefined ? "Same as the repository." : undefined} />
       </div>
       {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
-      <p className="np-step__note">Cloudflare Artifacts imports the repository with its history. A large repository takes some minutes.</p>
+      <p className="np-step__note">gitring imports the repository with its history. A large repository takes some minutes.</p>
       <Submit busy={busy} label={busy ? "Please wait…" : "Create project"} />
     </form>
   );
