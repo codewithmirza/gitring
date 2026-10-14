@@ -18,8 +18,10 @@ import {
   gitAuthHeader,
   main,
   parseArgs,
+  plainText,
   readCredentials,
   rpcMessage,
+  safePage,
   serverOrigin,
   titleFrom,
   TOO_OLD,
@@ -206,9 +208,10 @@ describe("arguments", () => {
 describe("gitring login", () => {
   it("asks for a device code, polls at the given pace (slower after slow_down), and stores the tokens", async () => {
     let polls = 0;
+    let origin = "";
     const srv = await fakeServer((r) => {
       if (r.path === "/oauth/device_authorization") {
-        return { json: { device_code: "god_secret", user_code: "BCDF-GHJK", verification_uri: "x/device", verification_uri_complete: "https://g.example/device?code=BCDF-GHJK", expires_in: 600, interval: 5 } };
+        return { json: { device_code: "god_secret", user_code: "BCDF-GHJK", verification_uri: `${origin}/device`, verification_uri_complete: `${origin}/device?code=BCDF-GHJK`, expires_in: 600, interval: 5 } };
       }
       if (r.path === "/oauth/token") {
         polls++;
@@ -220,18 +223,19 @@ describe("gitring login", () => {
       if (r.path === "/api/me") return { json: { user: { id: "u_1", name: "Robin" } } };
       return { status: 404, text: "404 Not Found" };
     });
+    origin = srv.origin;
     const opened: string[] = [];
     const res = await run(["login", "--server", srv.origin, "--open"], { openUrl: (u) => void opened.push(u) });
     expect(res.err).toEqual([]);
     expect(res.code).toBe(0);
     expect(res.out).toEqual([
       "Open this page in a browser, and sign in to gitring:",
-      "  https://g.example/device?code=BCDF-GHJK",
+      `  ${srv.origin}/device?code=BCDF-GHJK`,
       "Check that the page shows this code: BCDF-GHJK",
       "The code works for 10 minutes. The command line waits for your answer.",
       `You are signed in to ${srv.origin} as Robin.`,
     ]);
-    expect(opened).toEqual(["https://g.example/device?code=BCDF-GHJK"]);
+    expect(opened).toEqual([`${srv.origin}/device?code=BCDF-GHJK`]);
     // 5 seconds, 5 seconds, then 10 seconds after slow_down.
     expect(res.sleeps).toEqual([5000, 5000, 10000, 10000]);
     const [start, ...rest] = srv.seen;
@@ -244,6 +248,29 @@ describe("gitring login", () => {
     expect(creds.servers[srv.origin]).toMatchObject({ accessToken: "goa_new", refreshToken: "gor_new", scope: "mcp", user: "Robin" });
     expect(res.out.join("\n")).not.toContain("god_secret");
     for (const line of res.out) expect(steViolations(line)).toEqual([]);
+  });
+
+  it("opens only a page of the server in the browser, with plain characters", async () => {
+    const page = (u: string) => (r: Seen): Answer =>
+      r.path === "/oauth/device_authorization"
+        ? { json: { device_code: "god_x", user_code: "BCDF-GHJK", verification_uri: u, verification_uri_complete: u, expires_in: 600, interval: 5 } }
+        : r.path === "/oauth/token"
+          ? { status: 400, json: { error: "access_denied" } }
+          : { status: 404, text: "" };
+    let answer = page("");
+    const srv = await fakeServer((r) => answer(r));
+    const opened: string[] = [];
+    answer = page(`${srv.origin}/device?code=BCDF-GHJK`);
+    await run(["login", "--server", srv.origin, "--open"], { openUrl: (u) => void opened.push(u) });
+    expect(opened).toEqual([`${srv.origin}/device?code=BCDF-GHJK`]);
+    answer = page("https://evil.example/device&calc");
+    const res = await run(["login", "--server", srv.origin, "--open"], { openUrl: (u) => void opened.push(u) });
+    expect(opened).toHaveLength(1);
+    expect(res.out).toContain("The command line did not open the page: it is not a page of your gitring. Check the address.");
+    expect(safePage("https://g.example/device?code=BCDF-GHJK", "https://g.example")).toBe(true);
+    expect(safePage("https://g.example/device?code=A&calc", "https://g.example")).toBe(false);
+    expect(safePage("https://g.example/device?code=A B", "https://g.example")).toBe(false);
+    expect(safePage("not a url", "https://g.example")).toBe(false);
   });
 
   it("says that an older server cannot do it", async () => {
@@ -475,6 +502,23 @@ describe("gitring inbox, yes and back", () => {
     expect(res.err).toEqual([`A person must answer in the gitring app. A key or an agent token cannot say yes for a person. Answer in the gitring app: ${srv.origin}/approve/a_9?project=shop`]);
   });
 
+  it("shows the rule of the project when the person may not answer, and exits 1 when the answer changed nothing", async () => {
+    let outcome = "refused";
+    const srv = await fakeServer((r) => {
+      if (r.path === "/api/me/inbox") return { json: { items: ITEMS } };
+      if (outcome === "refused") return { status: 403, json: { outcome, message: "Only an owner of the project can answer this." } };
+      return { json: { outcome, message: "Kestrel changed the work. gitring asks again when the agent submits." } };
+    });
+    signedIn(srv.origin);
+    expect(await run(["yes", "ap_7hx2"])).toMatchObject({ code: 1, err: ["Only an owner of the project can answer this."] });
+    outcome = "withdrawn";
+    expect(await run(["yes", "ap_7hx2"])).toMatchObject({ code: 1, out: ["Kestrel changed the work. gitring asks again when the agent submits."], err: [] });
+    outcome = "approved";
+    const json = await run(["yes", "ap_7hx2", "--json"]);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.out.join("\n")).outcome).toBe("approved");
+  });
+
   it("refuses an item that is not a merge question, a key that waits nowhere, and a start that fits two items", async () => {
     const srv = await fakeServer(() => ({ json: { items: ITEMS } }));
     signedIn(srv.origin);
@@ -490,7 +534,7 @@ describe("gitring inbox, yes and back", () => {
 describe("gitring clone", () => {
   it("asks for a read token and gives it to git in the environment, never in the command or the output", async () => {
     const srv = await fakeServer((r) =>
-      r.path === "/api/projects/shop/clone-token" ? { json: { remote: "https://acct.artifacts.example/git/ns/shop.git", token: "art_secret?expires=1700000000", expiresAt: "2026-10-13T18:00:00Z" } } : { status: 404, text: "" },
+      r.path === "/api/projects/shop/clone-token" ? { json: { remote: "https://acct.artifacts.example/git/ns/shop.git", branch: "main", token: "art_secret?expires=1700000000", expiresAt: "2026-10-13T18:00:00Z" } } : { status: 404, text: "" },
     );
     signedIn(srv.origin);
     const calls: { cmd: string; args: string[]; env?: Record<string, string | undefined> }[] = [];
@@ -499,7 +543,8 @@ describe("gitring clone", () => {
     expect(srv.seen[0]).toMatchObject({ method: "POST", path: "/api/projects/shop/clone-token" });
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe("git");
-    expect(calls[0].args).toEqual(["clone", "https://acct.artifacts.example/git/ns/shop.git", "my-shop"]);
+    expect(calls[0].args).toEqual(["clone", "--branch", "main", "--", "https://acct.artifacts.example/git/ns/shop.git", "my-shop"]);
+    expect(res.out[0]).toBe("gitring runs: git clone --branch main https://acct.artifacts.example/git/ns/shop.git my-shop");
     expect(calls[0].env).toMatchObject({ PATH: "/bin", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.extraHeader", GIT_CONFIG_VALUE_0: gitAuthHeader("art_secret"), GIT_TERMINAL_PROMPT: "0" });
     expect(JSON.stringify([calls[0].args, res.out, res.err])).not.toContain("art_secret");
     expect(res.out.at(-1)).toBe("gitring cloned shop into my-shop. The read token is not in the folder.");
@@ -511,6 +556,10 @@ describe("gitring clone", () => {
     signedIn(srv.origin);
     expect(await run(["clone", "shop"], { run: async () => 0 })).toMatchObject({ code: 1, err: [TOO_OLD] });
     old = false;
+    // Without a branch from the server, git takes the default branch. A folder name that starts with a dash stays a folder.
+    const args: string[][] = [];
+    expect((await run(["clone", "shop", "--", "-x"], { run: async (_cmd, a) => (args.push(a), 0) })).code).toBe(0);
+    expect(args[0]).toEqual(["clone", "--", "https://r.example/shop.git", "-x"]);
     const failed = await run(["clone", "shop"], { run: async () => 128 });
     expect(failed.err).toEqual(["git clone did not finish. Check that git 2.31 or later is installed, and read the git message above."]);
   });
@@ -567,29 +616,63 @@ describe("gitring watch", () => {
     expect(frames.find((f) => f.opcode === 0xa)?.payload.toString()).toBe("hi");
   });
 
-  it("connects again after a close, and stops when the access is gone", async () => {
+  it("connects again after a close or a change of access, and stops when the server refuses the access", async () => {
     let connections = 0;
     const srv = await fakeServer(
       () => ({ status: 404, text: "" }),
       (req, socket) => {
         connections++;
+        if (connections === 3) {
+          socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+          return;
+        }
         acceptSocket(req, socket);
         if (connections === 1) socket.end(serverFrame(0x8, Buffer.from([0x03, 0xe9])));
         else socket.end(serverFrame(0x8, Buffer.concat([Buffer.from([0x11, 0x33]), Buffer.from("Your access to this project changed.")])));
       },
     );
     signedIn(srv.origin);
-    const res = await run(["watch", "shop"], { watchRetries: 3 });
-    expect(connections).toBe(2);
-    expect(res.sleeps).toEqual([1000]);
-    expect(res.err).toEqual(["You cannot watch shop. The project does not exist, or your access changed. Your access to this project changed."]);
+    const res = await run(["watch", "shop"], { watchRetries: 5 });
+    // A deploy (1001), then a change of access (4403): the next connection shows that the access is gone.
+    expect(connections).toBe(3);
+    expect(res.sleeps).toEqual([1000, 2000]);
+    expect(res.err).toEqual(["You cannot watch shop. The project does not exist, or your access changed. The server answered 403."]);
   });
 
-  it("asks for a new sign-in when the server refuses the WebSocket with 401", async () => {
-    const srv = await fakeServer(() => ({ status: 401, json: { error: "Sign in to open this project." } }));
+  it("goes on after the person signs out in a browser: the server closes the live log, and the token still works", async () => {
+    let connections = 0;
+    const logs = [{ id: "lg_1", at: Date.UTC(2026, 9, 13, 9, 0, 0), message: "Log 1." }];
+    const srv = await fakeServer(
+      () => ({ status: 404, text: "" }),
+      (req, socket) => {
+        connections++;
+        acceptSocket(req, socket);
+        if (connections === 2) logs.push({ id: "lg_2", at: Date.UTC(2026, 9, 13, 9, 1, 0), message: "Log 2." });
+        // The third connection gives no state: the command line stops after watchRetries.
+        if (connections < 3) socket.write(serverFrame(0x1, JSON.stringify({ type: "snapshot", state: { logs } })));
+        // The first time: the sign-out of the person closes every live log (4401). Then: a deploy (1001).
+        const code = connections === 1 ? [0x11, 0x31] : [0x03, 0xe9];
+        setTimeout(() => socket.end(serverFrame(0x8, Buffer.from(code))), 20);
+      },
+    );
+    signedIn(srv.origin);
+    const res = await run(["watch", "shop"], { watchRetries: 1 });
+    expect(connections).toBe(3);
+    expect(res.sleeps).toEqual([1000, 1000]);
+    expect(res.out.slice(1).map((l) => l.slice(10))).toEqual(["Log 1.", "Log 2."]);
+    expect(res.err).toEqual(["The live log stopped. The connection closed."]);
+  });
+
+  it("renews the token once when the server refuses the WebSocket with 401, and asks for a new sign-in when that fails", async () => {
+    const srv = await fakeServer((r) => (r.path === "/oauth/token" ? { status: 400, json: { error: "invalid_grant" } } : { status: 401, json: { error: "Sign in to open this project." } }));
     signedIn(srv.origin);
     const res = await run(["watch", "shop"], { watchRetries: 0 });
     expect(res.err).toEqual([`Your sign-in to ${srv.origin} ended. Run: gitring login --server ${srv.origin}`]);
+    expect(srv.seen.map((x) => x.path)).toEqual(["/ws/shop", "/oauth/token"]);
+    expect(readCredentials(dir).servers).toEqual({});
+    // A personal key cannot be renewed.
+    const keyed = await run(["watch", "shop"], { watchRetries: 0, env: { GITRING_URL: srv.origin, GITRING_TOKEN: "gk_old" } });
+    expect(keyed.err).toEqual(["The key in GITRING_TOKEN is not valid."]);
   });
 
   it("reads and writes frames of every length form, masked and not", () => {
@@ -600,10 +683,28 @@ describe("gitring watch", () => {
       const read = wsReadFrames(Buffer.concat([masked, Buffer.from([0x81])]));
       expect(read.frames).toHaveLength(1);
       expect(read.frames[0]).toMatchObject({ fin: true, opcode: 1 });
-      expect(read.frames[0].payload.equals(payload)).toBe(true);
+      expect(Buffer.compare(read.frames[0].payload, payload)).toBe(0);
       // The start of the next frame waits for more bytes.
       expect(read.rest.length).toBe(1);
     }
+  });
+});
+
+/* ───────────── the terminal ───────────── */
+
+describe("words from other people", () => {
+  it("never bring control characters to the terminal", async () => {
+    const srv = await fakeServer(() =>
+      toolAnswer("1 open task.", { intents: [{ id: "i_1", title: "Dark mode\u001b]52;c;cm0gLXJmIH4=\u0007\u001b[2J", status: "open", attempts: 0 }] }),
+    );
+    signedIn(srv.origin);
+    const res = await run(["tasks", "shop"]);
+    expect(res.out[1]).toBe("i_1   Open    0       Dark mode]52;c;cm0gLXJmIH4=[2J");
+    expect(res.out.join("")).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    // JSON keeps the text, with the control characters escaped.
+    const json = await run(["tasks", "shop", "--json"]);
+    expect(json.out.join("\n")).toContain("\\u001b]52");
+    expect(plainText("a\tb\nc\u0000d\u009be")).toBe("a\tb\ncde");
   });
 });
 

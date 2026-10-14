@@ -254,6 +254,44 @@ describe("the command line's token at the REST API", () => {
     expect((await world.call("GET", `/api/projects/${shop}`, { key })).status).toBe(200);
   });
 
+  it("opens the live log of a project (gitring watch) for the person", async () => {
+    const { session } = await robin();
+    const token = await deviceToken(session);
+    const ws = (t: string, project: string) => send(`/ws/${project}`, { headers: { authorization: `Bearer ${t}`, upgrade: "websocket" } });
+    // The token is known: the answer is about the project, not about the sign-in.
+    const unknown = await ws(token, "no-such-project");
+    expect(unknown.status).toBe(404);
+    expect(((await unknown.json()) as { error: string }).error).toBe("This project does not exist, or you have no access to it.");
+    expect((await ws("goa_not-a-token", "no-such-project")).status).toBe(401);
+  });
+
+  it("closes the live logs when the person removes the command line in Connected apps", async () => {
+    const { session, userId, key } = await robin();
+    const made = await world.call("POST", "/api/projects", { key, body: { name: "shop", visibility: "private", source: { kind: "empty" } } });
+    const shop = made.json.project.id as string;
+    const token = await deviceToken(session);
+    const closed: unknown[][] = [];
+    const h = world.harbor(shop);
+    const real = h.closeSockets.bind(h);
+    h.closeSockets = async (...args: Parameters<typeof h.closeSockets>) => (closed.push(args), real(...args));
+    const browser = { cookie: `__Host-gitring=${session}`, headers: { origin: ORIGIN, "sec-fetch-site": "same-origin" } };
+    const grants = (await (await send("/api/oauth/grants", browser)).json()) as { id: string; clientId: string }[];
+    const cli = grants.find((g) => g.clientId === "gitring-cli")!;
+    expect((await send(`/api/oauth/grants/${cli.id}`, { ...browser, method: "DELETE" })).status).toBe(204);
+    await Promise.all(world.pending.splice(0));
+    expect(closed).toEqual([[{ userId }, 4401]]);
+    expect((await send(`/ws/${shop}`, { headers: { authorization: `Bearer ${token}`, upgrade: "websocket" } })).status).toBe(401);
+    // Another app: its tokens open no live log, so the live logs of the person stay open.
+    const reg = await world.dir.oauthRegister({ client_name: "Claude Code", redirect_uris: ["http://localhost:4567/callback"] });
+    const started = await world.dir.oauthStart({ response_type: "code", client_id: String(reg.body.client_id), redirect_uri: "http://localhost:4567/callback", code_challenge: await s256("v".repeat(50)), code_challenge_method: "S256" }, ORIGIN);
+    if (!started.ok) throw new Error("start");
+    await world.dir.oauthApprove(started.request.id, userId, ORIGIN);
+    const other = (await world.dir.oauthGrants(userId)).find((g) => g.clientId === String(reg.body.client_id))!;
+    expect((await send(`/api/oauth/grants/${other.id}`, { ...browser, method: "DELETE" })).status).toBe(204);
+    await Promise.all(world.pending.splice(0));
+    expect(closed).toHaveLength(1);
+  });
+
   it("is not open to the tokens of other apps, nor to a read-only sign-in of the command line", async () => {
     const { session, userId } = await robin();
     // An MCP app that the person allowed with the code flow: its token works at /mcp only.

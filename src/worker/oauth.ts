@@ -17,9 +17,9 @@
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
-import { directory, esc, forgetPrincipal, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
+import { closeUserSockets, directory, esc, forgetPrincipal, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
 import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
-import { DEVICE_GRANT } from "../directory/device";
+import { CLI_CLIENT_ID, DEVICE_GRANT } from "../directory/device";
 import { sameString } from "../directory/crypto";
 import { clientAddress } from "./limits";
 
@@ -327,8 +327,15 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
   app.delete("/api/oauth/grants/:id", async (c) => {
     const u = c.get("principal").user;
     if (!u) return json({ error: "Sign in first." }, 401);
-    const ok = await directory(c.env).oauthRevokeGrant(u.id, c.req.param("id"));
-    if (ok) forgetPrincipal({ userId: u.id });
+    const dir = directory(c.env);
+    const id = c.req.param("id");
+    // Of all apps, only gitring's own command line opens live logs (gitring watch): they close with it.
+    const cli = (await dir.oauthGrants(u.id)).some((g) => g.id === id && g.clientId === CLI_CLIENT_ID);
+    const ok = await dir.oauthRevokeGrant(u.id, id);
+    if (ok) {
+      forgetPrincipal({ userId: u.id });
+      if (cli) c.executionCtx.waitUntil(closeUserSockets(c.env, u.id, 4401));
+    }
     return ok ? new Response(null, { status: 204 }) : json({ error: "Unknown app." }, 404);
   });
 }

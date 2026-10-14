@@ -44,6 +44,8 @@ export function toolCallBody(name: string, args: Record<string, unknown>, id?: n
 export function age(ms: number): string;
 export function titleFrom(text: string): string;
 export function gitAuthHeader(token: string): string;
+export function plainText(text: unknown): string;
+export function safePage(url: string, origin: string): boolean;
 
 export function wsFrame(opcode: number, payload: Buffer | string): Buffer;
 export function wsReadFrames(buf: Buffer): { frames: { fin: boolean; opcode: number; payload: Buffer }[]; rest: Buffer };

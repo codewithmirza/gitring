@@ -449,6 +449,14 @@ export function age(ms) {
   return `${Math.floor(h / 24)} days`;
 }
 
+/**
+ * The text without control characters. Titles, notes and logs come from other people and agents: an escape
+ * sequence in them must not reach the terminal (it can move the cursor, hide text or write the clipboard).
+ */
+export function plainText(text) {
+  return String(text).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
 /** Rows of text in columns. */
 function table(rows) {
   if (!rows.length) return [];
@@ -469,6 +477,15 @@ export function titleFrom(text) {
 
 /* ───────────────────────── commands ───────────────────────── */
 
+/** A page of the server with only plain URL characters: safe to give to the browser of the system (no shell words). */
+export function safePage(url, origin) {
+  try {
+    return new URL(url).origin === origin && /^[A-Za-z0-9\-._~:/?=%#]+$/.test(url);
+  } catch {
+    return false;
+  }
+}
+
 async function login(ctx) {
   const creds = readCredentials(ctx.configDir);
   const raw = ctx.flags.server ?? ctx.env.GITRING_URL ?? creds.current;
@@ -483,7 +500,10 @@ async function login(ctx) {
   ctx.out(`  ${page}`);
   ctx.out(`Check that the page shows this code: ${d.user_code}`);
   ctx.out(`The code works for ${Math.max(1, Math.round(Number(d.expires_in ?? 600) / 60))} minutes. The command line waits for your answer.`);
-  if (ctx.flags.open) ctx.openUrl(page);
+  if (ctx.flags.open) {
+    if (safePage(page, origin)) ctx.openUrl(page);
+    else ctx.out("The command line did not open the page: it is not a page of your gitring. Check the address.");
+  }
   let interval = Math.max(1, Number(d.interval) || 5);
   const deadline = ctx.now() + Number(d.expires_in ?? 600) * 1000;
   let faults = 0;
@@ -690,11 +710,14 @@ async function answer(ctx, [key, note], approve) {
     answer: approve ? "approve" : "send-back",
     ...(note ? { note } : {}),
   });
+  // "refused": this person may not answer this question (the rules of the project). The gitring app does not change that.
+  if (res.status === 403 && res.json?.outcome === "refused") throw new CliError(res.json.message || errorText(res));
   if (res.status === 403) throw new CliError(`${errorText(res)} Answer in the gitring app: ${link}`);
   const out = okJson(s, res);
-  if (ctx.flags.json) return printJson(ctx, out);
-  ctx.out(out?.message ?? (approve ? "gitring took your yes." : "gitring sent the work back."));
-  return out?.outcome === "refused" ? 1 : 0;
+  if (ctx.flags.json) printJson(ctx, out);
+  else ctx.out(out?.message ?? (approve ? "gitring took your yes." : "gitring sent the work back."));
+  // "already" and "withdrawn": the answer changed nothing (another answer came first, or the work changed).
+  return out?.outcome === "approved" || out?.outcome === "sent-back" ? 0 : 1;
 }
 
 /* ───────────────────────── watch: the live log over a WebSocket ───────────────────────── */
@@ -861,11 +884,15 @@ export function openSocket(url, headers, on) {
   };
 }
 
-/** One live connection: resolves with the close code and reason. `onLive` runs when the first state arrives. */
+/**
+ * One live connection: resolves with the close code, the reason, and `opened` (false: the server refused the
+ * connection). `onLive` runs when the first state arrives.
+ */
 function watchOnce(ctx, s, project, token, seen, onLive) {
   return new Promise((resolve) => {
     let ping = null;
     let sock = null;
+    let opened = false;
     const url = `${s.origin.replace(/^http/, "ws")}/ws/${encodeURIComponent(project)}`;
     const print = (log) => {
       if (!log?.id || seen.has(log.id)) return;
@@ -875,6 +902,7 @@ function watchOnce(ctx, s, project, token, seen, onLive) {
     };
     sock = ctx.connect(url, { authorization: `Bearer ${token}` }, {
       open() {
+        opened = true;
         // The server answers "pong". It keeps the connection open through proxies.
         ping = setInterval(() => sock?.send("ping"), 30_000);
         ping.unref?.();
@@ -898,7 +926,7 @@ function watchOnce(ctx, s, project, token, seen, onLive) {
       },
       close(code, reason) {
         if (ping) clearInterval(ping);
-        resolve({ code, reason });
+        resolve({ code, reason, opened });
       },
     });
   });
@@ -909,14 +937,25 @@ async function watch(ctx, [project]) {
   const seen = new Set();
   if (!ctx.flags.json) ctx.out(`The live log of ${project}. Press Ctrl+C to stop.`);
   let tries = 0;
+  // A sign-in renews its token once when the server refuses it (bearer stops when the sign-in ended).
+  let renew = false;
+  let renewed = false;
   for (;;) {
     let live = false;
-    const { code, reason } = await watchOnce(ctx, s, project, await bearer(ctx, s), seen, () => {
+    const { code, reason, opened } = await watchOnce(ctx, s, project, await bearer(ctx, s, renew), seen, () => {
       live = true;
     });
-    if (code === 4401) throw new CliError(s.kind === "key" ? "The key in GITRING_TOKEN is not valid." : `Your sign-in to ${s.origin} ended. Run: gitring login --server ${s.origin}`);
-    if (code === 4403) throw new CliError(`You cannot watch ${project}. The project does not exist, or your access changed. ${reason}`.trim());
-    // A deploy or a restart of the project closes the connection: connect again, a little later each time.
+    renew = false;
+    if (opened) renewed = false;
+    if (!opened && code === 4401 && s.kind === "oauth" && !renewed) {
+      renew = renewed = true;
+      continue;
+    }
+    if (!opened && code === 4401) throw new CliError(s.kind === "key" ? "The key in GITRING_TOKEN is not valid." : `Your sign-in to ${s.origin} ended. Run: gitring login --server ${s.origin}`);
+    if (!opened && code === 4403) throw new CliError(`You cannot watch ${project}. The project does not exist, or your access changed. ${reason}`.trim());
+    // A deploy or a restart of the project closes the connection. So does a change of access, or a sign-out of
+    // the person in a browser (4401, 4403): the next connection shows if the access is still there.
+    // Connect again, a little later each time.
     tries = live ? 1 : tries + 1;
     if (tries > ctx.watchRetries) throw new CliError(`The live log stopped. ${reason || "The connection closed."}`.trim());
     await ctx.sleep(Math.min(30_000, 1000 * 2 ** (tries - 1)));
@@ -974,8 +1013,8 @@ export async function main(argv, io = {}) {
     env,
     processEnv: io.processEnv ?? process.env,
     fetch: io.fetch ?? ((...a) => globalThis.fetch(...a)),
-    out: io.out ?? ((line) => process.stdout.write(`${line}\n`)),
-    err: io.err ?? ((line) => process.stderr.write(`${line}\n`)),
+    out: (line) => (io.out ?? ((l) => process.stdout.write(`${l}\n`)))(plainText(line)),
+    err: (line) => (io.err ?? ((l) => process.stderr.write(`${l}\n`)))(plainText(line)),
     configDir: io.configDir ?? configDir(env, process.platform, homedir()),
     sleep: io.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
     now: io.now ?? (() => Date.now()),
