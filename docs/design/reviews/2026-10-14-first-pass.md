@@ -286,3 +286,54 @@ Leave these as they are. They are the reasons that the app does not look generic
 ## Not seen, for the next pass
 
 A history with 200 merges; the pages for a member and a viewer; an empty inbox; five or more questions at the same time; a failed or stopped passkey; the GitHub steps of a new project; the diff view of a work copy in the Code view; the answer when somebody else already answered; the "Send back" note panel. Make each appear in `scripts/shots/screens.mjs`, shoot it, and review it.
+
+## After: what changed on 15 Oct 2026
+
+Six design agents fixed the findings in six areas of `web/src`. Each fix was checked in new pictures (`node scripts/shots.mjs`), and a second agent checked it again. No server code and no API field changed. The suite is at its baseline (only the four known Windows failures).
+
+| Finding | State |
+|---|---|
+| 1 Approve link, signed out | Fixed: "Sign in to answer a merge question." and one button. No false "Offline" or "No decisions". |
+| 2 A project that does not exist | Fixed: a plain sentence, no false "Offline". |
+| 3 The tray covers the page | Fixed: on a phone the tray is a row of the page. |
+| 4 A long project name | Fixed: no sideways scroll at 320 to 1440 px. |
+| 5 The task page | Fixed: work copies first, empty sections are one quiet line. |
+| 6 Project cards | Fixed: the live fact first ("1 question waits"), the answer buttons in place. |
+| 7 Hosts and protocols in the first minute | Fixed on Projects, the git step, the start page and Connect. |
+| 8 Touch targets | Mostly fixed: a global rule for touch screens. Some links inside text are still small. |
+| 9, 10 "Why" on a line | Fixed: a click on a line number opens the answer; on a phone it is a sheet from the bottom. |
+| 11 Map labels on a phone | Fixed: flags only for the selected agent and for change requests; the others are dots. |
+| 12 Replay words and sizes | Fixed: sentence case, plain stage names, fewer sizes. |
+| 13 Facts joined with dots | Fixed in all areas that were reviewed. Some remain (see below). |
+| 14 Type sizes | Fixed in the reviewed screens: 11 px floor, 12 px on a phone. |
+| 15 One question shown three times | Fixed: the top bar shows only the Inbox badge. |
+| 16 Tab title | Fixed: "(1) Tasks · corner-shop · gitring". |
+| 17 Theme on a phone | Fixed: Day, Dusk and Night in the account menu. |
+| 18 Disabled button | Fixed, with a hint under the "Next" field. |
+| 19 80 tasks | Fixed: a filter, "Start agents" on hover and focus, groups by day. |
+| 20 Connect | Fixed: "Which agent do you use?" first, one command; about 1,300 px instead of 4,050 px. |
+| 21 The inbox card | Partly: the code logic sentence is hidden when a concrete reason shows. The full signature needs a server field. |
+| 22 Code toolbar and replay on a phone | Fixed. |
+| 23 Settings | Fixed: one section at a time, plain words. |
+| 24 One left edge | Fixed for the document pages. |
+| 25 One word for one thing | Mostly: "merge record" everywhere; the id `cr_…` still shows in the correction notice. |
+| 26 The start page | Fixed: "Start a project" and "Add gitring to your agent"; the drawing uses the vocabulary of the real map. |
+
+### Left for a person
+
+These need a server change, a decision, or a change in a shared component that no area owned.
+
+- **A server field for the inbox card (21).** `src/core/approvals.ts` should send the changed signatures, such as `cartTotal(items, currency)`.
+- **A server field `incomplete` on `GET /api/me/inbox`.** A project that is importing or restarting is dropped from the answer, so "Nothing waits for you." can be wrong for a moment.
+- **`CorrectionNotice` (25, 13).** Add a `showId` prop and switch the `cr_…` id off in the History and the lane. Drop the dot before the time. The same file and `CourseCheckReadout` still join facts with dots.
+- **The webhook event labels** "A person must say yes, or answered" are broken English. A unit test and `test/web/settings-e2e.mjs` check them, so change both together.
+- **A select cut off at 390 px:** "When the work of an outside agent cannot merge" in Settings.
+- **A dropped sentence.** "A change of comments, white space or documentation only never looks risky" went out of the Settings help to reach two sentences. It can come back as a hint.
+- **Small links in running text on a phone** ("Open the inbox", "Claude Code hook"), and the Settings section links on a desktop (17 px).
+- **The names of hosts.** The footer "Built on Cloudflare: Artifacts" and the template text "A Cloudflare Worker that answers JSON" (`src/core/templates`). `src/harbor/master/github.ts` sends "Cloudflare Artifacts" and the browser replaces it with "gitring".
+- **The order of the sign-in choices** in `web/src/app/Account.tsx`: the passkey is first, which is right, but check that the page opens with "Create an account" for a browser that has no passkey.
+- **The toast "Merged by fast-forward"** (`approvalActions`) is a method name, not words for a person.
+- **At 320 px** the replay map is cramped (about 215 px high).
+- **Not covered by pictures:** the split of the task list by day (only a unit test), the GitHub repository rows of the new project, the waitlist "Pack: price" line, a history with 200 merges, the pages of a member and a viewer, an empty inbox, five or more questions at once, a failed passkey.
+- **Browser scripts** `test/web/*-e2e.mjs` need a running app and were not run: some selectors changed.
+- **No unit test** covers `chooseTags` in `web/src/chart/tags.ts`.
