@@ -5,7 +5,8 @@
 - `harbor.ts`: the front door. The class `HarborMaster` (the last layer of the chain) with the entry points that Cloudflare calls, and the re-exports that other folders import.
 - `master/`: the chain of layers. Each layer holds the methods of one job. Start with `master/README.md`.
 - `support/`: pure functions, constants and types that the layers share. Start with `support/README.md`.
-- `derived.ts`: the derived data of main (path history, blame, search) and the history questions that read it.
+- `derived.ts`: the front door of the derived data of main (path history, blame, search) and the history questions.
+- `derived/`: the parts of the derived data: tables, tree diff, updates, answers and compare. Start with `derived/README.md`.
 - `ack-check.ts`: checks the code of a work copy when an agent confirms a change request.
 - `ids.ts`: short ids, callsigns and identity colors.
 - `steward.ts`: the steward: counts the facts of a project and finds real anomalies.
