@@ -143,7 +143,7 @@ function WhyCard({ a, path, now }: { a: WhyAnswer; path: string; now: number }) 
 function WhyPanel({ projectId, refName, path, line, version, now }: { projectId: string; refName: string; path: string; line: number; version: string; now: number }) {
   const [retry, setRetry] = useState(0);
   const res = useJson<WhyAnswer>(whyUrl(projectId, refName, path, line, version), retry);
-  if (!res || res.status === "loading") return <Wait label={`Loading the history of line ${line}`} />;
+  if (!res || res.status === "loading") return <Wait label={`Please wait for the history of line ${line}`} />;
   if (res.status === "error") return <Failed error={res.error} onRetry={() => setRetry((n) => n + 1)} />;
   return <WhyCard a={res.data} path={path} now={now} />;
 }
@@ -153,7 +153,7 @@ function WhyPanel({ projectId, refName, path, line, version, now }: { projectId:
 function HistoryPanel({ projectId, path, version, now }: { projectId: string; path: string; version: string; now: number }) {
   const [retry, setRetry] = useState(0);
   const res = useJson<HistoryAnswer>(historyUrl(projectId, path, 30, version), retry);
-  if (!res || res.status === "loading") return <Wait label={`Loading the changes of ${path}`} />;
+  if (!res || res.status === "loading") return <Wait label={`Please wait for the changes of ${path}`} />;
   if (res.status === "error") return <Failed error={res.error} onRetry={() => setRetry((n) => n + 1)} />;
   const h = res.data;
   return (

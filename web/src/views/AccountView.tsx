@@ -85,7 +85,7 @@ function AnswersIn() {
           options={APPROVALS_IN.map((v) => ({ value: v, label: APPROVALS_IN_TEXT[v].label }))}
         />
       ) : (
-        !error && <SkeletonRows rows={1} label="Loading your choice" />
+        !error && <SkeletonRows rows={1} label="Please wait for your choice" />
       )}
       {value && (
         <p className="acct-sec__lede" aria-live="polite">
@@ -223,7 +223,7 @@ function Passkeys({ now }: { now: number }) {
         </p>
       </div>
       {keys.loading && !keys.data ? (
-        <SkeletonRows rows={1} label="Loading your passkeys" />
+        <SkeletonRows rows={1} label="Please wait for your passkeys" />
       ) : keys.error ? (
         <p className="acct-error" role="alert">
           <Icon name="cross" size={14} /> gitring could not load the passkeys. {keys.error.message}{" "}
@@ -408,7 +408,7 @@ function ConnectedApps({ now }: { now: number }) {
         <p className="acct-sec__lede">Agents and apps that you allowed to use gitring as you, through MCP and OAuth. Revoke one, and it must ask you again.</p>
       </div>
       {apps.loading && !apps.data ? (
-        <SkeletonRows rows={2} label="Loading the connected apps" />
+        <SkeletonRows rows={2} label="Please wait for the connected apps" />
       ) : apps.error ? (
         <p className="acct-error" role="alert">
           <Icon name="cross" size={14} /> gitring could not load the apps. {apps.error.message}{" "}
@@ -564,7 +564,7 @@ function ApiKeys({ now }: { now: number }) {
         </div>
       )}
       {keys.loading && !keys.data ? (
-        <SkeletonRows rows={2} label="Loading the API keys" />
+        <SkeletonRows rows={2} label="Please wait for the API keys" />
       ) : keys.error ? (
         <p className="acct-error" role="alert">
           <Icon name="cross" size={14} /> gitring could not load the keys. {keys.error.message}{" "}
@@ -596,7 +596,7 @@ export function AccountView() {
         <h1 className="page__title" tabIndex={-1}>
           Account
         </h1>
-        <SkeletonRows rows={4} label="Loading your account" />
+        <SkeletonRows rows={4} label="Please wait for your account" />
       </div>
     );
   }
@@ -639,7 +639,7 @@ export function AccountView() {
           <InlineConfirm
             label="Sign out everywhere"
             ariaLabel="Sign out on every device"
-            consequence="Every browser signs out. API keys and connected apps keep working."
+            consequence="Every browser signs out. API keys and connected apps stay valid."
             confirmLabel="Sign out everywhere"
             onConfirm={() => signOutEverywhere()}
           />

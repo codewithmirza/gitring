@@ -97,7 +97,7 @@ const ChangeDiff = memo(function ChangeDiff({ attemptId, version }: { attemptId:
         </button>
       </p>
     );
-  if (!res) return <SkeletonRows rows={4} label="Loading the change" />;
+  if (!res) return <SkeletonRows rows={4} label="Please wait for the change" />;
   return <DiffView files={res.files} onlyFirstOpen={res.files.length > 5} empty="This work copy changes no file." />;
 });
 

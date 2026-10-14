@@ -191,7 +191,7 @@ function Evidence({ c, names, mainAfter }: { c: CourseCheck; names: (id: string)
           <li key={f.otherAttemptId} className="evid__item">
             <p className="evid__head">
               Near <strong className="voice-agent">{names(f.otherAttemptId)}</strong> ({f.otherState === "landed" ? "merged" : f.otherState === "waiting" ? "waits to merge" : "works"}) · distance {f.range}
-              {f.closing ? " · moving closer" : ""}
+              {f.closing ? " · closer now" : ""}
               {a ? ` · collision ${prob(a.collision)} · ${a.giveWay === "incoming" ? "this work adapts" : "the other work adapts"}` : ""}
             </p>
             {f.sharedFiles.length > 0 && (
@@ -344,7 +344,7 @@ function useLandingDetail(id: string, enabled: boolean): { detail: LandingDetail
 
 function DiffSkeleton() {
   return (
-    <div className="lskel" role="status" aria-label="Loading the diff">
+    <div className="lskel" role="status" aria-label="Please wait for the diff">
       {Array.from({ length: 8 }, (_, i) => (
         <span key={i} className="lskel__line" style={{ width: `${30 + ((i * 41) % 60)}%` }} />
       ))}
@@ -766,7 +766,7 @@ export function LogbookView({ id }: { id?: string }) {
           </ol>
         )}
         <p className="logbook__origin">
-          <Icon name="commit" size={12} /> The history starts with the import of the starting code{createdAt ? `, ${ago(createdAt, now)}` : ""}.
+          <Icon name="commit" size={12} /> The history starts with the import of the first code{createdAt ? `, ${ago(createdAt, now)}` : ""}.
         </p>
       </section>
       {id && (

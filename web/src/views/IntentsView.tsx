@@ -34,7 +34,7 @@ const SOURCE_TEXT: Record<Intent["source"]["kind"], string> = {
   ui: "the web app",
   mcp: "MCP",
   webhook: "a webhook",
-  seed: "the starting code",
+  seed: "the first code",
 };
 
 function sourceText(i: Intent): string {
@@ -169,7 +169,7 @@ function PausePanel({ intent, onClose, returnFocus }: { intent: Intent; onClose:
   };
   return (
     <InlinePanel label="Pause the task" onClose={onClose} returnFocus={returnFocus} onSubmit={() => void submit()} className="pause">
-      <p className="inline__lead">Pausing stops all work copies of this task. gitring keeps them. You can open a new task later.</p>
+      <p className="inline__lead">A pause stops all work copies of this task. gitring keeps them. You can open a new task later.</p>
       <label className="inline__label" htmlFor="pause-reason">
         Reason <span className="ink-3">(optional, the history keeps it)</span>
       </label>
@@ -184,7 +184,7 @@ function PausePanel({ intent, onClose, returnFocus }: { intent: Intent; onClose:
           Pause the task
         </Button>
         <Button size="sm" variant="ghost" onClick={onClose}>
-          Keep working
+          Keep the task active
         </Button>
       </div>
     </InlinePanel>
@@ -281,7 +281,7 @@ function LaneDiff({ attempt, onRequest }: { attempt: Attempt; onRequest?: (input
         </button>
       </p>
     );
-  if (!res) return <SkeletonRows rows={3} label="Loading the diff" />;
+  if (!res) return <SkeletonRows rows={3} label="Please wait for the diff" />;
   return <DiffView files={res.files} onRequest={onRequest} />;
 }
 

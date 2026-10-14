@@ -595,7 +595,7 @@ const server = http.createServer(async (req, res) => {
       if (body.approvalId !== ap.id) return json(res, 200, out("withdrawn", "This question is old. The work changed, and gitring asked again. Open the new question."));
       if (ap.status === "withdrawn") return json(res, 200, out("withdrawn", `This question is closed. ${ap.closed ?? ""}`.trim()));
       if (ap.status !== "waiting") return json(res, 200, out("already", `${ap.answer?.by.name ?? "A person"} ${ap.status === "approved" ? "said yes to" : "sent back"} this work already.`));
-      if (a.status !== "ready") return json(res, 200, out("withdrawn", "This work is not waiting any more."));
+      if (a.status !== "ready") return json(res, 200, out("withdrawn", "This work does not wait for an answer any more."));
 
       const note = String(body.note ?? "").trim().slice(0, 1000);
       const answer = { by: { id: user.id, name: "Robin" }, how: "app", ...(note ? { note } : {}), at: Date.now() };

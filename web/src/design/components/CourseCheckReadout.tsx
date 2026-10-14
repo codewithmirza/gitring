@@ -84,7 +84,7 @@ export function CourseCheckReadout({ check, otherAttemptId, thresholds = DEFAULT
               <span>
                 Distance {f.range}: {RANGE_TEXT[f.range]}
                 {f.previousRange !== undefined && f.previousRange !== f.range ? ` (was ${f.previousRange})` : ""}
-                {f.closing ? " · moving closer" : ""}
+                {f.closing ? " · closer now" : ""}
               </span>
               {f.sharedFiles.length > 0 && <span>files {f.sharedFiles.join(", ")}</span>}
               {f.sharedSymbols.length > 0 && <span>functions {f.sharedSymbols.map((s) => s.split("#")[1]).join(", ")}</span>}

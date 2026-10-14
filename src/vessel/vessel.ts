@@ -439,7 +439,7 @@ function briefPrompt(
 function clearanceText(clr: T.Clearance): string {
   const parts = [`gitring conflict check: ${clr.verdict === "correct" ? "change request" : clr.verdict}. ${clr.advice}`];
   if (clr.corrections.length) parts.push(correctionsText(clr.corrections));
-  if (clr.traffic.length) parts.push(`Active work near you: ${clr.traffic.map((t) => `${t.callsign} (distance ${t.range}${t.closing ? ", coming closer" : ""}) on "${t.intentTitle}"`).join("; ")}.`);
+  if (clr.traffic.length) parts.push(`Active work near you: ${clr.traffic.map((t) => `${t.callsign} (distance ${t.range}${t.closing ? ", closer now" : ""}) on "${t.intentTitle}"`).join("; ")}.`);
   return parts.join("\n");
 }
 

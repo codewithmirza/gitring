@@ -598,7 +598,7 @@ export class Directory extends DurableObject<Env> {
       callback_urls: [`${origin}/auth/github/callback`],
       setup_url: `${origin}/setup/github/installed`,
       setup_on_update: true,
-      description: "gitring: many coding agents change one codebase at the same time. Sign in, open tasks from issues, send merged code to GitHub.",
+      description: "gitring: many agents change one codebase at the same time. Sign in, open tasks from issues, send merged code to GitHub.",
       public: true,
       default_permissions: { contents: "write", pull_requests: "write", issues: "read", metadata: "read" },
       request_oauth_on_install: false,

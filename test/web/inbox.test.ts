@@ -68,6 +68,14 @@ describe("questions in the decisions list", () => {
     expect((withQ[0] as QuestionItem).detail).toBe("The work did not merge. A person decides what happens next");
   });
 
+  it("gives a revert question its own detail text", () => {
+    const st = state({ questions: [question({ kind: "revert", attemptIds: ["a1"] })] });
+    const detail = (selectJudgmentQueue(st, { id: SAM.id, role: "owner" })[0] as QuestionItem).detail;
+    expect(detail).toBe("gitring reverted a merge you said yes to. The tests failed on main. A person decides what happens next");
+    expect(detail).not.toMatch(/did not merge/);
+    expect(steViolations(detail)).toEqual([]);
+  });
+
   it("leaves out answered and closed questions", () => {
     const q = selectJudgmentQueue(state({ questions: [question({ status: "answered" }), question({ id: "q_2", status: "closed" })] }), { id: SAM.id, role: "member" });
     expect(q).toEqual([]);

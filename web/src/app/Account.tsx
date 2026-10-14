@@ -253,7 +253,7 @@ function rememberLast(kind: SignInKind) {
 /**
  * The sign-in choices. Passkeys come first: they need no outside account. Then the providers that this
  * gitring has (real provider marks, the last used first). A provider choice is a link (it leaves for the
- * provider) and shows "Opening …" until the page changes. A passkey sign-in loads `returnTo` again
+ * provider) and shows "Please wait…" until the page changes. A passkey sign-in loads `returnTo` again
  * (default: this page), so the app starts signed in, like after a provider.
  */
 export function SignInChoices({ reason, error, returnTo }: { reason?: string | null; error?: string | null; returnTo?: string }) {
@@ -273,7 +273,7 @@ export function SignInChoices({ reason, error, returnTo }: { reason?: string | n
     return () => removeEventListener("pageshow", reset);
   }, []);
   const last = lastProvider();
-  if (!me) return <SkeletonRows rows={2} label="Loading the sign-in choices" />;
+  if (!me) return <SkeletonRows rows={2} label="Please wait for the sign-in choices" />;
   const ordered = orderedProviders(me.providers, last);
   const back = returnTo ?? location.pathname + location.search;
   const canPasskey = passkeysWork();
@@ -374,7 +374,7 @@ export function SignInChoices({ reason, error, returnTo }: { reason?: string | n
                 }}
               >
                 {p === "github" ? <GitHubMark size={18} /> : <GoogleG size={18} />}
-                <span className="b-provider__text">{busy === p ? `Opening ${PROVIDER_NAME[p]}…` : `Continue with ${PROVIDER_NAME[p]}`}</span>
+                <span className="b-provider__text">{busy === p ? "Please wait…" : `Continue with ${PROVIDER_NAME[p]}`}</span>
                 {p === last && <span className="b-provider__tag">Last used</span>}
               </a>
             ))}

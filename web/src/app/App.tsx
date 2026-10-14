@@ -21,7 +21,7 @@ import { HomeView } from "../views/HomeView";
 setPreloader(V.preloadPath);
 
 const TITLES: Record<Route["name"], string> = {
-  home: "Many coding agents, one codebase",
+  home: "Many agents, one codebase",
   chart: "Overview",
   intents: "Tasks",
   logbook: "History",
@@ -267,8 +267,8 @@ function View({ route }: { route: Route }) {
 
 /** Skeletons in the shape of the view that loads. */
 function ViewSkeleton({ route }: { route: Route }) {
-  if (route.name === "intents" || route.name === "chart" || route.name === "code" || route.name === "replay") return <SkeletonSplit label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
-  return <SkeletonPage label={route.name === "approve" ? "Loading the merge question" : `Loading ${TITLES[route.name].toLowerCase()}`} />;
+  if (route.name === "intents" || route.name === "chart" || route.name === "code" || route.name === "replay") return <SkeletonSplit label={`Please wait for ${TITLES[route.name].toLowerCase()}`} />;
+  return <SkeletonPage label={route.name === "approve" ? "Please wait for the merge question" : `Please wait for ${TITLES[route.name].toLowerCase()}`} />;
 }
 
 /** Before the first project state: load it, or say why there is no project to show. */

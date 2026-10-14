@@ -93,6 +93,14 @@ export function questionHeadline(kind: Question["kind"]): string {
   return "The work did not merge";
 }
 
+/** The short line under the title of a question in the decisions list. */
+export function questionDetail(kind: Question["kind"]): string {
+  if (kind === "escalation") return "Which work adapts? A person decides";
+  if (kind === "steward") return "A note from the steward. Seen closes it";
+  if (kind === "revert") return "gitring reverted a merge you said yes to. The tests failed on main. A person decides what happens next";
+  return "The work did not merge. A person decides what happens next";
+}
+
 /** The answers when gitring reverted a merge that a person said yes to: the agent fixes it, or a built-in agent redoes it, or the task pauses. */
 export const REVERT_OPTIONS: readonly QuestionOption[] = [
   { id: "ok", label: "Understood: the agent fixes it" },

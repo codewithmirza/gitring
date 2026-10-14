@@ -171,7 +171,7 @@ function MarkCard({ lanes, line, path, now }: { lanes: Lane[]; line: number; pat
               </p>
               <p className="cv-markcard__msg voice-agent">{k.correction.message}</p>
               <p className="cv-markcard__meta">
-                {k.correction.status === "acknowledged" ? "The agent acknowledged it" : k.correction.status === "closed" ? "Closed at merge" : k.correction.status === "delivered" ? "Sent to the agent" : "Waiting to go to the agent"} ·{" "}
+                {k.correction.status === "acknowledged" ? "The agent acknowledged it" : k.correction.status === "closed" ? "Closed at merge" : k.correction.status === "delivered" ? "Sent to the agent" : "Not sent to the agent yet"} ·{" "}
                 {ago(k.correction.createdAt, now)}
               </p>
               <div className="cv-markcard__actions">
@@ -360,7 +360,7 @@ function ContextStrip({
 
 function LinesSkeleton({ rows = 18 }: { rows?: number }) {
   return (
-    <div className="cv-skel" role="status" aria-label="Loading the file">
+    <div className="cv-skel" role="status" aria-label="Please wait for the file">
       {Array.from({ length: rows }, (_, i) => (
         <span key={i} className="cv-skel__line" style={{ width: `${18 + ((i * 37) % 60)}%`, marginLeft: `${(i % 4) * 2}ch` }} />
       ))}
@@ -370,7 +370,7 @@ function LinesSkeleton({ rows = 18 }: { rows?: number }) {
 
 function TreeSkeleton() {
   return (
-    <div className="cv-skel cv-skel--tree" role="status" aria-label="Loading the files">
+    <div className="cv-skel cv-skel--tree" role="status" aria-label="Please wait for the files">
       {Array.from({ length: 12 }, (_, i) => (
         <span key={i} className="cv-skel__line" style={{ width: `${40 + ((i * 29) % 45)}%`, marginLeft: `${(i % 3) * 14}px` }} />
       ))}
@@ -1116,7 +1116,7 @@ export function CodeView() {
                 {fileSize ? <span>{kb(fileSize)}</span> : null}
                 <span>{langLabel(undefined, path)}</span>
                 <span className="cv-copied" role="status" aria-live="polite">
-                  {copied === "path" ? "Path copied" : copied === "file" ? "File copied" : copied === "link" ? "Link copied" : copied?.endsWith(":fail") ? "Copying did not work. Select the text and copy it." : ""}
+                  {copied === "path" ? "Path copied" : copied === "file" ? "File copied" : copied === "link" ? "Link copied" : copied?.endsWith(":fail") ? "The copy did not work. Select the text and copy it." : ""}
                 </span>
               </span>
               <LinePicker

@@ -79,7 +79,7 @@ export function ReplayView() {
         </div>
       ) : (
         <div className="replay__loading" role="status">
-          <span>Reading the history{load.records ? `: ${load.records.toLocaleString("en-US")} records` : ""}…</span>
+          <span>Please wait for the history{load.records ? `: ${load.records.toLocaleString("en-US")} records` : ""}…</span>
           <ProgressRule />
         </div>
       )}

@@ -148,7 +148,7 @@ export function checkSourceText(source: string): string {
 
 export const ATTEMPT_STATUS_TEXT: Record<AttemptStatus, string> = {
   declared: "Plan sent",
-  underway: "Working",
+  underway: "At work",
   submitted: "Submitted",
   checking: "Testing",
   ready: "Ready",
@@ -172,7 +172,7 @@ export const APPROVAL_STATUS_TEXT: Record<ApprovalStatus, string> = {
 export const INTENT_STATUS_TEXT: Record<IntentStatus, string> = {
   draft: "Draft",
   open: "Open",
-  underway: "Working",
+  underway: "At work",
   judging: "Needs a yes",
   landing: "Merging",
   landed: "Merged",

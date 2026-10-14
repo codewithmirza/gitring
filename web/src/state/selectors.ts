@@ -24,7 +24,7 @@ import type {
 import { noTestRan } from "../../../src/core/types";
 import type { Role } from "../../../src/core/accounts";
 import { approvalLine, canDecide } from "../../../src/core/approvals";
-import { canAnswerQuestion } from "../../../src/core/inbox";
+import { canAnswerQuestion, questionDetail } from "../../../src/core/inbox";
 import { hullName, type HullName } from "../design/icons";
 import { RANGE_TEXT } from "./format";
 
@@ -324,7 +324,7 @@ const rangeLinesMemo = memo((vessels: VesselModel[]): RangeLine[] => {
         range: r.range,
         closing: r.closing,
         tone: rangeTone(r.range, r.corrected),
-        label: `${RANGE_TEXT[r.range]}${r.closing ? " · moving closer" : ""}`,
+        label: `${RANGE_TEXT[r.range]}${r.closing ? " · closer now" : ""}`,
       });
     }
   }
@@ -478,7 +478,7 @@ const queueMemo = memo(
         kind: "question",
         intentId: q.intentId,
         title: intentById.get(q.intentId)?.title ?? "A decision needs a person",
-        detail: q.kind === "escalation" ? "Which work adapts? A person decides" : q.kind === "steward" ? "A note from the steward. Seen closes it" : "The work did not merge. A person decides what happens next",
+        detail: questionDetail(q.kind),
         question: q,
         mayAnswer: canAnswerQuestion(
           q.attemptIds.map((id) => attemptsById.get(id)?.sender),
@@ -592,7 +592,7 @@ export function selectJudgmentQueue(st: ProjectState, who: Who = {}): JudgmentIt
 
 export const INTENT_GROUPS: { id: string; label: string; statuses: IntentStatus[] }[] = [
   { id: "judging", label: "Needs a yes", statuses: ["judging"] },
-  { id: "underway", label: "Working", statuses: ["underway", "landing"] },
+  { id: "underway", label: "At work", statuses: ["underway", "landing"] },
   { id: "open", label: "Open", statuses: ["open", "draft"] },
   { id: "landed", label: "Merged", statuses: ["landed"] },
   { id: "parked", label: "Paused", statuses: ["parked", "merged-into"] },

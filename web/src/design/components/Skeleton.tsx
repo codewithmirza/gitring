@@ -22,7 +22,7 @@ function Rows({ rows }: { rows: number }) {
 }
 
 /** Rows of a list: a title line and a meta line each. */
-export function SkeletonRows({ rows = 6, label = "Loading" }: { rows?: number; label?: string }) {
+export function SkeletonRows({ rows = 6, label = "Please wait" }: { rows?: number; label?: string }) {
   return (
     <div className="b-skel-rows" role="status" aria-label={label}>
       <Rows rows={rows} />
@@ -31,7 +31,7 @@ export function SkeletonRows({ rows = 6, label = "Loading" }: { rows?: number; l
 }
 
 /** A page: a heading, a lede and blocks. */
-export function SkeletonPage({ label = "Loading" }: { label?: string }) {
+export function SkeletonPage({ label = "Please wait" }: { label?: string }) {
   return (
     <div className="b-skel-page" role="status" aria-label={label}>
       <Skeleton width={220} height={26} />
@@ -46,7 +46,7 @@ export function SkeletonPage({ label = "Loading" }: { label?: string }) {
 }
 
 /** A project view: the task rail on the left and the work area on the right. */
-export function SkeletonSplit({ label = "Loading the project" }: { label?: string }) {
+export function SkeletonSplit({ label = "Please wait for the project" }: { label?: string }) {
   return (
     <div className="b-skel-split" role="status" aria-label={label}>
       <div className="b-skel-split__rail b-skel-rows">
