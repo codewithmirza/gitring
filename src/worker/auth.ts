@@ -6,10 +6,10 @@ import type { Context, Hono } from "hono";
 import type { Env } from "./env";
 import type * as A from "../core/accounts";
 import type * as T from "../core/types";
-import { randomToken, sameString } from "../directory/crypto";
-import type { ManifestConversion } from "../directory/directory";
 import { CLI_CLIENT_ID } from "../directory/device";
 import { cliMayCall } from "./cli";
+import { randomToken, sameString } from "../directory/crypto";
+import type { ManifestConversion } from "../directory/directory";
 import { privacyBody, termsBody } from "./legal";
 
 export const SESSION_COOKIE = "__Host-gitring";
