@@ -160,18 +160,17 @@ export abstract class HarborDecisions extends HarborSubmit {
   /** "approve": the yes is stored first, then the work goes to the merge queue. */
   protected async approveWork(t: Answering): Promise<T.ApprovalResult> {
     const { a, ap, intent, who, by, note, answer, where, sign, out } = t;
-      a.approval = { ...ap, status: "approved", answer };
-      this.putAttempt(a); // the answer is stored before the merge starts
-      this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} says yes to the work of ${this.callsign(a.id)} on "${intent.title}"${where}.` });
-      this.webhook("approval", { ...sign, approval: a.approval });
-      const res = await this.landWork(a.id, note || "Approved.", by);
-      return out("approved", res.message, { ...(res.landing ? { landing: res.landing } : {}), ...(res.waits ? { waits: res.waits } : {}) });
+    a.approval = { ...ap, status: "approved", answer };
+    this.putAttempt(a); // the answer is stored before the merge starts
+    this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} says yes to the work of ${this.callsign(a.id)} on "${intent.title}"${where}.` });
+    this.webhook("approval", { ...sign, approval: a.approval });
+    const res = await this.landWork(a.id, note || "Approved.", by);
+    return out("approved", res.message, { ...(res.landing ? { landing: res.landing } : {}), ...(res.waits ? { waits: res.waits } : {}) });
   }
 
   /** "send-back": a built-in agent does the task again with the note. An outside agent gets the note as a change request. */
   protected async sendWorkBack(t: Answering): Promise<T.ApprovalResult> {
     const { a, ap, intent, who, by, note, answer, where, sign, out } = t;
-    // Send back.
     a.approval = { ...ap, status: "sent-back", answer };
     const decision = this.recordDecision({ kind: "send-back", intentId: a.intentId, attemptIds: [a.id], by, rationale: note || "Sent back without a note." });
     this.addLog({ kind: "decision", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `${who.name} sends the work of ${this.callsign(a.id)} on "${intent.title}" back${where}${note ? `: ${note}` : "."}` });

@@ -332,6 +332,8 @@ export abstract class HarborGithub extends HarborRebase {
     if (!res.changes.length && !links.length && res.headTree === main.tree) {
       return this.markPullUpToDate(repo, reason, p, res, main, n);
     }
+    // New GitHub commits: one merge commit on main, also when main already had every change (then the
+    // commit is empty), so that GitHub's history joins main's and the next sync can fast-forward.
     const message = this.upstreamMessage(repo, res, n, links);
     let committed: { sha: string; tree: string };
     try {
