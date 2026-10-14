@@ -1,5 +1,5 @@
 /*
- * The styles of the start page.
+ * The styles of the start page. The drawing of the hero has its own file: home/hero-map.css.
  * Type sizes here: 11, 13, 15, 20, 44 (28 on phones).
  */
 
@@ -10,7 +10,9 @@
 }
 .home--wait { padding-top: var(--s-10); }
 
-.home__hero { display: grid; gap: var(--s-5); justify-items: start; }
+/* The headline at the left and the drawing of the map at the right; one column when the page is narrower than 880 px (the headline needs 400 px). */
+.home__hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: var(--s-8); align-items: center; }
+.home__intro { display: grid; gap: var(--s-5); justify-items: start; min-width: 0; }
 .home__brand {
   display: inline-flex;
   align-items: center;
@@ -35,26 +37,6 @@
   color: var(--ink-2);
 }
 .home__actions { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-2); }
-
-.home__figure {
-  width: 100%;
-  margin: var(--s-6) 0 0;
-  padding: var(--s-6) var(--s-6) var(--s-4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface-1);
-}
-.home__art { display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; }
-.home__lane { fill: none; stroke: var(--vc); stroke-width: 2; stroke-linecap: round; }
-.home__main { stroke: var(--ink-2); stroke-width: 2; stroke-linecap: round; }
-.home__dot { fill: var(--surface-1); stroke: var(--vc); stroke-width: 2; }
-.home__dot--main { fill: var(--ink-2); stroke: none; }
-.home__merge { fill: var(--surface-1); stroke: var(--clear); stroke-width: 2; }
-.home__check { fill: none; stroke: var(--clear); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.home__marker { fill: var(--magenta); }
-.home__artlabel { font-family: var(--font-agent); font-size: 11px; fill: var(--ink-3); }
-.home__artlabel--cr { fill: var(--magenta); }
-.home__artlabel--ok { fill: var(--clear); }
 
 .home__sec {
   display: grid;
@@ -128,14 +110,13 @@
 .home__built { max-width: 60ch; }
 .home__links { display: flex; gap: var(--s-5); }
 
+@media (max-width: 880px) {
+  .home__hero { grid-template-columns: minmax(0, 1fr); gap: var(--s-7); }
+}
 @media (max-width: 760px) {
   .home { padding: var(--s-8) var(--s-5) var(--s-10); }
   .home__title { font-size: var(--t-xl); line-height: var(--lh-xl); }
   .home__lede { font-size: var(--t-md); line-height: var(--lh-md); }
   .home__steps { grid-template-columns: minmax(0, 1fr); }
   .home__sec { margin-top: var(--s-8); }
-}
-/* The drawing needs room for its labels: phones show the steps without it. */
-@media (max-width: 600px) {
-  .home__figure { display: none; }
 }

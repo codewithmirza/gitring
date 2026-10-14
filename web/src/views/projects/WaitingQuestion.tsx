@@ -1,0 +1,62 @@
+/**
+ * The question that waits in a project, shown on the project card with its answer in place.
+ * A merge question has "Yes, merge" right here and a link to the change. Any other question opens its task.
+ * Never answers by itself: it sends the same request as the inbox and the tray (answerApproval).
+ */
+import { useId } from "react";
+import { Button } from "../../design/components";
+import { answerApproval, useAnswering } from "../../app/approvalActions";
+import { Link } from "../../app/router";
+import { dropInboxItem, refreshInbox, type InboxItem } from "../../state/inbox";
+
+export function WaitingQuestion({ item, more }: { item: InboxItem; more: number }) {
+  const titleId = useId();
+  const sending = useAnswering(item.approvalId ?? "");
+  // The yes of a merge question is the same action that the inbox sends: the action with the id "approve".
+  const yes = item.actions.find((a) => a.id === "approve");
+  const isMerge = Boolean(yes && item.attemptId && item.approvalId);
+
+  const answer = async () => {
+    if (!item.attemptId || !item.approvalId) return;
+    const r = await answerApproval({ attemptId: item.attemptId, approvalId: item.approvalId, answer: "approve", title: item.title, projectId: item.project });
+    if (r.ok && r.kind !== "refused") {
+      dropInboxItem(item.key);
+      void refreshInbox();
+    }
+  };
+
+  return (
+    <div className="pj-ask" role="group" aria-labelledby={titleId}>
+      <p className="pj-ask__title voice-human" id={titleId}>
+        {item.title}
+      </p>
+      <p className="pj-ask__question">{item.headline}</p>
+      {item.line && (
+        <p className="pj-ask__line">
+          {item.agent && <span className="voice-agent">{item.agent}</span>} {item.line}
+        </p>
+      )}
+      <div className="pj-ask__acts">
+        {isMerge ? (
+          <>
+            <Button variant="primary" icon="merge" busy={sending === "approve"} aria-describedby={titleId} onClick={() => void answer()}>
+              {yes?.label}
+            </Button>
+            <Link to={item.link} className="pj-ask__link">
+              See the change
+            </Link>
+          </>
+        ) : (
+          <Link to={item.link} className="b-btn b-btn--primary">
+            {item.kind === "task" ? "Open the task" : "Answer the question"}
+          </Link>
+        )}
+      </div>
+      {more > 0 && (
+        <Link to="/inbox" className="pj-ask__more">
+          {more === 1 ? "1 more question in the inbox" : `${more} more questions in the inbox`}
+        </Link>
+      )}
+    </div>
+  );
+}

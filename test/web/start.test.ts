@@ -3,7 +3,7 @@
  * are plain (ASD-STE100), a description gives a name and a template, and a link opens the template step.
  */
 import { describe, expect, it } from "vitest";
-import { agentsHint, CONNECT_GITHUB_NOTE, DESCRIBE_HINT, DESCRIBE_LABEL, NEW_PROJECT_LEDE, SOURCES } from "../../web/src/views/newproject/start-text";
+import { agentsHint, CONNECT_GITHUB_NOTE, DESCRIBE_HINT, DESCRIBE_LABEL, DESCRIBE_WAIT, NEW_PROJECT_LEDE, SOURCES } from "../../web/src/views/newproject/start-text";
 import { nameFromDescription } from "../../web/src/views/newproject/match";
 import { draftFromLink, EMPTY_DRAFT, LINK_PARAMS, linkOfStep } from "../../web/src/views/newproject/draft";
 import { pickTemplate } from "../../src/core/templates";
@@ -18,10 +18,11 @@ describe("the first view of a new project", () => {
   });
 
   it("uses plain words", () => {
-    const texts = [DESCRIBE_LABEL, DESCRIBE_HINT, NEW_PROJECT_LEDE, `Connect GitHub ${CONNECT_GITHUB_NOTE}`, ...SOURCES.map((s) => s.text), ...[0, 1, 3].map(agentsHint)];
+    const texts = [DESCRIBE_LABEL, DESCRIBE_WAIT, DESCRIBE_HINT, NEW_PROJECT_LEDE, `Connect GitHub ${CONNECT_GITHUB_NOTE}`, ...SOURCES.map((s) => s.text), ...[0, 1, 3].map(agentsHint)];
     // "bring" is an STE verb, not an "-ing" form: the checker only reads the end of a word.
     expect(texts.flatMap((t) => steViolations(t)).filter((v) => !v.includes('"bring"'))).toEqual([]);
     expect(NEW_PROJECT_LEDE).toBe("Describe it, start from a template, or bring your code. Agents start at once.");
+    expect(DESCRIBE_WAIT).toBe("Describe the project to continue.");
   });
 
   it("says how many built-in agents start", () => {

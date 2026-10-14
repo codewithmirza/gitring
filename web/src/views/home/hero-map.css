@@ -1,0 +1,40 @@
+/*
+ * The styles of the drawing on the start page. They copy the look of the map (src/chart/chart.css): the same tokens, the same hairlines.
+ * The map styles load with the project pages only, so this file holds its own small copy. Text is 11 px.
+ */
+
+.hm { margin: 0; display: grid; gap: var(--s-3); min-width: 0; }
+.hm__svg { display: block; width: 100%; height: auto; max-width: 420px; }
+.hm__svg * { vector-effect: non-scaling-stroke; }
+.hm__caption { max-width: 44ch; margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+
+.hm-water { fill: var(--bg); }
+.hm-grat line { stroke: var(--graticule); stroke-width: 1; }
+.hm-rule { fill: none; stroke: var(--line-strong); stroke-width: 1; }
+.hm-bar { fill: var(--line-strong); }
+.hm-tick { font-family: var(--font-agent); font-size: 11px; font-weight: 500; fill: var(--ink-3); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+
+.hm-depth { fill: none; stroke: color-mix(in oklch, var(--accent) 22%, var(--line)); stroke-width: 1; stroke-dasharray: 1 3; }
+.hm-shoal { fill: var(--shoal); stroke: color-mix(in oklch, var(--accent) 30%, var(--shoal)); stroke-width: 1; }
+.hm-island { fill: var(--land); stroke: var(--land-edge); stroke-width: 1; }
+.hm-island__label { font-family: var(--font-agent); font-size: 11px; font-weight: 500; fill: var(--ink-2); }
+.hm-parcel { fill: transparent; stroke: color-mix(in oklch, var(--land-edge) 60%, transparent); stroke-width: 1; }
+.hm-parcel__name { font-family: var(--font-agent); font-size: 11px; font-weight: 500; fill: var(--ink-1); }
+.hm-parcel__size { font-family: var(--font-agent); font-size: 11px; fill: var(--ink-3); }
+.hm-contour { fill: none; stroke: var(--contour); stroke-width: 1; }
+
+.hm-course { fill: none; stroke: var(--vc); stroke-width: 1; stroke-dasharray: 5 4; stroke-linejoin: round; }
+.hm-waypoint { fill: var(--bg); stroke: var(--vc); stroke-width: 1; }
+
+.hm-range line { stroke: var(--magenta); stroke-width: 1; stroke-dasharray: 3 3; }
+.hm-range__bg { fill: var(--bg); stroke: var(--magenta); stroke-width: 1; }
+.hm-range__text { font-family: var(--font-agent); font-size: 11px; font-weight: 500; fill: var(--magenta); }
+
+.hm-hull { fill: var(--vc); stroke: var(--bg); stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
+.hm-heading { stroke: var(--vc); stroke-width: 1.5; }
+.hm-tag__bg { fill: color-mix(in oklch, var(--vc) 20%, var(--bg)); stroke: color-mix(in oklch, var(--vc) 55%, var(--bg)); stroke-width: 1; }
+.hm-tag__hull { fill: var(--vc); }
+.hm-tag__text { font-family: var(--font-agent); font-size: 11px; font-weight: 500; fill: var(--ink-1); letter-spacing: .02em; }
+
+.hm-buoy__mark { fill: var(--magenta); stroke: var(--bg); stroke-width: 1.5; paint-order: stroke; }
+.hm-buoy__label { font-family: var(--font-agent); font-size: 11px; font-weight: 500; fill: var(--magenta); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }

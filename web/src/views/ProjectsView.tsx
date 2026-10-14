@@ -1,55 +1,25 @@
 /**
  * The /projects page: the projects of the person, and the public ones.
  * The "New project" button grows a panel from the button (a description, then the sources). A person without projects
- * sees that picker right on the page.
+ * sees that picker right on the page. The cards are in projects/ProjectCard.tsx.
  * The project list comes from the boot request. This page asks again only when the tab comes back after a minute or more.
  */
-import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Button, EmptyState } from "../design/components";
 import { Icon } from "../design/icons";
-import type { ProjectInfo } from "../../../src/core/accounts";
-import { TEMPLATES } from "../../../src/core/templates";
-import { loadProjects, openProject, useMe } from "../state/account";
-import { ago } from "../state/format";
+import { loadProjects, useMe } from "../state/account";
+import { refreshInbox } from "../state/inbox";
 import { useStore } from "../state/store";
 import { setSearchParam, useLocationKey } from "../app/router";
 import { AnchoredPanel } from "./newproject/AnchoredPanel";
 import { NEW_PROJECT_LEDE, NewProject } from "./newproject/NewProject";
 import { draftFromLink, EMPTY_DRAFT, LINK_PARAMS, type NewProjectDraft } from "./newproject/draft";
-import { GithubMark, LockIcon, RepoIcon } from "./newproject/marks";
+import { ProjectGrid } from "./projects/ProjectCard";
 import "./projects.css";
 
 /* ───────────── helpers ───────────── */
 
 const RETURN_TO = "/projects?new=1";
-
-function sourceLine(p: ProjectInfo): string {
-  const s = p.source;
-  switch (s.kind) {
-    case "github":
-      return `${s.repo}${s.branch ? ` · ${s.branch}` : ""}`;
-    case "git":
-      return `Imported from ${s.url.replace(/^https:\/\//, "")}${s.branch ? ` · ${s.branch}` : ""}`;
-    case "empty":
-      return "Started empty";
-    case "upload":
-      return `Uploaded folder · ${s.files} ${s.files === 1 ? "file" : "files"}`;
-    case "push":
-      return "Pushed with git";
-    case "template":
-      return `From the ${TEMPLATES.find((t) => t.id === s.template)?.title ?? s.template} template`;
-    default:
-      return "Project";
-  }
-}
-
-function SourceIcon({ p }: { p: ProjectInfo }) {
-  if (p.source.kind === "github") return <GithubMark className="pj-card__icon" />;
-  if (p.source.kind === "git") return <Icon name="fork" className="pj-card__icon" />;
-  if (p.source.kind === "upload") return <Icon name="launch" className="pj-card__icon" />;
-  if (p.source.kind === "template") return <Icon name="grid" className="pj-card__icon" />;
-  return <RepoIcon className="pj-card__icon" />;
-}
 
 function clearLinkParams() {
   const params = new URLSearchParams(location.search);
@@ -104,6 +74,11 @@ export function ProjectsView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [ready, inline]);
 
+  // The cards lead with the questions that wait: load the inbox now, so that the numbers are fresh.
+  useEffect(() => {
+    if (ready && signedIn) void refreshInbox();
+  }, [ready, signedIn]);
+
   // Someone may add this person to a project meanwhile: look again when the tab comes back after a minute.
   useEffect(() => {
     let hiddenAt = 0;
@@ -130,10 +105,7 @@ export function ProjectsView() {
           <h1 className="page__title" tabIndex={-1}>
             Projects
           </h1>
-          <p className="page__lede">
-            A project is one git repository. gitring holds it in Cloudflare Artifacts. Many agents change it at the same time: gitring checks their plans and merges
-            their work when the tests pass. You say yes to risky work. Agents can also create projects through MCP. GitHub sync is optional.
-          </p>
+          <p className="page__lede">A project is the code that your agents change together.</p>
         </div>
         {ready && !inline && (
           <div className="projects__new">
@@ -205,47 +177,6 @@ function GridSkeleton() {
           <span className="np-skel" style={{ width: "55%", height: 14 }} />
           <span className="np-skel" style={{ width: "80%" }} />
           <span className="np-skel" style={{ width: "40%" }} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ProjectGrid({ list, current }: { list: ProjectInfo[]; current: string }) {
-  const open = (e: MouseEvent<HTMLAnchorElement>, id: string) => {
-    // A plain click opens the project here; a modified click opens a new tab as usual.
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    openProject(id);
-  };
-  return (
-    <ul className="pj-grid">
-      {list.map((p) => (
-        <li key={p.id}>
-          <a
-            href={`/overview?project=${encodeURIComponent(p.id)}`}
-            className={["pj-card", p.id === current && "is-current"].filter(Boolean).join(" ")}
-            aria-current={p.id === current ? "true" : undefined}
-            onClick={(e) => open(e, p.id)}
-          >
-            <span className="pj-card__top">
-              <SourceIcon p={p} />
-              <span className="pj-card__name">{p.name}</span>
-              {p.visibility === "private" && (
-                <span className="pj-card__lock" title="Private">
-                  <LockIcon size={12} />
-                  <span className="vh">Private</span>
-                </span>
-              )}
-            </span>
-            <span className="pj-card__source voice-agent">{sourceLine(p)}</span>
-            <span className="pj-card__meta">
-              {[p.visibility === "public" ? "Public" : "Private", p.role === "owner" ? "Owner" : p.role === "member" ? "Member" : "Viewer", p.ownerName && p.role !== "owner" ? p.ownerName : null, p.createdAt ? `created ${ago(p.createdAt)}` : null]
-                .filter(Boolean)
-                .join(" · ")}
-              {p.id === current ? " · open now" : ""}
-            </span>
-          </a>
         </li>
       ))}
     </ul>

@@ -520,11 +520,11 @@ step("E2. Home and Projects words");
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Where your code goes" }).waitFor();
   const home = (await page.locator("body").innerText()).replace(/\s+/g, " ");
-  check(home.includes("gitring holds the code.") && home.includes("An agent creates a project through MCP with one call.") && home.includes("GitHub is optional"), "Home: gitring holds the code, agents create projects, GitHub is optional");
+  check(home.includes("gitring holds the code.") && home.includes("An agent can start a project too.") && home.includes("GitHub is optional"), "Home: gitring holds the code, agents create projects, GitHub is optional");
   check(!/Import it from GitHub|Sign in with GitHub|Pick a repository from GitHub/.test(home), "Home: GitHub is not the way in");
   await page.goto(`${BASE}/projects`, { waitUntil: "networkidle" });
   const lede = await textOf(page.locator(".projects .page__lede"));
-  check(lede.includes("gitring holds it in Cloudflare Artifacts") && lede.includes("GitHub sync is optional."), "Projects: the lede says where the code lives", lede);
+  check(lede === "A project is the code that your agents change together." && !/Cloudflare|Artifacts|MCP/.test(lede), "Projects: the lede says what a project is, with no host name", lede);
   await ctx.close();
 }
 
@@ -712,7 +712,7 @@ for (const theme of ["day", "dusk", "night"]) {
     [".np-describe__hint", 4.5],
     [".np-start__opt .np-opt__text", 4.5],
     [".np-search__input", 4.5],
-    [".pj-card__meta", 4.5],
+    [".pj-card__facts", 4.5],
   ]) {
     const c = await contrastOf(page, sel);
     check(c !== null && c >= min, `[${theme}] ${sel} ≥ ${min}:1`, c);

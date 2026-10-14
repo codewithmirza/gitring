@@ -1,17 +1,20 @@
 /**
- * The start page ("/"): visitors read what gitring is, how it works and how to add it to their agent.
- * Then they sign in. Signed-in people go to their remembered project, else their first project,
- * else to their projects. With "/?home" they can read this page too.
+ * The start page ("/"): visitors see the idea on a drawing of the map, read how it works and how to add gitring to their agent.
+ * Then they start a project, which asks them to create an account or sign in. Signed-in people go to their remembered project,
+ * else their first project, else to their projects. With "/?home" they can read this page too.
+ * The words of the first screen stay plain: no host name and no protocol (see "Voice" in docs/design/INTENT.md).
  */
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectInfo } from "../../../src/core/accounts";
 import { Button, CodeBlock, SkeletonPage, Tabs, TabPanel } from "../design/components";
 import { Mark } from "../design/icons";
 import { useStore } from "../state/store";
 import { rememberedProject } from "../state/account";
 import { Link, navigate, useSearchParam } from "../app/router";
+import { lastProvider } from "../app/Account";
 import { openSignIn } from "../app/ui";
 import { copyMcpUrl, mcpUrl } from "../app/actions";
+import { HeroMap } from "./home/HeroMap";
 import "./home.css";
 
 /* ───────────── constants and the remembered client ───────────── */
@@ -20,7 +23,7 @@ const STEPS: { title: string; text: string }[] = [
   { title: "You write a task.", text: "A task has a goal. You can add test files that prove it." },
   {
     title: "An agent sends its plan.",
-    text: "The plan lists the files and functions that the agent will change. Agents connect through MCP: Claude, Claude Code, Codex, Cursor, or the built-in agents.",
+    text: "The plan lists the files and functions that the agent will change. Any agent can join: Claude, Claude Code, Codex, Cursor or a built-in agent.",
   },
   {
     title: "gitring checks the plan.",
@@ -28,7 +31,7 @@ const STEPS: { title: string; text: string }[] = [
   },
   {
     title: "gitring merges the work.",
-    text: "When the tests pass, gitring merges the work into main: fast-forward, 3-way merge, or a redo on the new main. A person says yes first when the project asks. Each merge keeps a record of why.",
+    text: "When the tests pass, gitring merges the work into main. A person says yes first when the project asks. Each merge keeps a record of why.",
   },
 ];
 
@@ -44,6 +47,14 @@ function readClient(): Client {
   }
 }
 
+/**
+ * What the sign-in panel says when a person chooses "Start a project". A browser that never signed in here belongs to a
+ * stranger: the panel invites that person to create an account. The order of the choices is made in app/Account.tsx.
+ */
+export function startReason(): string {
+  return lastProvider() ? "Sign in to start a project." : "New here? Create an account with a passkey. You need no password.";
+}
+
 /** The person's project for "/": the remembered one, else the first they own, else the first they are a member of. */
 export function homeProject(projects: ProjectInfo[], asked: string | null, loaded: string | null): string | null {
   const ids = new Set(projects.map((p) => p.id));
@@ -56,59 +67,12 @@ export function homeProject(projects: ProjectInfo[], asked: string | null, loade
 
 /* ───────────── parts of the page ───────────── */
 
-/** Two agents work at the same time; one gets a change request; both merge into main when the tests pass. */
-function HeroArt() {
-  const lane = (n: number) => ({ "--vc": `var(--v${n})` }) as CSSProperties;
-  return (
-    <svg className="home__art" viewBox="0 0 560 150" role="img" aria-labelledby="home-art-title">
-      <title id="home-art-title">
-        Two agents work on one codebase at the same time. gitring sends one agent a change request. The work of both agents merges into main when the tests
-        pass.
-      </title>
-      <path className="home__lane" style={lane(2)} d="M56 118 C 80 118, 80 34, 104 34 H 418 C 442 34, 446 118, 470 118" />
-      <path className="home__lane" style={lane(0)} d="M98 118 C 118 118, 118 76, 138 76 H 258 C 278 76, 282 118, 302 118" />
-      <line className="home__main" x1="20" y1="118" x2="540" y2="118" />
-      {[28, 56, 98, 540].map((x) => (
-        <circle key={x} className="home__dot home__dot--main" cx={x} cy={118} r={4} />
-      ))}
-      {[150, 214].map((x) => (
-        <circle key={x} className="home__dot" style={lane(0)} cx={x} cy={76} r={4} />
-      ))}
-      {[136, 330, 388].map((x) => (
-        <circle key={x} className="home__dot" style={lane(2)} cx={x} cy={34} r={4} />
-      ))}
-      <path className="home__marker" d="M250 26 L258 34 L250 42 L242 34 Z" />
-      <text className="home__artlabel home__artlabel--cr" x={250} y={16} textAnchor="middle">
-        change request
-      </text>
-      <text className="home__artlabel" x={150} y={62}>
-        agent 1
-      </text>
-      <text className="home__artlabel" x={136} y={20} textAnchor="middle">
-        agent 2
-      </text>
-      {[302, 470].map((x) => (
-        <g key={x} transform={`translate(${x} 118)`}>
-          <circle className="home__merge" r={8} />
-          <path className="home__check" d="M-3.5 0.5 L-1 3 L4 -2.5" />
-        </g>
-      ))}
-      <text className="home__artlabel home__artlabel--ok" x={386} y={144} textAnchor="middle">
-        tests pass · merged into main
-      </text>
-      <text className="home__artlabel" x={20} y={144}>
-        main
-      </text>
-    </svg>
-  );
-}
-
 function cursorLink(url: string): string {
   const config = btoa(JSON.stringify({ url }));
   return `cursor://anysphere.cursor-deeplink/mcp/install?name=gitring&config=${encodeURIComponent(config)}`;
 }
 
-/** How to add gitring to an agent as an MCP connector. OAuth: no key to copy. */
+/** How to add gitring to an agent with one URL. The agent signs in in the browser: no key to copy. */
 function ConnectorSteps({ signedIn }: { signedIn: boolean }) {
   const [client, setClientState] = useState<Client>(readClient);
   const url = mcpUrl();
@@ -123,7 +87,7 @@ function ConnectorSteps({ signedIn }: { signedIn: boolean }) {
   return (
     <div className="home__connect">
       <div className="home__url">
-        <span className="home__urllabel">MCP URL</span>
+        <span className="home__urllabel">URL for your agent</span>
         <code className="home__urlvalue">{url}</code>
         <Button size="sm" icon="copy" onClick={() => void copyMcpUrl()}>
           Copy URL
@@ -172,8 +136,8 @@ function ConnectorSteps({ signedIn }: { signedIn: boolean }) {
       </TabPanel>
       <TabPanel idPrefix="home-client" id="other" active={client === "other"} className="home__panel">
         <p className="home__text home__text--sm">
-          Add the URL to any MCP client that supports OAuth. It opens your browser, you sign in, and you allow it. Clients without OAuth, scripts and hooks
-          send the header <span className="code-inline">Authorization: Bearer gk_…</span> with a personal API key
+          Add the URL to the list of tools or connectors of your agent. It opens your browser, you sign in, and you allow it. A script or a hook sends the
+          header <span className="code-inline">Authorization: Bearer gk_…</span> with a personal API key
           {signedIn ? (
             <>
               {" "}
@@ -217,34 +181,38 @@ export function HomeView() {
   return (
     <div className="home">
       <section className="home__hero" aria-labelledby="home-title">
-        <p className="home__brand">
-          <Mark size={20} />
-          gitring
-        </p>
-        <h1 className="home__title" id="home-title" tabIndex={-1}>
-          Many agents. One codebase. No merge fights.
-        </h1>
-        <p className="home__lede">
-          gitring checks the plan of each agent before it writes code. It sends a change request instead of a rejection. It merges work only when the tests
-          pass, and it asks you before risky work.
-        </p>
-        <div className="home__actions">
-          {signedIn ? (
-            <Button variant="primary" icon="grid" onClick={() => navigate("/projects")}>
-              Open your projects
-            </Button>
-          ) : (
-            <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget })} aria-haspopup="dialog">
-              Sign in
-            </Button>
-          )}
-          <a className="b-btn b-btn--secondary" href="#home-connect">
-            Add gitring to your agent
-          </a>
+        <div className="home__intro">
+          <p className="home__brand">
+            <Mark size={20} />
+            gitring
+          </p>
+          <h1 className="home__title" id="home-title" tabIndex={-1}>
+            Many agents. One codebase. No merge fights.
+          </h1>
+          <p className="home__lede">
+            gitring checks the plan of each agent before it writes code. It sends a change request instead of a rejection. It merges work only when the tests
+            pass, and it asks you before risky work.
+          </p>
+          <div className="home__actions">
+            {signedIn ? (
+              <Button variant="primary" icon="grid" onClick={() => navigate("/projects")}>
+                Open your projects
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: startReason(), then: { kind: "newProject" } })}
+                aria-haspopup="dialog"
+              >
+                Start a project
+              </Button>
+            )}
+            <a className="b-btn b-btn--secondary" href="#home-connect">
+              Add gitring to your agent
+            </a>
+          </div>
         </div>
-        <figure className="home__figure">
-          <HeroArt />
-        </figure>
+        <HeroMap />
       </section>
 
       <section className="home__sec" aria-labelledby="home-how">
@@ -271,8 +239,8 @@ export function HomeView() {
           Add gitring to your agent
         </h2>
         <p className="home__text">
-          gitring is an MCP connector. Your agent adds one URL and signs in with your gitring account (OAuth). There is no key to copy. Your agent can then
-          create projects, read the open tasks, send its plan and get change requests.
+          Your agent adds one URL. It signs in with your gitring account, and there is no key to copy. Your agent can then create projects, read the open
+          tasks, send its plan and get change requests.
         </p>
         <ConnectorSteps signedIn={signedIn} />
       </section>
@@ -282,14 +250,14 @@ export function HomeView() {
           Where your code goes
         </h2>
         <p className="home__text">
-          gitring holds the code. Each project is a git repository in Cloudflare Artifacts. Describe a project or start from a template, upload a folder, push
-          with git, or import any git URL. An agent creates a project through MCP with one call. GitHub is optional. gitring can import a repository from
-          GitHub. It can also send merged code back to GitHub as a pull request, or straight to main.
+          gitring holds the code. Each project is a git repository: you can clone it and push to it. Describe a project, start from a template, upload a
+          folder, or import a git URL. An agent can start a project too. GitHub is optional: gitring can import a repository from it, and send merged code
+          back to it.
         </p>
         {!signedIn && (
           <div className="home__actions">
-            <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: "Sign in to make your first project.", then: { kind: "newProject" } })}>
-              Sign in to make a project
+            <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: startReason(), then: { kind: "newProject" } })} aria-haspopup="dialog">
+              Start a project
             </Button>
           </div>
         )}

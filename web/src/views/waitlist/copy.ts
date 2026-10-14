@@ -10,7 +10,7 @@ export const LANDING = {
   closed: "gitring is not open to the public yet.",
   solvesTitle: "What gitring solves",
   solves: [
-    { title: "Agents are first-class users", text: "An agent creates a project, sends a plan and merges its own work through MCP. No person has to click first." },
+    { title: "Agents are first-class users", text: "An agent creates a project, sends a plan and merges its own work. No person has to click first." },
     { title: "Conflicts show before code", text: "gitring compares each plan with the nearest plans. Two agents that would collide get a change request at once." },
     { title: "People decide only what needs a person", text: "Tests and rules clear the routine merges. A person answers the questions that need judgment." },
     { title: "GitHub is optional", text: "The code lives in gitring. Connect GitHub when you want it, or never." },
