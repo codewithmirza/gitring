@@ -151,10 +151,7 @@ export class RefCollector {
         this.cls(node, scope);
         return;
       case "VariableDeclaration":
-        for (const d of node.declarations) {
-          this.pattern(d.id, scope);
-          if (d.init) this.walk(d.init, scope);
-        }
+        this.variableDeclaration(node, scope);
         return;
       case "BlockStatement":
       case "StaticBlock":
@@ -201,6 +198,14 @@ export class RefCollector {
         return;
       default:
         this.children(node, scope);
+    }
+  }
+
+  /** `const`, `let` or `var`: the pattern, then the value of each declarator. */
+  private variableDeclaration(node: AnyNode, scope: Scope): void {
+    for (const d of node.declarations) {
+      this.pattern(d.id, scope);
+      if (d.init) this.walk(d.init, scope);
     }
   }
 
