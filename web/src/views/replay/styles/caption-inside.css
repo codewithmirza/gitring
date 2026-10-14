@@ -35,7 +35,7 @@
   border-radius: 999px;
   background: color-mix(in oklch, var(--stage) 14%, var(--bg));
   border: 1px solid color-mix(in oklch, var(--stage) 50%, var(--bg));
-  color: var(--stage);
+  color: color-mix(in oklch, var(--stage) 80%, var(--ink-1)); /* 4.5 to 1 on the tint, in all themes */
   font-size: var(--rp-small);
   font-weight: 500;
   white-space: nowrap;

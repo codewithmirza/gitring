@@ -54,7 +54,7 @@ export const Parcels = memo(function Parcels({
           {i.parcels.map((p) => {
             const w = (p.x1 - p.x0) * kq;
             const h = (p.y1 - p.y0) * kq;
-            const nameFits = w >= p.name.length * 7 + 8 && h >= 18;
+            const nameFits = w >= p.name.length * 6.9 + 8 && h >= 18; // a mono character is 0.6 em: 6.9 px at 11.5 px
             const soundFits = nameFits && h >= 32;
             return (
               <g
