@@ -497,6 +497,8 @@ export class OAuthStore {
       reason: e.error_description,
     });
     if (q.response_type !== "code") return back(err("unsupported_response_type", "gitring supports response_type=code."));
+    // An app that registered only the device grant never gets a code.
+    if (!client.grantTypes.includes("authorization_code")) return back(err("unauthorized_client", "This app did not register the grant type authorization_code."));
     if (!q.code_challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(q.code_challenge)) return back(err("invalid_request", "Send a PKCE code_challenge (S256)."));
     if ((q.code_challenge_method ?? "") !== "S256") return back(err("invalid_request", "code_challenge_method must be S256."));
     if (!resourceOk(q.resource, origin)) return back(err("invalid_target", resourceHint(origin)));

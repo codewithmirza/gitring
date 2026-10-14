@@ -91,6 +91,12 @@ describe("start of a device sign-in", () => {
     // The code flow still needs a redirect URI, and unknown grant types are still refused.
     expect((await s.register({ grant_types: ["authorization_code"] })).body.error).toBe("invalid_redirect_uri");
     expect((await s.register({ redirect_uris: ["https://a.example/cb"], grant_types: ["client_credentials", DEVICE_GRANT] })).body.error).toBe("invalid_client_metadata");
+    // An app with a redirect URI that registered only the device grant gets no code either.
+    const deviceOnly = await s.register({ client_name: "Device only", redirect_uris: ["https://a.example/cb"], grant_types: [DEVICE_GRANT] });
+    const asked = await s.startRequest({ client_id: String(deviceOnly.body.client_id), response_type: "code", code_challenge: await s256("v".repeat(50)), code_challenge_method: "S256", state: "st" }, O);
+    expect(asked).toMatchObject({ ok: false, reason: "This app did not register the grant type authorization_code." });
+    if (asked.ok || !("redirect" in asked)) throw new Error("redirect");
+    expect(new URL(asked.redirect).searchParams.get("error")).toBe("unauthorized_client");
   });
 
   it("knows gitring's own command line, which has no redirect URI and cannot use the code flow", async () => {
