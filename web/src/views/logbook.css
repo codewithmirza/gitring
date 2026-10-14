@@ -314,7 +314,7 @@
   .lrow .lrow__title { grid-area: title; }
   .lrow .lrow__method { grid-area: method; }
   .lrow .lrow__agent { grid-area: agent; justify-self: end; }
-  .lrow .lrow__files { grid-area: files; grid-column: auto; }
+  .lrow .lrow__files { grid-area: files; grid-column: 1 / -1; }
   .lrow .lrow__checks, .lrow .lrow__corr { display: none; }
   .lrow--header { display: none; }
   .logbook__keys { display: none; }

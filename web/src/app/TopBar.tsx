@@ -262,7 +262,8 @@ function Decisions({ route }: { route: Route }) {
   // The approve page answers one question itself: when that is the only one, the count would repeat it.
   const first = rows[0];
   const onlyThisOne = route.name === "approve" && rows.length === 1 && first.kind === "approval" && first.attemptId === route.id;
-  const quiet = rows.length === 0 || onlyThisOne || (trayShowsAll && route.name !== "replay" && route.name !== "approve");
+  // An open list stays: it holds the tray back (decisionsOpen), so the button must not leave while the person answers in it.
+  const quiet = !pop.open && (rows.length === 0 || onlyThisOne || (trayShowsAll && route.name !== "replay" && route.name !== "approve"));
   const merges = mine.every((q) => q.kind === "approval");
   const lead = merges ? `${n} ${n === 1 ? "merge waits" : "merges wait"} for you.` : `${n} ${n === 1 ? "decision needs" : "decisions need"} you.`;
   const others = w > 0 ? ` ${w} ${w === 1 ? "waits" : "wait"} for other people.` : "";
