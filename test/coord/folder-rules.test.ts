@@ -60,6 +60,25 @@ describe("matchesPattern", () => {
   });
 });
 
+describe("matchesPattern with a hostile pattern", () => {
+  it("answers fast when a pattern has many ** parts", () => {
+    const hostile = `${"**/a/".repeat(40)}b`;
+    const path = `${"a/".repeat(2000)}c`;
+    const start = Date.now();
+    expect(matchesPattern(hostile, path)).toBe(false);
+    expect(matchesPattern(`${"**/".repeat(100)}*.sql`, `${"d/".repeat(500)}x.sql`)).toBe(true);
+    expect(matchesPattern(`${"*a".repeat(100)}b`, "a".repeat(3000))).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it("keeps the meaning of ** in the middle of a name", () => {
+    expect(matchesPattern("a**b", "a/x/b")).toBe(true);
+    expect(matchesPattern("src/**/**/x.ts", "src/x.ts")).toBe(true);
+    expect(matchesPattern("src/**/**/x.ts", "src/a/b/x.ts")).toBe(true);
+    expect(matchesPattern("src/**/x.ts", "srcx.ts")).toBe(false);
+  });
+});
+
 describe("sanitizeFolderRules", () => {
   it("keeps good rules, trims patterns and drops the rest", () => {
     const out = sanitizeFolderRules([

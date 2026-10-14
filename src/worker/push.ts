@@ -50,6 +50,9 @@ export function pushEndpointOk(raw: unknown): boolean {
   }
 }
 
+/** The most time that one push may take. */
+export const PUSH_TIMEOUT_MS = 10_000;
+
 const enc = new TextEncoder();
 const keyCache = new Map<string, Promise<CryptoKey>>();
 
@@ -89,6 +92,9 @@ export async function sendPush(k: PushKeys, endpoint: string, fetcher: typeof fe
   try {
     const res = await fetcher(endpoint, {
       method: "POST",
+      // A push service answers fast; a slow or hostile address must not hold gitring. A redirect is not followed.
+      redirect: "manual",
+      signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
       headers: { authorization: await vapidAuthorization(k, endpoint), ttl: "86400", urgency: "high", "content-length": "0" },
     });
     if (res.status === 404 || res.status === 410) return "gone";

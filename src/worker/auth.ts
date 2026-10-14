@@ -713,7 +713,7 @@ function passkeyRoutes(app: Hono<HonoEnv>): void {
     const u = sessionUser(c);
     if (u instanceof Response) return u;
     try {
-      await directory(c.env).removePasskey(u.id, c.req.param("id"));
+      await directory(c.env).removePasskey(u.id, c.req.param("id"), readCookie(c.req.raw, SESSION_COOKIE) ?? undefined);
       forgetPrincipal({ userId: u.id });
       return new Response(null, { status: 204 });
     } catch (e) {

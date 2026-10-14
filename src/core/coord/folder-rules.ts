@@ -20,42 +20,92 @@ export const MAX_FOLDER_RULES = 50;
 export const MAX_PATTERN = 200;
 export const MAX_RULE_MEMBERS = 50;
 
-const cache = new Map<string, RegExp | null>();
+/** One piece of a compiled pattern. */
+type Token = { t: "lit"; c: string } | { t: "one" } | { t: "star" } | { t: "any" } | { t: "dirs" };
 
-/** The regular expression of a pattern (cached), or null for an empty pattern. */
-function regexOf(pattern: string): RegExp | null {
+interface Compiled {
+  tokens: Token[];
+  /** A name pattern (no "/") matches at any depth. */
+  anyDepth: boolean;
+}
+
+const cache = new Map<string, Compiled | null>();
+
+/** The pieces of a pattern (cached), or null for an empty pattern. */
+function compile(pattern: string): Compiled | null {
   const hit = cache.get(pattern);
   if (hit !== undefined) return hit;
   let p = pattern.trim().replace(/\\/g, "/").replace(/^\.?\/+/, "");
   if (p.endsWith("/")) p += "**";
-  let re: RegExp | null = null;
+  let out: Compiled | null = null;
   if (p) {
-    let out = "";
+    const tokens: Token[] = [];
     for (let i = 0; i < p.length; i++) {
       const c = p[i];
       if (c === "*") {
         if (p[i + 1] === "*") {
           // `**/` matches zero or more folders; `**` at the end matches the rest.
           const slash = p[i + 2] === "/";
-          out += slash ? "(?:.*/)?" : ".*";
+          const last = tokens[tokens.length - 1];
+          // Two of the same kind in a row match the same paths as one.
+          if (!(last && last.t === (slash ? "dirs" : "any"))) tokens.push({ t: slash ? "dirs" : "any" });
           i += slash ? 2 : 1;
-        } else out += "[^/]*";
-      } else if (c === "?") out += "[^/]";
-      else out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+        } else if (tokens[tokens.length - 1]?.t !== "star") tokens.push({ t: "star" });
+      } else if (c === "?") tokens.push({ t: "one" });
+      else tokens.push({ t: "lit", c });
     }
     // A name pattern (no "/") matches at any depth; a folder name also matches all that is in it.
-    const anyDepth = !p.includes("/");
-    re = new RegExp(anyDepth ? `(?:^|/)${out}(?:/|$)` : `^${out}$`);
+    out = { tokens, anyDepth: !p.includes("/") };
   }
   if (cache.size > 500) cache.clear();
-  cache.set(pattern, re);
-  return re;
+  cache.set(pattern, out);
+  return out;
+}
+
+/**
+ * Match without backtracking: for each piece, the set of places in the path where the match can be. The
+ * work is (pieces x path length), so a hostile pattern with many `**` cannot make it slow.
+ */
+function run(m: Compiled, path: string): boolean {
+  const n = path.length;
+  let cur = new Uint8Array(n + 1);
+  for (let i = 0; i <= n; i++) cur[i] = !m.anyDepth ? (i === 0 ? 1 : 0) : i === 0 || path[i - 1] === "/" ? 1 : 0;
+  for (const tok of m.tokens) {
+    const next = new Uint8Array(n + 1);
+    let live = false; // a place in the set at or before this one
+    let liveInName = false; // the same, with no "/" between it and this place
+    let any = false;
+    for (let j = 0; j <= n; j++) {
+      const ch = j > 0 ? path[j - 1] : "";
+      if (tok.t === "lit") {
+        if (j > 0 && cur[j - 1] && ch === tok.c) next[j] = 1;
+      } else if (tok.t === "one") {
+        if (j > 0 && cur[j - 1] && ch !== "/") next[j] = 1;
+      } else if (tok.t === "star") {
+        if (j > 0 && ch === "/") liveInName = false;
+        if (cur[j]) liveInName = true;
+        if (liveInName) next[j] = 1;
+      } else if (tok.t === "any") {
+        if (cur[j]) live = true;
+        if (live) next[j] = 1;
+      } else {
+        // `**/`: nothing, or any text that ends in "/".
+        if (cur[j]) next[j] = 1;
+        if (j > 0 && ch === "/" && any) next[j] = 1;
+        if (cur[j]) any = true;
+      }
+    }
+    cur = next;
+  }
+  if (!m.anyDepth) return cur[n] === 1;
+  for (let j = 0; j <= n; j++) if (cur[j] && (j === n || path[j] === "/")) return true;
+  return false;
 }
 
 /** Does the pattern match the path? */
 export function matchesPattern(pattern: string, path: string): boolean {
-  const re = regexOf(pattern);
-  return re ? re.test(path.replace(/\\/g, "/").replace(/^\.?\/+/, "")) : false;
+  const m = compile(pattern);
+  return m ? run(m, path.replace(/\\/g, "/").replace(/^\.?\/+/, "")) : false;
 }
 
 /** The rules that a path falls under, in their order. */
@@ -70,7 +120,7 @@ export function sanitizeFolderRules(raw: unknown): FolderRule[] {
   for (const r of raw) {
     if (!r || typeof r !== "object") continue;
     const pattern = typeof r.pattern === "string" ? r.pattern.trim().replace(/\s+/g, "").slice(0, MAX_PATTERN) : "";
-    if (!pattern || !regexOf(pattern)) continue;
+    if (!pattern || !compile(pattern)) continue;
     if (r.rule === "owner-yes" || r.rule === "no-yes") out.push({ pattern, rule: r.rule });
     else if (r.rule === "members") {
       const members: Person[] = [];

@@ -300,6 +300,11 @@ export { publicHostname };
 
 /* ───────────────────────── the store ───────────────────────── */
 
+/** The key of an address in the miss counter (an address cannot look like a user id). */
+function addressKey(address: string | undefined): string | null {
+  return address && address !== "unknown" ? `addr:${address}` : null;
+}
+
 export class OAuthStore {
   private readonly sql: Sql;
   private readonly now: () => number;
@@ -767,25 +772,33 @@ export class OAuthStore {
    * person: after DEVICE_MISSES_MAX of them, the page stops for a while ("locked"), so that nobody can
    * guess the codes of other people.
    */
-  async deviceLookup(raw: string, userId: string): Promise<{ ok: true; device: PendingDevice } | { ok: false; reason: "unknown" | "locked" }> {
-    if (this.deviceLocked(userId)) return { ok: false, reason: "locked" };
+  async deviceLookup(raw: string, userId: string, address?: string): Promise<{ ok: true; device: PendingDevice } | { ok: false; reason: "unknown" | "locked" }> {
+    if (this.deviceLocked(userId) || this.deviceLocked(addressKey(address))) return { ok: false, reason: "locked" };
     const code = normalizeUserCode(raw);
     const row = code ? this.pendingDevice(await sha256B64url(code)) : undefined;
     if (!code || !row) {
       this.deviceMiss(userId);
-      return { ok: false, reason: this.deviceLocked(userId) ? "locked" : "unknown" };
+      this.deviceMiss(addressKey(address));
+      return { ok: false, reason: this.deviceLocked(userId) || this.deviceLocked(addressKey(address)) ? "locked" : "unknown" };
     }
     return { ok: true, device: await this.deviceView(row, code) };
   }
 
-  /** The person allows the sign-in (a grant, as on the consent page) or not. Null when the code does not wait any more. */
-  async deviceDecide(raw: string, userId: string, allow: boolean): Promise<PendingDevice | null> {
+  /**
+   * The person allows the sign-in (a grant, as on the consent page) or not. Null when the code does not wait
+   * any more. Wrong codes count here as on the lookup, so that the answer form cannot guess codes either.
+   */
+  async deviceDecide(raw: string, userId: string, allow: boolean, address?: string): Promise<PendingDevice | null | "locked"> {
+    if (this.deviceLocked(userId) || this.deviceLocked(addressKey(address))) return "locked";
     const code = normalizeUserCode(raw);
-    if (!code) return null;
-    const userHash = await sha256B64url(code);
+    const userHash = code ? await sha256B64url(code) : "";
     // No await from the read to the write: only the first answer counts.
-    const row = this.pendingDevice(userHash);
-    if (!row) return null;
+    const row = code ? this.pendingDevice(userHash) : undefined;
+    if (!code || !row) {
+      this.deviceMiss(userId);
+      this.deviceMiss(addressKey(address));
+      return null;
+    }
     if (allow) {
       const grant = this.grantFor(userId, row.client_id, row.scope);
       this.sql.exec("UPDATE oauth_devices SET status = 'allowed', user_id = ?, grant_id = ? WHERE hash = ?", userId, grant, row.hash);
@@ -854,20 +867,22 @@ export class OAuthStore {
     return this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_devices WHERE created_at > ?", hourAgo).one().n >= MAX_DEVICES_PER_HOUR;
   }
 
-  private deviceLocked(userId: string): boolean {
-    const m = this.deviceMisses.get(userId);
+  private deviceLocked(key: string | null): boolean {
+    if (!key) return false;
+    const m = this.deviceMisses.get(key);
     if (!m) return false;
     if (this.now() - m.since > DEVICE_MISSES_WINDOW_MS) {
-      this.deviceMisses.delete(userId);
+      this.deviceMisses.delete(key);
       return false;
     }
     return m.n >= DEVICE_MISSES_MAX;
   }
 
-  private deviceMiss(userId: string): void {
-    const m = this.deviceMisses.get(userId);
+  private deviceMiss(key: string | null): void {
+    if (!key) return;
+    const m = this.deviceMisses.get(key);
     if (m && this.now() - m.since <= DEVICE_MISSES_WINDOW_MS) m.n++;
-    else this.deviceMisses.set(userId, { n: 1, since: this.now() });
+    else this.deviceMisses.set(key, { n: 1, since: this.now() });
     if (this.deviceMisses.size > 10_000) this.deviceMisses.clear();
   }
 

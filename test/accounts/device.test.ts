@@ -128,7 +128,7 @@ describe("the person's answer and the program's token requests", () => {
     const seen = await s.deviceLookup(d.user_code, "u_1");
     expect(seen).toMatchObject({ ok: true, device: { userCode: d.user_code, clientId: CLI_CLIENT_ID, clientName: "gitring command line", builtin: true, scope: "mcp", address: "203.0.113.9" } });
     const allowed = await s.deviceDecide(d.user_code.toLowerCase(), "u_1", true);
-    expect(allowed?.builtin).toBe(true);
+    expect((allowed as { builtin: boolean } | null)?.builtin).toBe(true);
     // A second answer finds no waiting code.
     expect(await s.deviceDecide(d.user_code, "u_1", false)).toBeNull();
     expect((await s.deviceLookup(d.user_code, "u_1")).ok).toBe(false);
@@ -165,7 +165,7 @@ describe("the person's answer and the program's token requests", () => {
   it("answers access_denied after Cancel, and expired_token after 10 minutes", async () => {
     const { s, tick } = store();
     const denied = (await start(s)).body;
-    expect((await s.deviceDecide(denied.user_code, "u_1", false))?.userCode).toBe(denied.user_code);
+    expect(((await s.deviceDecide(denied.user_code, "u_1", false)) as { userCode: string } | null)?.userCode).toBe(denied.user_code);
     expect((await poll(s, denied.device_code)).body.error).toBe("access_denied");
     const late = (await start(s)).body;
     tick(DEVICE_TTL_S * 1000 + 1);
@@ -216,6 +216,19 @@ describe("the person's answer and the program's token requests", () => {
     tick(10 * 60_000 + 1);
     const later = (await start(s)).body;
     expect((await s.deviceLookup(later.user_code, "u_guess")).ok).toBe(true);
+  });
+
+  it("counts wrong codes on the answer form too, per person and per address", async () => {
+    const { s } = store();
+    const d = (await start(s)).body;
+    for (let i = 0; i < 10; i++) expect(await s.deviceDecide("BBBB-BBBB", "u_guess", true, "198.51.100.1")).toBeNull();
+    // This person is locked now, also for the right code.
+    expect(await s.deviceDecide(d.user_code, "u_guess", true, "198.51.100.1")).toBe("locked");
+    expect(await s.deviceLookup(d.user_code, "u_guess")).toEqual({ ok: false, reason: "locked" });
+    // The same address is locked for other people.
+    expect(await s.deviceDecide(d.user_code, "u_other", true, "198.51.100.1")).toBe("locked");
+    // Another person from another address is not.
+    expect(((await s.deviceDecide(d.user_code, "u_1", true, "198.51.100.2")) as { userCode: string } | null)?.userCode).toBe(d.user_code);
   });
 
   it("never stores the device code or the user code in clear text", async () => {
