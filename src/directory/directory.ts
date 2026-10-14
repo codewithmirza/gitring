@@ -3,6 +3,7 @@
  * who may do what, and the sealed credentials of the sign-in providers.
  *
  *   users + identities   one person, one or more sign-ins (GitHub, Google)
+ *   passkeys             WebAuthn credentials (src/directory/passkeys.ts): a person may have passkeys only
  *   sessions             browser sessions (only a SHA-256 of the cookie token is stored)
  *   api_keys             personal keys for MCP clients, hooks and scripts (only a hash is stored)
  *   projects + members   project registry and roles (owner, member, viewer); invites by login or email
@@ -21,6 +22,7 @@ import { rand } from "../harbor/ids";
 import { githubAppJwt, randomToken, sameString, seal, sha256B64url, unseal } from "./crypto";
 import { OAuthStore, type JsonObject, type PendingRequest, type TokenAnswer } from "./oauth";
 import { pushEndpointOk, pushKeys, sendPush } from "../worker/push";
+import { credentialIdOf, PASSKEY_ALGS, PASSKEY_SCHEMA, PasskeyError, signCountOk, userHandleOf, verifyAssertion, verifyRegistration, type NewPasskey, type PasskeyAlg } from "./passkeys";
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, avatar TEXT, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL)`,
@@ -52,6 +54,9 @@ const SCHEMA = [
 
 const SESSION_MS = 30 * 24 * 3600_000;
 const STATE_MS = 15 * 60_000;
+/** A passkey challenge works once, for 5 minutes. */
+const PASSKEY_STATE_MS = 5 * 60_000;
+const MAX_PASSKEYS_PER_USER = 20;
 const MAX_PROJECTS_PER_USER = 20;
 const MAX_KEYS_PER_USER = 20;
 /** Devices with push notifications for one person. A new one replaces the oldest. */
@@ -122,7 +127,9 @@ type ProjectRow = {
 
 type StateData =
   | { kind: "manifest"; origin: string }
-  | { kind: "signin"; provider: A.Provider; origin: string; returnTo: string; verifier?: string; nonce?: string; linkUserId?: string };
+  | { kind: "signin"; provider: A.Provider; origin: string; returnTo: string; verifier?: string; nonce?: string; linkUserId?: string }
+  /** create: a new account named `name`; add: the signed-in person `userId` adds a passkey; login: sign in. */
+  | { kind: "passkey"; mode: "create" | "add" | "login"; challenge: string; origin: string; rpId: string; userId?: string; name?: string };
 
 /** A profile from a provider, after the code exchange. */
 interface Profile {
@@ -176,6 +183,7 @@ export class Directory extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     for (const s of SCHEMA) this.sql.exec(s);
+    for (const s of PASSKEY_SCHEMA) this.sql.exec(s);
     this.oauth = new OAuthStore({ sql: this.sql as never });
   }
 
@@ -533,11 +541,11 @@ export class Directory extends DurableObject<Env> {
 
   /* ════════════════════ one-time states (OAuth, manifest) ════════════════════ */
 
-  private putState(data: StateData): string {
+  private putState(data: StateData, ttl = STATE_MS): string {
     const state = randomToken(24);
     const now = Date.now();
     this.sql.exec("DELETE FROM states WHERE expires_at < ?", now);
-    this.sql.exec("INSERT INTO states (state, data, expires_at) VALUES (?, ?, ?)", state, JSON.stringify(data), now + STATE_MS);
+    this.sql.exec("INSERT INTO states (state, data, expires_at) VALUES (?, ?, ?)", state, JSON.stringify(data), now + ttl);
     return state;
   }
 
@@ -816,6 +824,194 @@ export class Directory extends DurableObject<Env> {
     return userId;
   }
 
+  /* ════════════════════ passkeys (WebAuthn) ════════════════════ */
+
+  /** A one-time passkey state: null when it is unknown, expired, used, or of another kind. */
+  private takePasskeyState(state: string): Extract<StateData, { kind: "passkey" }> | null {
+    const row = this.sql.exec<{ data: string; expires_at: number }>("SELECT data, expires_at FROM states WHERE state = ?", String(state ?? "")).toArray()[0];
+    if (!row) return null;
+    this.sql.exec("DELETE FROM states WHERE state = ?", String(state ?? ""));
+    const data = JSON.parse(row.data) as StateData;
+    return row.expires_at >= Date.now() && data.kind === "passkey" ? data : null;
+  }
+
+  private passkeyRows(userId: string) {
+    return this.sql
+      .exec<{ id: string; name: string; transports: string | null; created_at: number; last_used: number | null }>("SELECT id, name, transports, created_at, last_used FROM passkeys WHERE user_id = ? ORDER BY created_at", userId)
+      .toArray();
+  }
+
+  /** A new browser session for a person (only a SHA-256 of the token is stored). */
+  private async openSession(userId: string): Promise<string> {
+    const token = randomToken(32);
+    const hash = await sha256B64url(token);
+    const now = Date.now();
+    this.sql.exec("DELETE FROM sessions WHERE expires_at < ?", now);
+    this.sql.exec("INSERT INTO sessions (hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", hash, userId, now, now + SESSION_MS);
+    return token;
+  }
+
+  /**
+   * Options for navigator.credentials.create(). With `userId` (a signed-in person), the passkey joins
+   * that person; else it makes a new account with the display name `name`. `origin` and `rpId` come
+   * from the request (the RP id is its host name). Returns the one-time state for the browser cookie.
+   */
+  async passkeyRegisterOptions(input: { origin: string; rpId: string; name?: string; userId?: string }): Promise<{ state: string; options: A.PasskeyCreationOptions }> {
+    let mode: "create" | "add";
+    let userId: string;
+    let name: string;
+    let account: string;
+    let exclude: A.PasskeyDescriptor[] = [];
+    if (input.userId) {
+      const user = this.userInfo(input.userId);
+      if (!user) throw new Error("Sign in again, then add the passkey.");
+      const rows = this.passkeyRows(user.id);
+      if (rows.length >= MAX_PASSKEYS_PER_USER) throw new Error(`You have ${MAX_PASSKEYS_PER_USER} passkeys. Remove one first.`);
+      mode = "add";
+      userId = user.id;
+      name = user.name;
+      account = user.email ?? user.name;
+      // The browser makes no second passkey for this account on an authenticator that has one.
+      exclude = rows.map((r) => ({ type: "public-key", id: r.id, ...transportsOf(r.transports) }));
+    } else {
+      name = cleanName(input.name);
+      if (!name) throw new Error("Give your name. Other people in your projects see it.");
+      mode = "create";
+      userId = `u_${rand(10)}`;
+      while (this.userInfo(userId)) userId = `u_${rand(10)}`;
+      account = name;
+    }
+    const challenge = randomToken(32);
+    const state = this.putState({ kind: "passkey", mode, challenge, origin: input.origin, rpId: input.rpId, userId, name }, PASSKEY_STATE_MS);
+    return {
+      state,
+      options: {
+        challenge,
+        rp: { id: input.rpId, name: "gitring" },
+        user: { id: userHandleOf(userId), name: account, displayName: name },
+        pubKeyCredParams: PASSKEY_ALGS.map((alg) => ({ type: "public-key" as const, alg })),
+        timeout: PASSKEY_STATE_MS,
+        attestation: "none",
+        authenticatorSelection: { residentKey: "required", requireResidentKey: true, userVerification: "preferred" },
+        excludeCredentials: exclude,
+      },
+    };
+  }
+
+  /**
+   * Check the browser's new passkey and keep it. A new account opens a session (`token`); a passkey that
+   * a signed-in person added opens none. `userId` is the person who is signed in now (or none), `label`
+   * the name that the browser suggests for the passkey.
+   */
+  async passkeyRegister(state: string, credential: unknown, opts: { origin: string; userId?: string; label?: string }): Promise<{ token: string | null; user: A.UserInfo; passkey: A.PasskeyInfo }> {
+    const st = this.takePasskeyState(state);
+    if (!st || st.mode === "login" || !st.userId) throw new Error("The passkey request expired or was used already. Start again.");
+    if (st.origin !== opts.origin) throw new Error("The passkey request is for another site. Start again.");
+    if (st.mode === "add" && st.userId !== opts.userId) throw new Error("Sign in again, then add the passkey.");
+    let pk: NewPasskey;
+    try {
+      pk = await verifyRegistration(credential, { challenge: st.challenge, origin: st.origin, rpId: st.rpId });
+    } catch (e) {
+      throw new Error(e instanceof PasskeyError ? e.message : "gitring could not read the passkey. Try again.");
+    }
+    if (this.sql.exec("SELECT id FROM passkeys WHERE id = ?", pk.id).toArray()[0]) throw new Error("gitring has this passkey already. Sign in with it.");
+    const userId = st.userId;
+    const now = Date.now();
+    if (st.mode === "create") {
+      if (this.userInfo(userId)) throw new Error("The passkey request was used already. Start again.");
+      this.sql.exec("INSERT INTO users (id, name, email, avatar, created_at, last_seen) VALUES (?, ?, NULL, NULL, ?, ?)", userId, st.name || "gitring user", now, now);
+    } else if (!this.userInfo(userId)) {
+      throw new Error("Sign in again, then add the passkey.");
+    } else if (this.passkeyRows(userId).length >= MAX_PASSKEYS_PER_USER) {
+      throw new Error(`You have ${MAX_PASSKEYS_PER_USER} passkeys. Remove one first.`);
+    }
+    const name = cleanName(opts.label) || "Passkey";
+    const lastUsed = st.mode === "create" ? now : null;
+    this.sql.exec(
+      "INSERT INTO passkeys (id, user_id, public_key, alg, sign_count, transports, name, created_at, last_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      pk.id,
+      userId,
+      JSON.stringify(pk.jwk),
+      pk.alg,
+      pk.signCount,
+      pk.transports.length ? JSON.stringify(pk.transports) : null,
+      name,
+      now,
+      lastUsed,
+    );
+    const token = st.mode === "create" ? await this.openSession(userId) : null;
+    return { token, user: this.userInfo(userId)!, passkey: { id: pk.id, name, createdAt: now, ...(lastUsed ? { lastUsed } : {}) } };
+  }
+
+  /**
+   * Options for navigator.credentials.get(). allowCredentials stays empty: every gitring passkey is a
+   * discoverable credential, so the browser offers the passkeys that it has for this site. (A typed
+   * name would also tell anyone which names have an account.)
+   */
+  async passkeyLoginOptions(input: { origin: string; rpId: string }): Promise<{ state: string; options: A.PasskeyRequestOptions }> {
+    const challenge = randomToken(32);
+    const state = this.putState({ kind: "passkey", mode: "login", challenge, origin: input.origin, rpId: input.rpId }, PASSKEY_STATE_MS);
+    return { state, options: { challenge, rpId: input.rpId, timeout: PASSKEY_STATE_MS, userVerification: "preferred", allowCredentials: [] } };
+  }
+
+  /** Check a passkey sign-in and open the same session as other sign-ins. */
+  async passkeyLogin(state: string, credential: unknown, opts: { origin: string }): Promise<{ token: string; user: A.UserInfo }> {
+    const st = this.takePasskeyState(state);
+    if (!st || st.mode !== "login") throw new Error("The passkey sign-in expired or was used already. Start again.");
+    if (st.origin !== opts.origin) throw new Error("The passkey sign-in is for another site. Start again.");
+    let id: string;
+    try {
+      id = credentialIdOf(credential);
+    } catch (e) {
+      throw new Error((e as Error).message);
+    }
+    const unknown = "gitring does not know this passkey. Use another passkey, or create an account.";
+    const row = this.sql
+      .exec<{ user_id: string; public_key: string; alg: number; sign_count: number }>("SELECT user_id, public_key, alg, sign_count FROM passkeys WHERE id = ?", id)
+      .toArray()[0];
+    if (!row) throw new Error(unknown);
+    let res: { signCount: number; userHandle: string | null };
+    try {
+      res = await verifyAssertion(credential, { challenge: st.challenge, origin: st.origin, rpId: st.rpId }, { jwk: JSON.parse(row.public_key) as JsonWebKey, alg: row.alg as PasskeyAlg, signCount: row.sign_count });
+    } catch (e) {
+      throw new Error(e instanceof PasskeyError ? e.message : "gitring could not read the passkey. Try again.");
+    }
+    if (res.userHandle && res.userHandle !== userHandleOf(row.user_id)) throw new Error("The passkey does not belong to this account. gitring did not sign you in.");
+    // Another sign-in with this passkey can finish during the check, and the person can remove the
+    // passkey: read the row again (no await from here to the update, so the two steps are one).
+    const current = this.sql.exec<{ user_id: string; public_key: string; sign_count: number }>("SELECT user_id, public_key, sign_count FROM passkeys WHERE id = ?", id).toArray()[0];
+    if (!current || current.user_id !== row.user_id || current.public_key !== row.public_key) throw new Error(unknown);
+    if (!signCountOk(current.sign_count, res.signCount)) throw new Error("The passkey counter went back. This can mean a copy of the passkey. gitring did not sign you in.");
+    const now = Date.now();
+    this.sql.exec("UPDATE passkeys SET sign_count = ?, last_used = ? WHERE id = ?", res.signCount, now, id);
+    this.sql.exec("UPDATE users SET last_seen = ? WHERE id = ?", now, row.user_id);
+    const user = this.userInfo(row.user_id);
+    if (!user) throw new Error(unknown);
+    return { token: await this.openSession(row.user_id), user };
+  }
+
+  async listPasskeys(userId: string): Promise<A.PasskeyInfo[]> {
+    return this.passkeyRows(userId).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, ...(r.last_used ? { lastUsed: r.last_used } : {}) }));
+  }
+
+  async renamePasskey(userId: string, id: string, name: string): Promise<A.PasskeyInfo> {
+    const clean = cleanName(name);
+    if (!clean) throw new Error("Give the passkey a name.");
+    this.sql.exec("UPDATE passkeys SET name = ? WHERE id = ? AND user_id = ?", clean, id, userId);
+    const found = (await this.listPasskeys(userId)).find((p) => p.id === id);
+    if (!found) throw new Error("You have no passkey with this id.");
+    return found;
+  }
+
+  /** Remove a passkey. One way to sign in always stays: a person without identities keeps one passkey. */
+  async removePasskey(userId: string, id: string): Promise<void> {
+    const rows = this.passkeyRows(userId);
+    if (!rows.some((r) => r.id === id)) throw new Error("You have no passkey with this id.");
+    const identities = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM identities WHERE user_id = ?", userId).one().n;
+    if (rows.length === 1 && identities === 0) throw new Error("This passkey is your only way to sign in. Add another passkey or sign-in first.");
+    this.sql.exec("DELETE FROM passkeys WHERE id = ? AND user_id = ?", id, userId);
+  }
+
   /* ════════════════════ people ════════════════════ */
 
   private owners(): string[] {
@@ -826,14 +1022,16 @@ export class Directory extends DurableObject<Env> {
   }
 
   /**
-   * An owner of the deployment (GITRING_OWNERS): "github:<login>", "github-id:<number>",
-   * "google:<email>" or a bare email. A login matches only the account that matched it first: when an
-   * owner renames their GitHub account, GitHub releases the old login, and whoever registers it later
-   * does not become an owner.
+   * An owner of the deployment (GITRING_OWNERS): "user:<account id>" (any person, also one with
+   * passkeys only), "github:<login>", "github-id:<number>", "google:<email>" or a bare email. A login
+   * matches only the account that matched it first: when an owner renames their GitHub account, GitHub
+   * releases the old login, and whoever registers it later does not become an owner.
    */
   private isAdmin(userId: string): boolean {
     const owners = this.owners();
     if (!owners.length) return false;
+    // Account ids never change hands: no pin needed.
+    if (owners.includes(`user:${userId.toLowerCase()}`)) return true;
     for (const i of this.sql.exec<{ provider: string; subject: string; login: string | null; email: string | null }>("SELECT provider, subject, login, email FROM identities WHERE user_id = ?", userId).toArray()) {
       if (owners.includes(`${i.provider}-id:${String(i.subject).toLowerCase()}`)) return true;
       const handle = i.login ? `${i.provider}:${i.login.toLowerCase()}` : null;
@@ -859,7 +1057,8 @@ export class Directory extends DurableObject<Env> {
       .exec<{ provider: A.Provider; login: string | null; email: string | null }>("SELECT provider, login, email FROM identities WHERE user_id = ?", userId)
       .toArray()
       .map((i) => ({ provider: i.provider, login: i.login ?? undefined, email: i.email ?? undefined }));
-    return { id: u.id, name: u.name, email: u.email ?? undefined, avatar: u.avatar ?? undefined, identities, admin: this.isAdmin(u.id) };
+    const passkeys = this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM passkeys WHERE user_id = ?", userId).one().n;
+    return { id: u.id, name: u.name, email: u.email ?? undefined, avatar: u.avatar ?? undefined, identities, passkeys, admin: this.isAdmin(u.id) };
   }
 
   async sessionUser(token: string): Promise<A.UserInfo | null> {
@@ -1053,14 +1252,24 @@ export class Directory extends DurableObject<Env> {
     }));
   }
 
-  /** Invite by GitHub login (no @) or email. The person gets the role at their next sign-in. */
+  /**
+   * Add a person by account id ("u_…", also "user:u_…": a person who exists, for example with passkeys
+   * only), or invite by email or GitHub login (no @). An invite becomes a role at the next sign-in.
+   */
   async addMember(id: string, who: string, role: A.Role): Promise<A.MemberInfo[]> {
     if (!this.projectRow(id)) throw new Error("Unknown project.");
     if (!["owner", "member", "viewer"].includes(role)) throw new Error("Use the role owner, member or viewer.");
     const raw = String(who ?? "").trim().replace(/^@/, "").toLowerCase();
-    if (!raw) throw new Error("Give a GitHub login or an email.");
+    if (!raw) throw new Error("Give an account id, an email or a GitHub login.");
+    const account = /^(?:user:)?(u_[a-z0-9]{10})$/.exec(raw)?.[1];
+    if (account) {
+      if (!this.userInfo(account)) throw new Error("gitring has no account with this id.");
+      this.sql.exec("DELETE FROM members WHERE project_id = ? AND user_id = ?", id, account);
+      this.sql.exec("INSERT OR REPLACE INTO members (project_id, handle, user_id, role) VALUES (?, ?, ?, ?)", id, `user:${account}`, account, role);
+      return this.members(id);
+    }
     const handle = raw.includes("@") ? `email:${raw}` : `github:${raw}`;
-    if (!/^(email:[^\s@]+@[^\s@]+\.[^\s@]+|github:[a-z0-9-]{1,39})$/.test(handle)) throw new Error("This is not a GitHub login or an email.");
+    if (!/^(email:[^\s@]+@[^\s@]+\.[^\s@]+|github:[a-z0-9-]{1,39})$/.test(handle)) throw new Error("This is not an account id, an email or a GitHub login.");
     const known = raw.includes("@")
       ? this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE lower(email) = ? LIMIT 1", raw).toArray()[0]
       : this.sql.exec<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = 'github' AND lower(login) = ? LIMIT 1", raw).toArray()[0];
@@ -1197,6 +1406,26 @@ export class Directory extends DurableObject<Env> {
     const frees = [g2.length >= global ? g2[0] + HOUR : 0, owner && u2.length >= perUser ? u2[0] + HOUR : 0];
     const retryAt = Math.max(now + 1000, ...frees) + 1000;
     return { granted, retryAt };
+  }
+}
+
+/** A display name or a passkey name: one line, at most 80 characters. */
+function cleanName(raw: unknown): string {
+  return String(raw ?? "")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+/** The transports column (JSON) as a part of a credential descriptor. */
+function transportsOf(raw: string | null): { transports?: string[] } {
+  if (!raw) return {};
+  try {
+    const list = JSON.parse(raw) as unknown;
+    return Array.isArray(list) && list.length ? { transports: list.filter((t): t is string => typeof t === "string") } : {};
+  } catch {
+    return {};
   }
 }
 

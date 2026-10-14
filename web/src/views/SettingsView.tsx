@@ -271,8 +271,8 @@ export function SettingsView() {
               );
             }}
           >
-            <Field label="Add a person" help="A GitHub login or an email. They get the role when they sign in.">
-              <Input value={who} onChange={(e) => setWho(e.target.value)} placeholder="octocat or ada@example.com" autoComplete="off" spellCheck={false} />
+            <Field label="Add a person" help="An account id (from the Account page), an email or a GitHub login. An email or a login gets the role at the next sign-in.">
+              <Input value={who} onChange={(e) => setWho(e.target.value)} placeholder="u_0123456789 or ada@example.com" autoComplete="off" spellCheck={false} />
             </Field>
             <Segmented<Role>
               label="Role"

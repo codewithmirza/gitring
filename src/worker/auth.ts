@@ -1,14 +1,18 @@
 /**
  * Who is calling: a browser session (cookie), a personal API key (`Authorization: Bearer gk_…`), or the
- * operator key (GITRING_KEY, for scripts). Plus the sign-in and setup routes.
+ * operator key (GITRING_KEY, for scripts). Plus the sign-in routes (passkeys first, then the optional
+ * providers Google and GitHub) and the setup page.
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
 import type * as A from "../core/accounts";
 import type * as T from "../core/types";
 import { randomToken, sameString } from "../directory/crypto";
-import type { ManifestConversion } from "../directory/directory";
+import { safeReturn, type ManifestConversion } from "../directory/directory";
+import { passkeyLabel } from "../directory/passkeys";
 import { privacyBody, termsBody } from "./legal";
+import { isCrossSiteWrite } from "./csrf";
+import { clientAddress, overLimit, tooMany } from "./limits";
 
 export const SESSION_COOKIE = "__Host-gitring";
 const SESSION_MAX_AGE_S = 30 * 24 * 3600;
@@ -198,6 +202,8 @@ ol{padding-left:20px}li{margin:4px 0}
 .provider:hover{background:#f2f2f2}.provider:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .provider svg,.provider img{width:20px;height:20px;flex:none}.provider .last{margin-left:auto;font-size:12px;color:#5f6368}
 @media (prefers-color-scheme:dark){.provider{background:#131314;border-color:#8e918f;color:#e3e3e3}.provider:hover{background:#1f1f20}.provider svg{fill:#fff}.provider .last{color:#9aa0a6}}
+.provider svg.pk{fill:none;stroke:currentColor}summary.provider{list-style:none;cursor:pointer}summary.provider::-webkit-details-marker{display:none}
+.pk-new form{padding:4px 2px 0}.or{display:flex;align-items:center;gap:10px;max-width:340px;color:var(--muted);font-size:13px;margin:14px 0}.or::before,.or::after{content:"";flex:1;border-top:1px solid var(--line)}
 </style></head><body><main>${body}</main></body></html>`;
   return new Response(html, {
     status,
@@ -282,10 +288,84 @@ export function providerButtons(providers: { github: boolean; google: boolean },
     .join("")}</div>`;
 }
 
-export function lastProvider(req: Request): string | null {
+export function lastProvider(req: Request): A.SignInKind | null {
   const v = readCookie(req, LAST_PROVIDER_COOKIE);
-  return v === "github" || v === "google" ? v : null;
+  return v === "github" || v === "google" || v === "passkey" ? v : null;
 }
+
+/** A key (passkeys), drawn for gitring. */
+const PASSKEY_ICON = `<svg class="pk" viewBox="0 0 24 24" aria-hidden="true" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M16.5 6.5l3 3M14 9l2.5 2.5"/></svg>`;
+
+/**
+ * The sign-in choices of a server page (connect an app): passkeys first, then the providers that this
+ * gitring has, the provider used last first. The passkey buttons need the page's script nonce. After a
+ * passkey sign-in the browser opens `returnPath` (a path on this site).
+ */
+export function signInChoices(providers: { github: boolean; google: boolean }, returnPath: string, last: A.SignInKind | null, nonce: string): string {
+  const others = providers.github || providers.google ? `<p class="or">or</p>${providerButtons(providers, returnPath, last === "passkey" ? null : last)}` : "";
+  const tag = last === "passkey" && others ? '<span class="last">Last used</span>' : "";
+  const back = safeReturn(returnPath);
+  return `<div id="pk" class="providers" data-back="${esc(back)}">
+<button type="button" class="provider" id="pk-in">${PASSKEY_ICON}<span>Sign in with a passkey</span>${tag}</button>
+<details class="pk-new"><summary class="provider">${PASSKEY_ICON}<span>Create an account with a passkey</span></summary>
+<form id="pk-form"><label for="pk-name">Your name</label><input id="pk-name" name="name" required maxlength="80" autocomplete="name">
+<p class="muted">Your device keeps the passkey. gitring keeps only its public key.</p><p><button type="submit">Create the account</button></p></form></details>
+<p id="pk-msg" class="warn" role="alert" hidden></p></div>${others}
+<script nonce="${nonce}">${PASSKEY_PAGE_JS}</script>`;
+}
+
+/**
+ * The script of the passkey buttons on server pages. It asks /auth/passkey/* for options, calls the
+ * browser's WebAuthn API, sends the answer, then opens the path in data-back (signed in). It is static:
+ * nothing from the request goes into it.
+ */
+const PASSKEY_PAGE_JS = String.raw`
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const msg = $("pk-msg");
+  const say = (t) => { msg.textContent = t; msg.hidden = !t; };
+  if (!window.PublicKeyCredential || !navigator.credentials) {
+    for (const el of $("pk").querySelectorAll("button, input")) el.disabled = true;
+    say("This browser cannot use passkeys. Use another browser or another sign-in.");
+    return;
+  }
+  const bytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (ch) => ch.charCodeAt(0));
+  const text = (b) => { let s = ""; for (const x of new Uint8Array(b)) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  const ids = (list) => (list || []).map((d) => Object.assign({}, d, { id: bytes(d.id) }));
+  async function post(path, body) {
+    const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || "gitring did not answer. Try again.");
+    return out;
+  }
+  async function run(button, task) {
+    say("");
+    button.disabled = true;
+    try {
+      await task();
+      location.assign($("pk").dataset.back || "/");
+    } catch (e) {
+      button.disabled = false;
+      say(e && (e.name === "NotAllowedError" || e.name === "AbortError") ? "You stopped the passkey. gitring made no change." : (e && e.message) || String(e));
+    }
+  }
+  $("pk-in").addEventListener("click", (ev) => run(ev.currentTarget, async () => {
+    const o = (await post("/auth/passkey/login/options")).options;
+    const c = await navigator.credentials.get({ publicKey: Object.assign({}, o, { challenge: bytes(o.challenge), allowCredentials: ids(o.allowCredentials) }) });
+    const r = c.response;
+    await post("/auth/passkey/login/verify", { credential: { id: c.id, rawId: text(c.rawId), type: c.type, response: { clientDataJSON: text(r.clientDataJSON), authenticatorData: text(r.authenticatorData), signature: text(r.signature), userHandle: r.userHandle ? text(r.userHandle) : null } } });
+  }));
+  $("pk-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    run(ev.submitter || $("pk-form").querySelector("button"), async () => {
+      const o = (await post("/auth/passkey/register/options", { name: $("pk-name").value })).options;
+      const c = await navigator.credentials.create({ publicKey: Object.assign({}, o, { challenge: bytes(o.challenge), user: Object.assign({}, o.user, { id: bytes(o.user.id) }), excludeCredentials: ids(o.excludeCredentials) }) });
+      const r = c.response;
+      await post("/auth/passkey/register/verify", { credential: { id: c.id, rawId: text(c.rawId), type: c.type, response: { clientDataJSON: text(r.clientDataJSON), attestationObject: text(r.attestationObject), transports: r.getTransports ? r.getTransports() : [] } } });
+    });
+  });
+})();
+`;
 
 export function esc(s: string): string {
   return String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
@@ -314,20 +394,22 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
   return page(
     "Set up gitring",
     `<h1>Set up gitring</h1><p class="muted">${esc(o)}</p>${note ? `<div class="card"><p>${note}</p></div>` : ""}
-<div class="card"><h2>1. Sign in with GitHub</h2>${gh}</div>
-<div class="card"><h2>2. Sign in with Google</h2>${gg}
+<div class="card"><h2>1. Passkeys</h2><p class="ok">Ready. Passkeys need no setup.</p>
+<p>People create an account with a passkey on their device: a fingerprint, a face, a PIN or a security key. gitring keeps only the public key of each passkey.</p></div>
+<div class="card"><h2>2. Owners</h2>${
+      owners.length
+        ? `<p>These people own this gitring (they may open this page after they sign in):</p><ul>${owners.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>`
+        : `<p class="warn">No owner is set.</p><p>Set the secret GITRING_OWNERS, for example <code>user:u_0123456789</code>. Each person finds their account id on the Account page. You can also use <code>google:you@example.com</code> or <code>github:your-login</code>.</p>`
+    }
+<p><a class="btn" href="/">Open gitring</a></p></div>
+<div class="card"><h2>3. Optional: sign in with Google</h2>${gg}
 <ol><li>Open <a href="https://console.cloud.google.com/apis/credentials">Google Cloud console → Credentials</a>. Create an <b>OAuth client ID</b> of type <b>Web application</b>.</li>
 <li>Authorized JavaScript origin: <code>${esc(o)}</code></li>
 <li>Authorized redirect URI: <code>${esc(o)}/auth/google/callback</code></li>
 <li>Paste the client ID and the client secret here. gitring seals them; nobody can read them back.</li></ol>
 <form method="post" action="/setup/google">${tokenField}<label for="cid">Client ID</label><input id="cid" name="clientId" required autocomplete="off" placeholder="…apps.googleusercontent.com">
 <label for="cs">Client secret</label><input id="cs" name="clientSecret" required autocomplete="off" type="password"><p><button type="submit">Save Google sign-in</button></p></form></div>
-<div class="card"><h2>3. Owners</h2>${
-      owners.length
-        ? `<p>These people own this gitring (they may open this page after they sign in):</p><ul>${owners.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>`
-        : `<p class="warn">No owner is set. Set the secret GITRING_OWNERS, for example <code>github:your-login,google:you@example.com</code>.</p>`
-    }
-<p><a class="btn" href="/">Open gitring</a></p></div>`,
+<div class="card"><h2>4. Optional: GitHub (sign-in, imports and sync)</h2>${gh}</div>`,
     200,
     {},
     { formAction: ["https://github.com"] },
@@ -337,6 +419,7 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
 /* ───────────── routes ───────────── */
 
 export function authRoutes(app: Hono<HonoEnv>): void {
+  passkeyRoutes(app);
   // Privacy policy and terms (the Google consent screen links to them).
   const contact = (c: C): string | null => {
     const v = (c.env.GITRING_CONTACT ?? "").trim();
@@ -486,6 +569,144 @@ export function authRoutes(app: Hono<HonoEnv>): void {
 const SIGNIN_COOKIE = "__Host-gitring-signin";
 /** Not secret: the sign-in popover shows the provider that the person used last ("Last used"). */
 const LAST_PROVIDER_COOKIE = "gitring_last";
+
+/* ───────────── passkeys ───────────── */
+
+/** The one-time passkey state of this browser (a challenge works only where it was asked for). */
+const PASSKEY_COOKIE = "__Host-gitring-passkey";
+
+function passkeyCookie(state: string, maxAge = 300): string {
+  return `${PASSKEY_COOKIE}=${state}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+}
+
+function jsonAnswer(body: unknown, status: number, cookies: string[] = []): Response {
+  const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
+  for (const c of cookies) headers.append("set-cookie", c);
+  return new Response(JSON.stringify(body), { status, headers });
+}
+
+/** Passkey posts: limited per address like the other sign-in starts, and only from gitring's own pages. */
+async function passkeyGuard(c: C): Promise<Response | null> {
+  if (await overLimit(c.env, "auth", clientAddress(c.req.raw))) return tooMany();
+  if (isCrossSiteWrite(c.req.method, c.req.header("origin"), c.req.header("sec-fetch-site"), origin(c))) return jsonAnswer({ error: "Cross-site requests are not allowed." }, 403);
+  return null;
+}
+
+/** The RP id of WebAuthn is the host name of the request; the origin must match too. */
+function relyingParty(c: C): { origin: string; rpId: string } {
+  const u = new URL(c.req.url);
+  return { origin: u.origin, rpId: u.hostname };
+}
+
+/**
+ * Passkey routes (contract C6):
+ *
+ *   POST /auth/passkey/register/options   a new account (body: name), or a passkey for the signed-in person
+ *   POST /auth/passkey/register/verify    keep the passkey; a new account gets a session
+ *   POST /auth/passkey/login/options      a challenge for a discoverable passkey
+ *   POST /auth/passkey/login/verify       check it, open the same session as other sign-ins
+ *   GET/PATCH/DELETE /api/me/passkeys[/:id]  the person's passkeys (rename, remove; one sign-in stays)
+ */
+function passkeyRoutes(app: Hono<HonoEnv>): void {
+  app.post("/auth/passkey/register/options", async (c) => {
+    const stop = await passkeyGuard(c);
+    if (stop) return stop;
+    const p = c.get("principal");
+    const body = await c.req.json<{ name?: unknown }>().catch(() => ({}) as { name?: unknown });
+    // A browser session adds the passkey to its person. Without one, the passkey makes a new account.
+    const userId = p.via === "session" && p.user ? p.user.id : undefined;
+    try {
+      const res = await directory(c.env).passkeyRegisterOptions({ ...relyingParty(c), ...(userId ? { userId } : { name: String(body.name ?? "") }) });
+      return jsonAnswer({ options: res.options, mode: userId ? "add" : "create" }, 200, [passkeyCookie(res.state)]);
+    } catch (e) {
+      return jsonAnswer({ error: (e as Error).message }, 400);
+    }
+  });
+
+  app.post("/auth/passkey/register/verify", async (c) => {
+    const stop = await passkeyGuard(c);
+    if (stop) return stop;
+    const clear = passkeyCookie("", 0);
+    const state = readCookie(c.req.raw, PASSKEY_COOKIE) ?? "";
+    if (!state) return jsonAnswer({ error: "The passkey request expired. Start again." }, 400, [clear]);
+    const p = c.get("principal");
+    const body = await c.req.json<{ credential?: unknown; label?: unknown }>().catch(() => ({}) as { credential?: unknown; label?: unknown });
+    try {
+      const res = await directory(c.env).passkeyRegister(state, body.credential, {
+        origin: relyingParty(c).origin,
+        ...(p.via === "session" && p.user ? { userId: p.user.id } : {}),
+        label: typeof body.label === "string" && body.label.trim() ? body.label : passkeyLabel(c.req.header("user-agent")),
+      });
+      // The cached lookups of the person show the new passkey count.
+      forgetPrincipal({ userId: res.user.id });
+      const cookies = res.token ? [clear, sessionCookie(res.token), `${LAST_PROVIDER_COOKIE}=passkey; Path=/; Secure; SameSite=Lax; Max-Age=31536000`] : [clear];
+      return jsonAnswer({ user: res.user, passkey: res.passkey }, 200, cookies);
+    } catch (e) {
+      return jsonAnswer({ error: (e as Error).message }, 400, [clear]);
+    }
+  });
+
+  app.post("/auth/passkey/login/options", async (c) => {
+    const stop = await passkeyGuard(c);
+    if (stop) return stop;
+    const res = await directory(c.env).passkeyLoginOptions(relyingParty(c));
+    return jsonAnswer({ options: res.options }, 200, [passkeyCookie(res.state)]);
+  });
+
+  app.post("/auth/passkey/login/verify", async (c) => {
+    const stop = await passkeyGuard(c);
+    if (stop) return stop;
+    const clear = passkeyCookie("", 0);
+    const state = readCookie(c.req.raw, PASSKEY_COOKIE) ?? "";
+    if (!state) return jsonAnswer({ error: "The passkey sign-in expired. Start again." }, 400, [clear]);
+    const body = await c.req.json<{ credential?: unknown }>().catch(() => ({}) as { credential?: unknown });
+    try {
+      const res = await directory(c.env).passkeyLogin(state, body.credential, { origin: relyingParty(c).origin });
+      return jsonAnswer({ user: res.user }, 200, [clear, sessionCookie(res.token), `${LAST_PROVIDER_COOKIE}=passkey; Path=/; Secure; SameSite=Lax; Max-Age=31536000`]);
+    } catch (e) {
+      return jsonAnswer({ error: (e as Error).message }, 400, [clear]);
+    }
+  });
+
+  app.get("/api/me/passkeys", async (c) => {
+    const u = c.get("principal").user;
+    if (!u) return jsonAnswer({ error: "Sign in first." }, 401);
+    return jsonAnswer(await directory(c.env).listPasskeys(u.id), 200);
+  });
+
+  /** Rename and remove: in the browser only (a key or an app cannot change how the person signs in). */
+  const sessionUser = (c: C): A.UserInfo | Response => {
+    const p = c.get("principal");
+    if (!p.user) return jsonAnswer({ error: "Sign in first." }, 401);
+    if (p.via !== "session") return jsonAnswer({ error: "Change your passkeys on the Account page of gitring." }, 403);
+    return p.user;
+  };
+
+  app.patch("/api/me/passkeys/:id", async (c) => {
+    const u = sessionUser(c);
+    if (u instanceof Response) return u;
+    const body = await c.req.json<{ name?: unknown }>().catch(() => ({}) as { name?: unknown });
+    try {
+      return jsonAnswer(await directory(c.env).renamePasskey(u.id, c.req.param("id"), String(body.name ?? "")), 200);
+    } catch (e) {
+      const message = (e as Error).message;
+      return jsonAnswer({ error: message }, /no passkey with this id/.test(message) ? 404 : 400);
+    }
+  });
+
+  app.delete("/api/me/passkeys/:id", async (c) => {
+    const u = sessionUser(c);
+    if (u instanceof Response) return u;
+    try {
+      await directory(c.env).removePasskey(u.id, c.req.param("id"));
+      forgetPrincipal({ userId: u.id });
+      return new Response(null, { status: 204 });
+    } catch (e) {
+      const message = (e as Error).message;
+      return jsonAnswer({ error: message }, /no passkey with this id/.test(message) ? 404 : 409);
+    }
+  });
+}
 
 const SIGNIN_ERRORS: Record<string, string> = {
   stopped: "You stopped the sign-in. Nothing changed.",

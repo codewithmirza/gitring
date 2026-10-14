@@ -16,9 +16,9 @@
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
-import { directory, esc, forgetPrincipal, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
+import { directory, esc, forgetPrincipal, lastProvider, page, readCookie, signInChoices, type Principal } from "./auth";
 import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
-import { sameString } from "../directory/crypto";
+import { randomToken, sameString } from "../directory/crypto";
 import { clientAddress } from "./limits";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
@@ -142,18 +142,21 @@ function destinationText(redirectUri: string): string {
   }
 }
 
+/** Sign in first: a passkey (needs no outside account), or a provider that this gitring has. */
 async function signInPage(c: C, clientName: string, reqId: string): Promise<Response> {
   const providers = await directory(c.env)
     .providers()
     .catch(() => ({ github: null, google: null }));
-  const buttons = providerButtons({ github: Boolean(providers.github), google: Boolean(providers.google) }, `/oauth/authorize?req=${reqId}`, lastProvider(c.req.raw));
+  const nonce = randomToken(16);
+  const choices = signInChoices({ github: Boolean(providers.github), google: Boolean(providers.google) }, `/oauth/authorize?req=${encodeURIComponent(reqId)}`, lastProvider(c.req.raw), nonce);
   return page(
     "Connect an app",
     `<h1>Connect ${esc(clientName)} to gitring</h1>
 <p class="muted">Sign in to gitring. Then you allow ${esc(clientName)} to work as you.</p>
-<div class="card">${providers.github || providers.google ? buttons : "<p>Sign-in is not set up on this server.</p>"}</div>`,
+<div class="card">${choices}</div>`,
     200,
     { "set-cookie": requestCookie(reqId) },
+    { nonce, connect: ["'self'"] },
   );
 }
 

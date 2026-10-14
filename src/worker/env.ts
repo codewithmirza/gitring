@@ -27,9 +27,13 @@ export interface Env {
   CHECK_RUNS_PER_OWNER_HOUR?: string;
   /** Secret: 32 random bytes (base64). Seals provider credentials in the Directory. */
   GITRING_SECRET?: string;
-  /** Secret: opens /setup before any owner can sign in (create the GitHub App, add Google). */
+  /** Secret: opens /setup before any owner can sign in (add the optional Google and GitHub sign-ins). */
   GITRING_SETUP_TOKEN?: string;
-  /** Secret: deployment owners, comma-separated: "github:<login>", "google:<email>" or "<email>". */
+  /**
+   * Secret: deployment owners, comma-separated. "user:<account id>" names any person, also one who signs
+   * in with passkeys only (the id, for example u_0123456789, is on the Account page). Also accepted:
+   * "google:<email>", "<email>", "github:<login>" and "github-id:<number>".
+   */
   GITRING_OWNERS?: string;
   /** Optional operator key for scripts: `Authorization: Bearer <GITRING_KEY>` acts as the deployment. */
   GITRING_KEY?: string;
