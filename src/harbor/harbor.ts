@@ -4194,7 +4194,11 @@ export class HarborMaster extends DurableObject<Env> {
   private countUse(kind: "merges" | "testRuns" | "agentTokens", n = 1): void {
     const id = this.project?.id;
     if (!id) return;
-    void Promise.resolve(this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory")).usageAdd(id, kind, n)).catch(() => undefined);
+    try {
+      void Promise.resolve(this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory")).usageAdd(id, kind, n)).catch(() => undefined);
+    } catch {
+      /* a counter that fails never stops the work */
+    }
   }
 
   private async scheduleBudgetRetry(at: number): Promise<void> {

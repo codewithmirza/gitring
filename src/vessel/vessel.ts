@@ -72,8 +72,12 @@ export class Vessel extends DurableObject<Env> {
   private countTokens(c: VesselConfig, usage: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number } | undefined): void {
     const n = usage?.total_tokens ?? (usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0);
     if (!n) return;
-    const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"));
-    void Promise.resolve(dir.usageAdd(c.projectId, "agentTokens", Math.round(n * tokenWeight(c.model)))).catch(() => undefined);
+    try {
+      const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName("directory"));
+      void Promise.resolve(dir.usageAdd(c.projectId, "agentTokens", Math.round(n * tokenWeight(c.model)))).catch(() => undefined);
+    } catch {
+      /* a counter that fails never stops the work */
+    }
   }
 
   private harbor(projectId: string): HarborApi {
