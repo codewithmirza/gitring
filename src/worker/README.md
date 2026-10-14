@@ -1,6 +1,6 @@
 # src/worker
 
-The Worker is the front door of gitring. It answers every request: the MCP servers for agents, the REST API, live sockets, previews, hooks, sign-in pages, and the web app. Every project has an owner and members (the Directory). Public projects can be watched by anyone. Acting on a project needs the member role. Settings and reset need the owner role.
+The Worker is the front door of gitring. It answers every request: MCP for agents, REST, live sockets, previews, hooks, sign-in pages and the web app. Every project has an owner and members (the Directory). Public projects can be watched by anyone. A person needs the member role to act on a project. Settings and reset need the owner role.
 
 ## The route map
 
@@ -21,13 +21,13 @@ The Worker is the front door of gitring. It answers every request: the MCP serve
 |---|---|
 | `index.ts` | The entry point that wrangler loads. It re-exports the Durable Object classes and has the fetch handler. |
 | `app.ts` | Builds the Hono app and mounts the routes. The order of the lines is the order of the routes. |
-| `request-guard.ts` | The first middleware: limits, who is calling, safe default headers. |
+| `request-guard.ts` | The first middleware: limits, the caller, safe default headers. |
 | `http.ts` | Helpers of the route files: the error class, the project id check, the role check. |
 | `routes/` | The REST routes, one file for each area. Start with `routes/README.md`. |
 | `github-tools/` | The tools of the GitHub-compatible MCP endpoint. Start with `github-tools/README.md`. |
 | `env.ts` | The bindings, variables and secrets that the Worker gets. |
-| `auth.ts` | The front door of sign-in: re-exports who-is-calling and the page helpers, mounts the auth routes. |
-| `principal.ts` | Finds who is calling: session, API key, OAuth token or operator key. |
+| `auth.ts` | The front door of sign-in: re-exports the caller lookup and the page helpers, mounts the auth routes. |
+| `principal.ts` | Finds the caller: session, API key, OAuth token or operator key. |
 | `auth-kit.ts` | The cookies of gitring and the origin of a request. |
 | `pages.ts` | Server pages: the page shell with its policy, and the GitHub App setup pages. |
 | `sign-in-page.ts` | The sign-in buttons of a server page, with the passkey script. |

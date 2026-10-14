@@ -1,7 +1,7 @@
 /**
  * The GitHub repositories that a person can import, and the test-command guess for one of them.
  *
- * They are the repositories of the installations of the gitring GitHub App that the person can see (with the person's user token).
+ * They are the repositories of the app installations that the person can see with the person's user token.
  * The file list and a reader of GitHub's tree go to the same guess as every other source (core/guess.ts, guessTree).
  */
 import type * as A from "../../core/accounts";

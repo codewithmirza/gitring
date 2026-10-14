@@ -1,8 +1,8 @@
 /**
  * The OAuth 2.1 routes for MCP clients (Claude, Claude Code, Cursor, Codex and other agents).
  *
- * The logic lives in the Directory (src/directory/oauth.ts). A pending authorization is bound to the browser
- * that started it with a short-lived cookie, so that a link to it does not work elsewhere.
+ * The logic lives in the Directory (src/directory/oauth.ts). A short-lived cookie binds a pending authorization
+ * to the browser that started it. A link to it does not work elsewhere.
  * Read next: the table of routes below.
  */
 import type { Hono } from "hono";

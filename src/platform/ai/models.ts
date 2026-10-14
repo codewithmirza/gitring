@@ -1,7 +1,7 @@
 /**
  * Workers AI access: the conflict-check model, and the chat models of built-in agents and the test-command guess.
  *
- * Every call has a timeout and never throws to the caller: a failure returns null, so the caller can fall back to the rules.
+ * Every call has a timeout and never throws. A failure returns null, so the caller can fall back to the rules.
  */
 import type { ClefRequest, ClefResponse } from "../../core/coord/clef";
 

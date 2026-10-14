@@ -10,7 +10,7 @@ The OAuth 2.1 server for MCP clients and the gitring command line. `OAuthStore` 
 | `base.ts` | The base layer: SQL handle, clock, table upgrades, removal of old rows. |
 | `clients.ts` | Client registration and client ID metadata documents. |
 | `authorize.ts` | The authorization request, the grant and the single-use code. |
-| `issue.ts` | Client authentication and the making of access and refresh tokens. |
+| `issue.ts` | Client authentication, and how access and refresh tokens are made. |
 | `devices.ts` | The device authorization grant (RFC 8628). |
 
 Only SHA-256 hashes of codes and tokens are stored.

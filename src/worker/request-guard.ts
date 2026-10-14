@@ -1,5 +1,5 @@
 /**
- * The first middleware of the app: it limits requests, finds who is calling and sets safe default headers.
+ * The first middleware of the app: it limits requests, finds the caller and sets safe default headers.
  *
  * Called once by app.ts, before any route. It runs for every path that the app answers.
  * Never answer a route here. Never skip the credential limit: keys that are not valid are not cached.

@@ -1,7 +1,7 @@
 /**
  * Pull requests of the GitHub-compatible tools: which work copies count as pull requests, and what state each one shows.
  *
- * A pull request number is the place of the work copy in the age order of all branch work copies of the project.
+ * The number of a pull request is the age rank of its work copy among all branch work copies.
  * Read next: src/worker/mcp-approval.ts (the question to a person).
  */
 import type * as T from "../../core/types";

@@ -1,8 +1,8 @@
 /**
- * The front door of sign-in and identity: it re-exports who-is-calling and the page helpers, and mounts the auth routes.
+ * The front door of sign-in: it re-exports the caller lookup and the page helpers, and mounts the auth routes.
  *
- * The files behind it: principal.ts (who is calling), pages.ts and sign-in-page.ts (server pages), auth-kit.ts (cookies),
- * passkey-routes.ts, setup-routes.ts and sign-in-routes.ts (the routes). Other files import from here.
+ * The files behind it: principal.ts (the caller), pages.ts and sign-in-page.ts (server pages), auth-kit.ts (cookies).
+ * The routes are in passkey-routes.ts, setup-routes.ts and sign-in-routes.ts. Other files import from here.
  * The ORDER of the three route calls is the order of the routes.
  */
 import type { Hono } from "hono";

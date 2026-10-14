@@ -1,10 +1,10 @@
 # src/worker/github-tools
 
-The tools of the GitHub-compatible endpoint (`/mcp/github`). An agent or a plugin that works with the GitHub MCP server can use gitring when its owner changes one URL. The tools keep the names and the argument names of the GitHub tools. `src/worker/mcp-github.ts` joins the four tool files in this order: read, write, pulls, issues.
+The tools of the GitHub-compatible endpoint (`/mcp/github`). An agent that works with the GitHub MCP server can use gitring when its owner changes one URL. The tools keep the names and the argument names of the GitHub tools. `src/worker/mcp-github.ts` joins the four tool files in this order: read, write, pulls, issues.
 
 | File | What it is for |
 |---|---|
-| `shared.ts` | Argument schemas, answer helpers, paging and small formatters that every tool file uses. |
+| `shared.ts` | Argument schemas, answer helpers, list pages and small formatters that every tool file uses. |
 | `branches.ts` | A branch name is a work copy of the caller. Open a project, find the branches of the caller, write to a branch. |
 | `pulls.ts` | Which work copies count as pull requests, their numbers and the state that each one shows. |
 | `tools-read.ts` | `get_me`, `search_repositories`, `get_file_contents`, `get_repository_tree`, `list_branches`, `list_commits`, `get_commit`, `search_code`. |
@@ -25,4 +25,4 @@ The tools of the GitHub-compatible endpoint (`/mcp/github`). An agent or a plugi
 | `update_pull_request_branch` | The update of `gitring_update`. |
 | Issues | gitring tasks. |
 
-A pull request number is the place of the work copy in the age order of all branch work copies of the project. A branch belongs to the caller who made it. Only that person (or an owner) can change its work copy, and only that person gets its change requests. The read tools bring them too, after the text of a file or above the GitHub-shaped JSON.
+The number of a pull request is the age rank of its work copy among all branch work copies. A branch belongs to the caller who made it. Only that person (or an owner) can change its work copy, and only that person gets its change requests. The read tools bring them too, after the text of a file or above the GitHub-shaped JSON.

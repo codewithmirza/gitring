@@ -1,5 +1,5 @@
 /**
- * Shared parts of the GitHub-compatible tools: argument schemas, answer helpers, paging and small formatters.
+ * Shared parts of the GitHub-compatible tools: argument schemas, answer helpers, list pages and small formatters.
  *
  * No tool is defined here. Read next: src/worker/github-tools/README.md (how the tools map onto gitring).
  */

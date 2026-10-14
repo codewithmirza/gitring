@@ -2,7 +2,7 @@
  * A small GitHub REST client for the Worker: a token, JSON and raw reads, pagination and ETags.
  *
  * The token is a user token, an installation token or none.
- * GitHub answers 304 to a request with a known ETag, and a 304 does not count against the rate limit: repeated reads stay cheap.
+ * GitHub answers 304 to a request with a known ETag. A 304 does not count against the rate limit, so repeated reads stay cheap.
  */
 
 export const GITHUB_API = "https://api.github.com";

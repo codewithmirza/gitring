@@ -1,5 +1,5 @@
 /**
- * The GitHub-compatible tool set (/mcp/github): the names and arguments of the GitHub tools, working on gitring.
+ * The GitHub-compatible tool set (/mcp/github): the names and arguments of the GitHub tools, on top of gitring.
  *
  * An agent that works with the GitHub MCP server uses gitring when its owner changes one URL.
  * The tools are in src/worker/github-tools/. This file joins them and keeps the texts that src/worker/mcp.ts uses.

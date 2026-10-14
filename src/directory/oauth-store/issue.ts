@@ -1,5 +1,5 @@
 /**
- * Client authentication and the making of an access token and a refresh token.
+ * Client authentication, and how an access token and a refresh token are made.
  *
  * A new pair ends the older refresh token of the same family: only the newest one works.
  * Never log a token.

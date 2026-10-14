@@ -1,7 +1,7 @@
 /**
  * The device authorization grant (RFC 8628): the names, the codes and the limits.
  *
- * For programs on a computer where a browser sign-in is not easy: the gitring command line, or an agent on a server.
+ * It is for programs that cannot easily open a browser: the gitring command line, or an agent on a server.
  * The store logic is in src/directory/oauth-store/devices.ts. The page is in src/worker/device.ts.
  */
 import { randomToken } from "./crypto";

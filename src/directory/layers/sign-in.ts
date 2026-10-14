@@ -1,5 +1,5 @@
 /**
- * Sign-in with GitHub or Google: the sign-in link, the code exchange, and finding or making the person.
+ * Sign-in with GitHub or Google: the sign-in link, the code exchange, and how a person is found or made.
  *
  * A sign-in link works once. A person who adds a sign-in to an account opens no new session.
  * Read next: src/worker/sign-in-routes.ts (the routes that call these methods).

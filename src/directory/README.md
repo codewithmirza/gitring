@@ -9,7 +9,7 @@ The Directory is one Durable Object for the whole deployment. It knows people, s
 | `schema.ts` | The SQL tables of the Directory. |
 | `constants.ts` | Lifetimes, limits for each person and GitHub headers. |
 | `types.ts` | Answers that other files import, database rows and one-time states. |
-| `helpers.ts` | Small pure functions: name cleaning, URL checks, the shape of a GitHub token. |
+| `helpers.ts` | Small pure functions: name clean-up, URL checks, the shape of a GitHub token. |
 | `crypto.ts` | Web Crypto helpers: random tokens, hashes, sealed values and the GitHub App token. |
 | `oauth.ts` | The OAuth server for MCP clients. The front door of `oauth-store/`. |
 | `oauth-store/` | The layers of the OAuth server. Start with `oauth-store/README.md`. |

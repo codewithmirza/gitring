@@ -1,5 +1,5 @@
 /**
- * Counters of use for each project and month, and the rolling one-hour budgets of built-in agents and test runs.
+ * Counters of use for each project and month, and the hourly budgets of built-in agents and test runs.
  *
  * A counter never throws: a counter must not stop a merge or a test. Nothing here charges anyone.
  */

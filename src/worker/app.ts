@@ -2,7 +2,7 @@
  * Builds the Hono app of the REST API, the live sockets, the previews, the hooks and the sign-in pages.
  *
  * Imported by index.ts only. The ORDER of the lines below is the order of the routes: Hono tries them in order.
- * Never add a route here: add it to a file of src/worker/routes/ (or to its own file) and mount that file.
+ * Never add a route here: add it to a file of src/worker/routes/ and mount that file.
  * Read next: src/worker/README.md (the route map).
  */
 import { Hono } from "hono";

@@ -1,5 +1,5 @@
 /**
- * Small pure functions that the Directory layers share: name cleaning, URL checks and the shape of a GitHub token.
+ * Small pure functions that the Directory layers share: name clean-up, URL checks and the shape of a GitHub token.
  *
  * No storage and no network here. src/worker/sign-in-page.ts imports safeReturn through directory.ts.
  */

@@ -2,7 +2,7 @@
  * OAuth 2.1 authorization server for MCP clients and the gitring command line, built on src/directory/oauth-store/.
  *
  * OAuthStore is a chain of layers (see src/directory/oauth-store/README.md). This file adds the token endpoint,
- * revocation and the grants of a person, and it re-exports every public name of the store.
+ * revocation and the grants of a person. It re-exports every public name of the store.
  * Runs inside the Directory Durable Object (SQLite). Pure enough to test in Node.
  */
 import { sameString, sha256B64url } from "./crypto";
