@@ -9,7 +9,7 @@ import { untestedHelp } from "../approval-copy";
 import { TESTS_WHEN_OPTIONS, testsWhenHelp } from "../trains-copy";
 import { SaveError, type SectionProps, useSave } from "./shared";
 
-/** How tests run: the gitring test runner (Dynamic Worker) or the project's own commands in a container. */
+/** How tests run: the gitring test runner or the project's own commands in a container. */
 export function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
   const cs: CheckSettings = settings.checks ?? { runner: "worker" };
   const [install, setInstall] = useState(cs.install ?? "");
@@ -32,7 +32,7 @@ export function ChecksSection({ projectId, owner, settings, onSaved }: SectionPr
       <h2 className="page__h2" id="st-checks">
         Tests
       </h2>
-      <p className="np__help">gitring runs the tests of a work copy before the work copy is ready. The first choice below says when gitring tests main with the work.</p>
+      <p className="np__help">gitring runs the tests of a work copy before the work copy is ready. Choose when gitring also tests main with the work.</p>
       <Segmented<TestsWhen>
         label="When are tests run?"
         value={settings.testsWhen ?? "before"}
@@ -54,7 +54,7 @@ export function ChecksSection({ projectId, owner, settings, onSaved }: SectionPr
       <p className="np__help">
         {container
           ? "A Linux container with Node.js 24 runs the install command, then the test command. The container can reach package registries only."
-          : "A Dynamic Worker runs tests/*.test.js with the gitring test runner. No dependencies and no network."}
+          : "The test runner of gitring runs the files tests/*.test.js. It has no packages and no network."}
       </p>
       {!container && (
         <>

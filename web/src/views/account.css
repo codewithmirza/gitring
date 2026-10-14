@@ -24,7 +24,8 @@
 .acct-profile__avatar--none { display: grid; place-items: center; color: var(--ink-3); }
 .acct-profile__text { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; }
 .acct-profile__text .page__title { overflow-wrap: anywhere; }
-.acct-profile__meta { font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.acct-profile__meta { display: grid; gap: 2px; font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.acct-profile__meta p { margin: 0; }
 .acct-profile__acts { display: flex; flex-wrap: wrap; gap: var(--s-2, 8px); align-items: center; }
 
 .acct-sec { display: grid; gap: var(--s-4); margin-top: var(--s-9); padding-top: var(--s-6); border-top: 1px solid var(--line); scroll-margin-top: var(--s-6); }
@@ -58,6 +59,8 @@
 .acct-row__host, .acct-row__prefix { font-weight: 400; color: var(--ink-2); }
 .acct-row__prefix { font-size: var(--t-xs); }
 .acct-row__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+/* The one fact that needs care: it reads in the full ink, and the words say why. */
+.acct-row__meta--note { color: var(--ink-1); font-weight: 500; }
 .acct-row__acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-2); }
 .acct-row__acts .b-btn { text-decoration: none; }
 

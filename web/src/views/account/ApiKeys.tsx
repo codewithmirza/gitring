@@ -20,9 +20,8 @@ function KeyRow({ k, now, onGone }: { k: ApiKeyInfo; now: number; onGone: (id: s
         <span className="acct-row__name">
           {k.name} <span className="voice-agent acct-row__prefix">{k.prefix}…</span>
         </span>
-        <span className="acct-row__meta">
-          Created {dateText(k.createdAt)} · {k.lastUsed ? `last used ${ago(k.lastUsed, now)}` : "not used yet"}
-        </span>
+        <span className="acct-row__meta">Created {dateText(k.createdAt)}</span>
+        <span className="acct-row__meta">{k.lastUsed ? `Last used ${ago(k.lastUsed, now)}` : "Not used yet"}</span>
       </div>
       <div className="acct-row__acts">
         <InlineConfirm
@@ -84,8 +83,7 @@ export function ApiKeys({ now }: { now: number }) {
           API keys
         </h2>
         <p className="acct-sec__lede">
-          For scripts, hooks and agents without OAuth: they send <span className="code-inline">Authorization: Bearer gk_…</span>. A key acts as you. Agents that sign
-          in with OAuth do not need a key.
+          A key is for scripts, hooks and agents that cannot sign in. A key acts as you. An agent that signs in does not need a key.
         </p>
       </div>
       {fresh && (

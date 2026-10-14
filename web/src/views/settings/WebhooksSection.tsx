@@ -57,7 +57,10 @@ export function WebhooksSection({ projectId, owner, settings, onSaved }: Section
         Webhooks
       </h2>
       <p className="np__help">gitring sends a POST request to each webhook when an event happens: JSON, or a Slack message. At most {MAX_WEBHOOKS} webhooks.</p>
-      <p className="np__help">{SIGNATURE_HELP}</p>
+      <details className="st-fold">
+        <summary>How your receiver checks a request</summary>
+        <p className="np__help">{SIGNATURE_HELP}</p>
+      </details>
       <p className="np__help" id={approvalHelpId}>
         {APPROVAL_EVENT_NOTE}
       </p>

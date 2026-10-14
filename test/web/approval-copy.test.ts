@@ -12,6 +12,7 @@ import {
   APPROVER_LEGEND,
   LANDING_CHOICES,
   LANDING_LEGEND,
+  PERSON_ALSO_DECIDES,
   WEBHOOK_EVENTS,
   approverOf,
   landingOf,
@@ -83,7 +84,9 @@ describe("the choices", () => {
     expect(LANDING_CHOICES.map((c) => c.value)).toEqual(["automatic", "risky", "ask"]);
     expect(LANDING_CHOICES.filter((c) => c.badge).map((c) => [c.value, c.badge])).toEqual([["risky", "Recommended"]]);
     expect(DEFAULT_SETTINGS.landing).toBe("risky");
-    expect(LANDING_CHOICES.find((c) => c.value === "risky")?.help).toContain("New projects start with this choice.");
+    // The badge says "Recommended". The help of "risky" stays at two sentences.
+    const risky = LANDING_CHOICES.find((c) => c.value === "risky")!.help;
+    expect(risky.split(". ").length).toBeLessThanOrEqual(2);
   });
 
   it("names the choices as the brief says", () => {
@@ -134,12 +137,10 @@ describe("the choices", () => {
     expect(help).toContain(`${LARGE_LINES} changed lines`);
   });
 
-  it("says that a person decides in every mode when no test ran or work copies compete", () => {
-    for (const value of ["automatic", "risky"] as const) {
-      const help = LANDING_CHOICES.find((c) => c.value === value)!.help;
-      expect(help, value).toMatch(/no test ran/);
-      expect(help, value).toMatch(/work copies compete/);
-    }
+  it("says once, under the three choices, that a person decides when no test ran or work copies compete", () => {
+    expect(PERSON_ALSO_DECIDES).toMatch(/no test ran/);
+    expect(PERSON_ALSO_DECIDES).toMatch(/work copies compete/);
+    expect(steViolations(PERSON_ALSO_DECIDES)).toEqual([]);
   });
 });
 

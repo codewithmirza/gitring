@@ -1,0 +1,36 @@
+/*
+ * The styles of the settings page that are new with the tabs: the tab strip, the panel, and the facts list.
+ * The older rules of the sections (st-sec, st-row, st-choice and more) are in projects.css.
+ * Type sizes here: 13 and 15 (the page adds 11 and 28).
+ */
+
+.settings .st-tabs { margin-top: var(--s-6); }
+.st-panel[hidden] { display: none; }
+/* The tab already names the section: the first section of a panel has no rule above it. */
+.settings .st-panel > .st-sec:first-child { margin-top: var(--s-6); padding-top: 0; border-top: 0; }
+
+/* Facts of a project: one fact for each line, the name at the left. */
+.st-facts { display: grid; gap: var(--s-2); margin: 0; }
+.st-facts > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--s-4); align-items: baseline; }
+.st-facts dt { font-size: var(--t-sm); color: var(--ink-3); }
+.st-facts dd { margin: 0; font-size: var(--t-sm); color: var(--ink-1); overflow-wrap: anywhere; }
+
+/* A group of settings inside Merging: a hairline above it, so that the checkboxes and fields do not run together. */
+.settings .st-group { padding-top: var(--s-5); margin-top: var(--s-3); border-top: 1px solid var(--line); }
+.settings .st-group:not(.st-checks) { display: grid; gap: var(--s-4); }
+
+.st-members__badge { margin-left: var(--s-3); vertical-align: 1px; }
+
+/* A closed note inside a section (how a receiver checks a webhook). */
+.st-fold { font-size: var(--t-sm); }
+.st-fold > summary { cursor: pointer; color: var(--ink-2); padding: var(--s-1) 0; min-height: 24px; }
+.st-fold > summary:hover { color: var(--ink-1); }
+.st-fold[open] > summary { margin-bottom: var(--s-2); }
+.st-sync__when { display: block; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+
+@media (max-width: 600px) {
+  /* Seven tabs do not fit in one row: they wrap, so that no tab hides at the right. */
+  .settings .st-tabs { flex-wrap: wrap; overflow-x: visible; }
+  .settings .st-tabs .b-tab { height: 44px; }
+  .st-facts > div { grid-template-columns: 1fr; gap: 0; }
+}

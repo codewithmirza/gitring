@@ -15,13 +15,14 @@ import {
   FOLDER_RULE_CHOICES,
   LANDING_CHOICES,
   LANDING_LEGEND,
+  PERSON_ALSO_DECIDES,
   approverOf,
   folderRulesOf,
   landingOf,
   type FolderRuleKind,
 } from "../approval-copy";
 import { ChoiceList } from "../ChoiceList";
-import { TRAIN_HELP, parseMaxTrain } from "../trains-copy";
+import { TRAIN_ERROR, TRAIN_HELP, TRAIN_LABEL, parseMaxTrain } from "../trains-copy";
 import { STEWARD_LABEL, stewardHelp } from "../steward-copy";
 import { SaveError, type SectionProps, useSave } from "./shared";
 
@@ -106,7 +107,7 @@ export function MergingSection({ projectId, owner, settings, onSaved, members }:
     }
     const maxTrain = parseMaxTrain(train);
     if (maxTrain === undefined) {
-      setError("Give a train size from 1 to 16.");
+      setError(TRAIN_ERROR);
       return;
     }
     setTried(true);
@@ -124,6 +125,7 @@ export function MergingSection({ projectId, owner, settings, onSaved, members }:
         Merging
       </h2>
       <ChoiceList legend={LANDING_LEGEND} choices={LANDING_CHOICES} value={landing} onChange={setLanding} disabled={!owner} />
+      <p className="np__help">{PERSON_ALSO_DECIDES}</p>
       <ChoiceList legend={APPROVER_LEGEND} choices={APPROVER_CHOICES} value={approver} onChange={setApprover} disabled={!owner} />
       <fieldset className="st-rules" disabled={!owner}>
         <legend className="b-field__label st-choice__legend">{FOLDER_RULES_LEGEND}</legend>
@@ -179,40 +181,36 @@ export function MergingSection({ projectId, owner, settings, onSaved, members }:
           </div>
         )}
       </fieldset>
-      <div className="st-checks">
-        <Checkbox
-          label={
-            <>
-              Write a task file into the repository on each merge (<span className="voice-agent">.gitring/intents/…</span>)
-            </>
-          }
-          checked={intentsInRepo}
-          disabled={!owner}
-          onChange={(e) => setIntentsInRepo(e.target.checked)}
-        />
+      <div className="st-checks st-group">
+        <Checkbox label="Write a task file into the repository on each merge" checked={intentsInRepo} disabled={!owner} onChange={(e) => setIntentsInRepo(e.target.checked)} />
+        <p className="np__help">
+          Each file goes in the folder <span className="voice-agent">.gitring/intents/</span>.
+        </p>
         <Checkbox label={STEWARD_LABEL} checked={steward} disabled={!owner} onChange={(e) => setSteward(e.target.checked)} />
         <p className="np__help">{stewardHelp(steward)}</p>
       </div>
-      <div className="st-row">
-        <Field label="When the work of an outside agent cannot merge" help={REDO_HELP[redo]}>
-          <Select value={redo} disabled={!owner} onChange={(e) => setRedo(e.target.value as RedoPolicy)}>
-            {REDO_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        {redo === "agent-first" && (
-          <Field label="Wait time (minutes)" help="5 to 120.">
-            <Input type="number" min={5} max={120} step={1} inputMode="numeric" value={wait} disabled={!owner} onChange={(e) => setWait(e.target.value)} />
+      <div className="st-group">
+        <div className="st-row">
+          <Field label="When the work of an outside agent cannot merge" help={REDO_HELP[redo]}>
+            <Select value={redo} disabled={!owner} onChange={(e) => setRedo(e.target.value as RedoPolicy)}>
+              {REDO_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
           </Field>
-        )}
-      </div>
-      <div className="st-row">
-        <Field label="Largest train (work copies)" help={TRAIN_HELP}>
-          <Input type="number" min={1} max={16} step={1} inputMode="numeric" value={train} disabled={!owner} onChange={(e) => setTrain(e.target.value)} />
-        </Field>
+          {redo === "agent-first" && (
+            <Field label="Wait time (minutes)" help="5 to 120.">
+              <Input type="number" min={5} max={120} step={1} inputMode="numeric" value={wait} disabled={!owner} onChange={(e) => setWait(e.target.value)} />
+            </Field>
+          )}
+        </div>
+        <div className="st-row">
+          <Field label={TRAIN_LABEL} help={TRAIN_HELP}>
+            <Input type="number" min={1} max={16} step={1} inputMode="numeric" value={train} disabled={!owner} onChange={(e) => setTrain(e.target.value)} />
+          </Field>
+        </div>
       </div>
       {owner && (
         <div>
