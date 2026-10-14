@@ -25,7 +25,7 @@ import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, closeUserSockets, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, mcpScopeChallenge, oauthRoutes } from "./oauth";
 import { deviceRoutes } from "./device";
-import { answerWay, cliMayCall } from "./cli";
+import { answerWay } from "./cli";
 import { MCP_PATH, mcpSetOf, resourceOf, SCOPE, SCOPE_READ, type McpSet } from "../directory/oauth";
 import { githubRoutes, readAsPerson } from "./github";
 import type { RepoJson } from "../platform/github/repos";
@@ -86,7 +86,7 @@ app.use("*", async (c, next) => {
   // Credential lookups are limited per address before the lookup: keys and cookies that are not valid
   // are never cached, so a flood of them must stop here and not at the account store.
   if (kind === "api" && hasCredential(c.req.raw) && (await overLimit(c.env, "cred", clientAddress(c.req.raw)))) return tooMany();
-  const p = await resolvePrincipal(c.env, c.req.raw, { cli: cliMayCall(c.req.method, path) });
+  const p = await resolvePrincipal(c.env, c.req.raw);
   if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Account → API keys)." }, 401);
   c.set("principal", p);
   if (kind === "api" && (await overLimit(c.env, "api", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(c.req.raw))))) return tooMany();
@@ -506,7 +506,7 @@ app.post("/api/projects/:p/attempts/:id/decide", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "member");
     const principal = c.get("principal");
-    const way = await answerWay(c.env, principal);
+    const way = await answerWay(directory(c.env), principal);
     if ("refused" in way || !principal.user) throw new HTTPError(403, "refused" in way ? way.refused : "Sign in first.");
     const body = await c.req.json<{ approvalId?: string; answer?: string; note?: string }>().catch(() => ({}) as { approvalId?: string; answer?: string; note?: string });
     if (body.answer !== "approve" && body.answer !== "send-back") throw new HTTPError(400, 'Give answer: "approve" or "send-back".');

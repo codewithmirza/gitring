@@ -9,6 +9,7 @@ import type * as T from "../core/types";
 import { randomToken, sameString } from "../directory/crypto";
 import type { ManifestConversion } from "../directory/directory";
 import { CLI_CLIENT_ID } from "../directory/device";
+import { cliMayCall } from "./cli";
 import { privacyBody, termsBody } from "./legal";
 
 export const SESSION_COOKIE = "__Host-gitring";
@@ -95,9 +96,9 @@ export function forgetPrincipal(opts: { session?: string; userId?: string; all?:
 /**
  * Who sends this request. `oauth: true` (the MCP endpoints only) also accepts OAuth access tokens: they
  * are for one MCP endpoint (RFC 8707), not for the rest of the API. `resource` is the endpoint that gets
- * this request (default <origin>/mcp): a token works only at the resource it was issued for. `cli: true`
- * (a REST route of a command of the gitring command line, src/worker/cli.ts) accepts the token of that
- * command line too.
+ * this request (default <origin>/mcp): a token works only at the resource it was issued for. On a REST route
+ * of a command of the gitring command line (src/worker/cli.ts), the token of that command line works too.
+ * `cli` overrides that check of the route.
  */
 export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: boolean; resource?: string; cli?: boolean } = {}): Promise<Principal> {
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "");
@@ -120,7 +121,7 @@ export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: b
       // OAuth tokens are cached for at most 15 seconds: a revoked token stops working soon everywhere.
       if (found) return remember(`o:${resource}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId, scope: found.scope }, Math.min(found.expiresAt, Date.now() + 15_000));
     }
-    if (opts.cli && !opts.oauth && token.startsWith("goa_")) {
+    if (!opts.oauth && token.startsWith("goa_") && (opts.cli ?? cliMayCall(req.method, new URL(req.url).pathname))) {
       // gitring's own command line: its token (for /mcp, with the full scope) also works for the REST
       // routes of its commands (src/worker/cli.ts). Tokens of other apps do not.
       const origin = new URL(req.url).origin;

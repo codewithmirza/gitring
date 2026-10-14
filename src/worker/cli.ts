@@ -9,8 +9,7 @@
  * An answer to a merge question from the command line counts as the person's answer only when the person
  * allows answers outside the gitring app (contract C3). See answerWay.
  */
-import type { Env } from "./env";
-import { directory, type Principal } from "./auth";
+import type { Principal } from "./auth";
 import { CLI_CLIENT_ID } from "../directory/device";
 import { SCOPE } from "../directory/oauth";
 
@@ -50,12 +49,12 @@ export function cliMayAnswer(p: { via: string | null; clientId?: string; scope?:
 }
 
 /**
- * The preference of a person (contract C3). When the Directory cannot say (it has no preferences, or the call
- * fails), the answer is "app": an answer from outside the app must never count by mistake.
+ * The preference of a person (contract C3), from the Directory. When the Directory cannot say (it has no
+ * preferences, or the call fails), the answer is "app": an answer from outside the app must never count by mistake.
  */
-export async function approvalsInOf(env: Env, userId: string): Promise<ApprovalsIn> {
+export async function approvalsInOf(directory: object, userId: string): Promise<ApprovalsIn> {
   try {
-    const dir = directory(env) as unknown as { prefs(userId: string): Promise<{ approvalsIn?: unknown } | null> };
+    const dir = directory as { prefs(userId: string): Promise<{ approvalsIn?: unknown } | null> };
     const v = (await dir.prefs(userId))?.approvalsIn;
     return v === "agent" || v === "app" || v === "both" ? v : "both";
   } catch {
@@ -70,8 +69,8 @@ export const CLI_APP_ONLY = "You answer merge questions only in the gitring app.
  * How the answer of this caller to a merge question counts: "app" (a browser session) or "cli" (gitring's own
  * command line, when the person allows it). `refused`: it does not count, and the words say why.
  */
-export async function answerWay(env: Env, p: Principal): Promise<{ how: "app" | "cli" } | { refused: string }> {
+export async function answerWay(directory: object, p: Principal): Promise<{ how: "app" | "cli" } | { refused: string }> {
   if (p.via === "session" && p.user) return { how: "app" };
-  if (isCli(p) && p.user) return cliMayAnswer(p, await approvalsInOf(env, p.user.id)) ? { how: "cli" } : { refused: CLI_APP_ONLY };
+  if (isCli(p) && p.user) return cliMayAnswer(p, await approvalsInOf(directory, p.user.id)) ? { how: "cli" } : { refused: CLI_APP_ONLY };
   return { refused: "A person must answer in the gitring app. A key or an agent token cannot say yes for a person." };
 }
