@@ -94,7 +94,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
       for (const i of layout.islands) {
         const x0 = t.x + (i.x0 + 8) * t.k;
         const base = t.y + (i.y0 + 11) * t.k + (4 * t.k) / kq;
-        labels.push({ x0: x0 - 1, y0: base - 11, x1: x0 + i.label.length * 6.8 + 1, y1: base + 3 });
+        labels.push({ x0: x0 - 1, y0: base - 11, x1: x0 + i.label.length * 7.2 + 1, y1: base + 3 });
       }
     }
     const rankOf = (v: VesselModel) =>

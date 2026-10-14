@@ -23,7 +23,7 @@ export const STAGE_NAME: Record<Stage, string> = {
   request: "Change request",
   work: "Work",
   tests: "Tests in the work copy",
-  queue: "Waiting to merge",
+  queue: "Waits to merge",
   composed: "Tests on main with the work",
   compose: "Combine",
   commit: "Commit and record",

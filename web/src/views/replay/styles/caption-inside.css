@@ -76,7 +76,7 @@
   border-left: 1px solid var(--line);
   background: var(--surface-1);
 }
-.rp-pipe { display: grid; align-content: start; gap: calc(var(--rp-pad) * .7); padding: var(--rp-pad); }
+.rp-pipe { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: calc(var(--rp-pad) * .7); padding: var(--rp-pad); }
 .rp-pipe__title { margin: 0; font-size: var(--rp-text); font-weight: 500; color: var(--ink-2); }
 .rp-pipe__now { display: none; }
 .rp-pipe__rail { position: relative; }
