@@ -172,7 +172,7 @@ const Line = memo(function Line({
           {bars}
         </span>
       )}
-      <span className="cv-ln" data-n={n} aria-hidden="true" onClick={(e) => onNum(n, e)} />
+      <span className="cv-ln" data-n={n} aria-hidden="true" title="Why is this line here?" onClick={(e) => onNum(n, e)} />
       <span className="cv-code">
         <Code text={text} tokens={tokens} />
       </span>

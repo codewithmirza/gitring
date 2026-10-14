@@ -3,7 +3,7 @@
  * panels (plain words, ASD-STE100).
  */
 import { describe, expect, it } from "vitest";
-import { changeText, historyUrl, requestStatusText, shortGoal, stepMeta, testsText, whyUrl, type HistoryStep } from "../../web/src/views/code/history";
+import { changeText, historyUrl, requestStatusText, shortGoal, stepFacts, stepWhat, stepWho, testsText, whyUrl, type HistoryStep } from "../../web/src/views/code/history";
 import { steViolations } from "../coord/ste";
 
 const merge: HistoryStep = {
@@ -27,9 +27,18 @@ describe("addresses", () => {
 
 describe("words", () => {
   it("says who made a change, what it did to the file, and the tests", () => {
-    expect(stepMeta(merge)).toBe("Work of Robin-4 · 3-way merge · commit aaaaaaa");
-    expect(stepMeta({ ...merge, kind: "outside", merge: undefined })).toBe("Main moved without a merge · commit aaaaaaa");
-    expect(stepMeta({ ...merge, kind: "root", merge: undefined })).toBe("The start of the history · commit aaaaaaa");
+    // One fact in each row: no string of facts joined with dots.
+    const now = 5 * 60_000 + 1;
+    expect(stepFacts(merge, now)).toEqual([
+      { label: "Merged", value: "5 min ago by Robin-4" },
+      { label: "Commit", value: "aaaaaaa, 3-way merge", agent: true },
+    ]);
+    expect(stepFacts({ ...merge, kind: "outside", merge: undefined }, now).map((f) => f.label)).toEqual(["Changed", "Commit"]);
+    expect(stepFacts({ ...merge, kind: "root", merge: undefined }, now)).toEqual([{ label: "Commit", value: "aaaaaaa", agent: true }]);
+    expect(stepWho(merge, now)).toBe("Merged by Robin-4, 5 min ago");
+    expect(stepWho({ ...merge, kind: "outside", merge: undefined }, now)).toBe("Main moved without a merge, 5 min ago");
+    expect(stepWho({ ...merge, kind: "root", merge: undefined }, now)).toBe("The start of the history");
+    expect(stepWhat(merge)).toBe("+4 −1, commit aaaaaaa");
     expect(changeText(merge)).toBe("+4 −1");
     expect(changeText({ ...merge, change: { status: "A", additions: 9, deletions: 0 } })).toBe("added, +9");
     expect(changeText({ ...merge, change: { status: "D", additions: 0, deletions: 9 } })).toBe("deleted");

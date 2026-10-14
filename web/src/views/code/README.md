@@ -12,6 +12,7 @@ The parts of the code page. `../CodeView.tsx` puts the page together; the state 
 - `CodeDiff.tsx`: a work copy against its base, as a diff.
 - `CodeLink.tsx`: a link that changes the view without a page load.
 - `LineHistory.tsx`: the "Why line N?" and "History" actions.
+- `BottomSheet.tsx`: the sheet from the bottom of a phone that holds those answers.
 - `CloneButton.tsx`: "Clone", a git clone command with a read token.
 - `pickers.tsx`: the ref switcher, the file finder, "go to line" and the more menu.
 - `highlight.ts`: the syntax highlighter (front door of `highlight/`).

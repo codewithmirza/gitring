@@ -18,9 +18,11 @@ export { codeHref } from "./code/links";
 
 export function CodeView() {
   const model = useCodeView();
-  const { showTree, narrow, phonePanel, projectName, path, markAt, setMarkAt, lanes, now } = model;
+  const { showTree, narrow, phonePanel, projectName, path, markAt, setMarkAt, lanes, now, lineAnswer, loc } = model;
+  // On a phone an open answer is a sheet from the bottom. The page gives the code its room above the sheet.
+  const hasSheet = narrow && (lineAnswer === "history" || (lineAnswer === "why" && Boolean(loc.lines)));
   return (
-    <div className={["cv", showTree ? "has-tree" : "no-tree", narrow ? "is-narrow" : ""].join(" ")} data-panel={narrow ? phonePanel : undefined}>
+    <div className={["cv", showTree ? "has-tree" : "no-tree", narrow ? "is-narrow" : "", hasSheet ? "has-sheet" : ""].join(" ")} data-panel={narrow ? phonePanel : undefined}>
       <h1 className="vh" tabIndex={-1}>
         Code of {projectName}
         {path ? `: ${path}` : ""}

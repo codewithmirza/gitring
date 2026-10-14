@@ -1,5 +1,5 @@
 /*
- * The styles of the "Why line N?" and "History" panels of the code view (LineHistory.tsx).
+ * The styles of the "Why line N?" and "History" panels of the code view (LineHistory.tsx) and of the phone sheet (BottomSheet.tsx).
  * Type sizes: 11, 13, 15. Colors come from the theme tokens only, so Day, Dusk and Night work without rules of their own.
  */
 .lh-card { display: grid; gap: var(--s-2); width: min(440px, calc(100vw - 40px)); padding: var(--s-3); font-size: var(--t-sm); }
@@ -14,8 +14,12 @@
 .lh-plan { margin: 0; padding-left: 20px; display: grid; gap: 2px; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .lh-reqs { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--s-2); }
 .lh-reqs li { display: grid; gap: 2px; padding-left: var(--s-3); border-left: 2px solid var(--magenta); font-size: var(--t-xs); line-height: var(--lh-xs); }
-.lh-facts { display: flex; flex-wrap: wrap; gap: 4px var(--s-3); font-size: var(--t-xs); color: var(--ink-2); }
-.lh-facts span + span::before { content: "·"; margin-right: var(--s-3); color: var(--ink-3); }
+/* One fact in each row. A label and its value sit in two columns. */
+.lh-rows { display: grid; gap: 2px; margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); }
+.lh-rows > div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: var(--s-3); }
+.lh-rows dt { color: var(--ink-3); }
+.lh-rows dd { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+.lh-facts { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
 .lh-acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: 2px; }
 .lh-msg { display: grid; gap: var(--s-2); justify-items: start; padding: var(--s-3); max-width: 360px; font-size: var(--t-sm); }
 
@@ -39,3 +43,40 @@
   .lh-wait span { animation: lh-pulse 1.2s ease-in-out infinite alternate; }
 }
 @keyframes lh-pulse { from { opacity: .55; } to { opacity: 1; } }
+
+/* ───────────── the sheet of a phone ───────────── */
+/* It covers the bottom bar and the question card, and the sheet closes with its button. Its height is told to the page (--why-sheet-h), so the code has room above it. */
+.cv-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-popover);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(46dvh, 420px);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--overlay-border);
+  border-radius: var(--r-4) var(--r-4) 0 0;
+  background: var(--bg);
+  color: var(--ink-1);
+  box-shadow: var(--shadow-overlay);
+  animation: cv-sheet-in var(--dur-2) var(--ease-out);
+}
+.cv-sheet:focus { outline: none; }
+.cv-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 0 var(--s-2) 0 var(--s-4); border-bottom: 1px solid var(--line); }
+.cv-sheet__title { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
+.cv-sheet .cv-sheet__close { justify-content: center; min-width: 44px; min-height: 44px; border-color: transparent; background: transparent; color: var(--ink-2); }
+.cv-sheet__body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.cv-sheet .lh-card, .cv-sheet .lh-wait { width: auto; }
+.cv-sheet .lh-msg { max-width: none; }
+.cv-sheet .lh-eyebrow--line { display: none; }
+.cv-sheet .lh-steps { max-height: none; overflow: visible; }
+@keyframes cv-sheet-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv-sheet { animation-name: cv-sheet-fade; }
+  @keyframes cv-sheet-fade { from { opacity: 0; } to { opacity: 1; } }
+}

@@ -39,7 +39,12 @@ export function RefOverview({
       <div className="cv-scroll">
         <article className="cv-over">
           <p className="cv-over__eyebrow">
-            <Dot color={wc.color} /> Work copy of <strong>{wc.callsign}</strong> · {ATTEMPT_STATUS_TEXT[wc.status]} · updated {ago(wc.updatedAt, now)}
+            <Dot color={wc.color} />
+            <span>
+              Work copy of <strong>{wc.callsign}</strong>
+            </span>
+            <span>{ATTEMPT_STATUS_TEXT[wc.status]}</span>
+            <span>Updated {ago(wc.updatedAt, now)}</span>
           </p>
           <h2 className="cv-over__title voice-human">{wc.intentTitle}</h2>
           {wc.approach && <p className="cv-over__approach voice-agent">{wc.approach}</p>}
@@ -113,7 +118,7 @@ export function RefOverview({
         {info.kind === "commit" ? (
           <>
             <p className="cv-over__eyebrow">
-              <Icon name="commit" size={12} /> Commit {shortSha(info.sha)} · an earlier state of main
+              <Icon name="commit" size={12} /> Commit {shortSha(info.sha)}, an earlier state of main
             </p>
             <h2 className="cv-over__title">{mergeTitle ? <>Main after “<span className="voice-human">{mergeTitle}</span>”</> : "Files of this commit"}</h2>
             {mergeFiles}
@@ -136,7 +141,7 @@ export function RefOverview({
                     </CodeLink>
                     <span className="cv-over__who">
                       {fm.work.map((w) => `${w.wc.callsign}${w.touch ? "" : " (plan)"}`).join(", ")}
-                      {fm.keepOut.length ? ` · ${plural(fm.keepOut.length, "change request")}` : ""}
+                      {fm.keepOut.length ? `, ${plural(fm.keepOut.length, "change request")}` : ""}
                     </span>
                   </li>
                 ))}

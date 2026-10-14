@@ -1,11 +1,13 @@
 /**
  * The toolbar of the code view: files button, ref switcher, Code or Diff, Find file and Clone.
+ * On a phone it is one row: Files, the ref, and one menu that holds Find file and Clone.
  */
+import { useRef, useState } from "react";
 import { Icon } from "../../../design/icons";
 import { plural } from "../../../state/format";
 import { CodeLink } from "../CodeLink";
-import { FileFinder, RefPicker } from "../pickers";
-import { CloneButton } from "../CloneButton";
+import { FileFinder, MoreMenu, RefPicker, type MenuAction } from "../pickers";
+import { CloneButton, ClonePanel } from "../CloneButton";
 import type { CodeViewModel } from "./model";
 
 export function CodeToolbar({ model }: { model: CodeViewModel }) {
@@ -15,6 +17,13 @@ export function CodeToolbar({ model }: { model: CodeViewModel }) {
     canAct, projectId, importing, info,
   } = model;
   const isWork = info.kind === "work";
+  const toolsBtn = useRef<HTMLButtonElement | null>(null);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const canClone = Boolean(canAct && projectId && !importing);
+  const tools: MenuAction[] = [
+    { key: "find", label: "Find file", opensPanel: true, onSelect: () => setFindOpen(true) },
+    ...(canClone ? [{ key: "clone", label: "Clone", opensPanel: true, onSelect: () => setCloneOpen(true) }] : []),
+  ];
   return (
     <div className="cv-bar" role="toolbar" aria-label="Code">
       <button
@@ -56,13 +65,17 @@ export function CodeToolbar({ model }: { model: CodeViewModel }) {
         </div>
       )}
 
-      <button ref={findBtn} type="button" className="cv-findbtn" aria-haspopup="dialog" aria-expanded={findOpen} onClick={() => setFindOpen(!findOpen)}>
-        <Icon name="filter" size={14} />
-        <span className="cv-findbtn__text">Find file</span>
-        <kbd className="b-kbd">t</kbd>
-      </button>
+      {narrow ? (
+        <MoreMenu bar className="cv-bar__more" label="Find file or clone" actions={tools} buttonRef={toolsBtn} />
+      ) : (
+        <button ref={findBtn} type="button" className="cv-findbtn" aria-haspopup="dialog" aria-expanded={findOpen} onClick={() => setFindOpen(!findOpen)}>
+          <Icon name="filter" size={14} />
+          <span className="cv-findbtn__text">Find file</span>
+          <kbd className="b-kbd">t</kbd>
+        </button>
+      )}
       <FileFinder
-        anchor={findBtn.current}
+        anchor={narrow ? toolsBtn.current : findBtn.current}
         open={findOpen}
         onClose={() => setFindOpen(false)}
         paths={allPaths}
@@ -81,7 +94,8 @@ export function CodeToolbar({ model }: { model: CodeViewModel }) {
             ? `${plural(files.length, "file")}`
             : ""}
       </span>
-      {canAct && projectId && !importing && <CloneButton project={projectId} />}
+      {canClone && !narrow && <CloneButton project={projectId} />}
+      {canClone && narrow && <ClonePanel project={projectId} anchor={toolsBtn.current} open={cloneOpen} onClose={() => setCloneOpen(false)} />}
     </div>
   );
 }

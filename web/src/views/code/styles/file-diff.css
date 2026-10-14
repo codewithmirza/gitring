@@ -22,13 +22,15 @@
 .cv-crumbs__dir:hover { text-decoration: underline; text-underline-offset: 3px; }
 .cv-crumbs__file { font-weight: 600; color: var(--ink-1); overflow-wrap: anywhere; }
 .cv-crumbs__sep { padding: 0 2px; color: var(--ink-3); }
-.cv-filehead__meta { display: inline-flex; gap: var(--s-3); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
+.cv-filehead__meta { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
 .cv-filehead__acts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; }
 /* File actions are quiet: no border until hover; the toggled one shows its state. */
 .cv-tool { min-height: 28px; padding: 0 8px; border-color: transparent; background: transparent; font-size: var(--t-xs); color: var(--ink-2); }
 .cv-tool:hover { color: var(--ink-1); }
 .cv-tool[aria-pressed="true"] { color: var(--ink-1); background: var(--surface-2); border-color: var(--line-strong); }
 .cv-tool[aria-expanded="true"] { color: var(--ink-1); background: var(--surface-2); }
+/* "Why?" is the idea of the page, so it has a border at rest and ink-1 text (never greyed out). */
+.cv-tool--why { border-color: var(--line-strong); color: var(--ink-1); font-weight: 500; }
 .cv-tool:disabled,
 .cv-tool[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .cv-tool__caret path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -82,6 +84,8 @@
 .cv-ctx__item strong { color: var(--ink-1); font-weight: 600; }
 .cv-ctx__acts { display: inline-flex; flex-wrap: wrap; gap: var(--s-3); justify-self: end; }
 .cv-ctx__act { font-size: var(--t-xs); }
+/* A fact at the end of a line (the state of a work copy, the time of a merge): space sets it apart, not a dot. */
+.cv-ctx__state { margin-left: var(--s-4); color: var(--ink-3); white-space: nowrap; }
 .cv-ctx__more { justify-self: start; }
 .cv-linkbtn { min-height: 24px; color: var(--accent); font-size: inherit; text-decoration: underline; text-decoration-color: color-mix(in oklch, currentColor 38%, transparent); text-underline-offset: 3px; }
 .cv-linkbtn:hover { text-decoration-color: currentColor; }
@@ -101,6 +105,8 @@
   line-height: 20px;
   tab-size: 4;
   color: var(--ink-1);
+  /* A phone sheet covers the bottom of the code. The last lines can still scroll up above it. */
+  padding-bottom: var(--why-sheet-h, 0px);
 }
 .cv-lines:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .cv-lines__inner { position: relative; min-width: 100%; }
@@ -127,11 +133,12 @@
   padding-right: 14px;
   text-align: right;
   color: var(--ink-3);
-  cursor: pointer;
+  /* A click on a number answers "why is this line here?". The help cursor says that something is there to ask. */
+  cursor: help;
   user-select: none;
 }
 .cv-ln::before { content: attr(data-n); }
-.cv-ln:hover { color: var(--ink-1); }
+.cv-ln:hover { color: var(--ink-1); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .cv-code { flex: 1; min-width: 0; padding: 0 var(--s-6) 0 var(--s-1); }
 .cv-line.is-sel,
 .cv-line.is-sel .cv-gut,

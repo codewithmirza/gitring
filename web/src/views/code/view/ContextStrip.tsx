@@ -31,6 +31,7 @@ export function ContextStrip({
   own,
   onShowLines,
   now,
+  limit = 3,
 }: {
   info: RefInfo;
   path: string;
@@ -39,6 +40,8 @@ export function ContextStrip({
   own: DiffFile | undefined;
   onShowLines: (r: LineRange) => void;
   now: number;
+  /** How many lines show before "Show more". A phone shows one, so that the code is on the first screen. */
+  limit?: number;
 }) {
   const [all, setAll] = useState(false);
   const items: { key: string; node: ReactNode }[] = [];
@@ -79,7 +82,8 @@ export function ContextStrip({
           <span>
             <strong>{w.wc.callsign}</strong>{" "}
             {w.touch ? (hunks.length ? `changes ${rangesText(hunks)}` : w.touch.status === "A" ? "adds this file" : w.touch.status === "D" ? "deletes this file" : "changes this file") : "plans to change this file"}
-            {info.kind === "work" ? " too" : ""} · <span className="voice-human">{w.wc.intentTitle}</span> · {ATTEMPT_STATUS_TEXT[w.wc.status]}
+            {info.kind === "work" ? " too" : ""} for <span className="voice-human">{w.wc.intentTitle}</span>
+            <span className="cv-ctx__state">{ATTEMPT_STATUS_TEXT[w.wc.status]}</span>
           </span>
           <span className="cv-ctx__acts">
             {w.touch && (
@@ -129,7 +133,8 @@ export function ContextStrip({
           <Icon name="anchor" size={12} />
           <span>
             Last merge: <span className="voice-human">{last.intentTitle}</span>
-            {last.callsign ? ` by ${last.callsign}` : ""} · {ago(last.landing.at, now)}
+            {last.callsign ? ` by ${last.callsign}` : ""}
+            <span className="cv-ctx__state">{ago(last.landing.at, now)}</span>
           </span>
           <span className="cv-ctx__acts">
             <Link to={`/history/${encodeURIComponent(last.landing.id)}`} className="cv-ctx__act">
@@ -141,7 +146,7 @@ export function ContextStrip({
     });
   }
   if (!items.length) return null;
-  const shown = all ? items : items.slice(0, 3);
+  const shown = all ? items : items.slice(0, limit);
   return (
     <div className="cv-ctx">
       <h2 className="vh">Who works on this file</h2>
@@ -152,9 +157,9 @@ export function ContextStrip({
           </li>
         ))}
       </ul>
-      {items.length > 3 && (
+      {items.length > limit && (
         <button type="button" className="cv-linkbtn cv-ctx__more" aria-expanded={all} onClick={() => setAll(!all)}>
-          {all ? "Show less" : `Show ${items.length - 3} more`}
+          {all ? "Show less" : `Show ${items.length - limit} more`}
         </button>
       )}
     </div>

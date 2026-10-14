@@ -1,9 +1,10 @@
 /**
- * The line selection of the code view: jumps, the flash of a mark, and the j and k moves.
+ * The line selection of the code view: jumps, the flash of a mark, the j and k moves, and the line that "Why?" asks about.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LineRange } from "../../../../../src/core/types";
 import { goCode } from "../links";
+import { lineForWhy } from "./whyLine";
 import type { CodeSource } from "./useCodeSource";
 import type { OpenFileState } from "./useOpenFile";
 
@@ -41,7 +42,23 @@ export function useCodeCursor(source: CodeSource, openFile: OpenFileState) {
     },
     [loc.ref, loc.path, loc.view],
   );
-  const onLines = useCallback((r: LineRange) => selectLines(r), [selectLines]);
+  // The answer of "Why line N?" or the history of the file. A click on a line number opens the first one.
+  const [lineAnswer, setLineAnswer] = useState<"why" | "history" | null>(null);
+  useEffect(() => setLineAnswer(null), [path, loc.ref]);
+  const onLines = useCallback(
+    (r: LineRange, extend: boolean) => {
+      selectLines(r);
+      if (!extend) setLineAnswer("why");
+    },
+    [selectLines],
+  );
+
+  // "Why?" with no line selected: select the line under the caret, or the first line on screen that an agent changes.
+  const chooseWhyLine = useCallback(() => {
+    const scroller = document.querySelector<HTMLElement>(".cv-lines");
+    const n = lineForWhy(scroller, window.getSelection(), annos.map((a) => a.range));
+    selectLines([n, n]);
+  }, [annos, selectLines]);
 
   const moveAnno = useCallback(
     (dir: 1 | -1) => {
@@ -61,7 +78,7 @@ export function useCodeCursor(source: CodeSource, openFile: OpenFileState) {
     [annos, loc.lines, jumpTo],
   );
 
-  return { jump, flash, setFlash, focusMark, jumpTo, selectLines, onLines, moveAnno };
+  return { jump, flash, setFlash, focusMark, jumpTo, selectLines, onLines, lineAnswer, setLineAnswer, chooseWhyLine, moveAnno };
 }
 
 export type CursorState = ReturnType<typeof useCodeCursor>;
