@@ -65,11 +65,22 @@ describe("fileChangeKind", () => {
     expect(kind("src/Price.tsx", PRICE_TSX, PRICE_TSX.replace("// cents to dollars", "// to dollars"))).toBe("comment-only");
   });
 
-  it("sees a formatting-only change: white space only, in any text file", () => {
+  it("sees a formatting-only change: white space only, in a JS or TS file", () => {
     expect(kind("src/price.js", PRICE, PRICE.replace("  return", "    return"))).toBe("formatting-only");
     expect(kind("src/price.js", PRICE, PRICE.replace(/\n/g, "\r\n"))).toBe("formatting-only");
-    expect(kind("config.json", '{"a":1}\n', '{\n  "a": 1\n}\n')).toBe("formatting-only");
-    expect(kind("styles.css", "a{color:red;}", "a {\n  color: red;\n}\n")).toBe("formatting-only");
+  });
+
+  it("does not trust white space in other formats: it can change the meaning", () => {
+    expect(kind("tool.py", "if a:\n    run()\n", "if a:\nrun()\n")).toBe("logic");
+    expect(kind("ci.yml", "on:\n  push:\n", "on:\npush:\n")).toBe("logic");
+    expect(kind("config.json", '{"a b":1}\n', '{"ab":1}\n')).toBe("logic");
+    expect(kind("src/a.js", 'const a = "x y";\n', 'const a = "xy";\n')).toBe("logic");
+  });
+
+  it("calls only extension-less documentation names docs: history.js and notice.yml are code", () => {
+    expect(kind("LICENSE", "a\n", "b\n")).toBe("docs-only");
+    expect(kind("src/history.js", "run();\n", "run2();\n")).toBe("logic");
+    expect(kind(".github/workflows/notice.yml", "a: 1\n", "a: 2\n")).toBe("logic");
   });
 
   it("calls a change of comments and white space together comment-only", () => {
@@ -87,10 +98,10 @@ describe("fileChangeKind", () => {
     expect(kind("src/a.js", "const a = 1;\n", "// const a = 1;\nconst a = 2;\n")).toBe("logic");
   });
 
-  it("calls a JS file that the tokenizer cannot read logic, unless only white space differs", () => {
+  it("calls a JS file that the tokenizer cannot read logic", () => {
     const bad = "const a = 'unterminated\n";
     expect(kind("src/a.js", bad, `${bad}// note\n`)).toBe("logic");
-    expect(kind("src/a.js", bad, `  ${bad}`)).toBe("formatting-only");
+    expect(kind("src/a.js", bad, `  ${bad}`)).toBe("logic");
   });
 
   it("calls every change of a documentation file docs-only, also a new or deleted one", () => {

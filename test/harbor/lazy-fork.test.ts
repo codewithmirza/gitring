@@ -43,4 +43,22 @@ describe("lazy work copy forks", () => {
     expect(copy.headSha).toBeTruthy();
     expect(await w.repo.resolve(fork, "main")).toBe(copy.headSha);
   });
+
+  it("keeps a merge that main got after the base: the fork commit carries only the work of the agent", async () => {
+    const w = new CrashWorld();
+    await w.start({ files: [{ path: "src/a.js", text: "export const a = 1;\n" }, TEST_FILE], settings: { landing: "manual" } });
+    const d = await declareApi(w);
+    await w.harbor.write({ attemptId: d.attemptId, files: [{ path: "src/b.js", content: "export const b = 2;\n" }] });
+    // Main moves after the base of the work (an outside commit), before the fork exists.
+    const repo = (w.inner as unknown as { requireProject(): { repo: { name: string } } }).requireProject().repo.name;
+    const tip = (await w.repo.resolve(repo, "main"))!;
+    const other = await w.repo.commit({ repo, branch: "main", parent: tip, changes: [{ path: "src/c.js", content: "export const c = 3;\n" }], message: "Add c", author: { name: "Robin", email: "robin@example.invalid" } });
+    const copy = await w.harbor.workCopyRemote(d.attemptId);
+    const head = (await w.repo.readCommit(copy.repo, copy.headSha!))!;
+    const files = async (tree: string) => (await w.repo.readTree(copy.repo, tree))!;
+    const src = (await files(head.treeHash)).find((e) => e.name === "src")!;
+    const names = (await files(src.hash)).map((e) => e.name).sort();
+    expect(head.parents[0]).toBe(other.sha);
+    expect(names).toEqual(["a.js", "b.js", "c.js"]);
+  });
 });

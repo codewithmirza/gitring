@@ -28,7 +28,7 @@ const JS_EXT = /\.(?:js|mjs|cjs|jsx|ts|tsx|mts|cts)$/i;
 const JSX_EXT = /\.(?:jsx|tsx)$/i;
 const DOCS_EXT = /\.(?:md|mdx|markdown|txt|rst|adoc|asciidoc)$/i;
 /** Documentation files without an extension, by name. */
-const DOCS_NAME = /^(?:readme|license|licence|changelog|changes|history|authors|contributors|contributing|notice|copying)(?:\.[a-z0-9]+)?$/i;
+const DOCS_NAME = /^(?:readme|license|licence|changelog|changes|history|authors|contributors|contributing|notice|copying)$/i;
 const TEST_DIR = /(?:^|\/)(?:tests?|__tests__|spec|specs|__snapshots__|__mocks__|fixtures?)\//i;
 const TEST_NAME = /(?:[._-](?:test|spec)\.[a-z0-9]+$|\.snap$|^(?:test|spec)[._-])/i;
 
@@ -89,11 +89,10 @@ export function fileChangeKind(f: FileVersions): ChangeKind {
   if (where === "docs") return "docs-only";
   if (f.base === null || f.head === null) return where === "test" ? "test-only" : "logic";
   if (f.base === f.head) return "formatting-only";
-  if (whitespaceOnly(f.base, f.head)) return "formatting-only";
+  // White space is not safe in every format (Python, YAML, a string in code): only the tokens of JS and TS decide.
   if (JS_EXT.test(f.path)) {
     const same = sameTokens(f.base, f.head, f.path);
-    // The tokens are the same, and more than white space differs: the comments differ.
-    if (same) return "comment-only";
+    if (same) return whitespaceOnly(f.base, f.head) ? "formatting-only" : "comment-only";
   }
   return where === "test" ? "test-only" : "logic";
 }

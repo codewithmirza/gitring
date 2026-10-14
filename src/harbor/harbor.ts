@@ -2523,11 +2523,13 @@ export class HarborMaster extends DurableObject<Env> {
     const view = await this.attemptView(a);
     const forkTip = tip === a.baseSha ? undefined : await this.backend.readCommit(a.fork.repo, tip);
     const forkTree = forkTip ? await this.treeText(a.fork.repo, forkTip.treeHash) : await this.treeText(this.requireProject().repo.name, a.baseTree);
-    // Every entry that differs: after a re-plot the attempt also carries the main changes since the fork point,
-    // binary files included, and a delete of a binary file is a change too.
-    const reader = await this.workReader(a, view, [forkTree]);
+    // The fork is made when it is needed, from the main of that time, which can be newer than the base of the work.
+    // So the commit carries what the work changed since its own base, never the difference to the fork tip:
+    // that difference would undo the merges that main got after the base. Binary files and deletes count too.
+    const baseTree = await this.treeText(this.requireProject().repo.name, a.baseTree);
+    const reader = await this.workReader(a, view, [forkTree, baseTree]);
     const changes: FileChange[] = [];
-    for (const ch of diffSnapshots(forkTree.snapshot, view.snapshot)) {
+    for (const ch of diffSnapshots(baseTree.snapshot, view.snapshot)) {
       const e = view.snapshot.get(ch.path);
       if (!e) {
         changes.push({ path: ch.path, content: null });
@@ -2548,6 +2550,7 @@ export class HarborMaster extends DurableObject<Env> {
       author: { name: agent?.callsign ?? "agent", email: `${(agent?.callsign ?? "agent").toLowerCase()}@agents.gitring.invalid` },
     });
     a.headSha = res.sha;
+    this.putAttempt(a);
     this.addLog({ kind: "push", attemptId: a.id, agentId: a.agentId, intentId: a.intentId, message: `The work of ${agent?.callsign} is in its work copy ${a.fork.repo} at ${res.sha.slice(0, 7)}.`, files: changes.map((c) => c.path) });
   }
 
@@ -3187,7 +3190,9 @@ export class HarborMaster extends DurableObject<Env> {
           }
           return;
         }
-        // Main is not where gitring thinks. The rest of the train stays queued: the next round catches up with main and merges it one by one.
+        // Main is not where gitring thinks. Catch up with it now, so the next round composes on the real main.
+        // The rest of the train stays queued and merges one by one.
+        await this.catchUpMain(a);
         for (const y of merge.slice(i)) {
           this.leaveTrain(y.a, intentBefore.get(y.a.id)!, `Main moved under the train. The work of ${this.callsign(y.a.id)} merges on its own next.`);
           outcomes.set(y.a.id, "wait");
@@ -4842,6 +4847,10 @@ export class HarborMaster extends DurableObject<Env> {
     if (asked.approval?.status === "waiting") {
       const res = await this.decide(attemptId, { answer: "approve", note: rationale }, { id: by.id, name: by.name, role }, "app");
       return { status: res.status, message: res.message, ...(res.landing ? { landing: res.landing } : {}), ...(res.waits ? { waits: res.waits } : {}), ...(res.outcome === "refused" ? { refused: true as const } : {}) };
+    }
+    // Work that was never asked about can have a rule by folder too: only an owner merges it.
+    if (!atLeast(role, "owner") && (await this.approvalFor(asked, { untested: false, competing: 0, picked: true }))?.ownerOnly) {
+      return { status: asked.status, message: "A rule by folder needs the yes of an owner for this work. An owner must merge it.", refused: true as const };
     }
     return this.landWork(attemptId, rationale, by);
   }

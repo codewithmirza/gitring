@@ -145,6 +145,18 @@ describe("rules by folder", () => {
     expect(robin.next).toBe("landing-queue");
   });
 
+  it("does not let a member merge work under a rule for owners with the merge button", async () => {
+    await start({ landing: "automatic", folderRules: RULES });
+    const d = await plan(SAM, ["src/a.js"]);
+    await world.harbor.write({ attemptId: d.attemptId, files: [{ path: "infra/main.tf", content: 'resource "x" "z" {}\n' }] });
+    const refused = await world.harbor.land(d.attemptId, "Merge it", human(SAM), "member");
+    expect(refused).toMatchObject({ refused: true, message: "A rule by folder needs the yes of an owner for this work. An owner must merge it." });
+    expect(steViolations(refused.message)).toEqual([]);
+    expect(world.status(d.attemptId)).not.toBe("landed");
+    const ok = await world.harbor.land(d.attemptId, "Merge it", human(ROBIN), "owner");
+    expect(ok.refused).toBeUndefined();
+  });
+
   it("needs no yes for work under a no-yes rule, also when the project asks before every merge", async () => {
     await start({ landing: "ask", folderRules: RULES });
     const docs = await work(SAM, { "docs/guide.md": "# Guide\n\nMore.\n" });

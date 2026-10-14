@@ -69,6 +69,27 @@ describe("trains", () => {
     expect(await w.harbor.file("main", "src/gamma.js")).toContain("gamma");
   });
 
+  it("catches up with a main that moved under the train, and merges every task", async () => {
+    const w = new CrashWorld();
+    await w.start({ settings: { landing: "automatic" } });
+    let release!: () => void;
+    w.inner.landingChain = new Promise<void>((r) => (release = r));
+    const tasks = [];
+    for (const name of ["alpha", "beta", "gamma"]) {
+      const t = await w.startTask(name);
+      await w.harbor.submit(t.attemptId, `Add ${name}`);
+      tasks.push(t);
+    }
+    // A commit from outside gitring lands on main while the work waits.
+    const tip = (await w.repo.resolve(w.mainRepo, "main"))!;
+    await w.repo.commit({ repo: w.mainRepo, branch: "main", parent: tip, changes: [{ path: "docs/outside.md", content: "Outside.\n" }], message: "Outside change", author: { name: "Robin", email: "robin@example.invalid" } });
+    release();
+    await w.settle();
+    for (const t of tasks) expect(w.status(t.attemptId), t.attemptId).toBe("landed");
+    // The train did not try again and again on the stale main: a few test runs, not one for each round.
+    expect(composedRuns(w)).toBeLessThanOrEqual(6);
+  });
+
   it("does not make a train when the setting is 1, or when the work shares a file", async () => {
     const solo = new CrashWorld();
     await solo.start({ settings: { landing: "automatic", maxTrain: 1 } });
