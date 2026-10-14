@@ -31,6 +31,7 @@ export function ContextStrip({
   own,
   onShowLines,
   now,
+  limit = 3,
 }: {
   info: RefInfo;
   path: string;
@@ -39,6 +40,8 @@ export function ContextStrip({
   own: DiffFile | undefined;
   onShowLines: (r: LineRange) => void;
   now: number;
+  /** How many lines show before "Show more". A phone shows one, so that the code is on the first screen. */
+  limit?: number;
 }) {
   const [all, setAll] = useState(false);
   const items: { key: string; node: ReactNode }[] = [];
@@ -143,7 +146,7 @@ export function ContextStrip({
     });
   }
   if (!items.length) return null;
-  const shown = all ? items : items.slice(0, 3);
+  const shown = all ? items : items.slice(0, limit);
   return (
     <div className="cv-ctx">
       <h2 className="vh">Who works on this file</h2>
@@ -154,9 +157,9 @@ export function ContextStrip({
           </li>
         ))}
       </ul>
-      {items.length > 3 && (
+      {items.length > limit && (
         <button type="button" className="cv-linkbtn cv-ctx__more" aria-expanded={all} onClick={() => setAll(!all)}>
-          {all ? "Show less" : `Show ${items.length - 3} more`}
+          {all ? "Show less" : `Show ${items.length - limit} more`}
         </button>
       )}
     </div>

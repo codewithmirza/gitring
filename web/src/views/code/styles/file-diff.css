@@ -22,7 +22,7 @@
 .cv-crumbs__dir:hover { text-decoration: underline; text-underline-offset: 3px; }
 .cv-crumbs__file { font-weight: 600; color: var(--ink-1); overflow-wrap: anywhere; }
 .cv-crumbs__sep { padding: 0 2px; color: var(--ink-3); }
-.cv-filehead__meta { display: inline-flex; gap: var(--s-3); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
+.cv-filehead__meta { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
 .cv-filehead__acts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; }
 /* File actions are quiet: no border until hover; the toggled one shows its state. */
 .cv-tool { min-height: 28px; padding: 0 8px; border-color: transparent; background: transparent; font-size: var(--t-xs); color: var(--ink-2); }
@@ -138,7 +138,7 @@
   user-select: none;
 }
 .cv-ln::before { content: attr(data-n); }
-.cv-ln:hover { color: var(--ink-1); }
+.cv-ln:hover { color: var(--ink-1); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .cv-code { flex: 1; min-width: 0; padding: 0 var(--s-6) 0 var(--s-1); }
 .cv-line.is-sel,
 .cv-line.is-sel .cv-gut,

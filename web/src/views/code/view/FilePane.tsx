@@ -119,7 +119,7 @@ export function FilePane({ model }: { model: CodeViewModel }) {
         </header>
       )}
       {path && !diffMode && (info.kind === "main" || info.kind === "work") && (
-        <ContextStrip info={info} path={path} fm={marks.get(path)} last={lastMerges.get(path)} own={own} onShowLines={(r) => { selectLines(r); setFlash(r); jumpTo(r[0]); }} now={now} />
+        <ContextStrip info={info} path={path} fm={marks.get(path)} last={lastMerges.get(path)} own={own} onShowLines={(r) => { selectLines(r); setFlash(r); jumpTo(r[0]); }} now={now} limit={narrow ? 1 : 3} />
       )}
       {main}
     </section>

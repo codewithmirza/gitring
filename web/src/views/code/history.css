@@ -45,7 +45,7 @@
 @keyframes lh-pulse { from { opacity: .55; } to { opacity: 1; } }
 
 /* ───────────── the sheet of a phone ───────────── */
-/* It sits above the bottom bar and the question card. Its height is told to the page (--why-sheet-h), so the code has room above it. */
+/* It covers the bottom bar and the question card, and the sheet closes with its button. Its height is told to the page (--why-sheet-h), so the code has room above it. */
 .cv-sheet {
   position: fixed;
   left: 0;
@@ -66,7 +66,7 @@
 .cv-sheet:focus { outline: none; }
 .cv-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 0 var(--s-2) 0 var(--s-4); border-bottom: 1px solid var(--line); }
 .cv-sheet__title { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
-.cv-sheet__close { justify-content: center; min-width: 44px; min-height: 44px; border-color: transparent; background: transparent; color: var(--ink-2); }
+.cv-sheet .cv-sheet__close { justify-content: center; min-width: 44px; min-height: 44px; border-color: transparent; background: transparent; color: var(--ink-2); }
 .cv-sheet__body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .cv-sheet .lh-card, .cv-sheet .lh-wait { width: auto; }
 .cv-sheet .lh-msg { max-width: none; }
