@@ -82,7 +82,7 @@ export function isGatewayModel(model: string): boolean {
   return !model.startsWith("@cf/") && !model.startsWith("@hf/");
 }
 
-/** The last chat error (for diagnostics in vessels and logs). */
+/** The last chat error (for diagnostics in agent runners and logs). */
 export let lastChatError: string | undefined;
 
 /**

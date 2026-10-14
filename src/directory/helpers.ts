@@ -1,7 +1,7 @@
 /**
  * Small pure functions that the Directory layers share: name cleaning, URL checks and the shape of a GitHub token.
  *
- * No storage and no network here. src/worker/auth.ts imports safeReturn through directory.ts.
+ * No storage and no network here. src/worker/sign-in-page.ts imports safeReturn through directory.ts.
  */
 import { sameString } from "./crypto";
 import type { GithubTokenAnswer, GithubUserToken } from "./types";

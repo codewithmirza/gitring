@@ -10,6 +10,8 @@ import { dispose } from "./helpers";
 import { ArtifactsCore } from "./core";
 
 export abstract class ArtifactsControl extends ArtifactsCore {
+  // ───── Make a repository ─────
+
   async ensureRepo(name: string, opts: { description?: string } = {}): Promise<RepoHandle> {
     let waited = 0;
     let hiccups = 0;
@@ -64,6 +66,8 @@ export abstract class ArtifactsControl extends ArtifactsCore {
     }
   }
 
+  // ───── Fork ─────
+
   /**
    * Fork `source` (default branch only) into `name`. Retries FORK_IN_PROGRESS / CREATE_IN_PROGRESS.
    * If `name` already exists as a fork of `source` (a retried call), it is adopted with a new token.
@@ -105,6 +109,8 @@ export abstract class ArtifactsControl extends ArtifactsCore {
     this.forget(name);
     await this.retrying(() => this.binding.delete(name));
   }
+
+  // ───── Tokens and the remote URL ─────
 
   async createToken(repo: string, scope: "read" | "write", ttlSeconds: number): Promise<{ token: string; expiresAt: string; id: string }> {
     const ttl = Math.min(31_536_000, Math.max(60, Math.floor(ttlSeconds)));

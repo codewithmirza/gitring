@@ -9,7 +9,7 @@ import type { TreeEntry } from "../backend";
 import type { BlobCache } from "../blob-cache";
 import type { MemoryFS } from "../memory-fs";
 
-/** Notes ref for logbook records. */
+/** Notes ref for why-records. */
 export const NOTES_REF = "refs/notes/gitring";
 export const DEFAULT_BRANCH = "main";
 /** TTL of the internal write token used for clone/fetch/push. */

@@ -7,6 +7,8 @@ import { HOUR } from "../constants";
 import { DirectoryStore } from "./store";
 
 export abstract class DirectoryMeters extends DirectoryStore {
+  // ───── Counters of use ─────
+
   /** Add to a counter of a project for this month. Never throws: a counter must not stop a merge or a test. */
   usageAdd(projectId: string, kind: "merges" | "testRuns" | "agentTokens", n = 1): void {
     try {
@@ -24,6 +26,8 @@ export abstract class DirectoryMeters extends DirectoryStore {
     const r = this.sql.exec<{ merges: number; test_runs: number; agent_tokens: number }>("SELECT merges, test_runs, agent_tokens FROM usage WHERE project_id = ? AND month = ?", projectId, month).toArray()[0];
     return { month, merges: r?.merges ?? 0, testRuns: r?.test_runs ?? 0, agentTokens: r?.agent_tokens ?? 0 };
   }
+
+  // ───── Budgets of one hour ─────
 
   /**
    * Take up to n units from rolling one-hour windows: one per person (perUser) and one for the

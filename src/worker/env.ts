@@ -14,7 +14,7 @@ export interface Env {
   HARBOR: DurableObjectNamespace<HarborMaster>;
   VESSEL: DurableObjectNamespace<Vessel>;
   DIRECTORY: DurableObjectNamespace<Directory>;
-  /** Check containers (Cloudflare Containers): one per attempt. */
+  /** Check containers (Cloudflare Containers): one for each work copy. */
   DRYDOCK: DurableObjectNamespace<Drydock>;
   LOADER: WorkerLoader;
   ARTIFACTS: Artifacts;

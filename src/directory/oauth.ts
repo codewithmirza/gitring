@@ -21,6 +21,8 @@ export type { McpSet } from "./oauth-store/rules";
 type Fail = (status: number, e: OAuthError, extra?: Record<string, string>) => TokenAnswer;
 
 export class OAuthStore extends OAuthDevices {
+  // ───── The token endpoint ─────
+
   /**
    * POST /oauth/token. `form` holds the request parameters; `basic` is the decoded HTTP Basic
    * client authentication, if any.
@@ -104,6 +106,8 @@ export class OAuthStore extends OAuthDevices {
     return { status: 200, body: await this.issue(row.grant_id, row.scope || SCOPE, row.resource, family), headers: noStore };
   }
 
+  // ───── Revocation and validation ─────
+
   /**
    * RFC 7009. A refresh token ends its family (that sign-in of the app: every token of it); an access
    * token only itself. The person's consent (the grant) stays. Unknown tokens are fine (200). A token of
@@ -147,6 +151,8 @@ export class OAuthStore extends OAuthDevices {
     if (!grant.last_used || this.now() - grant.last_used > 60_000) this.sql.exec("UPDATE oauth_grants SET last_used = ? WHERE id = ?", this.now(), row.grant_id);
     return { userId: grant.user_id, clientId: grant.client_id, grantId: row.grant_id, scope: row.scope || SCOPE, expiresAt: row.expires_at };
   }
+
+  // ───── Grants of a person ─────
 
   grants(userId: string): { id: string; clientId: string; clientName: string; clientUri?: string; scope: string; createdAt: number; lastUsedAt?: number }[] {
     return this.sql

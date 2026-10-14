@@ -16,6 +16,8 @@ export abstract class DirectoryGithubRepos extends DirectoryGithubTokens {
   /** Repositories without the app, for a few minutes (lowercase "owner/name"). */
   private readonly repoMisses = new Map<string, { until: number; answer: GithubRepoAccess }>();
 
+  // ───── Access to a repository ─────
+
   /**
    * A short-lived token of the GitHub App for one repository ("owner/name"), scoped to that repository.
    * Worker-only (RPC from a project coordinator). Tokens are cached until 5 minutes before they expire.
@@ -55,6 +57,8 @@ export abstract class DirectoryGithubRepos extends DirectoryGithubTokens {
     this.repoTokens.set(name.toLowerCase(), entry);
     return { ok: true, ...entry };
   }
+
+  // ───── What a person may do in a repository ─────
 
   /**
    * What this person may do in a GitHub repository, as GitHub says now: read, push, and whether the
@@ -107,6 +111,8 @@ export abstract class DirectoryGithubRepos extends DirectoryGithubTokens {
     if (!p.installed) return { ok: false, message: p.message.includes("not installed") ? p.message : `The gitring GitHub App is not installed on ${repo}.`, ...(p.installUrl ? { installUrl: p.installUrl } : {}) };
     return { ok: p.push, message: p.message };
   }
+
+  // ───── Webhook deliveries ─────
 
   /** True the first time a webhook delivery id arrives (kept for a day). */
   async firstDelivery(id: string): Promise<boolean> {

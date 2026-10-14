@@ -15,6 +15,8 @@ export abstract class OAuthDevices extends OAuthIssue {
   /** Wrong user codes on /device per person (see deviceLookup). The Directory is one object, so memory is enough. */
   private readonly deviceMisses = new Map<string, { n: number; since: number }>();
 
+  // ───── Start and answer ─────
+
   /**
    * POST /oauth/device_authorization: a program asks for a sign-in. Answers the device code (for the
    * program), the user code (for the person) and the page where the person types it.
@@ -113,6 +115,8 @@ export abstract class OAuthDevices extends OAuthIssue {
     return this.deviceView(row, code);
   }
 
+  // ───── The token ─────
+
   /** POST /oauth/token with the device grant: the program asks again until the person answers (RFC 8628 §3.4, §3.5). */
   protected async deviceToken(form: Record<string, string | undefined>, client: OAuthClient, origin: string, fail: (status: number, e: OAuthError) => TokenAnswer): Promise<TokenAnswer> {
     if (!client.grantTypes.includes(DEVICE_GRANT)) return fail(400, err("unauthorized_client", `This app may not use the device grant. Register it with the grant type ${DEVICE_GRANT}.`));
@@ -144,6 +148,8 @@ export abstract class OAuthDevices extends OAuthIssue {
     const resource = row.resource ? canonicalResource(row.resource, origin) : resourceOf(origin);
     return { status: 200, body: await this.issue(row.grant_id, row.scope, resource, family), headers: { "cache-control": "no-store", pragma: "no-cache" } };
   }
+
+  // ───── Helpers ─────
 
   private pendingDevice(userHash: string): DeviceRow | undefined {
     return this.sql.exec<DeviceRow>("SELECT * FROM oauth_devices WHERE user_hash = ? AND status = 'pending' AND expires_at >= ?", userHash, this.now()).toArray()[0];

@@ -27,6 +27,8 @@ export abstract class DirectoryStore extends DurableObject<Env> {
     this.oauth = new OAuthStore({ sql: this.sql as never });
   }
 
+  // ───── Sealed config values ─────
+
   protected secret(): string {
     const s = this.env.GITRING_SECRET;
     if (!s) throw new Error("GITRING_SECRET is not set. Set it with: npx wrangler secret put GITRING_SECRET");
@@ -41,6 +43,8 @@ export abstract class DirectoryStore extends DurableObject<Env> {
   protected async putSealed(key: string, value: unknown): Promise<void> {
     this.sql.exec("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", key, await seal(this.secret(), value));
   }
+
+  // ───── One-time states ─────
 
   protected putState(data: StateData, ttl = STATE_MS): string {
     const state = randomToken(24);

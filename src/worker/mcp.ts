@@ -1,7 +1,7 @@
 /**
  * The MCP server for external agents (Claude Code, Codex, Cursor and others): the gitring tool set.
  *
- * Stateless (MCP 2026-07-28, createMcpHandler). All state lives in the HarborMaster of the project.
+ * Stateless (MCP 2026-07-28, createMcpHandler). All state lives in the project coordinator (HarborMaster).
  * Every call carries a personal API key or an OAuth token. Each tool checks the role of the caller on the project.
  * The Worker uses the read-only hint of a tool for the read-only path and scope.
  * Read next: src/worker/mcp-kit.ts (how a tool is defined) and the note below.

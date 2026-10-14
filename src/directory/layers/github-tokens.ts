@@ -15,6 +15,8 @@ export abstract class DirectoryGithubTokens extends DirectoryGithubApp {
   /** GitHub token calls per GitHub account run one at a time: refresh tokens are single-use. */
   private readonly githubRefreshes = new Map<string, Promise<GithubUserTokenResult>>();
 
+  // ───── The GitHub sign-in of a person ─────
+
   /** The GitHub sign-in of a person that holds a token (the newest one when there are several). */
   private githubIdentity(userId: string): { subject: string; login: string; token: string | null } | null {
     const rows = this.sql
@@ -42,6 +44,8 @@ export abstract class DirectoryGithubTokens extends DirectoryGithubApp {
       return null;
     }
   }
+
+  // ───── A valid user token ─────
 
   /**
    * A valid GitHub user token for a person (Worker-only, RPC). Refreshes it when it has less than five
@@ -129,6 +133,8 @@ export abstract class DirectoryGithubTokens extends DirectoryGithubApp {
       body: JSON.stringify({ access_token: access }),
     }).catch(() => undefined);
   }
+
+  // ───── Disconnect GitHub ─────
 
   /**
    * Disconnect GitHub: revoke the token at GitHub and forget it. The GitHub sign-in stays. A refresh in

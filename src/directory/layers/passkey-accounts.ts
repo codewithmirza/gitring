@@ -14,6 +14,8 @@ import { cleanName, transportsOf } from "../helpers";
 import { DirectorySignIn } from "./sign-in";
 
 export abstract class DirectoryPasskeyAccounts extends DirectorySignIn {
+  // ───── Passkey states and rows ─────
+
   /** A one-time passkey state: null when it is unknown, expired, used, or of another kind. */
   private takePasskeyState(state: string): Extract<StateData, { kind: "passkey" }> | null {
     const row = this.sql.exec<{ data: string; expires_at: number }>("SELECT data, expires_at FROM states WHERE state = ?", String(state ?? "")).toArray()[0];
@@ -28,6 +30,8 @@ export abstract class DirectoryPasskeyAccounts extends DirectorySignIn {
       .exec<{ id: string; name: string; transports: string | null; created_at: number; last_used: number | null }>("SELECT id, name, transports, created_at, last_used FROM passkeys WHERE user_id = ? ORDER BY created_at", userId)
       .toArray();
   }
+
+  // ───── Make or add a passkey ─────
 
   /**
    * Options for navigator.credentials.create(). With `userId` (a signed-in person), the passkey joins
@@ -121,6 +125,8 @@ export abstract class DirectoryPasskeyAccounts extends DirectorySignIn {
     return { token, user: this.userInfo(userId)!, passkey: { id: pk.id, name, createdAt: now, ...(lastUsed ? { lastUsed } : {}) } };
   }
 
+  // ───── Sign in with a passkey ─────
+
   /**
    * Options for navigator.credentials.get(). allowCredentials stays empty: every gitring passkey is a
    * discoverable credential, so the browser offers the passkeys that it has for this site. (A typed
@@ -167,6 +173,8 @@ export abstract class DirectoryPasskeyAccounts extends DirectorySignIn {
     if (!user) throw new Error(unknown);
     return { token: await this.openSession(row.user_id), user };
   }
+
+  // ───── List, rename and remove ─────
 
   async listPasskeys(userId: string): Promise<A.PasskeyInfo[]> {
     return this.passkeyRows(userId).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, ...(r.last_used ? { lastUsed: r.last_used } : {}) }));

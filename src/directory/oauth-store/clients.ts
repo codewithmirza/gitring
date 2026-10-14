@@ -22,6 +22,8 @@ export abstract class OAuthClients extends OAuthBase {
     return this.sql.exec<{ n: number }>("SELECT count(*) AS n FROM oauth_clients WHERE created_at > ?", hourAgo).one().n >= MAX_CLIENTS_PER_HOUR;
   }
 
+  // ───── Registration ─────
+
   /** RFC 7591 dynamic client registration. Answers the registration response or an error. `address`: the caller, for the caps. */
   async register(raw: unknown, address?: string): Promise<{ status: number; body: JsonObject }> {
     const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -77,6 +79,8 @@ export abstract class OAuthClients extends OAuthBase {
       },
     };
   }
+
+  // ───── Find a client ─────
 
   /**
    * A client by id: a registered one, or a client ID metadata document (https URL), fetched and cached

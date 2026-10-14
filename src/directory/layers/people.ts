@@ -12,6 +12,8 @@ import type { UserRow, WaitlistRow } from "../types";
 import { DirectoryMeters } from "./meters";
 
 export abstract class DirectoryPeople extends DirectoryMeters {
+  // ───── Owners and the profile of a person ─────
+
   private owners(): string[] {
     return (this.env.GITRING_OWNERS ?? "")
       .split(",")
@@ -59,6 +61,8 @@ export abstract class DirectoryPeople extends DirectoryMeters {
     const admin = this.isAdmin(u.id);
     return { id: u.id, name: u.name, email: u.email ?? undefined, avatar: u.avatar ?? undefined, identities, passkeys, admin, allowed: this.allowedFor(u.id, admin) };
   }
+
+  // ───── The waitlist gate ─────
 
   /** The emails of a person (the account and every sign-in), lowercase. Providers send verified emails only. */
   private emailsOf(userId: string): string[] {
@@ -125,6 +129,8 @@ export abstract class DirectoryPeople extends DirectoryMeters {
     const rows = this.sql.exec<WaitlistRow>("SELECT * FROM waitlist ORDER BY created_at ASC").toArray();
     return waitlistReport(rows.map((r) => ({ ...this.entryRow(r), allowed: this.allowedFor(r.user_id) })));
   }
+
+  // ───── The allow list ─────
 
   /** The people that an owner let in (the secret ALLOWLIST_EMAILS is separate and not listed here). */
   allowedList(): { entry: string; addedBy: string | null; addedAt: number }[] {

@@ -10,7 +10,7 @@ import { READS, callOf, defineTool, fail, plain, text, withNews, type ToolDef } 
 import { data, entriesOf, github, iso, newsOf, owner, page, page_, perPage, repo, sha7 } from "./answers";
 import { DONE, MAIN, cleanBranch, myBranches, open, resolve } from "./branches";
 
-/** A commit that gitring merged into main: the landing is the record of it. */
+/** A commit that gitring merged into main. The merge record holds its data. */
 function commitJson(l: T.Landing, state: T.ProjectState) {
   const agent = state.agents.find((x) => x.id === l.agentId)?.callsign ?? "agent";
   const task = state.intents.find((i) => i.id === l.intentId)?.title;

@@ -69,6 +69,8 @@ export abstract class ArtifactsCore {
     };
   }
 
+  // ───── Retries ─────
+
   /**
    * Retry `fn` while Artifacts reports *_IN_PROGRESS, with exponential backoff (budget ~20 s), and twice after a
    * short problem of the service (INTERNAL_ERROR).
@@ -120,6 +122,8 @@ export abstract class ArtifactsCore {
     }
   }
 
+  // ───── Remote URLs and tokens ─────
+
   protected remember(name: string, remote: string | undefined): void {
     if (remote) this.remotes.set(name, remote);
   }
@@ -155,6 +159,8 @@ export abstract class ArtifactsCore {
     }
     return { url, secret: token.secret };
   }
+
+  // ───── The local git directory ─────
 
   /** Remote URL + a cached short-lived write token secret + a fresh in-memory git dir. */
   protected async session(name: string, repo: ArtifactsRepo): Promise<GitSession> {

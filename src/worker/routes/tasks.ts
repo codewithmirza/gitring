@@ -19,7 +19,7 @@ export function taskRoutes(app: Hono<HonoEnv>): void {
 
 /** The state of a project, and the tasks: create, change, launch, park. */
 function intentRoutes(app: Hono<HonoEnv>): void {
-  // ───── project state + intents ─────
+  // ───── project state and tasks ─────
 
   app.get("/api/projects/:p/state", async (c) => {
     try {
@@ -82,7 +82,7 @@ function decisionRoutes(app: Hono<HonoEnv>): void {
 
 /** Merge a work copy. Only a person in the gitring app can. */
 function mergeRoutes(app: Hono<HonoEnv>): void {
-  // ───── attempts ─────
+  // ───── work copies ─────
 
   app.post("/api/projects/:p/attempts/:id/land", async (c) => {
     try {

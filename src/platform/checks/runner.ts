@@ -36,7 +36,7 @@ export interface CheckModules {
 export interface RunChecksOptions {
   /** Total time budget, fallback runs included. Default 10000 ms. */
   timeoutMs?: number;
-  /** "attempt" (default) = the attempt alone; "composed" = main + attempt. */
+  /** "attempt" (default) = the work copy alone; "composed" = main + the work copy. */
   scope?: CheckRun["scope"];
   /** CheckRun id. Default: a new random id. */
   id?: string;

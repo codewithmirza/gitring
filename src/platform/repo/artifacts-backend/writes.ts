@@ -44,6 +44,8 @@ import { ArtifactsReads } from "./reads";
  */
 
 export abstract class ArtifactsWrites extends ArtifactsReads {
+  // ───── A commit ─────
+
   async commit(input: CommitInput): Promise<CommitResult> {
     if (!isValidBranchName(input.branch)) throw new Error(`invalid branch name: ${String(input.branch)}`);
     if (input.parent !== "" && !isSha(input.parent)) throw new Error(`invalid parent commit id: ${String(input.parent)}`);
@@ -114,6 +116,8 @@ export abstract class ArtifactsWrites extends ArtifactsReads {
     return { sha: prepared.sha, tree: prepared.tree };
   }
 
+  // ───── The note of a commit ─────
+
   /**
    * Add the note of `commitSha` to refs/notes/gitring in the fan-out layout and push it (3 tries on a lost
    * race). `tip` is the notes ref as last advertised (undefined: look it up). `null` removes the note of
@@ -166,6 +170,8 @@ export abstract class ArtifactsWrites extends ArtifactsReads {
       }
     }
   }
+
+  // ───── The clone path ─────
 
   /** The clone path: a shallow clone of the branch at the parent, loose objects, push (isomorphic-git). */
   private async commitWithClone(repo: ArtifactsRepo, input: CommitInput): Promise<CommitResult> {

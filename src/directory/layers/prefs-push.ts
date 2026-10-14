@@ -11,6 +11,8 @@ import { MAX_PUSH_DEVICES, PUSH_GAP_MS } from "../constants";
 import { DirectoryProjects } from "./projects";
 
 export abstract class DirectoryPrefsPush extends DirectoryProjects {
+  // ───── Preferences ─────
+
   /** The preferences of a person (contract C3). A person who never set one has the defaults. */
   async prefs(userId: string): Promise<A.PersonPrefs> {
     const row = this.sql.exec<{ data: string }>("SELECT data FROM prefs WHERE user_id = ?", userId).toArray()[0];
@@ -26,6 +28,8 @@ export abstract class DirectoryPrefsPush extends DirectoryProjects {
     this.sql.exec("INSERT OR REPLACE INTO prefs (user_id, data) VALUES (?, ?)", userId, JSON.stringify(next));
     return next;
   }
+
+  // ───── Push notifications ─────
 
   /** Push for this person: is it on for the deployment, the public key for the browser, and how many devices get it. */
   async pushStatus(userId: string): Promise<{ available: boolean; publicKey?: string; devices: number }> {

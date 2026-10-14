@@ -12,6 +12,8 @@ import { findNote, localObjects } from "./git-local";
 import { ArtifactsControl } from "./control";
 
 export abstract class ArtifactsReads extends ArtifactsControl {
+  // ───── Commits and trees ─────
+
   async resolve(repo: string, ref: string): Promise<string | null> {
     if (typeof ref !== "string" || ref === "") return null;
     return this.withRepo(repo, async (r) => {
@@ -56,6 +58,8 @@ export abstract class ArtifactsReads extends ArtifactsControl {
     return entries;
   }
 
+  // ───── Blobs ─────
+
   /** A blob by id. A small blob read once comes from the shared cache the next time (any repository: the id names the bytes). */
   async readBlob(repo: string, sha: string): Promise<Uint8Array | null> {
     if (!isSha(sha)) return null;
@@ -68,6 +72,8 @@ export abstract class ArtifactsReads extends ArtifactsControl {
     if (bytes && this.blobs) await this.blobs.put(sha, bytes);
     return bytes;
   }
+
+  // ───── History ─────
 
   /** First-parent history, newest first (pages through the binding's 1000-commit cap). */
   async log(repo: string, ref: string, limit = 50): Promise<CommitMeta[]> {
@@ -89,6 +95,8 @@ export abstract class ArtifactsReads extends ArtifactsControl {
       return out;
     });
   }
+
+  // ───── Notes ─────
 
   /**
    * The note for a commit under refs/notes/gitring. Fast path: the binding resolves the notes ref

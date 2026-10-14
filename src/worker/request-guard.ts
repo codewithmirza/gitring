@@ -3,7 +3,7 @@
  *
  * Called once by app.ts, before any route. It runs for every path that the app answers.
  * Never answer a route here. Never skip the credential limit: keys that are not valid are not cached.
- * Read next: src/worker/auth.ts (resolvePrincipal), src/worker/limits.ts and src/worker/gate.ts.
+ * Read next: src/worker/principal.ts (who is calling), src/worker/limits.ts and src/worker/gate.ts.
  */
 import type { Hono } from "hono";
 import { resolvePrincipal } from "./auth";

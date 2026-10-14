@@ -201,7 +201,7 @@ function connectAndSettingsRoutes(app: Hono<HonoEnv>): void {
     }
   });
 
-  /** Operator only: diagnostics of a check container (name = "<project>:<attempt>"). */
+  /** Operator only: diagnostics of a check container (name = "<project>:<work copy id>"). */
   app.get("/api/ops/drydock", async (c) => {
     if (c.get("principal").via !== "operator") return c.json({ error: "Operator key only." }, 403);
     const name = c.req.query("name") ?? "diag";

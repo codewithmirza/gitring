@@ -1,7 +1,7 @@
 /**
  * The project registry: which projects exist, who may do what in each, and the members.
  *
- * The HarborMaster of a project holds its state. This layer only knows that a project exists.
+ * The project coordinator (HarborMaster) holds the state of a project. This layer only knows that a project exists.
  * Roles are owner, member and viewer. An invite by email or login becomes a role at the next sign-in.
  */
 import type * as A from "../../core/accounts";
@@ -14,6 +14,8 @@ import { normalizeRemote } from "../helpers";
 import { DirectoryCredentials } from "./credentials";
 
 export abstract class DirectoryProjects extends DirectoryCredentials {
+  // ───── Visibility and the GitHub link ─────
+
   /** "public" or "private" (null: unknown or archived project). */
   async visibilityOf(projectId: string): Promise<A.Visibility | null> {
     return this.projectRow(projectId)?.visibility ?? null;
@@ -32,6 +34,8 @@ export abstract class DirectoryProjects extends DirectoryCredentials {
       .toArray()
       .map((r) => r.project_id);
   }
+
+  // ───── Reading projects and roles ─────
 
   protected projectRow(id: string): ProjectRow | undefined {
     return this.sql.exec<ProjectRow>("SELECT * FROM projects WHERE id = ? AND archived = 0", id).toArray()[0];
@@ -78,7 +82,7 @@ export abstract class DirectoryProjects extends DirectoryCredentials {
 
   /**
    * Projects imported from (or linked to) a GitHub repository in which the sender of an issue may open
-   * intents: a member or owner, matched by GitHub account id (a login can be renamed and taken by
+   * tasks: a member or owner, matched by GitHub account id (a login can be renamed and taken by
    * someone else), or a pending invite of the login (nobody accepted it yet, so the login is all there is).
    * An issue event from an installed repository only reaches these.
    */
@@ -107,6 +111,8 @@ export abstract class DirectoryProjects extends DirectoryCredentials {
     if (all) return rows.map((r) => ({ ...this.info(r, null), role: "owner" as const }));
     return rows.map((r) => this.info(r, userId)).filter((p) => p.role !== null);
   }
+
+  // ───── Making and changing projects ─────
 
   /**
    * Make a project. ownerId null: the operator key made it, and no person owns it (deployment owners act
@@ -159,6 +165,8 @@ export abstract class DirectoryProjects extends DirectoryCredentials {
     if (patch.visibility === "public" || patch.visibility === "private") this.sql.exec("UPDATE projects SET visibility = ? WHERE id = ?", patch.visibility, id);
     return this.info(this.projectRow(id)!, null);
   }
+
+  // ───── Members ─────
 
   async members(id: string): Promise<A.MemberInfo[]> {
     const rows = this.sql

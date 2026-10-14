@@ -2,7 +2,7 @@
  * Sign-in with GitHub or Google: the sign-in link, the code exchange, and finding or making the person.
  *
  * A sign-in link works once. A person who adds a sign-in to an account opens no new session.
- * Read next: src/worker/auth.ts (the routes that call these methods).
+ * Read next: src/worker/sign-in-routes.ts (the routes that call these methods).
  */
 import type * as A from "../../core/accounts";
 import { rand } from "../../harbor/ids";
@@ -14,6 +14,8 @@ import { githubUserToken, safeReturn } from "../helpers";
 import { DirectoryGithubRepos } from "./github-repos";
 
 export abstract class DirectorySignIn extends DirectoryGithubRepos {
+  // ───── Start and finish a sign-in ─────
+
   /**
    * The provider's sign-in URL. With `linkUserId` (a signed-in person adds a sign-in), the provider
    * account joins that person instead of signing in.
@@ -113,6 +115,8 @@ export abstract class DirectorySignIn extends DirectoryGithubRepos {
     return { token, returnTo: st.returnTo, user: this.userInfo(userId)! };
   }
 
+  // ───── Profiles from the providers ─────
+
   private async githubProfile(code: string, origin: string): Promise<Profile> {
     const gh = await this.getSealed<GithubAppConfig>("github_app");
     if (!gh) throw new Error("GitHub sign-in is not set up.");
@@ -153,6 +157,8 @@ export abstract class DirectorySignIn extends DirectoryGithubRepos {
     if (!u.email || !u.email_verified) throw new Error("Google did not confirm the email address of this account.");
     return { provider: "google", subject: u.sub, name: u.name || u.email, email: u.email.toLowerCase(), emailVerified: true, avatar: u.picture };
   }
+
+  // ───── The person of a profile ─────
 
   /**
    * Find or create the person for a provider profile; link by a verified email when possible.

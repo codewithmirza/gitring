@@ -74,7 +74,7 @@ async function githubIssueLabeled(c: C, raw: string, event: string | undefined):
   }
   return c.json({ intents: opened, ...(refused.length ? { refused } : {}) }, opened.length ? 201 : 200);
 }
-/** Claude Code PostToolUse hook: corrections arrive mid-task as additional context (member API key). */
+/** Claude Code PostToolUse hook: change requests arrive mid-task as additional context (member API key). */
 async function claudeHook(c: C, project: string | undefined) {
   try {
     const h = await ready(c, project, "member");
@@ -100,7 +100,7 @@ function keyAndGithubHookRoutes(app: Hono<HonoEnv>): void {
 
 /** The hook for any app that holds a member key. */
 function keyHookRoutes(app: Hono<HonoEnv>): void {
-  /** Any app: a member's API key (Authorization: Bearer gk_…) opens an intent, and can launch agents. */
+  /** Any app: a member's API key (Authorization: Bearer gk_…) opens a task, and can launch agents. */
   app.post("/hooks/intents", async (c) => {
     try {
       const body = await c.req.json<{ project?: string; title: string; goal?: string; checks?: { path: string; content: string; description?: string }[]; source?: string; launch?: number }>();
@@ -120,7 +120,7 @@ function keyHookRoutes(app: Hono<HonoEnv>): void {
 /** The hooks of GitHub: the GitHub App and a plain repository webhook. */
 function githubHookRoutes(app: Hono<HonoEnv>): void {
   /**
-   * GitHub App webhook: an issue labeled "gitring" becomes an intent in each project imported from that
+   * GitHub App webhook: an issue labeled "gitring" becomes a task in each project imported from that
    * repository, when the person who labeled it is a member of the project.
    */
   app.post("/hooks/github-app", async (c) => {
@@ -178,7 +178,7 @@ function githubHookRoutes(app: Hono<HonoEnv>): void {
 
 /** Hooks from Slack and from Claude Code. */
 function slackAndClaudeHookRoutes(app: Hono<HonoEnv>): void {
-  /** Slack slash command: /gitring <intent title> — <goal>. Needs SLACK_SIGNING_SECRET and ?project=. */
+  /** Slack slash command: /gitring <task title> — <goal>. Needs SLACK_SIGNING_SECRET and ?project=. */
   app.post("/hooks/slack", async (c) => {
     const raw = await c.req.text();
     if (!c.env.SLACK_SIGNING_SECRET) return c.json({ error: "Set SLACK_SIGNING_SECRET to use the Slack command." }, 404);

@@ -2,7 +2,7 @@
  * The sign-in providers: the GitHub App (made from a manifest) and the Google client, sealed in the config.
  *
  * The webhook secret and the private key never leave this object except to verify and to sign.
- * Read next: src/worker/auth.ts (the setup page that calls these methods).
+ * Read next: src/worker/setup-routes.ts (the setup page that calls these methods).
  */
 import { githubAppJwt, seal } from "../crypto";
 import { GITHUB_HEADERS } from "../constants";
@@ -10,6 +10,8 @@ import type { GithubAppConfig, GoogleConfig, ManifestConversion, ProvidersInfo }
 import { DirectoryPrefsPush } from "./prefs-push";
 
 export abstract class DirectoryGithubApp extends DirectoryPrefsPush {
+  // ───── The providers ─────
+
   async providers(): Promise<ProvidersInfo> {
     const gh = await this.getSealed<GithubAppConfig>("github_app").catch(() => undefined);
     const gg = await this.getSealed<GoogleConfig>("google").catch(() => undefined);
@@ -31,6 +33,8 @@ export abstract class DirectoryGithubApp extends DirectoryPrefsPush {
     if (clientSecret.length < 10) throw new Error("Give the client secret.");
     await this.putSealed("google", { clientId, clientSecret });
   }
+
+  // ───── Make the GitHub App from a manifest ─────
 
   /** The manifest form for https://github.com/settings/apps/new. */
   async githubManifest(origin: string): Promise<{ postUrl: string; manifest: string }> {

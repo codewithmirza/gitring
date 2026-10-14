@@ -214,7 +214,7 @@ export class Drydock extends DurableObject<Env> {
     return { running: this.container.running, results };
   }
 
-  /** Stop the container now (the attempt is closed). */
+  /** Stop the container now (the work copy is closed). */
   async stop(): Promise<void> {
     if (this.ctx.container?.running) await this.ctx.container.destroy();
     this.ready = undefined;

@@ -12,6 +12,8 @@ import { MAX_KEYS_PER_USER, SESSION_MS } from "../constants";
 import { DirectoryPeople } from "./people";
 
 export abstract class DirectoryCredentials extends DirectoryPeople {
+  // ───── OAuth calls of MCP clients ─────
+
   async oauthRegister(body: unknown, address?: string): Promise<{ status: number; body: JsonObject }> {
     return this.oauth.register(body, address);
   }
@@ -95,6 +97,8 @@ export abstract class DirectoryCredentials extends DirectoryPeople {
     return token;
   }
 
+  // ───── Browser sessions ─────
+
   async sessionUser(token: string): Promise<A.UserInfo | null> {
     if (!token) return null;
     const row = this.sql.exec<{ user_id: string; expires_at: number }>("SELECT user_id, expires_at FROM sessions WHERE hash = ?", await sha256B64url(token)).toArray()[0];
@@ -105,6 +109,8 @@ export abstract class DirectoryCredentials extends DirectoryPeople {
   async endSession(token: string): Promise<void> {
     if (token) this.sql.exec("DELETE FROM sessions WHERE hash = ?", await sha256B64url(token));
   }
+
+  // ───── API keys ─────
 
   async createKey(userId: string, name: string): Promise<{ key: string; info: A.ApiKeyInfo }> {
     if (!this.userInfo(userId)) throw new Error("Unknown user.");

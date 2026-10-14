@@ -323,7 +323,7 @@ export function writeAnswer(res: T.WriteResult, opts: { clr?: T.Clearance; befor
 
 /**
  * The change requests of two clearances in one (the plan check of a new work copy, then the check of its
- * first write). The change requests of both reach the agent. The second clearance gives the traffic.
+ * first write). The change requests of both reach the agent. The second check result gives the traffic.
  */
 export function joinClearance(first: T.Clearance, second: T.Clearance): T.Clearance {
   const seen = new Set<string>();
