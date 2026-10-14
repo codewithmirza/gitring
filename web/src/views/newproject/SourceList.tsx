@@ -262,8 +262,8 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
           aria-autocomplete="list"
           aria-activedescendant={activeKey ? optId(activeKey) : undefined}
           aria-describedby={statusId}
-          aria-label="Search your GitHub repositories or paste a git URL"
-          placeholder={signedIn && connected !== false ? "Search your GitHub repositories or paste a git URL" : "Paste a git URL"}
+          aria-label="Search your repositories or paste a git URL"
+          placeholder={signedIn && connected !== false ? "Search your repositories or paste a git URL" : "Paste a git URL"}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           onKeyDown={onKeyDown}

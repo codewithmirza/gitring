@@ -12,7 +12,7 @@ export function testsWhenHelp(when: TestsWhen): string {
     : "gitring tests main plus the work before each merge. Work merges only when the tests pass.";
 }
 
-export const TRAIN_HELP = "When several work copies are ready and no two touch the same file or nearby code, gitring merges them in one train: one test run, one commit for each task. 1 to 16, and 1 turns trains off.";
+export const TRAIN_HELP = "Ready work copies that touch different files merge in one train. A train has one test run and one commit for each task. Use 1 to 16. Use 1 to turn trains off.";
 
 /** The largest train that a form may send: a whole number from 1 to 16, else undefined. */
 export function parseMaxTrain(text: string): number | undefined {
