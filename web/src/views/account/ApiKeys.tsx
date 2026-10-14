@@ -20,9 +20,8 @@ function KeyRow({ k, now, onGone }: { k: ApiKeyInfo; now: number; onGone: (id: s
         <span className="acct-row__name">
           {k.name} <span className="voice-agent acct-row__prefix">{k.prefix}…</span>
         </span>
-        <span className="acct-row__meta">
-          Created {dateText(k.createdAt)} · {k.lastUsed ? `last used ${ago(k.lastUsed, now)}` : "not used yet"}
-        </span>
+        <span className="acct-row__meta">Created {dateText(k.createdAt)}</span>
+        <span className="acct-row__meta">{k.lastUsed ? `Last used ${ago(k.lastUsed, now)}` : "Not used yet"}</span>
       </div>
       <div className="acct-row__acts">
         <InlineConfirm

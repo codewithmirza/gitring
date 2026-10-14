@@ -70,7 +70,7 @@ export function GeneralSection({ projectId, owner, title, visibility, branch, re
             <dd className="voice-agent">{branch}</dd>
           </div>
         </dl>
-        {remote && <CodeBlock label="Git address of main (Cloudflare Artifacts)" code={remote} copyLabel="Copy address" />}
+        {remote && <CodeBlock label="Git address of main" code={remote} copyLabel="Copy address" />}
       </section>
     </>
   );

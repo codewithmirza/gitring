@@ -1,5 +1,5 @@
 /**
- * The apps that the person allowed through OAuth (MCP clients such as Claude and Cursor), each with a revoke button.
+ * The apps that the person allowed to work as them (agent apps such as Claude and Cursor), each with a revoke button.
  */
 import type { OAuthGrantInfo } from "../../../../src/core/accounts";
 import { InlineConfirm, SkeletonRows } from "../../design/components";
@@ -18,14 +18,15 @@ function AppRow({ g, now, onGone }: { g: OAuthGrantInfo; now: number; onGone: (i
         <Icon name="apps" />
       </span>
       <div className="acct-row__text">
-        <span className="acct-row__name">
-          {g.clientName}
-          {h && <span className="acct-row__host"> · {h}</span>}
-        </span>
-        <span className="acct-row__meta">
-          Allowed {dateText(g.createdAt)} · {g.lastUsedAt ? `last used ${ago(g.lastUsedAt, now)}` : "not used yet"}
-          {g.scope ? ` · ${g.scope}` : ""}
-        </span>
+        <span className="acct-row__name">{g.clientName}</span>
+        {h && <span className="acct-row__meta voice-agent">{h}</span>}
+        <span className="acct-row__meta">Allowed {dateText(g.createdAt)}</span>
+        <span className="acct-row__meta">{g.lastUsedAt ? `Last used ${ago(g.lastUsedAt, now)}` : "Not used yet"}</span>
+        {g.scope && (
+          <span className="acct-row__meta">
+            Permission <span className="voice-agent">{g.scope}</span>
+          </span>
+        )}
       </div>
       <div className="acct-row__acts">
         <InlineConfirm
@@ -52,7 +53,7 @@ export function ConnectedApps({ now }: { now: number }) {
         <h2 className="page__h2" id="acct-apps">
           Connected apps
         </h2>
-        <p className="acct-sec__lede">Agents and apps that you allowed to use gitring as you, through MCP and OAuth. Revoke one, and it must ask you again.</p>
+        <p className="acct-sec__lede">Agents and apps that you allowed to work as you. Revoke one, and it must ask you again.</p>
       </div>
       {apps.loading && !apps.data ? (
         <SkeletonRows rows={2} label="Please wait for the connected apps" />

@@ -60,6 +60,11 @@ function pullOf(status: GithubSyncStatus | null): PullStatus | undefined {
 
 /* ───────────── the sync status ───────────── */
 
+/** The server names its storage host in the message "GitHub sync is off". A person reads "gitring" there. */
+function plainSyncMessage(message: string): string {
+  return message.replace("Cloudflare Artifacts", "gitring");
+}
+
 function SyncStatus({ status }: { status: GithubSyncStatus }) {
   const st = SYNC_STATE[status.state] ?? SYNC_STATE.error;
   const pull = pullOf(status);
@@ -70,7 +75,7 @@ function SyncStatus({ status }: { status: GithubSyncStatus }) {
         <Badge tone={st.tone} icon={st.icon}>
           {st.text}
         </Badge>
-        <span className="st-sync__msg">{status.message}</span>
+        <span className="st-sync__msg">{plainSyncMessage(status.message)}</span>
       </div>
       {pull && ps && (
         <div className="st-sync__head">

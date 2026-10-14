@@ -55,12 +55,14 @@ export function AccountView() {
           <h1 className="page__title" tabIndex={-1}>
             {u.name}
           </h1>
-          <p className="acct-profile__meta">
-            {u.email ? `${u.email} · ` : ""}
+          <div className="acct-profile__meta">
+            {u.email && <p>{u.email}</p>}
             {/* The id names this person in GITRING_OWNERS ("user:<id>") and in project invites. */}
-            Account id <span className="code-inline">{u.id}</span>
-            {u.admin ? " · administrator of this gitring" : ""}
-          </p>
+            <p>
+              Account id <span className="code-inline">{u.id}</span>
+            </p>
+            {u.admin && <p>Administrator of this gitring</p>}
+          </div>
         </div>
         <div className="acct-profile__acts">
           <Button icon="sign-out" onClick={() => void signOut()}>

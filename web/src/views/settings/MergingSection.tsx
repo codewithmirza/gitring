@@ -181,7 +181,7 @@ export function MergingSection({ projectId, owner, settings, onSaved, members }:
           </div>
         )}
       </fieldset>
-      <div className="st-checks">
+      <div className="st-checks st-group">
         <Checkbox label="Write a task file into the repository on each merge" checked={intentsInRepo} disabled={!owner} onChange={(e) => setIntentsInRepo(e.target.checked)} />
         <p className="np__help">
           Each file goes in the folder <span className="voice-agent">.gitring/intents/</span>.
@@ -189,26 +189,28 @@ export function MergingSection({ projectId, owner, settings, onSaved, members }:
         <Checkbox label={STEWARD_LABEL} checked={steward} disabled={!owner} onChange={(e) => setSteward(e.target.checked)} />
         <p className="np__help">{stewardHelp(steward)}</p>
       </div>
-      <div className="st-row">
-        <Field label="When the work of an outside agent cannot merge" help={REDO_HELP[redo]}>
-          <Select value={redo} disabled={!owner} onChange={(e) => setRedo(e.target.value as RedoPolicy)}>
-            {REDO_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        {redo === "agent-first" && (
-          <Field label="Wait time (minutes)" help="5 to 120.">
-            <Input type="number" min={5} max={120} step={1} inputMode="numeric" value={wait} disabled={!owner} onChange={(e) => setWait(e.target.value)} />
+      <div className="st-group">
+        <div className="st-row">
+          <Field label="When the work of an outside agent cannot merge" help={REDO_HELP[redo]}>
+            <Select value={redo} disabled={!owner} onChange={(e) => setRedo(e.target.value as RedoPolicy)}>
+              {REDO_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
           </Field>
-        )}
-      </div>
-      <div className="st-row">
-        <Field label={TRAIN_LABEL} help={TRAIN_HELP}>
-          <Input type="number" min={1} max={16} step={1} inputMode="numeric" value={train} disabled={!owner} onChange={(e) => setTrain(e.target.value)} />
-        </Field>
+          {redo === "agent-first" && (
+            <Field label="Wait time (minutes)" help="5 to 120.">
+              <Input type="number" min={5} max={120} step={1} inputMode="numeric" value={wait} disabled={!owner} onChange={(e) => setWait(e.target.value)} />
+            </Field>
+          )}
+        </div>
+        <div className="st-row">
+          <Field label={TRAIN_LABEL} help={TRAIN_HELP}>
+            <Input type="number" min={1} max={16} step={1} inputMode="numeric" value={train} disabled={!owner} onChange={(e) => setTrain(e.target.value)} />
+          </Field>
+        </div>
       </div>
       {owner && (
         <div>

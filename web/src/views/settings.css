@@ -15,6 +15,10 @@
 .st-facts dt { font-size: var(--t-sm); color: var(--ink-3); }
 .st-facts dd { margin: 0; font-size: var(--t-sm); color: var(--ink-1); overflow-wrap: anywhere; }
 
+/* A group of settings inside Merging: a hairline above it, so that the checkboxes and fields do not run together. */
+.settings .st-group { padding-top: var(--s-5); margin-top: var(--s-3); border-top: 1px solid var(--line); }
+.settings .st-group:not(.st-checks) { display: grid; gap: var(--s-4); }
+
 .st-members__badge { margin-left: var(--s-3); vertical-align: 1px; }
 
 /* A closed note inside a section (how a receiver checks a webhook). */

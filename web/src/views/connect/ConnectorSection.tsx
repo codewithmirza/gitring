@@ -12,13 +12,9 @@ import { CopyField, jumpTo, useRemembered } from "./shared";
 
 /* ───────────── small parts ───────────── */
 
+/** The numbered steps of one agent. Step 1 holds the thing to copy, so that the person sees it first. */
 function Steps({ children }: { children: ReactNode }) {
-  // The copy comes first in every panel, so the steps start at 2.
-  return (
-    <ol className="cx-steps" start={2}>
-      {children}
-    </ol>
-  );
+  return <ol className="cx-steps">{children}</ol>;
 }
 
 function Note({ children }: { children: ReactNode }) {
@@ -55,8 +51,11 @@ function ToolList() {
 function ClaudePanel({ mcpUrl }: { mcpUrl: string }) {
   return (
     <>
-      <CopyField value={mcpUrl} label="Connector URL" />
       <Steps>
+        <li>
+          Copy the URL.
+          <CopyField value={mcpUrl} label="Connector URL" />
+        </li>
         <li>
           In Claude, open <strong>Settings → Connectors</strong>, then click <strong>Add custom connector</strong>.{" "}
           <a href="https://claude.ai/settings/connectors" target="_blank" rel="noopener noreferrer">
@@ -78,8 +77,11 @@ function ClaudePanel({ mcpUrl }: { mcpUrl: string }) {
 function ClaudeCodePanel({ mcpUrl }: { mcpUrl: string }) {
   return (
     <>
-      <CopyField command value={`claude mcp add --transport http --scope user gitring ${mcpUrl}`} label="Command for Claude Code" button="Copy command" />
       <Steps>
+        <li>
+          Run this command in your terminal.
+          <CopyField command value={`claude mcp add --transport http --scope user gitring ${mcpUrl}`} label="Command for Claude Code" button="Copy command" />
+        </li>
         <li>
           In Claude Code, type <span className="code-inline">/mcp</span>, choose <strong>gitring</strong>, then <strong>Authenticate</strong>.
         </li>
@@ -87,7 +89,19 @@ function ClaudeCodePanel({ mcpUrl }: { mcpUrl: string }) {
           Your browser opens gitring. Click <strong>Allow</strong>.
         </li>
       </Steps>
-      <Note>Optional: add the Claude Code hook (in "More ways"). Then change requests also arrive in the middle of a task.</Note>
+      <Note>
+        Optional: add the{" "}
+        <a
+          href="#cx-hook"
+          onClick={(e) => {
+            e.preventDefault();
+            jumpTo("cx-hook");
+          }}
+        >
+          Claude Code hook
+        </a>
+        . Then change requests also arrive in the middle of a task.
+      </Note>
     </>
   );
 }
@@ -96,14 +110,16 @@ function CursorPanel({ mcpUrl }: { mcpUrl: string }) {
   const json = JSON.stringify({ mcpServers: { gitring: { url: mcpUrl } } }, null, 2);
   return (
     <>
-      <div className="cx-row">
-        <a className="b-btn b-btn--primary cx-cursor" href={cursorLink(mcpUrl)}>
-          <Icon name="plus" />
-          Add to Cursor
-        </a>
-        <span className="cx__step">Cursor opens and asks to install gitring.</span>
-      </div>
       <Steps>
+        <li>
+          Click the button. Cursor opens and asks to install gitring.
+          <span className="cx-row">
+            <a className="b-btn b-btn--primary cx-cursor" href={cursorLink(mcpUrl)}>
+              <Icon name="plus" />
+              Add to Cursor
+            </a>
+          </span>
+        </li>
         <li>
           In Cursor, open <strong>Settings → MCP</strong> and click <strong>Login</strong> next to gitring.
         </li>
@@ -122,8 +138,11 @@ function CursorPanel({ mcpUrl }: { mcpUrl: string }) {
 function CodexPanel({ mcpUrl }: { mcpUrl: string }) {
   return (
     <>
-      <CopyField command value={`codex mcp add gitring --url ${mcpUrl}\ncodex mcp login gitring`} label="Commands for Codex" button="Copy commands" />
       <Steps>
+        <li>
+          Run these two commands in your terminal.
+          <CopyField command value={`codex mcp add gitring --url ${mcpUrl}\ncodex mcp login gitring`} label="Commands for Codex" button="Copy commands" />
+        </li>
         <li>
           The second command opens your browser. Click <strong>Allow</strong>.
         </li>
@@ -137,12 +156,16 @@ function OtherPanel({ mcpUrl }: { mcpUrl: string }) {
   return (
     <>
       <CopyField value={mcpUrl} label="Connector URL" />
+      <p className="cx__step">Any agent app that speaks MCP can use this URL. The app signs in with your gitring account.</p>
+      <details className="cx-more">
+        <summary>How the sign-in works</summary>
+        <p className="cx__step">
+          The app signs in with OAuth 2.1, with dynamic client registration and PKCE. It finds the sign-in by itself in the metadata at{" "}
+          <span className="code-inline">/.well-known/oauth-protected-resource</span>.
+        </p>
+      </details>
       <p className="cx__step">
-        Any agent app that speaks MCP can use this URL. The app signs in with your gitring account (OAuth 2.1, with dynamic client registration and PKCE). It finds the
-        sign-in by itself in the metadata at <span className="code-inline">/.well-known/oauth-protected-resource</span>.
-      </p>
-      <p className="cx__step">
-        An app without OAuth sends a personal API key in the header <span className="code-inline">Authorization: Bearer gk_…</span>. Read{" "}
+        An app that cannot sign in sends a personal API key in the header <span className="code-inline">Authorization: Bearer gk_…</span>. Read{" "}
         <a
           href="#cx-keys"
           onClick={(e) => {

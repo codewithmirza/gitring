@@ -70,10 +70,10 @@ function PasskeyRow({ pk, now, last, onGone, onRenamed }: { pk: PasskeyInfo; now
         ) : (
           <span className="acct-row__name">{pk.name}</span>
         )}
-        <span className="acct-row__meta">
-          Added {dateText(pk.createdAt)} · {pk.lastUsed ? `last used ${ago(pk.lastUsed, now)}` : "not used yet"}
-          {last ? " · your only way to sign in" : ""}
-        </span>
+        {/* One fact for each line. */}
+        <span className="acct-row__meta">Added {dateText(pk.createdAt)}</span>
+        <span className="acct-row__meta">{pk.lastUsed ? `Last used ${ago(pk.lastUsed, now)}` : "Not used yet"}</span>
+        {last && <span className="acct-row__meta acct-row__meta--note">Your only way to sign in</span>}
       </div>
       <div className="acct-row__acts">
         {!editing && (

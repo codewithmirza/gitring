@@ -36,7 +36,9 @@
 .cx-url__cmd code { display: block; font: inherit; }
 .cx-url__cmd .tok-p { color: var(--ink-3); user-select: none; }
 .cx-url .b-btn { height: 40px; flex: none; }
-.cx-steps { display: grid; gap: var(--s-2); margin: 0; padding-left: 22px; max-width: 70ch; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
+.cx-steps { display: grid; gap: var(--s-3); margin: 0; padding-left: 22px; max-width: 760px; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
+/* Step 1 holds the thing to copy: a small gap, then the field or the button. */
+.cx-steps li > .cx-url, .cx-steps li > .cx-row { margin-top: var(--s-2); }
 .cx-steps li::marker { color: var(--ink-3); font-family: var(--font-agent); }
 .cx-steps strong { font-weight: 600; }
 .cx-ext { display: inline-block; vertical-align: -1px; }
