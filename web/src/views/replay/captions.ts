@@ -8,8 +8,11 @@
 import type { CorrectionKind, LandingMethod, Range, Verdict } from "../../../../src/core/types";
 import { RANGE_TEXT } from "../../state/format";
 
-/** The stages of the "Inside gitring" pipeline, in order. */
-export type Stage = "task" | "plan" | "check" | "request" | "work" | "tests" | "queue" | "composed" | "compose" | "commit" | "replot";
+/**
+ * The stages of the "Inside gitring" pipeline, in order. "note" is not a station of the pipeline: a note of
+ * the project (it is ready, a person pauses a task) lights no station.
+ */
+export type Stage = "task" | "plan" | "check" | "request" | "work" | "tests" | "queue" | "composed" | "compose" | "commit" | "replot" | "note";
 
 export const STAGES: Stage[] = ["task", "plan", "check", "request", "work", "tests", "queue", "composed", "compose", "commit", "replot"];
 
@@ -25,6 +28,7 @@ export const STAGE_NAME: Record<Stage, string> = {
   compose: "Compose",
   commit: "Commit + why-record",
   replot: "Other work moves",
+  note: "Note",
 };
 
 /** What gitring does at each stage, in one sentence. */
@@ -40,6 +44,7 @@ export const STAGE_LINE: Record<Stage, string> = {
   compose: "gitring puts the work on main: fast-forward or 3-way merge.",
   commit: "One commit on main. The why-record goes into git notes.",
   replot: "Main moved. gitring moves the other work onto the new main.",
+  note: "gitring writes a note in the history of the project.",
 };
 
 const q = (title: string) => `"${title.replace(/"/g, "'")}"`;

@@ -100,7 +100,7 @@ const STAGE_OF: Record<StepKind, Stage> = {
   replot: "replot",
   stale: "replot",
   end: "work",
-  note: "work",
+  note: "note",
 };
 
 export function stageOf(kind: StepKind): Stage {
@@ -787,7 +787,12 @@ export interface Effect {
   /** 0–1. */
   p: number;
   tone: "accent" | "magenta" | "clear" | "danger" | "caution";
+  /** The effect shows its tag. A newer tag at the same work copy replaces it, so two tags never overlap. */
+  labelled: boolean;
 }
+
+/** Effects with a tag next to the work copy (tests, an answer, the lease). */
+const TAGGED: ReadonlySet<EffectKind> = new Set<EffectKind>(["pop", "ack", "ring", "lease"]);
 
 /** Wall duration of each effect (ms). */
 export const EFFECT_MS: Record<EffectKind, number> = { course: 1300, sweep: 1500, flight: 1400, pop: 700, ack: 900, wake: 800, ring: 1000, lease: 1100, commit: 1800, replot: 1400 };
@@ -828,14 +833,19 @@ export function effectOf(step: ReplayStep): Pick<Effect, "kind" | "tone"> | null
 /** The effects that run at a wall time, oldest first, each with its progress. */
 export function effectsAt(script: ReplayScript, s: Schedule, wall: number): Effect[] {
   const out: Effect[] = [];
+  // Work copies with a newer tag (also one that ended): an older tag does not come back.
+  const tagged = new Set<string>();
   const last = indexAt(s, wall);
   for (let i = last; i >= 0 && s.starts[i] > wall - LONGEST_EFFECT; i--) {
     const step = script.steps[i];
     const e = effectOf(step);
     if (!e) continue;
+    const owner = TAGGED.has(e.kind) ? (step.attemptId ?? "") : null;
+    const labelled = owner === null || !tagged.has(owner);
+    if (owner !== null) tagged.add(owner);
     const p = (wall - s.starts[i]) / EFFECT_MS[e.kind];
     if (p < 0 || p >= 1) continue;
-    out.push({ id: step.id, kind: e.kind, tone: e.tone, step, p });
+    out.push({ id: step.id, kind: e.kind, tone: e.tone, step, p, labelled });
   }
   return out.reverse();
 }

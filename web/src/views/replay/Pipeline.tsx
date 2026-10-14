@@ -21,8 +21,9 @@ export function Pipeline({ stage, counts, children }: { stage: Stage | null; cou
   const list = useRef<HTMLOListElement | null>(null);
   const packet = useRef<HTMLSpanElement | null>(null);
   const at = stage ? STAGES.indexOf(stage) : -1;
-  // The packet moves to the lit station (a CSS transition on transform).
+  // The packet moves to the lit station (a CSS transition on transform). A note lights no station: the packet stays.
   useLayoutEffect(() => {
+    if (stage && at < 0) return;
     const row = list.current?.children[Math.max(0, at)] as HTMLElement | undefined;
     if (!row || !packet.current) return;
     packet.current.style.transform = `translateY(${row.offsetTop + row.offsetHeight / 2}px)`;

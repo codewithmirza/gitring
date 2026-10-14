@@ -29,6 +29,8 @@ import "./replay/replay.css";
 
 /** The title card before the first step (autoplay only). */
 const INTRO_MS = 2600;
+/** Without autoplay the replay opens before the first step, with the prompt to press play. */
+const LEAD_MS = 500;
 const NO_FILES: FileNode[] = [];
 
 type Load = { state: "loading"; records: number } | { state: "error"; message: string } | { state: "ready"; history: History };
@@ -87,7 +89,7 @@ export function ReplayView() {
 
 function Player({ history, files, name, kiosk, autoplay, speed }: { history: History; files: FileNode[]; name: string; kiosk: boolean; autoplay: boolean; speed: number }) {
   const script = useMemo(() => buildScript(history.records, history.agents), [history]);
-  const clock = useReplayClock(script.steps, { speed, autoplay, intro: autoplay ? INTRO_MS : 0 });
+  const clock = useReplayClock(script.steps, { speed, autoplay, intro: autoplay ? INTRO_MS : LEAD_MS });
   const world = useMemo(() => worldAt(script, clock.index), [script, clock.index]);
   const step: ReplayStep | undefined = script.steps[clock.index];
   const detail = useMemo(() => {
@@ -96,7 +98,7 @@ function Player({ history, files, name, kiosk, autoplay, speed }: { history: His
   }, [script, clock.index]);
   const counts = useMemo(() => {
     const c = Object.fromEntries(STAGES.map((s) => [s, 0])) as Record<Stage, number>;
-    for (let i = 0; i <= clock.index && i < script.steps.length; i++) c[script.steps[i].stage]++;
+    for (let i = 0; i <= clock.index && i < script.steps.length; i++) c[script.steps[i].stage] = (c[script.steps[i].stage] ?? 0) + 1;
     return c;
   }, [script, clock.index]);
   const previous = clock.index > 0 ? script.steps[clock.index - 1] : undefined;

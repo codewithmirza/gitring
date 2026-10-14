@@ -4,7 +4,7 @@
  * the work copy, a commit ripples over the files it changed.
  *
  * React renders an effect once when it starts and once when it ends. In between, the frame callback of the
- * replay clock paints it: it writes a few attributes and transforms on the effect's own elements.
+ * replay clock paints it: it writes a few geometry and paint attributes on the effect's own elements.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ReplayClock } from "./clock";
@@ -39,6 +39,27 @@ const TONE: Record<Effect["tone"], string> = { accent: "var(--accent)", magenta:
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
+/**
+ * Fade with the paint opacities. A change of the `opacity` or the `transform` attribute in each frame makes
+ * the browser sort the layers of the whole map again (a dropped frame now and then): the effects change
+ * only geometry and paint, so a frame costs a repaint of the effects.
+ */
+function fade(el: Element | null | undefined, a: number): void {
+  if (!el) return;
+  const v = clamp01(a).toFixed(3);
+  el.setAttribute("fill-opacity", v);
+  el.setAttribute("stroke-opacity", v);
+}
+
+function moveTo(el: Element | null | undefined, x: number, y: number, ax = "x", ay = "y"): void {
+  if (!el) return;
+  el.setAttribute(ax, x.toFixed(1));
+  el.setAttribute(ay, y.toFixed(1));
+}
+
+/** A diamond around a point (the mark of a change request). */
+const diamond = (x: number, y: number, s: number) => `M${x} ${y - s}L${x + s} ${y}L${x} ${y + s}L${x - s} ${y}Z`;
+
 function reducedMotion(): boolean {
   try {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -63,7 +84,7 @@ export function Effects({ script, clock, geo }: { script: ReplayScript; clock: R
   const frame = useCallback(
     (wall: number) => {
       const list = still ? [] : effectsAt(script, schedule, wall);
-      const k = list.map((e) => e.id).join("|");
+      const k = list.map((e) => (e.labelled ? e.id : `${e.id}~`)).join("|");
       if (k !== key.current) {
         key.current = k;
         setActive(list);
@@ -156,8 +177,8 @@ function Course({ e, geo, register }: ShapeProps) {
       const t = easeOut(clamp01(p / 0.7));
       path.current?.setAttribute("stroke-dashoffset", String(total * (1 - t)));
       const at = points.length > 1 ? along(points, lengths, total, t) : points[0];
-      if (at) head.current?.setAttribute("transform", `translate(${at.x} ${at.y})`);
-      group.current?.setAttribute("opacity", String(p > 0.78 ? clamp01(1 - (p - 0.78) / 0.22) : 1));
+      if (at) moveTo(head.current, at.x, at.y, "cx", "cy");
+      fade(group.current, p > 0.78 ? 1 - (p - 0.78) / 0.22 : 1);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [points, total],
@@ -169,7 +190,7 @@ function Course({ e, geo, register }: ShapeProps) {
   return (
     <g ref={group} className="rp-fx-course" style={style}>
       <path ref={path} d={d} strokeDasharray={`${total} ${total}`} strokeDashoffset={total} strokeWidth={2.5 * geo.g} />
-      <circle ref={head} r={4.5 * geo.g} />
+      <circle ref={head} cx={points[0].x} cy={points[0].y} r={4.5 * geo.g} />
     </g>
   );
 }
@@ -188,15 +209,14 @@ function Sweep({ e, geo, register }: ShapeProps) {
       if (!c) return;
       const r = lerp(8 * g, 88 * g, easeOut(p));
       ring.current?.setAttribute("r", String(r));
-      ring.current?.setAttribute("opacity", String(0.9 * (1 - p)));
+      fade(ring.current, 0.9 * (1 - p));
       const reach = easeOut(clamp01(p / 0.45));
       others.forEach((o, i) => {
         if (!o.at) return;
         const l = lines.current[i];
-        l?.setAttribute("x2", String(lerp(c.x, o.at.x, reach)));
-        l?.setAttribute("y2", String(lerp(c.y, o.at.y, reach)));
-        l?.setAttribute("opacity", String(p > 0.8 ? clamp01((1 - p) / 0.2) : 1));
-        badges.current[i]?.setAttribute("opacity", String(p < 0.4 ? 0 : p > 0.85 ? clamp01((1 - p) / 0.15) : 1));
+        moveTo(l, lerp(c.x, o.at.x, reach), lerp(c.y, o.at.y, reach), "x2", "y2");
+        fade(l, p > 0.8 ? (1 - p) / 0.2 : 1);
+        fade(badges.current[i], p < 0.4 ? 0 : p > 0.85 ? (1 - p) / 0.15 : 1);
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,7 +245,8 @@ function Sweep({ e, geo, register }: ShapeProps) {
               ref={(el) => {
                 badges.current[i] = el;
               }}
-              opacity={0}
+              fillOpacity={0}
+              strokeOpacity={0}
               transform={`translate(${o.at.x} ${o.at.y - 22 * g})`}
             >
               <rect x={-11 * g} y={-10 * g} width={22 * g} height={20 * g} rx={3 * g} />
@@ -242,7 +263,7 @@ function Sweep({ e, geo, register }: ShapeProps) {
 
 /** A change request flies from the agent that continues to the agent that adapts. */
 function Flight({ e, geo, register }: ShapeProps) {
-  const mark = useRef<SVGGElement>(null);
+  const mark = useRef<SVGPathElement>(null);
   const trail = useRef<SVGPathElement>(null);
   const label = useRef<SVGTextElement>(null);
   const g = geo.g;
@@ -268,26 +289,24 @@ function Flight({ e, geo, register }: ShapeProps) {
       const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * ctrl.y + t * t * to.y;
       const land = p > 0.78 ? (p - 0.78) / 0.22 : 0;
       const scale = 1 + Math.sin(land * Math.PI) * 0.7;
-      mark.current?.setAttribute("transform", `translate(${x} ${y}) scale(${scale})`);
+      mark.current?.setAttribute("d", diamond(x, y, 8 * g * scale));
       trail.current?.setAttribute("stroke-dashoffset", String(total * (1 - t)));
-      trail.current?.setAttribute("opacity", String(p > 0.7 ? clamp01((1 - p) / 0.3) * 0.7 : 0.7));
-      label.current?.setAttribute("opacity", String(p < 0.08 ? p / 0.08 : p > 0.7 ? clamp01((0.9 - p) / 0.2) : 1));
+      fade(trail.current, p > 0.7 ? ((1 - p) / 0.3) * 0.7 : 0.7);
+      moveTo(label.current, x + 12 * g, y - 10 * g);
+      fade(label.current, p < 0.08 ? p / 0.08 : p > 0.7 ? (0.9 - p) / 0.2 : 1);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [from.x, from.y, to?.x, to?.y, ctrl, total],
+    [from.x, from.y, to?.x, to?.y, ctrl, total, g],
   );
   useRegister(e.id, register, paint);
   if (!to || !ctrl) return null;
-  const s = 8 * g;
   return (
     <g className="rp-fx-flight">
-      <path ref={trail} d={`M${from.x} ${from.y} Q${ctrl.x} ${ctrl.y} ${to.x} ${to.y}`} strokeDasharray={`${total} ${total}`} strokeDashoffset={total} strokeWidth={2 * g} />
-      <g ref={mark} transform={`translate(${from.x} ${from.y})`}>
-        <path className="rp-fx-flight__mark" d={`M0 ${-s} L${s} 0 L0 ${s} L${-s} 0 Z`} strokeWidth={2 * g} />
-        <text ref={label} className="rp-fx-label" x={12 * g} y={-10 * g} fontSize={13 * g} opacity={0}>
-          change request
-        </text>
-      </g>
+      <path ref={trail} className="rp-fx-flight__trail" d={`M${from.x} ${from.y} Q${ctrl.x} ${ctrl.y} ${to.x} ${to.y}`} strokeDasharray={`${total} ${total}`} strokeDashoffset={total} strokeWidth={2 * g} />
+      <path ref={mark} className="rp-fx-flight__mark" d={diamond(from.x, from.y, 8 * g)} strokeWidth={2 * g} />
+      <text ref={label} className="rp-fx-label" x={from.x + 12 * g} y={from.y - 10 * g} fontSize={13 * g} fillOpacity={0} strokeOpacity={0}>
+        change request
+      </text>
     </g>
   );
 }
@@ -295,10 +314,10 @@ function Flight({ e, geo, register }: ShapeProps) {
 /** A ring at a work copy: tests (pass or fail), a change request that arrives or is applied, the merge lease. */
 function Ring({ e, geo, register }: ShapeProps) {
   const ring = useRef<SVGCircleElement>(null);
-  const tag = useRef<SVGGElement>(null);
+  const tag = useRef<SVGTextElement>(null);
   const g = geo.g;
   const at = geo.pos(e.step.attemptId);
-  const text = labelOf(e);
+  const text = e.labelled ? labelOf(e) : null;
   const paint = useCallback<Paint>(
     (p) => {
       if (!at) return;
@@ -306,9 +325,9 @@ function Ring({ e, geo, register }: ShapeProps) {
       const r0 = e.kind === "pop" ? 6 : 12;
       const r1 = e.kind === "lease" ? 22 : e.kind === "pop" ? 26 : 34;
       ring.current?.setAttribute("r", String(lerp(r0, r1, t) * g));
-      ring.current?.setAttribute("opacity", String(e.kind === "lease" ? 0.9 * (1 - p * 0.6) : 0.95 * (1 - p)));
-      tag.current?.setAttribute("opacity", String(p < 0.12 ? p / 0.12 : p > 0.8 ? clamp01((1 - p) / 0.2) : 1));
-      tag.current?.setAttribute("transform", `translate(${at.x + 18 * g} ${at.y + 26 * g - t * 6 * g})`);
+      fade(ring.current, e.kind === "lease" ? 0.9 * (1 - p * 0.6) : 0.95 * (1 - p));
+      fade(tag.current, p < 0.12 ? p / 0.12 : p > 0.8 ? (1 - p) / 0.2 : 1);
+      moveTo(tag.current, at.x + 18 * g, at.y + 26 * g - t * 6 * g);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [at?.x, at?.y, g, e.kind],
@@ -319,11 +338,9 @@ function Ring({ e, geo, register }: ShapeProps) {
     <g className={`rp-fx-ring rp-fx-ring--${e.kind}`} style={{ "--tone": TONE[e.tone] } as CSSProperties}>
       <circle ref={ring} cx={at.x} cy={at.y} r={12 * g} strokeWidth={(e.kind === "lease" ? 3 : 2.5) * g} />
       {text && (
-        <g ref={tag} opacity={0}>
-          <text className="rp-fx-label" fontSize={13 * g}>
-            {text}
-          </text>
-        </g>
+        <text ref={tag} className="rp-fx-label" x={at.x + 18 * g} y={at.y + 26 * g} fontSize={13 * g} fillOpacity={0} strokeOpacity={0}>
+          {text}
+        </text>
       )}
     </g>
   );
@@ -343,7 +360,7 @@ function labelOf(e: Effect): string | null {
 function Ripple({ e, geo, register }: ShapeProps) {
   const rects = useRef<SVGGElement>(null);
   const ring = useRef<SVGCircleElement>(null);
-  const tag = useRef<SVGGElement>(null);
+  const tag = useRef<SVGTextElement>(null);
   const g = geo.g;
   const boxes = useMemo(
     () => (e.step.files ?? []).map((f) => geo.parcel(f)).filter((b): b is NonNullable<typeof b> => Boolean(b)),
@@ -354,12 +371,12 @@ function Ripple({ e, geo, register }: ShapeProps) {
   const at = commit ? geo.pos(e.step.attemptId) ?? (boxes[0] ? { x: boxes[0].x + boxes[0].w / 2, y: boxes[0].y + boxes[0].h / 2 } : null) : null;
   const paint = useCallback<Paint>(
     (p) => {
-      rects.current?.setAttribute("opacity", String((commit ? 0.55 : 0.4) * (1 - easeOut(p))));
+      fade(rects.current, (commit ? 0.55 : 0.4) * (1 - easeOut(p)));
       if (at) {
         ring.current?.setAttribute("r", String(lerp(10, 96, easeOut(p)) * g));
-        ring.current?.setAttribute("opacity", String(0.9 * (1 - p)));
-        tag.current?.setAttribute("opacity", String(p < 0.1 ? p / 0.1 : p > 0.75 ? clamp01((1 - p) / 0.25) : 1));
-        tag.current?.setAttribute("transform", `translate(${at.x} ${at.y - (22 + easeOut(p) * 26) * g})`);
+        fade(ring.current, 0.9 * (1 - p));
+        fade(tag.current, p < 0.1 ? p / 0.1 : p > 0.75 ? (1 - p) / 0.25 : 1);
+        moveTo(tag.current, at.x, at.y - (22 + easeOut(p) * 26) * g);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -368,18 +385,16 @@ function Ripple({ e, geo, register }: ShapeProps) {
   useRegister(e.id, register, paint);
   return (
     <g className={`rp-fx-ripple rp-fx-ripple--${e.kind}`} style={{ "--tone": TONE[e.tone] } as CSSProperties}>
-      <g ref={rects}>
+      <g ref={rects} fillOpacity={0}>
         {boxes.map((b, i) => (
           <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} rx={2} />
         ))}
       </g>
       {at && <circle ref={ring} cx={at.x} cy={at.y} r={10 * g} strokeWidth={3 * g} />}
       {at && e.step.landing && (
-        <g ref={tag} opacity={0}>
-          <text className="rp-fx-label rp-fx-label--center" fontSize={14 * g}>
-            main {e.step.landing.mainAfter.slice(0, 7)}
-          </text>
-        </g>
+        <text ref={tag} className="rp-fx-label rp-fx-label--center" x={at.x} y={at.y - 22 * g} fontSize={14 * g} fillOpacity={0} strokeOpacity={0}>
+          main {e.step.landing.mainAfter.slice(0, 7)}
+        </text>
       )}
     </g>
   );
@@ -396,7 +411,7 @@ function Replot({ e, geo, register }: ShapeProps) {
         const delay = Math.min(0.3, i * 0.08);
         const t = clamp01((p - delay) / (1 - delay));
         r?.setAttribute("r", String(lerp(8, 46, easeOut(t)) * g));
-        r?.setAttribute("opacity", String(t <= 0 ? 0 : 0.9 * (1 - t)));
+        fade(r, t <= 0 ? 0 : 0.9 * (1 - t));
       });
     },
     [g],
@@ -414,7 +429,7 @@ function Replot({ e, geo, register }: ShapeProps) {
             cx={at.x}
             cy={at.y}
             r={8 * g}
-            opacity={0}
+            strokeOpacity={0}
             strokeWidth={2.5 * g}
           />
         ) : null,

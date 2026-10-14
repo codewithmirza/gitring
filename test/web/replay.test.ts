@@ -246,6 +246,10 @@ describe("steps", () => {
 
   it("puts each step on its stage of the pipeline", () => {
     for (const s of script.steps) expect(s.stage).toBe(stageOf(s.kind));
+    // A note of the project ("Project ready") lights no station of the pipeline.
+    expect(script.steps[0]).toMatchObject({ kind: "note", stage: "note" });
+    expect(STAGES).not.toContain("note");
+    expect(STAGE_NAME.note).toBe("Note");
     const stage = (kind: string) => script.steps.find((s) => s.kind === kind)!.stage;
     expect([stage("task"), stage("plan"), stage("check"), stage("request"), stage("work"), stage("tests")]).toEqual(["task", "plan", "check", "request", "work", "tests"]);
     expect([stage("submit"), stage("lease"), stage("composed"), stage("compose"), stage("commit"), stage("replot")]).toEqual(["queue", "queue", "composed", "compose", "commit", "replot"]);
@@ -292,7 +296,7 @@ describe("steps", () => {
   });
 
   it("follows ASD-STE100 in every caption and in the stage texts", () => {
-    const problems = [...script.steps.map((s) => s.caption), ...STAGES.map((s) => STAGE_LINE[s]), ...STAGES.map((s) => STAGE_NAME[s])].flatMap((t) => steViolations(t));
+    const problems = [...script.steps.map((s) => s.caption), ...Object.values(STAGE_LINE), ...Object.values(STAGE_NAME)].flatMap((t) => steViolations(t));
     expect(problems).toEqual([]);
     // Other verdicts, distances and test results too.
     const more = [
@@ -440,6 +444,32 @@ describe("effects", () => {
     // Effects come oldest first.
     const list = effectsAt(script, s, s.starts[i] + 10);
     expect(list.map((e) => script.steps.findIndex((x) => x.id === e.id))).toEqual([...list.map((e) => script.steps.findIndex((x) => x.id === e.id))].sort((a, b) => a - b));
+    expect(flight(s.starts[i])?.labelled).toBe(true);
+  });
+
+  it("shows one tag at a time next to a work copy: a newer tag replaces the older one", () => {
+    const ack = script.steps.find((x) => x.kind === "ack")!;
+    const tests = { ...script.steps.find((x) => x.kind === "tests")!, id: "tests:two", at: ack.at, attemptId: ack.attemptId };
+    const other = { ...tests, id: "tests:one", attemptId: "a_one" };
+    const small: ReplayScript = { ...script, steps: [ack, tests, other] };
+    const s = scheduleOf(small.steps, 120);
+    // The tests start while the tag of the answer still shows.
+    expect(s.starts[1]).toBeLessThan(EFFECT_MS.ack);
+    const before = effectsAt(small, s, s.starts[1] - 1);
+    expect(before.map((e) => [e.id, e.labelled])).toEqual([[ack.id, true]]);
+    const both = effectsAt(small, s, s.starts[2] + 1);
+    expect(both.map((e) => [e.id, e.labelled])).toEqual([
+      [ack.id, false],
+      ["tests:two", true],
+      ["tests:one", true],
+    ]);
+    // The older tag does not come back when the newer effect ends first (a short "reached" after the tests).
+    const reached = { ...tests, id: "deliver:two", kind: "deliver" as const, stage: stageOf("deliver"), tests: undefined };
+    const pair = [tests, reached];
+    const ps = scheduleOf(pair, 120);
+    const wall = ps.starts[1] + EFFECT_MS.pop + 1;
+    expect(wall).toBeLessThan(ps.starts[0] + EFFECT_MS.ring);
+    expect(effectsAt({ ...script, steps: pair }, ps, wall).map((e) => [e.id, e.labelled])).toEqual([["tests:two", false]]);
   });
 });
 
