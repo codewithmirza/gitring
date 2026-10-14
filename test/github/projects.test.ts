@@ -16,6 +16,7 @@ afterAll(() => loader.cleanup());
 
 let world: World;
 let started: { projectId: string; attemptId: string }[];
+let failStart: boolean;
 let modelCalls: string[];
 let modelAnswer: string;
 
@@ -23,11 +24,20 @@ beforeEach(async () => {
   world = new World();
   vi.stubGlobal("fetch", world.fetch);
   started = [];
+  failStart = false;
   modelCalls = [];
   modelAnswer = '{"test": ""}';
   await world.init({
     LOADER: loader,
-    VESSEL: { idFromName: (n: string) => n, get: () => ({ start: async (x: { projectId: string; attemptId: string }) => void started.push(x) }) },
+    VESSEL: {
+      idFromName: (n: string) => n,
+      get: () => ({
+        start: async (x: { projectId: string; attemptId: string }) => {
+          if (failStart) throw new Error("The agent container did not start.");
+          started.push(x);
+        },
+      }),
+    },
     AI: {
       run: async (model: string) => {
         modelCalls.push(model);
@@ -83,6 +93,22 @@ describe("a project from a template", () => {
     expect(made.json.task.title).toBe("A page about my bakery");
     expect(made.json.launched).toHaveLength(2);
     expect(started.map((s) => s.attemptId).sort()).toEqual([...made.json.launched].sort());
+  });
+
+  it("keeps the project and the task when the built-in agents do not start, and says why", async () => {
+    world.person("robin", 1);
+    const { key } = await world.signIn("robin");
+    failStart = true;
+    const made = await world.call("POST", "/api/projects", {
+      key,
+      body: { name: "Robin api", source: { kind: "template", template: "worker-api" }, firstTask: { goal: "Add a /time route." }, launch: 1 },
+    });
+    expect(made.status, made.text).toBe(201);
+    expect(made.json.task.title).toBe("Add a /time route");
+    expect(made.json.launched).toEqual([]);
+    expect(made.json.note).toBe("The first task is open. The built-in agents did not start: The agent container did not start.");
+    expect(steViolations(made.json.note)).toEqual([]);
+    expect((await world.call("GET", "/api/projects", { key })).json).toHaveLength(1);
   });
 });
 

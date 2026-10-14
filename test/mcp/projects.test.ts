@@ -13,12 +13,19 @@ let key: string;
 let userId: string;
 /** The built-in agents that started (the Vessel stand-in records them). */
 let started: { projectId: string; attemptId: string; model: string }[];
+/** The Vessel stand-in fails to start an agent. */
+let failStart: boolean;
 
 beforeEach(async () => {
   world = new World();
   vi.stubGlobal("fetch", world.fetch);
   started = [];
-  await world.init({ VESSEL: { idFromName: (n: string) => n, get: () => ({ start: async (x: { projectId: string; attemptId: string; model: string }) => void started.push(x) }) } });
+  failStart = false;
+  const start = async (x: { projectId: string; attemptId: string; model: string }) => {
+    if (failStart) throw new Error("The agent container did not start.");
+    started.push(x);
+  };
+  await world.init({ VESSEL: { idFromName: (n: string) => n, get: () => ({ start }) } });
   // Artifacts makes read tokens; the git double does not, so the test gives one.
   const backend = world.backend as unknown as Record<string, unknown>;
   backend.createToken = async (_repo: string, scope: string) => ({ token: `art_${scope}_secret?expires=1767225600`, expiresAt: "2026-10-14T06:00:00.000Z" });
@@ -73,6 +80,23 @@ describe("gitring_create_project", () => {
     expect(data.clone.clone).toMatch(/^git -c http\.extraHeader="Authorization: Basic [A-Za-z0-9+/=]+" clone --branch main https:\/\/\S+ robin-api-/);
     expect(data.clone.clone).not.toContain(secret);
     expect(data.clone.clone).not.toMatch(/https:\/\/[^\s]*@/);
+  });
+
+  it("keeps the project when the built-in agents do not start, and says why", async () => {
+    failStart = true;
+    const res = await callTool(world, key, "gitring_create_project", {
+      name: "Robin API",
+      start: { kind: "template", template: "worker-api" },
+      firstTask: { goal: "Add a /time route." },
+      launch: 1,
+    });
+    expect(res.isError, res.text).toBe(false);
+    expect(plainProblems(res.text)).toEqual([]);
+    const data = dataOf(res.text);
+    expect(data.task.title).toBe("Add a /time route");
+    expect(data.launched).toBeUndefined();
+    expect(data.note).toBe("The first task is open. The built-in agents did not start: The agent container did not start.");
+    expect(res.text).toContain(`Call gitring_declare with project "${data.project}", intentId "${data.task.id}"`);
   });
 
   it("creates a project from files and guesses the tests from them", async () => {

@@ -59,6 +59,8 @@ export interface CreatedProject {
   launched: string[];
   /** The agents start when the import is done. */
   launchAfterImport?: boolean;
+  /** The first task or the built-in agents did not start. The project exists; this sentence says why. */
+  note?: string;
 }
 
 function harbor(env: Env, id: string) {
@@ -206,18 +208,28 @@ export async function createProjectFor(env: Env, principal: Principal, input: Cr
     await dir.dropProject(info.id).catch(() => undefined);
     throw e instanceof ProjectError ? e : new ProjectError(400, String((e as Error)?.message ?? e).replace(/^Error: /, ""));
   }
-  // The project exists from here on: a first task that fails does not undo it (the answer says why).
+  // The project exists from here on: a first task or agents that fail do not undo it (the note says why).
   const out: CreatedProject = { project: info, state, launched: [] };
   const goal = String(input.firstTask?.goal ?? "").trim();
   const title = String(input.firstTask?.title ?? "").trim() || titleOf(goal);
   if (!title) return out;
   const by = actorOf(principal);
-  out.task = (await h.createIntent({ title, goal: goal || title, source: { kind: principal.via === "session" ? "ui" : "mcp" } }, by)) as unknown as T.Intent;
+  const why = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error: /, "").slice(0, 300);
+  try {
+    out.task = (await h.createIntent({ title, goal: goal || title, source: { kind: principal.via === "session" ? "ui" : "mcp" } }, by)) as unknown as T.Intent;
+  } catch (e) {
+    out.note = `The project is ready. gitring did not open the first task: ${why(e)}`;
+    return out;
+  }
   const fanout = Math.max(0, Math.min(4, Math.round(Number(input.launch) || 0)));
   if (fanout) {
-    const started = await h.launchWhenReady(out.task.id, fanout, by);
-    out.launched = started.attempts;
-    if (started.afterImport) out.launchAfterImport = true;
+    try {
+      const started = await h.launchWhenReady(out.task.id, fanout, by);
+      out.launched = started.attempts;
+      if (started.afterImport) out.launchAfterImport = true;
+    } catch (e) {
+      out.note = `The first task is open. The built-in agents did not start: ${why(e)}`;
+    }
   }
   return out;
 }

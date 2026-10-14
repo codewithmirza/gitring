@@ -114,10 +114,11 @@ export const PROJECT_TOOLS: readonly ToolDef[] = [
             tests: made.state.project.settings.checks ?? { runner: "worker" },
             ...(made.task ? { task: { id: made.task.id, title: made.task.title } } : {}),
             ...(made.launched.length ? { launched: made.launched } : {}),
+            ...(made.note ? { note: made.note } : {}),
             ...(clone ? { clone } : {}),
             next,
           },
-          `Project "${id}" is ready. ${what} ${next[0]}`,
+          `Project "${id}" is ready. ${what}${made.note ? ` ${made.note}` : ""} ${next[0]}`,
         );
       } catch (e) {
         return fail(e);
