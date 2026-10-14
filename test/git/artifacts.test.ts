@@ -279,7 +279,7 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
       expect(gitIn(binding, "flaky-note", ["rev-parse", "main^"])).toBe(res.sha);
       // The commit is on main, so its note stays.
       expect(await backend().readNote("flaky-note", res.sha)).toBe("note of second\n");
-    });
+    }, 60_000); // several pushes through git http-backend
 
     it("sends the body of a push again unchanged", async () => {
       const root = await repoWithRoot("flaky-body");
@@ -375,7 +375,7 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     expect(gitIn(binding, "orphan", ["rev-list", "--count", "refs/notes/gitring"])).toBe("3");
     expect(await be.readNote("orphan", c1.sha)).toBe("note of 1\n");
     git(["fsck", "--strict", "--no-dangling"], { cwd: bare("orphan") });
-  });
+  }, 60_000); // several pushes through git http-backend
 
   it("a root commit can start a new branch in a non-empty repo", async () => {
     const be = backend();
