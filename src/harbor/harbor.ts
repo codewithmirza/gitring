@@ -4773,8 +4773,10 @@ export class HarborMaster extends DurableObject<Env> {
    * A person asks the agent to change some lines of its work (a line comment in the app). The agent gets a
    * change request, like any other: in the answer of its next call.
    */
-  async requestChange(attemptId: string, input: { path: string; from: number; to: number; text: string }, who: { id: string; name: string }): Promise<T.Correction> {
+  async requestChange(attemptId: string, input: { path: string; from: number; to: number; text: string }, who: { id: string; name: string; role?: Role }): Promise<T.Correction> {
     const a = this.mustAttempt(attemptId);
+    // Only the person who sent the agent, or an owner, steers it. Another member cannot put text into this agent.
+    if (who.role && !this.mayAct(a, { id: who.id, role: who.role })) throw new Error(`The agent of ${a.sender?.name ?? "another person"} works on this. Only that person or an owner of the project can send it a change request.`);
     if (TERMINAL.has(a.status)) throw new Error(`The work copy is ${copyStatusWord(a.status)}. The agent does not work on it any more.`);
     const path = String(input.path ?? "").trim().replace(/^\/+/, "");
     const from = Math.floor(Number(input.from));

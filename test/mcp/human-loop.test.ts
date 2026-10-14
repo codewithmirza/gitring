@@ -250,6 +250,23 @@ describe("a person asks the agent to change some lines", () => {
   });
 });
 
+describe("who may send a change request", () => {
+  it("is the person who sent the agent, or an owner; another member cannot steer the agent", async () => {
+    const id = await shoutWork();
+    const url = `/api/projects/${project}/attempts/${id}/requests`;
+    const body = { path: "src/shout.js", from: 2, to: 3, text: "Rename it." };
+    world.person("bob", 2);
+    const bob = await world.signIn("bob");
+    await world.call("POST", `/api/projects/${project}/members`, { key, body: { who: "@bob", role: "member" } });
+    const refused = await world.call("POST", url, { headers: cookie(bob.session), body });
+    expect(refused.status, refused.text).toBeGreaterThanOrEqual(400);
+    expect(refused.text).toContain("Only that person or an owner of the project can send it a change request.");
+    expect(steViolations(String(refused.json.error ?? ""))).toEqual([]);
+    // The sender (an owner here) can.
+    expect((await world.call("POST", url, { headers: cookie(session), body })).status).toBe(201);
+  });
+});
+
 describe("the inbox of a person", () => {
   it("lists the merge questions of every project where the person may answer, with the project name", async () => {
     const id = await shoutWork();

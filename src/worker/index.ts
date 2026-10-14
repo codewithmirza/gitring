@@ -523,7 +523,7 @@ app.post("/api/projects/:p/attempts/:id/requests", async (c) => {
     const corr = await h.requestChange(
       c.req.param("id"),
       { path: String(body.path ?? ""), from: Number(body.from), to: Number(body.to ?? body.from), text: String(body.text ?? "") },
-      { id: principal.user.id, name: principal.user.name },
+      { id: principal.user.id, name: principal.user.name, role: h.role },
     );
     return c.json(corr, 201);
   } catch (e) {
