@@ -1,6 +1,6 @@
 ---
 name: gitring
-description: Work through gitring when many agents or people change one repository at the same time. Use it when the gitring tools are in your tool list, or when the user names gitring. Send a plan first. Apply each change request. Run the tests. Then ask for a merge. Use gitring instead of a GitHub pull request for work in a gitring project.
+description: Work through gitring when many agents or people change one repository at the same time. Use it when the gitring tools are in your tool list, or when the user names gitring. Send a plan first. Apply each change request. Run the tests. Then ask for a merge. gitring is where the work merges.
 ---
 
 # Work through gitring
@@ -16,10 +16,15 @@ Use gitring when the user names gitring or a gitring project.
 Use it when the gitring tools are in your tool list and the task changes a repository.
 Use it when other agents or people change the same repository now.
 
-Use a GitHub pull request when no gitring project exists for the repository.
-Use one when the user asks for a pull request.
 Do not open a pull request for work that gitring merges.
-When the project sends merges to GitHub, gitring does it for you.
+When the user asks for a pull request, or no gitring project exists, use the normal way of the repository.
+GitHub is an optional place that a project can import from or send merges to. gitring does it for you.
+
+## Start and look
+
+- **New project.** Call `gitring_templates` to see the starter templates. Call `gitring_create_project` to make a project from a template, empty, from files, or from a git URL. It can open the first task.
+- **Get the files.** Call `gitring_clone` for a git clone command. You do not need a clone to read: use `gitring_read`, `gitring_search` and `gitring_diff`.
+- **Ask why.** Call `gitring_why` for the reason a line is there. Call `gitring_history` for the changes of a file.
 
 ## The loop
 
@@ -44,6 +49,7 @@ When the project sends merges to GitHub, gitring does it for you.
 - When the conflict check says "a person decides", tell the user and wait.
 - Never say yes to your own work. gitring has no tool for it, and a person must answer.
 - Reuse your `agentId` in later calls of `gitring_declare`.
+- A person can use the `gitring` command line (`gitring watch`) and the inbox of the app.
 - Keep the token of your work copy secret. Do not write it into a file.
 
 ## If a tool fails

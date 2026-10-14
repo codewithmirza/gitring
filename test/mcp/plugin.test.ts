@@ -87,7 +87,7 @@ describe("skill", () => {
     const mentioned = new Set([...body.matchAll(/`(gitring_[a-z]+)`/g)].map((m) => m[1]));
     for (const name of ["gitring_intents", "gitring_declare", "gitring_ack", "gitring_check", "gitring_submit"]) expect(mentioned.has(name), name).toBe(true);
     for (const name of mentioned) expect(known.has(name), `${name} is not a gitring tool`).toBe(true);
-    expect(body).toMatch(/GitHub pull request/);
+    expect(body).toMatch(/Do not open a pull request for work that gitring merges/);
     expect(body).toMatch(/GITRING CHANGE REQUEST/);
   });
 
