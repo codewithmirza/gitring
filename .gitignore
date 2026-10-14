@@ -31,3 +31,6 @@ private/
 *.err
 tmp_*
 scratchpad_dummy
+
+# The landing page video ships from git (4.7 MB)
+!web/public/media/gitring-product.mp4
