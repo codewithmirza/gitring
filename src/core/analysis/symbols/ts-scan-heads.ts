@@ -61,6 +61,61 @@ export class TsHeadReader extends TsStatementSkipper {
     return j;
   }
 
+  /** The modifiers before the name of a class member. TypeScript ones are cut. `static` and `async` stay. */
+  protected skipClassModifiers(from: number): { j: number; ambient: boolean } {
+    let j = from;
+    let ambient = false;
+    for (;;) {
+      const w = this.word(j);
+      if (!w) break;
+      const after = this.t(j + 1);
+      const modifierUse = !this.nl(j + 1) && (this.isKey(j + 1) || after === "[" || after === "*" || after === "{" || after === "#");
+      if (!modifierUse) break;
+      if (TS_CLASS_MODIFIERS.has(w)) {
+        if (w === "abstract" || w === "declare") ambient = true;
+        this.cut(j, j + 1);
+        j++;
+        continue;
+      }
+      if (JS_MEMBER_PREFIXES.has(w)) {
+        j++;
+        continue;
+      }
+      break;
+    }
+    return { j, ambient };
+  }
+
+  /** An index signature in a class (`[key: string]: T`): cut the whole member. */
+  protected cutIndexSignature(ctx: ScanCtx, start: number, j: number): boolean {
+    let k = this.closeOf(j) + 1;
+    if (this.t(k) === "?") k++;
+    if (this.t(k) === ":") k = this.skipType(k + 1);
+    if (k < 0) { this.fail(); return true; }
+    if (this.t(k) === ";") k++;
+    this.cut(start, k);
+    ctx.memberStart = true;
+    this.i = k;
+    return true;
+  }
+
+  /** An `abstract` or `declare` member has no code: cut the whole member. */
+  protected cutAmbientMember(ctx: ScanCtx, start: number, j: number): boolean {
+    let k = j;
+    if (this.t(k) === "<") k = this.skipAngle(k);
+    if (k > 0 && this.t(k) === "(") {
+      k = this.closeOf(k) + 1;
+      if (this.t(k) === ":") k = this.skipReturnType(k + 1);
+    } else if (k > 0 && this.t(k) === ":") k = this.skipType(k + 1);
+    if (k > 0 && this.t(k) === "=") k = this.statementEnd(k);
+    if (k < 0) { this.fail(); return true; }
+    if (this.t(k) === ";") k++;
+    this.cut(start, k);
+    ctx.memberStart = true;
+    this.i = k;
+    return true;
+  }
+
   /** Class members: modifiers, keys, optional marks, field types and method type parameters. */
   protected readClassMember(ctx: ScanCtx, tok: Tok): boolean {
     const t = tok.t;
@@ -80,44 +135,16 @@ export class TsHeadReader extends TsStatementSkipper {
           return true;
         }
         const start = this.i;
-        let j = this.i;
-        let ambient = false;
-        for (;;) {
-          const w = this.word(j);
-          if (!w) break;
-          const after = this.t(j + 1);
-          const modifierUse = !this.nl(j + 1) && (this.isKey(j + 1) || after === "[" || after === "*" || after === "{" || after === "#");
-          if (!modifierUse) break;
-          if (TS_CLASS_MODIFIERS.has(w)) {
-            if (w === "abstract" || w === "declare") ambient = true;
-            this.cut(j, j + 1);
-            j++;
-            continue;
-          }
-          if (JS_MEMBER_PREFIXES.has(w)) {
-            j++;
-            continue;
-          }
-          break;
-        }
+        const modifiers = this.skipClassModifiers(this.i);
+        let j = modifiers.j;
+        const ambient = modifiers.ambient;
         if (this.t(j) === "{") {
           // static block
           this.i = j;
           this.pendingBrace = "block";
           return true;
         }
-        if (this.t(j) === "[" && this.t(j + 1) === "name" && this.t(j + 2) === ":") {
-          // index signature
-          let k = this.closeOf(j) + 1;
-          if (this.t(k) === "?") k++;
-          if (this.t(k) === ":") k = this.skipType(k + 1);
-          if (k < 0) { this.fail(); return true; }
-          if (this.t(k) === ";") k++;
-          this.cut(start, k);
-          ctx.memberStart = true;
-          this.i = k;
-          return true;
-        }
+        if (this.t(j) === "[" && this.t(j + 1) === "name" && this.t(j + 2) === ":") return this.cutIndexSignature(ctx, start, j);
         if (this.t(j) === "*") j++;
         if (this.t(j) === "[") {
           const c = this.closeOf(j);
@@ -132,21 +159,7 @@ export class TsHeadReader extends TsStatementSkipper {
           this.cut(j, j + 1);
           j++;
         }
-        if (ambient) {
-          let k = j;
-          if (this.t(k) === "<") k = this.skipAngle(k);
-          if (k > 0 && this.t(k) === "(") {
-            k = this.closeOf(k) + 1;
-            if (this.t(k) === ":") k = this.skipReturnType(k + 1);
-          } else if (k > 0 && this.t(k) === ":") k = this.skipType(k + 1);
-          if (k > 0 && this.t(k) === "=") k = this.statementEnd(k);
-          if (k < 0) { this.fail(); return true; }
-          if (this.t(k) === ";") k++;
-          this.cut(start, k);
-          ctx.memberStart = true;
-          this.i = k;
-          return true;
-        }
+        if (ambient) return this.cutAmbientMember(ctx, start, j);
         if (this.t(j) === "<") {
           const k = this.skipAngle(j);
           if (k < 0) { this.fail(); return true; }
