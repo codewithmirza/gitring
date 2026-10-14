@@ -3,7 +3,6 @@
  *
  * Reads go through the binding and are cached. A blob is cached for every repository, because its id names its bytes.
  */
-import git from "isomorphic-git";
 import { EMPTY_TREE_SHA, isSha } from "../../../core/git/objects";
 import type { CommitMeta, TreeEntry } from "../backend";
 import { DEFAULT_BRANCH, NOTES_REF } from "./types";

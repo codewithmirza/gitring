@@ -4,7 +4,7 @@
  * Nothing writes to main. A write goes to the work copy of the caller, and the conflict check runs after it.
  */
 import { z } from "zod";
-import { ADDS, CHANGES, defineTool, fail, text, VERDICT_WORD, type ToolDef } from "../mcp-kit";
+import { ADDS, CHANGES, defineTool, fail, VERDICT_WORD, type ToolDef } from "../mcp-kit";
 import { data, owner, repo, sha7 } from "./answers";
 import { MAIN, branchCopy, cleanBranch, open, workBranch, writeToBranch } from "./branches";
 

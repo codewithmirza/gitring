@@ -8,7 +8,7 @@ import git from "isomorphic-git";
 import { type PathEdit, buildChangeset, prepareChangeset } from "../../../core/git/changeset";
 import { EMPTY_TREE_SHA, encodeCommit, hashObject, isSha, isValidBranchName, normalizeCommitMessage, utf8 } from "../../../core/git/objects";
 import { type Snapshot, prepareCommit, readSnapshot } from "../../../core/git/snapshot";
-import { type CommitInput, type CommitResult, type FileChange, RepoConflictError } from "../backend";
+import { type CommitInput, type CommitResult, type FileChange } from "../backend";
 import { MemoryFS } from "../memory-fs";
 import { writePack } from "../pack";
 import { PushRejectedError, advertisedRefs, pushPack } from "../push";

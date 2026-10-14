@@ -4,7 +4,7 @@
  * The webhook secret and the private key never leave this object except to verify and to sign.
  * Read next: src/worker/setup-routes.ts (the setup page that calls these methods).
  */
-import { githubAppJwt, seal } from "../crypto";
+import { githubAppJwt } from "../crypto";
 import { GITHUB_HEADERS } from "../constants";
 import type { GithubAppConfig, GoogleConfig, ManifestConversion, ProvidersInfo } from "../types";
 import { DirectoryPrefsPush } from "./prefs-push";

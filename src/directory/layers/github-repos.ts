@@ -6,7 +6,6 @@
 import { githubAppJwt } from "../crypto";
 import { GITHUB_HEADERS } from "../constants";
 import type { GithubRepoAccess } from "../types";
-import { githubUserToken } from "../helpers";
 import { DirectoryGithubTokens } from "./github-tokens";
 
 export abstract class DirectoryGithubRepos extends DirectoryGithubTokens {

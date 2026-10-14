@@ -5,12 +5,11 @@
  * revocation and the grants of a person, and it re-exports every public name of the store.
  * Runs inside the Directory Durable Object (SQLite). Pure enough to test in Node.
  */
-import { publicHostname } from "../core/repo-rules";
 import { sameString, sha256B64url } from "./crypto";
 import { CLI_CLIENT_ID, CLI_CLIENT_NAME, DEVICE_GRANT } from "./device";
-import { ACCESS_TTL_S, OAUTH_SCHEMA, REFRESH_TTL_S, REUSE_GRACE_MS, SCOPE, SCOPE_READ } from "./oauth-store/constants";
-import { err, rand, type JsonObject, type OAuthClient, type OAuthDeps, type OAuthError, type PendingDevice, type PendingRequest, type TokenAnswer } from "./oauth-store/types";
-import { accessScope, audienceOk, canonicalResource, isCimdId, redirectMatches, redirectOk, resourceHint, resourceOf, resourceOk, scopeCovers, withParams } from "./oauth-store/rules";
+import { REUSE_GRACE_MS, SCOPE } from "./oauth-store/constants";
+import { err, rand, type OAuthClient, type OAuthError, type TokenAnswer } from "./oauth-store/types";
+import { audienceOk, canonicalResource, resourceHint, resourceOf, resourceOk } from "./oauth-store/rules";
 import { OAuthDevices } from "./oauth-store/devices";
 
 export { ACCESS_TTL_S, OAUTH_SCHEMA, REFRESH_TTL_S, SCOPE, SCOPE_READ } from "./oauth-store/constants";

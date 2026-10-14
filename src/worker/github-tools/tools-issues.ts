@@ -6,7 +6,7 @@
 import { z } from "zod";
 import type * as T from "../../core/types";
 import { ADDS, READS, defineTool, fail, type ToolDef } from "../mcp-kit";
-import { byAge, data, github, owner, page, perPage, repo } from "./answers";
+import { byAge, data, owner, page, perPage, repo } from "./answers";
 import { OPEN_TASK, open } from "./branches";
 
 function issueJson(i: T.Intent, number: number) {

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import type * as T from "../../core/types";
 import { directory } from "../auth";
-import { READS, callOf, defineTool, fail, plain, text, withNews, type ToolDef } from "../mcp-kit";
+import { READS, callOf, defineTool, fail, plain, withNews, type ToolDef } from "../mcp-kit";
 import { data, entriesOf, github, iso, newsOf, owner, page, page_, perPage, repo, sha7 } from "./answers";
 import { DONE, MAIN, cleanBranch, myBranches, open, resolve } from "./branches";
 
