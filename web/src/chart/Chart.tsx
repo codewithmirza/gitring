@@ -244,7 +244,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
             <RangeLines lines={rangeLines} pos={pos} k={t.k} selected={selected} />
             <Pulses pos={pos} k={t.k} />
             <Buoys buoys={buoys} layout={layout} k={t.k} selected={selected} onBuoy={onBuoy} />
-            <VesselLayer vessels={vessels} placements={placements} k={t.k} selected={selected} hovered={hovered} compact={compact} tags={tags} hitR={narrow ? 16 : 13} onSelect={onSelectVessel} />
+            <VesselLayer vessels={vessels} placements={placements} k={t.k} selected={selected} hovered={hovered} compact={compact} tags={tags} hitR={narrow && !compact ? 16 : 13} onSelect={onSelectVessel} />
           </g>
         </svg>
       )}
