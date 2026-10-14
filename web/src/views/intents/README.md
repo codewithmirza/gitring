@@ -8,3 +8,4 @@ The parts of the tasks page. `../IntentsView.tsx` composes them. The styles are 
 - `MergePanels.tsx`: merge into main, or ask for a redo.
 - `Spec.tsx`: the constraints and the test files of a task, under the work copies. An empty list is one quiet line.
 - `rail.css`: the styles of the task rail that `../../app/styles/rails.css` does not hold (filter, day labels, row action).
+- `rail-groups.ts`: the filter of the task rail, and the split of a long group by day. No React in it.

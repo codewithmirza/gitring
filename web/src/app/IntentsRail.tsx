@@ -15,16 +15,14 @@ import { dropPending, setUi, useUi, type PendingTask } from "./ui";
 import { LaunchButton } from "./LaunchControl";
 import { useNow } from "./useNow";
 import { useCanAct } from "../state/account";
-import { dayLabel } from "../views/labels";
 import { readDraft, TaskComposer, writeDraft } from "./Composer";
+import { matchFilter, splitByDay } from "../views/intents/rail-groups";
 import "../views/intents/rail.css";
 
 /* ───────────── constants ───────────── */
 
 /** A list this long gets a filter field. A shorter list is quick to read. */
 const FILTER_FROM = 8;
-/** A group with more tasks than this is split by day. */
-const SPLIT_BY_DAY_FROM = 20;
 const EMPTY_GROUPS: IntentGroup[] = [];
 const EMPTY_ATTEMPTS: Attempt[] = [];
 const EMPTY_AGENTS = new Map<string, AgentInfo>();
@@ -81,32 +79,6 @@ function intentFacts(i: Intent, attempts: Attempt[]): string[] {
     default:
       return [`${active.length} ${active.length === 1 ? "agent works" : "agents work"}`, ...(ready ? [`${ready} ready`] : [])];
   }
-}
-
-/** The tasks that have every word of the filter, in the title or the goal. An empty list of words keeps all tasks. */
-function matchFilter(i: Intent, words: string[]): boolean {
-  const text = `${i.title} ${i.goal}`.toLowerCase();
-  return words.every((w) => text.includes(w));
-}
-
-/** A group of tasks, or the part of it that one day holds. */
-interface RowGroup {
-  key: string;
-  label?: string;
-  intents: Intent[];
-}
-
-/** Splits a long group by the day that each task was opened (merged tasks: the day of the merge). */
-function splitByDay(g: IntentGroup, now: number): RowGroup[] {
-  if (g.intents.length <= SPLIT_BY_DAY_FROM) return [{ key: g.id, intents: g.intents }];
-  const days: RowGroup[] = [];
-  for (const i of g.intents) {
-    const label = dayLabel(g.id === "landed" ? i.updatedAt : i.createdAt, now);
-    const last = days[days.length - 1];
-    if (last?.label === label) last.intents.push(i);
-    else days.push({ key: `${g.id}-${days.length}`, label, intents: [i] });
-  }
-  return days;
 }
 
 const IntentRow = memo(function IntentRow({

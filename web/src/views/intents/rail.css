@@ -18,17 +18,15 @@
 /* A list of 80 tasks must not hold 80 buttons. The task page has the same button, always in view. */
 /* The button sits on the line of the facts (24 px high, centered on it) and never over the title. */
 .rail--intents .irow:not(.irow--pending):has(.irow__action) .irow__main { padding-right: var(--s-4); }
+/* The button is cut out of view, not removed: a keyboard user reaches it, and the row shows it when it has focus. */
 .rail--intents .irow__action:not(.irow__action--pending) {
   bottom: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-1) var(--ease-out);
+  clip-path: inset(50%);
 }
 .rail--intents .irow:hover .irow__action,
 .rail--intents .irow:focus-within .irow__action,
 .rail--intents .irow__action:has([aria-expanded="true"]) {
-  opacity: 1;
-  pointer-events: auto;
+  clip-path: none;
 }
 /* A touch screen has no hover: the person opens the task and starts the agents there. */
 @media (hover: none) {
