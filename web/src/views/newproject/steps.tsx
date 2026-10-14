@@ -10,6 +10,7 @@ import { pickTemplate, TEMPLATES, type TemplateId } from "../../../../src/core/t
 import { Button, Segmented } from "../../design/components";
 import { Icon } from "../../design/icons";
 import { openProject, readUpload, uploadable } from "../../state/account";
+import { openSignIn } from "../../app/ui";
 import { cachedGuess, githubConnectUrl, guessProject, isAbort, RequestError, useDelayedFlag, OFFLINE_TEXT } from "../../state/github";
 import { createProjectFrom } from "../../state/projects";
 import type { FormValues, SourceStep } from "./draft";
@@ -178,12 +179,14 @@ function useFirstField(when = true) {
 function createProblem(e: RequestError, returnTo: string, onStep: (s: SourceStep) => void): { text: string; actions?: ReactNode } {
   const install = typeof e.data.installUrl === "string" ? e.data.installUrl : null;
   if (e.status === 401) {
+    // The gitring sign-in ended (not the GitHub connection): any sign-in choice works, and the link of
+    // the step brings the person back to it.
     return {
       text: "Your sign-in ended. Sign in again. gitring keeps your choices.",
       actions: (
-        <a className="b-btn b-btn--secondary b-btn--sm" href={githubConnectUrl(returnTo)}>
-          <GithubMark size={14} /> Sign in with GitHub
-        </a>
+        <Button size="sm" onClick={(ev) => openSignIn({ anchor: ev.currentTarget, reason: "Sign in again to make the project.", then: { kind: "go", to: returnTo } })}>
+          Sign in again
+        </Button>
       ),
     };
   }
@@ -550,7 +553,8 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
                 ) : (
                   <span className="np-row__text">Stays in gitring.</span>
                 )}
-                <span className="np-row__hint">{hints.sync ?? (canSync ? SYNC_TEXT[v.sync] : "You cannot push to this repository, so gitring does not send code to GitHub.")}</span>
+                {/* With a choice, the hint follows the choice; without one, the guess says why. */}
+                <span className="np-row__hint">{canSync ? SYNC_TEXT[v.sync] : (hints.sync ?? "You cannot push to this repository, so gitring does not send code to GitHub.")}</span>
               </div>
             </div>
             <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} hint={form.visibility === undefined ? "Same as the repository." : undefined} />
@@ -580,6 +584,7 @@ export function UrlStep({ step, form, setForm, onBack, onStep, returnTo }: StepP
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const [error, setError] = useState<RequestError | null>(null);
+  // A pasted URL: the name takes the focus. "Import from a git URL" opens with no URL: the URL field does.
   const first = useFirstField();
   const v = {
     name: form.name ?? nameOfUrl(okUrl ?? url),
@@ -617,10 +622,20 @@ export function UrlStep({ step, form, setForm, onBack, onStep, returnTo }: StepP
       {step.note && <p className="np-step__note">{step.note}</p>}
       <div className="np-rows">
         <Row id={`${uid}-url`} label="URL" hint={badUrl ? "Give an https URL of a git repository, for example https://gitlab.com/owner/repo." : "Public repositories only. For a private one, push with git."}>
-          <Quiet id={`${uid}-url`} value={url} onChange={(u) => setForm({ url: u })} mono hint invalid={badUrl} inputMode="url" placeholder="https://github.com/owner/repo" />
+          <Quiet
+            id={`${uid}-url`}
+            value={url}
+            onChange={(u) => setForm({ url: u })}
+            mono
+            hint
+            invalid={badUrl}
+            inputMode="url"
+            placeholder="https://codeberg.org/owner/repo"
+            inputRef={step.url ? undefined : first}
+          />
         </Row>
         <Row id={`${uid}-name`} label="Name">
-          <Quiet id={`${uid}-name`} value={v.name} onChange={(name) => setForm({ name })} maxLength={80} inputRef={first} />
+          <Quiet id={`${uid}-name`} value={v.name} onChange={(name) => setForm({ name })} maxLength={80} inputRef={step.url ? first : undefined} />
         </Row>
         <Row id={`${uid}-branch`} label="Branch" hint={badBranch ? "Use letters, digits, dots, dashes and slashes." : "Empty: the default branch."}>
           <Quiet id={`${uid}-branch`} value={v.branch} onChange={(branch) => setForm({ branch })} mono hint invalid={badBranch} placeholder="default branch" />

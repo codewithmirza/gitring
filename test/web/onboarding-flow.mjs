@@ -55,6 +55,8 @@ const active = (page) => page.evaluate(() => {
   const a = document.activeElement;
   return a ? { tag: a.tagName.toLowerCase(), role: a.getAttribute("role"), name: a.getAttribute("aria-label") ?? a.textContent?.trim().slice(0, 60), value: a.value ?? null } : null;
 });
+/** Focus is in "Describe what you want to build". */
+const inDescribe = (page) => page.evaluate(() => document.activeElement?.classList.contains("np-describe__input") ?? false);
 const noOverflow = (page) => page.evaluate(() => {
   const main = document.getElementById("main");
   return document.documentElement.scrollWidth <= document.documentElement.clientWidth && (!main || main.scrollWidth <= main.clientWidth + 1);
@@ -142,7 +144,12 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   check((await trigger.getAttribute("aria-expanded")) === "true", "the trigger says aria-expanded=true");
   check((await trigger.getAttribute("aria-controls")) === (await dialog.getAttribute("id")), "aria-controls points at the panel");
   let a = await active(page);
-  check(a?.role === "combobox", "focus moves into the combobox", a);
+  check(await inDescribe(page), "focus moves into the describe field", a);
+  const starts = await page.locator(".np-start__opt .np-opt__title").allInnerTexts();
+  check(JSON.stringify(starts) === JSON.stringify(["Template", "Empty project", "Upload a folder", "Push with git", "Import from a git URL"]), "the sources come in order: Template, Empty, Upload, Push, git URL", starts);
+  const groups = await page.locator(".np-start > *").evaluateAll((els) => els.map((el) => el.className));
+  check(groups.length === 3 && groups[0].includes("np-describe") && groups[2].includes("np-start__github"), "the describe field is first, your GitHub repositories are last", groups);
+  check(await page.getByText("Describe it, start from a template, or bring your code. Agents start at once.").isVisible(), "the lede names the ways to start");
 
   const geo = await page.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => x.textContent?.includes("New project")).getBoundingClientRect();
@@ -158,6 +165,7 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   check(anim === "np-grow", "the panel grows from its tail", anim);
   check((await page.locator(".np-chip").count()) === 3, "account chips: All accounts, robin, acme");
 
+  await page.getByRole("combobox").focus();
   await page.keyboard.type("gitr", { delay: 40 });
   await page.waitForTimeout(700);
   const first = page.locator('[role="option"]').first();
@@ -193,13 +201,20 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   check(count(l, "GET", /^\/api\/github\/repos/) === 1, "the reopened list comes from the cache", count(l, "GET", /^\/api\/github\/repos/));
 
   // Pick, check the guesses, create with Enter.
+  check(await inDescribe(page), "the reopened panel puts focus in the describe field");
+  await page.getByRole("combobox").focus();
   await page.keyboard.press("Enter");
   await page.getByRole("heading", { name: /robin\/gitring/ }).waitFor();
   a = await active(page);
   check(a?.tag === "input" && a.value === "gitring", "the name field has focus with the guessed name", a);
   await page.waitForSelector('input[value="npm ci"]');
   check((await page.locator('input[value="npm test"]').count()) === 1, "the test command comes from the guess");
-  check((await page.getByRole("radio", { name: "Pull request" }).getAttribute("aria-checked")) === "true", "sync defaults to a pull request");
+  check((await page.getByRole("radio", { name: "Off" }).getAttribute("aria-checked")) === "true", "GitHub sync starts off, also with push rights");
+  check(await page.getByText("Merged code stays in gitring. You can turn GitHub sync on later in Settings → GitHub.").isVisible(), "…and says how to turn it on");
+  await page.getByRole("radio", { name: "Pull request" }).click();
+  check(await page.getByText("gitring keeps one pull request open on GitHub. You merge it there.").isVisible(), "the hint follows the choice");
+  await page.getByRole("radio", { name: "Off" }).click();
+  await page.getByRole("textbox", { name: "Name" }).focus();
   check((await page.getByRole("radio", { name: "Private" }).getAttribute("aria-checked")) === "true", "a private repository makes a private project");
   check(await page.getByText("package-lock.json is in the repository").isVisible(), "each guess shows its reason");
   l = await log();
@@ -209,7 +224,7 @@ step("A. Projects page and the picker (GitHub connected, 1280 px)");
   const id = new URL(page.url()).searchParams.get("project");
   const body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
   check(body?.source?.kind === "github" && body.source.repo === "robin/gitring" && body.source.branch === "main", "POST /api/projects sends the GitHub source", body?.source);
-  check(body?.settings?.github?.mode === "pull-request" && body.settings.github.repo === "robin/gitring" && body.settings.github.branch === "gitring", "…and the GitHub sync settings", body?.settings?.github);
+  check(body?.settings?.github?.mode === "off" && body.settings.github.repo === "robin/gitring" && body.settings.github.branch === "gitring", "…and the GitHub link with sync off", body?.settings?.github);
   check(body?.settings?.checks?.runner === "container" && body.settings.checks.install === "npm ci" && body.settings.checks.test === "npm test", "…and the test commands", body?.settings?.checks);
   check(body?.visibility === "private", "…and the visibility");
   await page.getByText("gitring imports robin/gitring from GitHub").waitFor({ timeout: 8000 });
@@ -227,6 +242,7 @@ step("B. Pasted URLs");
   await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
   await page.getByRole("dialog", { name: "New project" }).waitFor();
   await page.waitForTimeout(200);
+  await page.getByRole("combobox").focus();
   await page.keyboard.insertText("https://gitlab.com/acme/tool");
   await page.waitForTimeout(150);
   check((await textOf(page.locator('[role="option"]').first())).includes("Import gitlab.com/acme/tool"), "a pasted URL puts an import row on top");
@@ -244,6 +260,7 @@ step("B. Pasted URLs");
   await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
   await page.getByRole("dialog", { name: "New project" }).waitFor();
   await page.waitForTimeout(200);
+  await page.getByRole("combobox").focus();
   await page.keyboard.insertText("github.com/vercel/next.js");
   await page.waitForTimeout(150);
   check((await textOf(page.locator('[role="option"]').first())).includes("Import github.com/vercel/next.js"), "a GitHub URL outside the list gets an import row");
@@ -300,9 +317,8 @@ step("B3. Upload a folder, push with git, empty project");
   await reset();
   const { ctx, page } = await open("github");
   await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
-  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   const chooser = page.waitForEvent("filechooser");
-  await page.getByRole("option", { name: /Upload a folder/ }).click();
+  await page.getByRole("button", { name: /^Upload a folder/ }).click();
   await (await chooser).setFiles(dir);
   await page.getByRole("heading", { name: "Upload a folder" }).waitFor();
   check(await shows(page.getByText(/2 files, 1 KB\. 2 files stay out/)), "the folder summary counts kept and skipped files");
@@ -317,8 +333,7 @@ step("B3. Upload a folder, push with git, empty project");
   check(body?.visibility === "private", "an upload is private by default");
 
   await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
-  await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
-  await page.getByRole("option", { name: /Push with git/ }).click();
+  await page.getByRole("button", { name: /^Push with git/ }).click();
   await page.getByRole("heading", { name: "Push with git" }).waitFor();
   await page.keyboard.type("Shop");
   await page.keyboard.press("Enter");
@@ -334,7 +349,63 @@ step("B3. Upload a folder, push with git, empty project");
   await page.getByRole("heading", { name: "Empty project" }).waitFor();
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/overview\?project=new-project-/, { timeout: 8000 });
-  check(await shows(page.getByRole("heading", { name: "Main has no files yet" })), "an empty project asks for the first task");
+  id = new URL(page.url()).searchParams.get("project");
+  body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
+  check(body?.source?.kind === "template" && body.source.template === "empty", "an empty project starts from the empty template (README, AGENTS.md, .gitignore)", body?.source);
+
+  // Import from a git URL (any host): the URL field takes the focus.
+  await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^Import from a git URL/ }).click();
+  await page.getByRole("heading", { name: "Import a public repository" }).waitFor();
+  const u = await active(page);
+  check(u?.tag === "input" && u.value === "", "the URL field has focus", u);
+  await page.keyboard.insertText("https://codeberg.org/robin/notes");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/overview\?project=notes-/, { timeout: 8000 });
+  id = new URL(page.url()).searchParams.get("project");
+  body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
+  check(body?.source?.kind === "git" && body.source.url === "https://codeberg.org/robin/notes", "a git URL on any host makes a git project", body?.source);
+  await ctx.close();
+}
+
+/* ═════════════ B4. describe it, or start from a template ═════════════ */
+step("B4. Describe it, or start from a template");
+{
+  await reset();
+  const { ctx, page } = await open("github");
+  await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
+  await page.getByRole("dialog", { name: "New project" }).waitFor();
+  await page.waitForTimeout(200);
+  check(await inDescribe(page), "the describe field has the focus");
+  await page.keyboard.type("A JSON API for my shop, with tests");
+  await page.keyboard.press("Enter");
+  await page.getByRole("heading", { name: "Describe it" }).waitFor();
+  const a = await active(page);
+  check(a?.tag === "input" && a.value === "JSON API for my shop", "the name comes from the description and has focus", a);
+  check((await page.getByRole("radio", { name: "Worker API" }).getAttribute("aria-checked")) === "true", "gitring picks the template that fits");
+  check((await page.getByRole("radio", { name: "1", exact: true }).getAttribute("aria-checked")) === "true", "1 built-in agent starts by default");
+  check(await page.getByText("1 built-in agent starts on the first task at once.").isVisible(), "the hint says so");
+  await page.getByRole("radio", { name: "2", exact: true }).click();
+  check(await page.getByText(/^2 built-in agents start on the first task at once/).isVisible(), "the person can change the agent count");
+  await page.getByRole("textbox", { name: "Name" }).focus();
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/overview\?project=json-api-for-my-shop-/, { timeout: 8000 });
+  let id = new URL(page.url()).searchParams.get("project");
+  let body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
+  check(body?.source?.kind === "template" && body.source.template === "worker-api", "the project starts from the Worker API template", body?.source);
+  check(body?.firstTask?.goal === "A JSON API for my shop, with tests" && body.launch === 2, "the description is the first task, and 2 agents start", { firstTask: body?.firstTask, launch: body?.launch });
+  check(body?.visibility === "private", "a described project is private by default");
+
+  await page.goto(`${BASE}/projects?new=template`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Start from a template" }).waitFor();
+  await page.keyboard.type("Robin site");
+  await page.getByRole("radio", { name: "Static site" }).click();
+  await page.getByRole("textbox", { name: "Name" }).focus();
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/overview\?project=robin-site-/, { timeout: 8000 });
+  id = new URL(page.url()).searchParams.get("project");
+  body = await (await fetch(`${BASE}/api/projects/${id}/__body`, { headers: { cookie: "mock=github" } })).json();
+  check(body?.source?.kind === "template" && body.source.template === "static-site" && body.name === "Robin site", "a template project sends its template", body);
   await ctx.close();
 }
 
@@ -374,23 +445,19 @@ step("D. Google sign-in without GitHub");
   await page.getByRole("button", { name: "New project" }).click();
   await page.getByRole("dialog", { name: "New project" }).waitFor();
   await page.waitForTimeout(200);
-  check((await textOf(page.locator('[role="option"]').first())).includes("Connect GitHub"), "the first row is Connect GitHub");
+  check(await inDescribe(page), "the describe field has the focus");
+  const link = page.getByRole("link", { name: "Connect GitHub" });
+  check(await link.isVisible(), "a small Connect GitHub link stands in for the repositories");
+  check(await page.getByText("to import your repositories. It is optional.").isVisible(), "the link says that GitHub is optional");
+  check((await page.getByRole("combobox").count()) === 0, "no repository search without a connection");
   let l = await log();
   check(count(l, "GET", /^\/api\/github\/repos/) === 0, "no repository request without a connection");
-  await page.keyboard.type("next");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  // Back to the first row (Connect GitHub), then Enter.
-  for (let i = 0; i < 6 && !(await textOf(page.locator('[role="option"][aria-selected="true"]'))).includes("Connect GitHub"); i++) await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-  await page.waitForURL(/\/projects\?new=1&q=next/, { timeout: 8000 });
+  await link.click();
+  await page.waitForURL(/\/projects\?new=1$/, { timeout: 8000 });
   l = await log();
-  check(l.some((e) => /^\/auth\/github\/start\?link=1&return=%2Fprojects%3Fnew%3D1%26q%3Dnext$/.test(e.path)), "Connect GitHub goes to GitHub and back with the text", l.filter((e) => e.path.startsWith("/auth")).map((e) => e.path));
+  check(l.some((e) => /^\/auth\/github\/start\?link=1&return=%2Fprojects%3Fnew%3D1$/.test(e.path)), "Connect GitHub goes to GitHub and back to the picker", l.filter((e) => e.path.startsWith("/auth")).map((e) => e.path));
   await page.getByRole("dialog", { name: "New project" }).waitFor();
-  await page.waitForTimeout(600);
-  check((await page.getByRole("combobox").inputValue()) === "next", "the picker opens again, filled");
+  check(true, "the picker opens again");
   await ctx.close();
 }
 
@@ -417,6 +484,22 @@ step("E. Signed out");
   await b.ctx.close();
 }
 
+/* ═════════════ E2. home and projects: gitring holds the code, GitHub is optional ═════════════ */
+step("E2. Home and Projects words");
+{
+  await reset();
+  const { ctx, page } = await open("signedout");
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Where your code goes" }).waitFor();
+  const home = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+  check(home.includes("gitring holds the code.") && home.includes("An agent creates a project through MCP with one call.") && home.includes("GitHub is optional"), "Home: gitring holds the code, agents create projects, GitHub is optional");
+  check(!/Import it from GitHub|Sign in with GitHub|Pick a repository from GitHub/.test(home), "Home: GitHub is not the way in");
+  await page.goto(`${BASE}/projects`, { waitUntil: "networkidle" });
+  const lede = await textOf(page.locator(".projects .page__lede"));
+  check(lede.includes("gitring holds it in Cloudflare Artifacts") && lede.includes("GitHub sync is optional."), "Projects: the lede says where the code lives", lede);
+  await ctx.close();
+}
+
 /* ═════════════ F. first project: the picker on the page ═════════════ */
 step("F. A person without projects");
 {
@@ -427,9 +510,10 @@ step("F. A person without projects");
   check((await page.getByRole("button", { name: "New project" }).count()) === 0, "no extra button: the picker is on the page");
   let a = await active(page);
   check(a?.role !== "combobox", "the page does not steal focus on load", a);
+  check(await page.getByText("Describe what you want to build").isVisible(), "the page shows the describe field");
   await page.keyboard.press("Shift+N");
   a = await active(page);
-  check(a?.role === "combobox", "Shift+N focuses the picker", a);
+  check(await inDescribe(page), "Shift+N focuses the describe field", a);
   await page.waitForSelector('[role="option"]:has-text("robin/gitring")');
   check(true, "the repositories show at once");
   await ctx.close();
@@ -450,6 +534,9 @@ for (const theme of ["day", "night"]) {
   check(await noOverflow(page), `[${theme}] no horizontal overflow with the sheet open`);
   const h = await page.locator(".np-opt").first().evaluate((el) => el.getBoundingClientRect().height);
   check(h >= 44, `[${theme}] rows are at least 44 px high`, h);
+  const next = await page.getByRole("button", { name: "Next" }).boundingBox();
+  check(next && next.height >= 44, `[${theme}] the Next button of the describe field is at least 44 px high`, next);
+  await page.getByRole("combobox").focus();
   await page.keyboard.type("gitring");
   await page.keyboard.press("Enter");
   await page.waitForSelector('input[value="npm ci"]');
@@ -594,7 +681,8 @@ for (const theme of ["day", "dusk", "night"]) {
     [".np-opt:not(.is-active) .np-opt__text", 4.5],
     [".np-group__head", 4.5],
     [".np-tag", 4.5],
-    [".np-dock__hint", 4.5],
+    [".np-describe__hint", 4.5],
+    [".np-start__opt .np-opt__text", 4.5],
     [".np-search__input", 4.5],
     [".pj-card__meta", 4.5],
   ]) {
@@ -605,6 +693,7 @@ for (const theme of ["day", "dusk", "night"]) {
     const anim = await page.evaluate(() => getComputedStyle(document.querySelector(".np-pop")).animationName);
     check(anim === "b-fade-in", "[night, reduced motion] the panel only fades", anim);
   }
+  await page.getByRole("combobox").focus();
   await page.keyboard.type("gitring");
   await page.keyboard.press("Enter");
   await page.waitForSelector('input[value="npm ci"]');

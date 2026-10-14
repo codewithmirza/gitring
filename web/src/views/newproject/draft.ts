@@ -52,7 +52,7 @@ export const EMPTY_DRAFT: NewProjectDraft = { query: "", description: "", step: 
  *   ?new=1 (or github)       the source list (a draft of an earlier opening stays)
  *   ?new=upload|push|empty   that source
  *   ?new=template            the template list
- *   ?new=git&url=…           a public git URL
+ *   ?new=git&url=…           a public git URL (without url: the URL step, empty)
  *   &repo=owner/name         the guesses for that GitHub repository
  *   &q=…                     text in the search field (it comes back after "Connect GitHub")
  */
@@ -74,7 +74,8 @@ export function draftFromLink(params: URLSearchParams, prev: NewProjectDraft): N
     case "folder":
       return { ...EMPTY_DRAFT, query, step: { kind: "upload" } };
     case "git":
-      return url ? { ...EMPTY_DRAFT, query, step: { kind: "git", url } } : { ...EMPTY_DRAFT, query };
+      // Without a URL: the URL step with an empty field ("Import from a git URL").
+      return { ...EMPTY_DRAFT, query, step: { kind: "git", url: url ?? "" } };
     default:
       return q !== null ? { ...prev, query: q, step: { kind: "list" } } : prev;
   }

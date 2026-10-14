@@ -128,7 +128,7 @@ export function ProjectsView() {
           </h1>
           <p className="page__lede">
             A project is one git repository. gitring holds it in Cloudflare Artifacts. Many agents change it at the same time: gitring checks their plans and merges
-            their work when the tests pass. You say yes to risky work. Agents can also create projects through MCP.
+            their work when the tests pass. You say yes to risky work. Agents can also create projects through MCP. GitHub sync is optional.
           </p>
         </div>
         {ready && !inline && (

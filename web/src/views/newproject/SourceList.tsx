@@ -124,7 +124,8 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const n = options.length;
-    if (!n) return;
+    // No rows yet: Enter still waits for the repositories (the list has no other rows now).
+    if (!n && !(e.key === "Enter" && loadingRepos)) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       move(idx < 0 ? 0 : (idx + 1) % n);

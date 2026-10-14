@@ -50,4 +50,9 @@ describe("links", () => {
     expect(draftFromLink(new URLSearchParams("new=template"), EMPTY_DRAFT).step).toEqual({ kind: "template" });
     expect(EMPTY_DRAFT.description).toBe("");
   });
+
+  it("open the URL step of 'Import from a git URL', also without a URL", () => {
+    expect(draftFromLink(new URLSearchParams("new=git"), EMPTY_DRAFT).step).toEqual({ kind: "git", url: "" });
+    expect(draftFromLink(new URLSearchParams("new=git&url="), EMPTY_DRAFT).step).toEqual({ kind: "git", url: "" });
+  });
 });

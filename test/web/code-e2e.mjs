@@ -303,6 +303,22 @@ for (const [w, h] of [
     await page.locator(".cv-alldiffs").waitFor();
     ok((await page.locator(".cv-diff").count()) === 3, `${tag}: all changes of a work copy (3 files)`);
 
+    // Clone (members): the token comes only on a click, and it goes in a header, not in the URL.
+    await page.goto(`${BASE}/code?project=shop`, { waitUntil: "networkidle" });
+    await page.getByRole("tree").waitFor();
+    await page.getByRole("button", { name: "Clone" }).click();
+    const clonePop = page.getByRole("dialog", { name: "Clone with git" });
+    await clonePop.waitFor();
+    l = await log();
+    ok(!count(l, /POST \/api\/projects\/shop\/clone-token/), `${tag}: opening Clone makes no token`);
+    await clonePop.getByRole("button", { name: "Show the clone command" }).click();
+    await clonePop.getByText(/git -c http\.extraHeader="Authorization: Basic /).first().waitFor();
+    const cloneText = await clonePop.textContent();
+    ok(/clone --branch main https:\/\/artifacts\.example\/shop\.git shop/.test(cloneText) && !/https:\/\/[^\s"]*tok_read/.test(cloneText), `${tag}: the clone command has the token in a header, not in the URL`, cloneText);
+    ok(/works for 6 hours/.test(cloneText) && /gitring_clone/.test(cloneText), `${tag}: Clone says how long the token works, and names the MCP tool`);
+    await page.keyboard.press("Escape");
+    ok(!(await clonePop.count()), `${tag}: Escape closes Clone`);
+
     // The tree with the keyboard: one tab stop, arrows, Enter.
     await page.goto(`${BASE}/code?project=shop`, { waitUntil: "networkidle" });
     await page.getByRole("tree").waitFor();

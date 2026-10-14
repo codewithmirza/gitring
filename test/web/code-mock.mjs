@@ -336,6 +336,13 @@ const server = http.createServer(async (req, res) => {
       done(200);
       return send(res, 200, { ...makeState(), access: "owner" });
     }
+    if (sub === "/clone-token" && req.method === "POST") {
+      // Like the Worker: a 6-hour read token in a header, never in the URL.
+      done(200);
+      const remote = "https://artifacts.example/shop.git";
+      const header = `Authorization: Basic ${Buffer.from("x:tok_read").toString("base64")}`;
+      return send(res, 200, { remote, branch: "main", token: "tok_read?expires=1", expiresAt: new Date(NOW + 6 * 3600_000).toISOString(), header, clone: `git -c http.extraHeader="${header}" clone --branch main ${remote} shop`, pull: `git -c http.extraHeader="${header}" pull` });
+    }
     if (sub === "/connect") {
       done(200);
       return send(res, 200, { projectId: "shop", mcpUrl: `http://${req.headers.host}/mcp`, hookUrl: "", intentsUrl: "", artifacts: { namespace: "", repo: "", backend: "artifacts" }, inputs: { slack: false, githubIssues: true }, githubApp: null });
