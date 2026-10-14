@@ -267,6 +267,7 @@ describe("gitring login", () => {
     const res = await run(["login", "--server", srv.origin, "--open"], { openUrl: (u) => void opened.push(u) });
     expect(opened).toHaveLength(1);
     expect(res.out).toContain("The command line did not open the page: it is not a page of your gitring. Check the address.");
+    for (const line of [...res.out, ...res.err]) expect(steViolations(line)).toEqual([]);
     expect(safePage("https://g.example/device?code=BCDF-GHJK", "https://g.example")).toBe(true);
     expect(safePage("https://g.example/device?code=A&calc", "https://g.example")).toBe(false);
     expect(safePage("https://g.example/device?code=A B", "https://g.example")).toBe(false);
@@ -637,6 +638,7 @@ describe("gitring watch", () => {
     expect(connections).toBe(3);
     expect(res.sleeps).toEqual([1000, 2000]);
     expect(res.err).toEqual(["You cannot watch shop. The project does not exist, or your access changed. The server answered 403."]);
+    expect(steViolations(res.err[0])).toEqual([]);
   });
 
   it("goes on after the person signs out in a browser: the server closes the live log, and the token still works", async () => {
@@ -661,6 +663,7 @@ describe("gitring watch", () => {
     expect(res.sleeps).toEqual([1000, 1000]);
     expect(res.out.slice(1).map((l) => l.slice(10))).toEqual(["Log 1.", "Log 2."]);
     expect(res.err).toEqual(["The live log stopped. The connection closed."]);
+    expect(steViolations(res.out[0])).toEqual([]);
   });
 
   it("renews the token once when the server refuses the WebSocket with 401, and asks for a new sign-in when that fails", async () => {
