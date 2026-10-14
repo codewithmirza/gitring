@@ -399,7 +399,7 @@ Two modes:
 | `/mcp/readonly` | Only the gitring tools that read, with the history tools. The OAuth scope `mcp:read` limits a token to these tools. |
 | `/mcp/github` | A compatibility address for agents with a prompt or a habit that names the GitHub tools (see below). |
 
-`/mcp/github` has 20 tools with the names and the argument names of the GitHub MCP server. Among them: `get_file_contents`, `search_code`, `push_files`, `create_pull_request` and `list_issues`. It is the same project, the same conflict check, the same tests and the same approvals. `repo` is a gitring project id (`get_me` lists them). A branch other than `main` is your own work copy, and no tool writes to `main`. `create_pull_request` asks for a merge, and `merge_pull_request` waits for it. `issue_write` makes a task. The GitHub server has more tools (Actions, releases, security alerts and others), and gitring has none of them. New setups use `/mcp`. A sign-in is good for one address only. The tools are in `src/worker/mcp-github.ts`.
+`/mcp/github` has 20 tools with the names and the argument names of the GitHub MCP server. Among them: `get_file_contents`, `search_code`, `push_files`, `create_pull_request` and `list_issues`. It is the same project, the same conflict check, the same tests and the same approvals. `repo` is a gitring project id (`get_me` lists them). A branch other than `main` is your own work copy, and no tool writes to `main`. `create_pull_request` asks for a merge, and `merge_pull_request` waits for it. `issue_write` makes a task. The GitHub server has more tools (Actions, releases, security alerts and others), and gitring has none of them. New setups use `/mcp`. A sign-in is good for one address only. The tools are in `src/worker/github-tools/`.
 
 ### Claude Code plugin
 
@@ -702,7 +702,7 @@ The code keeps the names of its first design. This list gives each one a plain n
 src/core        pure logic: git objects, diffs, 3-way merge, JS symbol analysis, range,
                 conflict-check facts, rules, model input and output, change requests, merge records,
                 templates, approvals, the inbox, history shapes, what a merge carries
-src/harbor      HarborMaster: the project coordinator (one Durable Object for each project);
+src/harbor      HarborMaster: the project coordinator (one Durable Object for each project; master/ holds its logic, one job in each file);
                 derived.ts: path history, line blame and the search index; webhooks.ts: signed deliveries
 src/vessel      Vessel: the built-in agent runner (Workers AI, GLM)
 src/directory   Directory: the account store (people, passkeys, sessions, API keys, projects, roles,

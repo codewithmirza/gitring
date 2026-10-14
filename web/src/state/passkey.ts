@@ -1,6 +1,6 @@
 /**
  * Passkeys in the browser (WebAuthn): sign in, create an account, and add, rename or remove a passkey.
- * The Worker sends the options as JSON with base64url strings (src/worker/auth.ts, /auth/passkey/*).
+ * The Worker sends the options as JSON with base64url strings (src/worker/passkey-routes.ts, /auth/passkey/*).
  * The browser API wants bytes, and its answer has bytes too.
  */
 import type { PasskeyCreationOptions, PasskeyInfo, PasskeyRequestOptions, UserInfo } from "../../../src/core/accounts";

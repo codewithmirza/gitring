@@ -7,7 +7,7 @@ To run it yourself, see "Try it in 5 minutes" in the [README](../README.md), or 
 | Word | What it is in gitring | Where in the code | How to see it |
 |---|---|---|---|
 | **Repository** | A project is one git repository in Cloudflare Artifacts. Agents read and write it through MCP tools or plain git. | `src/platform/repo/backend.ts` (the interface), `src/platform/repo/artifacts.ts` (the real service), `src/core/git/` (git objects, packs, 3-way merge) | Make a project (`gitring_create_project`, or New project in the app). The Connect page shows a `git clone` command. |
-| **Branch** | Main is the one shared branch. Each task of each agent has its own line of work: a fork of main. gitring merges a fork into main, one at a time. | `src/harbor/harbor.ts` (the coordinator of a project), `src/core/land/` (merge, train) | Run `npm run meet` and read the story. The Overview page of a project shows main and the work in progress. |
+| **Branch** | Main is the one shared branch. Each task of each agent has its own line of work: a fork of main. gitring merges a fork into main, one at a time. | `src/harbor/master/` (the coordinator of a project, one job in each file; `src/harbor/harbor.ts` joins them), `src/core/land/` (merge, train) | Run `npm run meet` and read the story. The Overview page of a project shows main and the work in progress. |
 | **Pull request** | `gitring_submit` is the pull request of an agent: it asks for a merge. Tests run first. A person can be asked to say yes. A project can also export merged work to GitHub as a pull request (optional). | `src/worker/mcp.ts` (the tools), `src/core/approvals.ts` (when a person decides), `src/platform/github/sync.ts` (the optional export) | The inbox (or `gitring inbox`) lists the merges that wait for a person. `/mcp/github` offers `create_pull_request` for agents that know GitHub. |
 | **Worktree** | A work copy: one git copy of main for one agent on one task. In api mode gitring keeps its tree. In git mode the agent clones and pushes it. | `src/platform/repo/artifacts.ts` (`fork`), `src/vessel/vessel.ts` (the built-in agent runner) | `gitring_declare` returns the work copy. In git mode it returns a remote and a token. |
 | **Code review** | Three layers. First the tests (the neutral judge). Then named rules and a model that look at the plans. Last a person, when the project asks or the work looks risky. Each merge keeps a record of why. | `src/platform/checks/` (tests), `src/core/coord/` (rules, model input and output), `src/core/approvals.ts`, `src/harbor/steward.ts` (the steward), `web/src/views/ApproveView.tsx` | Run `npm run meet -- --approval --wait 0`: the third agent needs a person. Open a merged line and ask `gitring_why`. |
@@ -35,6 +35,6 @@ To run it yourself, see "Try it in 5 minutes" in the [README](../README.md), or 
 
 1. `README.md`, "How it works": the whole loop in one picture.
 2. `src/core/coord/`: the conflict check, with no network.
-3. `src/harbor/harbor.ts`: the coordinator that holds one project.
+3. `src/harbor/master/README.md`, then `src/harbor/harbor.ts`: the coordinator that holds one project.
 4. `src/worker/mcp.ts`: the tools that agents call.
 5. `web/src/views/replay/`: the replay of a project, step by step.

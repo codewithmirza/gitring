@@ -1,7 +1,7 @@
 /**
  * Keeps every source file easy to read (docs/CODE-STYLE.md, rules 1 to 3): a size limit, a header comment
- * and a folder map. The three lists below are debts of today. Fix a debt, then delete its line: the test
- * fails when a line is stale. Never add a line for new code. New code follows the rules.
+ * and a folder map. The three lists below are exceptions. They are empty now. Add a line only for one
+ * cohesive table, with the reason; never for code that can be split. The test fails when a line is stale.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
@@ -16,100 +16,13 @@ const MAX_LINES = { code: 600, css: 500 };
 const MIN_FILES_FOR_README = 4;
 
 /** Files over the size limit. A file may stay only if it is one cohesive table, with the reason as the value. */
-const TOO_LONG: Record<string, string> = {
-  "src/core/analysis/symbols.ts": "split it, then delete this line",
-  "src/directory/directory.ts": "split it, then delete this line",
-  "web/src/design/components/components.css": "split it, then delete this line",
-  "web/src/views/code/highlight.ts": "split it, then delete this line",
-  "web/src/views/CodeView.tsx": "split it, then delete this line",
-  "src/core/types.ts": "split it, then delete this line",
-  "src/worker/index.ts": "split it, then delete this line",
-  "web/src/views/SettingsView.tsx": "split it, then delete this line",
-  "web/src/views/DesignView.tsx": "split it, then delete this line",
-  "src/platform/repo/artifacts.ts": "split it, then delete this line",
-  "src/directory/oauth.ts": "split it, then delete this line",
-  "src/worker/mcp-github.ts": "split it, then delete this line",
-  "web/src/views/ConnectView.tsx": "split it, then delete this line",
-  "web/src/app/app.css": "split it, then delete this line",
-  "web/src/chart/Chart.tsx": "split it, then delete this line",
-  "web/src/views/replay/model.ts": "split it, then delete this line",
-  "web/src/views/IntentsView.tsx": "split it, then delete this line",
-  "web/src/views/newproject/steps.tsx": "split it, then delete this line",
-  "web/src/views/LogbookView.tsx": "split it, then delete this line",
-  "src/worker/auth.ts": "split it, then delete this line",
-  "web/src/state/selectors.ts": "split it, then delete this line",
-  "web/src/views/AccountView.tsx": "split it, then delete this line",
-  "web/src/views/code/code.css": "split it, then delete this line",
-  "web/src/state/api.ts": "split it, then delete this line",
-  "web/src/views/replay/replay.css": "split it, then delete this line",
-};
+const TOO_LONG: Record<string, string> = {};
 
-/** Files with no header comment yet. */
-const NO_HEADER = new Set([
-  "src/worker/env.ts",
-  "web/src/app/App.tsx",
-  "web/src/app/IntentsRail.tsx",
-  "web/src/app/LaunchControl.tsx",
-  "web/src/app/RadioLog.tsx",
-  "web/src/app/TopBar.tsx",
-  "web/src/app/TrafficRail.tsx",
-  "web/src/app/useMedia.ts",
-  "web/src/app/useNow.ts",
-  "web/src/chart/ChartLegend.tsx",
-  "web/src/design/components/Badge.tsx",
-  "web/src/design/components/Button.tsx",
-  "web/src/design/components/Callsign.tsx",
-  "web/src/design/components/CodeBlock.tsx",
-  "web/src/design/components/CorrectionNotice.tsx",
-  "web/src/design/components/CourseCheckReadout.tsx",
-  "web/src/design/components/Dialog.tsx",
-  "web/src/design/components/DiffView.tsx",
-  "web/src/design/components/EmptyState.tsx",
-  "web/src/design/components/EvidenceBar.tsx",
-  "web/src/design/components/Field.tsx",
-  "web/src/design/components/index.ts",
-  "web/src/design/components/InlineConfirm.tsx",
-  "web/src/design/components/InlinePanel.tsx",
-  "web/src/design/components/Kbd.tsx",
-  "web/src/design/components/LineRequest.tsx",
-  "web/src/design/components/LogLine.tsx",
-  "web/src/design/components/Menu.tsx",
-  "web/src/design/components/Panel.tsx",
-  "web/src/design/components/Popover.tsx",
-  "web/src/design/components/PreviewFrame.tsx",
-  "web/src/design/components/RangeIndicator.tsx",
-  "web/src/design/components/Segmented.tsx",
-  "web/src/design/components/Skeleton.tsx",
-  "web/src/design/components/Stat.tsx",
-  "web/src/design/components/Tabs.tsx",
-  "web/src/design/components/Toast.tsx",
-  "web/src/design/components/Tooltip.tsx",
-  "web/src/main.tsx",
-  "web/src/views/ChartView.tsx",
-  "web/src/views/ChoiceList.tsx",
-  "web/src/views/IntentsView.tsx",
-]);
+/** Files with no header comment. Keep empty. */
+const NO_HEADER = new Set<string>();
 
-/** Folders with 4 or more source files and no README.md yet. */
-const NO_README = new Set([
-  "src/core",
-  "src/core/analysis",
-  "src/core/coord",
-  "src/directory",
-  "src/platform/github",
-  "src/platform/repo",
-  "src/worker",
-  "web/src/app",
-  "web/src/chart",
-  "web/src/design",
-  "web/src/design/components",
-  "web/src/state",
-  "web/src/views",
-  "web/src/views/code",
-  "web/src/views/newproject",
-  "web/src/views/replay",
-  "web/src/views/waitlist",
-]);
+/** Folders with 4 or more source files and no README.md. Keep empty. */
+const NO_README = new Set<string>();
 
 interface SourceFile {
   path: string;
