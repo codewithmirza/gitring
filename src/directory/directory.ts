@@ -1,5 +1,5 @@
 /**
- * Directory: the registry Durable Object of the whole deployment. It knows people, projects, roles and sign-in settings.
+ * The registry Durable Object of the whole deployment: it knows people, projects, roles and sign-in settings.
  *
  * The class is a chain of layers in src/directory/layers/. Each layer adds one area and builds on the one before it.
  * The project coordinator (HarborMaster) of each project holds its state. The registry only knows that the project exists.

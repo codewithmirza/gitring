@@ -1,5 +1,5 @@
 /**
- * The SQL tables of the Directory. Each statement is safe to run again.
+ * The SQL tables of the Directory, each statement safe to run again.
  *
  * The Directory runs all of them at start. Add a table or an index with CREATE ... IF NOT EXISTS.
  * Never change a column of a stored table here: old data depends on it.

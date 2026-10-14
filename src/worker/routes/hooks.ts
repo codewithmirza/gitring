@@ -74,6 +74,7 @@ async function githubIssueLabeled(c: C, raw: string, event: string | undefined):
   }
   return c.json({ intents: opened, ...(refused.length ? { refused } : {}) }, opened.length ? 201 : 200);
 }
+
 /** Claude Code PostToolUse hook: change requests arrive mid-task as additional context (member API key). */
 async function claudeHook(c: C, project: string | undefined) {
   try {

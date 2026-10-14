@@ -66,7 +66,8 @@ async function changeGithubLink(c: C, h: ReadyProject, body: Partial<T.ProjectSe
 export function settingsRoutes(app: Hono<HonoEnv>): void {
   projectToolRoutes(app);
   githubLinkRoutes(app);
-  connectAndSettingsRoutes(app);
+  connectAndUsageRoutes(app);
+  settingsChangeRoutes(app);
 }
 
 /** Tokens for git, the import check and launch all. */
@@ -145,8 +146,8 @@ function githubLinkRoutes(app: Hono<HonoEnv>): void {
   });
 }
 
-/** Connect info, settings, usage and the operator diagnostics. */
-function connectAndSettingsRoutes(app: Hono<HonoEnv>): void {
+/** Connect info, the settings and the usage of a project (read only). */
+function connectAndUsageRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/projects/:p/connect", async (c) => {
     try {
       const h = await ready(c, c.req.param("p"), "viewer");
@@ -179,7 +180,10 @@ function connectAndSettingsRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** Change the settings, and the diagnostics for the operator. */
+function settingsChangeRoutes(app: Hono<HonoEnv>): void {
   app.put("/api/projects/:p/settings", async (c) => {
     try {
       const h = await ready(c, c.req.param("p"), "owner");

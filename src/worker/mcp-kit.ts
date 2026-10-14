@@ -1,7 +1,7 @@
 /**
  * Shared parts of the MCP tool sets: how a tool is defined, registered and checked, and how an answer looks.
  *
- * Used by src/worker/mcp.ts and src/worker/mcp-github.ts.
+ * Used by src/worker/mcp.ts, src/worker/mcp-github.ts and the tool files in src/worker/github-tools/.
  * A tool is plain data (name, title, description, schema, annotations) plus a handler.
  * The Worker reads the same data to know which tools only read (the read-only scope and path).
  */
@@ -322,7 +322,7 @@ export function writeAnswer(res: T.WriteResult, opts: { clr?: T.Clearance; befor
 }
 
 /**
- * The change requests of two clearances in one (the plan check of a new work copy, then the check of its
+ * The change requests of two check results in one (the plan check of a new work copy, then the check of its
  * first write). The change requests of both reach the agent. The second check result gives the traffic.
  */
 export function joinClearance(first: T.Clearance, second: T.Clearance): T.Clearance {

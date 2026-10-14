@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { HarborMaster } from "../harbor/harbor";
 import { TEMPLATES, type TemplateId } from "../core/templates";
 import { ADDS, READS, defineTool, fail, text, type ToolContext, type ToolDef } from "./mcp-kit";
-import { cloneHelp, createProjectFor, type CloneHelp } from "./projects";
+import { cloneHelp, createProjectFor, type CloneHelp, type CreatedProject } from "./projects";
 
 /*
  * The tools:
@@ -33,6 +33,26 @@ async function cloneOf(stub: unknown, project: string): Promise<CloneHelp> {
 
 function appUrl(ctx: ToolContext, project: string): string {
   return `${ctx.origin}/overview?project=${encodeURIComponent(project)}`;
+}
+
+/** The next steps in the answer of gitring_create_project. The first one is what the agent does now. */
+function nextSteps(ctx: ToolContext, made: CreatedProject, clone: CloneHelp | null, importing: unknown): string[] {
+  const id = made.project.id;
+  return [
+    made.task
+      ? made.launched.length
+        ? `${made.launched.length} built-in ${made.launched.length === 1 ? "agent works" : "agents work"} on the task "${made.task.title}". Call gitring_intents with project "${id}" to see the work.`
+        : made.launchAfterImport
+          ? `The built-in agents start on the task "${made.task.title}" when the import is done.`
+          : `Call gitring_declare with project "${id}", intentId "${made.task.id}" and your plan. Then write the work.`
+      : `Call gitring_declare with project "${id}" and newIntent to send the first task and your plan.`,
+    clone
+      ? "To work on your computer, run the command in clone.clone. The read token works for 6 hours. Keep it private."
+      : importing
+        ? "When the import is done, call gitring_clone to get a git clone command."
+        : "Call gitring_clone to get a git clone command.",
+    `Open the project in the gitring app: ${appUrl(ctx, id)}`,
+  ];
 }
 
 export const PROJECT_TOOLS: readonly ToolDef[] = [
@@ -103,21 +123,7 @@ export const PROJECT_TOOLS: readonly ToolDef[] = [
         if (args.launch && !task) made.note = "No built-in agent started: give firstTask or description to start agents on a first task.";
         const importing = made.state.project.importing;
         const clone = importing ? null : await cloneOf(ctx.env.HARBOR.get(ctx.env.HARBOR.idFromName(id)), id).catch(() => null);
-        const next = [
-          made.task
-            ? made.launched.length
-              ? `${made.launched.length} built-in ${made.launched.length === 1 ? "agent works" : "agents work"} on the task "${made.task.title}". Call gitring_intents with project "${id}" to see the work.`
-              : made.launchAfterImport
-                ? `The built-in agents start on the task "${made.task.title}" when the import is done.`
-                : `Call gitring_declare with project "${id}", intentId "${made.task.id}" and your plan. Then write the work.`
-            : `Call gitring_declare with project "${id}" and newIntent to send the first task and your plan.`,
-          clone
-            ? "To work on your computer, run the command in clone.clone. The read token works for 6 hours. Keep it private."
-            : importing
-              ? "When the import is done, call gitring_clone to get a git clone command."
-              : "Call gitring_clone to get a git clone command.",
-          `Open the project in the gitring app: ${appUrl(ctx, id)}`,
-        ];
+        const next = nextSteps(ctx, made, clone, importing);
         const what = importing ? `gitring imports ${importing.url}. The import takes some minutes.` : `Main has the first commit (${made.state.project.mainSha.slice(0, 7)}).`;
         return text(
           {

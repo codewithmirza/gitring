@@ -1,7 +1,8 @@
 /**
  * Small helpers of the sign-in files: the cookies of gitring and the origin of a request.
  *
- * Every cookie of gitring is set here, so that its rules (Secure, HttpOnly, SameSite) stay in one place.
+ * The session and passkey cookies are made here, so that their rules (Secure, HttpOnly, SameSite) stay in one place.
+ * The sign-in, OAuth and device routes make their own short-lived cookies. Never log the value of a cookie.
  * Read next: src/worker/principal.ts (who is calling) and src/worker/sign-in-routes.ts.
  */
 import type { C } from "./http";

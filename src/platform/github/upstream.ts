@@ -350,7 +350,6 @@ function upstreamAnswer(found: HeadFound, cmp: Compared, headTree: string, chang
   };
 }
 
-
 function normMode(mode: string): string {
   return mode === "040000" ? "40000" : mode;
 }

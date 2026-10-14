@@ -1,5 +1,5 @@
 /**
- * OAuth 2.1 authorization server for MCP clients and the gitring command line. The front door of src/directory/oauth-store/.
+ * OAuth 2.1 authorization server for MCP clients and the gitring command line, built on src/directory/oauth-store/.
  *
  * OAuthStore is a chain of layers (see src/directory/oauth-store/README.md). This file adds the token endpoint,
  * revocation and the grants of a person, and it re-exports every public name of the store.
