@@ -6,8 +6,9 @@ Last update: 14 Oct 2026, branch `agentic` at the merge of `ws/cli`.
 
 ## Branches
 
-- `main` is the state before this build (commit `4545b81`, build 0.9.2). Do not change it.
-- `agentic` is the integration branch. Every finished workstream merges into it as soon as it passes. Nothing is pushed or deployed: Mirza decides that.
+- `agentic` is the integration branch. Every finished workstream merges into it as soon as it passes.
+- `main` follows `agentic` by fast-forward after each merge, and is pushed to GitHub at once (Mirza decided this on 14 Oct 2026, so that a usage limit never traps the work on one computer). Deploys are still Mirza's decision.
+- Push `agentic`, `main` and every `ws/*` branch after each commit: `git push origin main agentic ws/<name>`. Push each branch by name; never `--all` or `--mirror` (the repo policy). Nothing under `private/` is ever tracked.
 - `ws/<name>` branches hold one workstream each. Worktrees live in `.claude/worktrees/ws-<name>` (git-ignored); `node_modules` there is a junction to the main checkout.
 
 ## Done and merged into `agentic`
