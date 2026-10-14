@@ -10,6 +10,7 @@ import { HULL_PATHS, type HullName } from "../design/icons";
 import { ATTEMPT_STATUS_TEXT, RANGE_TEXT } from "../state/format";
 import { anchorOf, type ChartLayout } from "./layout";
 import type { Placement } from "./placement";
+import { tagWidth, type TagSide } from "./tags";
 
 /* ───────────── small marks ───────────── */
 
@@ -57,12 +58,39 @@ interface VesselProps {
   dim: boolean;
   label: string;
   waiting: boolean;
-  showTag: boolean;
+  /** The side of the callsign flag, or null: the agent is a dot. */
+  tagSide: TagSide | null;
+  /** Radius of the tap target in px (16 on a phone: 32 px). */
+  hitR: number;
   onSelect: (id: string) => void;
 }
 
+/** The callsign flag. On the left side it is the mirror image, and the text still reads from left to right. */
+function Flag({ side, callsign, hull }: { side: TagSide; callsign: string; hull: HullName }) {
+  const w = tagWidth(callsign);
+  if (side === "left") {
+    return (
+      <g className="c-tag" transform="translate(-12 -10)">
+        <path className="c-tag__bg" d={`M-9 0 H${-w} L${5 - w} 9 L${-w} 18 H-9 A9 9 0 0 0 -9 0 Z`} />
+        <path className="c-tag__hull" d={HULL_PATHS[hull]} transform="translate(-14 4.5) scale(0.56)" />
+        <text className="c-tag__text" x={9 - w} y={12.5}>
+          {callsign}
+        </text>
+      </g>
+    );
+  }
+  return (
+    <g className="c-tag" transform="translate(12 -10)">
+      <path className="c-tag__bg" d={`M9 0 H${w} L${w - 5} 9 L${w} 18 H9 A9 9 0 0 1 9 0 Z`} />
+      <path className="c-tag__hull" d={HULL_PATHS[hull]} transform="translate(5 4.5) scale(0.56)" />
+      <text className="c-tag__text" x={17} y={12.5}>
+        {callsign}
+      </text>
+    </g>
+  );
+}
+
 const Vessel = memo(function Vessel(p: VesselProps) {
-  const tagW = p.callsign.length * 6.7 + 26;
   const style = { "--vc": `var(--v${p.color % 12})`, transform: `translate(${p.wx}px, ${p.wy}px)` } as CSSProperties;
   return (
     <g
@@ -87,20 +115,12 @@ const Vessel = memo(function Vessel(p: VesselProps) {
     >
       <g transform={`scale(${1 / p.k})`}>
         <g transform={`translate(${p.ox} ${p.oy})`}>
-          <circle className="c-vessel__hit" r={13} />
+          <title>{p.callsign}</title>
+          <circle className="c-vessel__hit" r={p.hitR} />
           <circle className="c-vessel__ring" r={13} />
           <line className="c-vessel__heading" x1={0} y1={-9} x2={0} y2={-20} transform={`rotate(${p.heading})`} />
           <path className="c-vessel__hull" d={HULL_PATHS[p.hull]} transform={`rotate(${p.heading}) translate(-8 -8)`} />
-          {p.showTag && <g className="c-tag" transform="translate(12 -10)">
-            <path
-              className="c-tag__bg"
-              d={`M9 0 H${tagW} L${tagW - 5} 9 L${tagW} 18 H9 A9 9 0 0 1 9 0 Z`}
-            />
-            <path className="c-tag__hull" d={HULL_PATHS[p.hull]} transform="translate(5 4.5) scale(0.56)" />
-            <text className="c-tag__text" x={17} y={12.5}>
-              {p.callsign}
-            </text>
-          </g>}
+          {p.tagSide && <Flag side={p.tagSide} callsign={p.callsign} hull={p.hull} />}
         </g>
       </g>
     </g>
@@ -157,6 +177,8 @@ export const VesselLayer = memo(function VesselLayer({
   selected,
   hovered,
   compact,
+  tags,
+  hitR = 13,
   onSelect,
 }: {
   vessels: VesselModel[];
@@ -165,6 +187,9 @@ export const VesselLayer = memo(function VesselLayer({
   selected: string | null;
   hovered: string | null;
   compact: boolean;
+  /** The flags to draw (see tags.ts). Without it, every agent has a flag, except in a large fleet (`compact`). */
+  tags?: Map<string, TagSide>;
+  hitR?: number;
   onSelect: (id: string) => void;
 }) {
   return (
@@ -194,7 +219,8 @@ export const VesselLayer = memo(function VesselLayer({
             dim={Boolean(selected && selected !== v.attemptId)}
             label={label}
             waiting={v.status === "ready"}
-            showTag={!compact || selected === v.attemptId || hovered === v.attemptId}
+            tagSide={tags ? tags.get(v.attemptId) ?? null : !compact || selected === v.attemptId || hovered === v.attemptId ? "right" : null}
+            hitR={hitR}
             onSelect={onSelect}
           />
         );

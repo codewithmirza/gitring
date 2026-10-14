@@ -278,7 +278,7 @@ describe("steps", () => {
     expect(caption("lease:ld_1")).toBe("The merge queue gives the lease to KESTREL-4. One merge runs at a time.");
     expect(caption("compose:ld_1")).toBe("Main did not move. gitring puts the work of KESTREL-4 on top of main: a fast-forward.");
     expect(caption("composed:ld_1")).toBe("gitring tests main plus the work of KESTREL-4: 2 of 2 tests pass.");
-    expect(caption("commit:ld_1")).toBe('"Shout" is on main now as commit d07b40d. Its why-record goes into git notes.');
+    expect(caption("commit:ld_1")).toBe('"Shout" is on main now as commit d07b40d. Its merge record goes into git notes.');
     const kinds = (k: string) => script.steps.filter((s) => s.kind === k).map((s) => s.caption);
     expect(kinds("work")).toEqual(["KESTREL-4 writes src/shout.js and tests/shout.test.js.", "gitring saves the work of KESTREL-4 as a commit in its work copy."]);
     expect(kinds("ack")).toEqual(["HERON-2 applies the change request and confirms it."]);

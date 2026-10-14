@@ -30,6 +30,16 @@ export const Land = memo(function Land({ layout }: { layout: ChartLayout }) {
   );
 });
 
+/** One mono character is 0.632 em wide: 7.3 px at the 11.5 px of a parcel name. */
+const CHAR_PX = 7.3;
+
+/** The name that fits in `room` px: the whole name, its start with an ellipsis, or nothing when fewer than 6 characters fit. */
+function nameThatFits(name: string, room: number): string | null {
+  const chars = Math.floor(room / CHAR_PX);
+  if (chars >= name.length) return name;
+  return chars >= 6 ? `${name.slice(0, chars - 1)}…` : null;
+}
+
 export const Parcels = memo(function Parcels({
   layout,
   kq,
@@ -41,7 +51,7 @@ export const Parcels = memo(function Parcels({
   onHover: (p: Parcel | null, e?: RPointerEvent) => void;
   onParcel?: (path: string) => void;
 }) {
-  const fs = 10 / kq;
+  const fs = 11.5 / kq; // 11 to 12 px on the screen (k is a little off kq): never under the 11 px floor
   return (
     <g className="c-parcels">
       {layout.islands.map((i) => (
@@ -54,7 +64,8 @@ export const Parcels = memo(function Parcels({
           {i.parcels.map((p) => {
             const w = (p.x1 - p.x0) * kq;
             const h = (p.y1 - p.y0) * kq;
-            const nameFits = w >= p.name.length * 6 + 8 && h >= 17;
+            const name = h >= 18 ? nameThatFits(p.name, w - 8) : null;
+            const nameFits = name !== null;
             const soundFits = nameFits && h >= 32;
             return (
               <g
@@ -68,7 +79,7 @@ export const Parcels = memo(function Parcels({
                 <rect x={p.x0} y={p.y0} width={p.x1 - p.x0} height={p.y1 - p.y0} rx={1.5} />
                 {nameFits && (
                   <text className="c-parcel-label" x={p.x0 + 5 / kq} y={p.y0 + 13 / kq} fontSize={fs}>
-                    {p.name}
+                    {name}
                   </text>
                 )}
                 {soundFits && (

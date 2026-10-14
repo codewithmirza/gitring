@@ -21,6 +21,7 @@ import { islandOf, layoutChart, type Parcel } from "./layout";
 import { usePanZoom } from "./panzoom";
 import { ChartLegend } from "./ChartLegend";
 import { placeVessels } from "./placement";
+import { chooseTags, TAG_RANK, type Box } from "./tags";
 import { Buoys, Contours, Pulses, RangeLines } from "./range-layers";
 import { CompassRose, Graticule, Land, Parcels, Sea } from "./static-layers";
 import { Ripples, TracksLayer, VesselLayer } from "./vessel-layers";
@@ -82,7 +83,39 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
 
   const kq = Math.round(t.k * 20) / 20 || 0.05;
   const compact = vessels.length > 24;
-  const placements = useMemo(() => placeVessels(vessels, layout, compact), [vessels, layout, compact]);
+  // A phone: most agents are dots with a tap target of 32 px; only the agents that matter have a flag.
+  const narrow = size.w > 0 && size.w <= 600;
+  const placements = useMemo(() => placeVessels(vessels, layout, compact, narrow), [vessels, layout, compact, narrow]);
+
+  /** The callsign flags to draw: the ones that matter first, and none that covers another flag or an island name. */
+  const tags = useMemo(() => {
+    const labels: Box[] = [];
+    if (22 * kq >= 12) {
+      for (const i of layout.islands) {
+        const x0 = t.x + (i.x0 + 8) * t.k;
+        const base = t.y + (i.y0 + 11) * t.k + (4 * t.k) / kq;
+        labels.push({ x0: x0 - 1, y0: base - 11, x1: x0 + i.label.length * 7.2 + 1, y1: base + 3 });
+      }
+    }
+    const rankOf = (v: VesselModel) =>
+      v.attemptId === selected
+        ? TAG_RANK.selected
+        : v.attemptId === hovered
+          ? TAG_RANK.hovered
+          : v.corrections.length
+            ? TAG_RANK.request
+            : v.status === "ready"
+              ? TAG_RANK.waiting
+              : v.ranges.some((r) => r.range <= 2)
+                ? TAG_RANK.near
+                : TAG_RANK.other;
+    const candidates = vessels.flatMap((v) => {
+      const p = placements.get(v.attemptId);
+      return p ? [{ id: v.attemptId, callsign: v.callsign, rank: rankOf(v), x: p.wx * t.k + t.x + p.ox, y: p.wy * t.k + t.y + p.oy }] : [];
+    });
+    const maxRank = narrow ? TAG_RANK.waiting : compact ? TAG_RANK.hovered : TAG_RANK.other;
+    return chooseTags({ candidates, view: size, maxRank, labels });
+  }, [vessels, placements, layout, t, kq, size, selected, hovered, narrow, compact]);
 
   /** Screen-offset-aware positions (world units) for lines that end at a vessel. */
   const pos = useMemo(() => {
@@ -211,7 +244,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
             <RangeLines lines={rangeLines} pos={pos} k={t.k} selected={selected} />
             <Pulses pos={pos} k={t.k} />
             <Buoys buoys={buoys} layout={layout} k={t.k} selected={selected} onBuoy={onBuoy} />
-            <VesselLayer vessels={vessels} placements={placements} k={t.k} selected={selected} hovered={hovered} compact={compact} onSelect={onSelectVessel} />
+            <VesselLayer vessels={vessels} placements={placements} k={t.k} selected={selected} hovered={hovered} compact={compact} tags={tags} hitR={narrow && !compact ? 16 : 13} onSelect={onSelectVessel} />
           </g>
         </svg>
       )}
@@ -232,7 +265,7 @@ export function Chart({ selected, hovered = null, onSelect, onBuoy, onParcel, fo
         </div>
       )}
 
-      <div className="c-overlay c-cartouche">
+      <div className={legendOpen ? "c-overlay c-cartouche is-open" : "c-overlay c-cartouche"}>
         <div className="c-cartouche__title">{projectName}</div>
         <div className="c-cartouche__meta voice-agent">
           main {shortSha(mainSha)} · {files.length} files

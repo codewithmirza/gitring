@@ -2,7 +2,7 @@
  * The "Inside gitring" panel: the pipeline of the engine, one station for each stage.
  * The stage of the current step is lit. Below the pipeline, a card shows the facts of the latest step that has facts to
  * show: the conflict check with its distance ladder, rule, model and verdict; the tests; the merge queue; the compose;
- * the commit and its why-record.
+ * the commit and its merge record.
  */
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { AgentInfo, CheckRun, CourseCheck, Range } from "../../../../src/core/types";
@@ -26,6 +26,9 @@ export function Pipeline({ stage, counts, children }: { stage: Stage | null; cou
     if (stage && at < 0) return;
     const row = list.current?.children[Math.max(0, at)] as HTMLElement | undefined;
     if (!row || !packet.current) return;
+    // A phone shows the stations in one row that scrolls sideways: keep the lit station in view.
+    const strip = list.current;
+    if (strip && at >= 0 && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = row.offsetLeft - (strip.clientWidth - row.offsetWidth) / 2;
     packet.current.style.transform = `translateY(${row.offsetTop + row.offsetHeight / 2}px)`;
     packet.current.style.opacity = at >= 0 ? "1" : "0";
     packet.current.dataset.stage = stage ?? "";
@@ -46,6 +49,7 @@ export function Pipeline({ stage, counts, children }: { stage: Stage | null; cou
           ))}
         </ol>
       </div>
+      {stage && at >= 0 && <p className="rp-pipe__now">{STAGE_LINE[stage]}</p>}
       {children}
     </section>
   );
@@ -351,7 +355,7 @@ function CommitFacts({ step, script }: { step: ReplayStep; script: ReplayScript 
     ["Agent", `${g?.callsign ?? "an agent"}${g?.model || g?.client ? ` · ${modelShort(g.model ?? g.client)}` : ""}`],
     ["Conflict checks", String(checks)],
     ["Change requests", String(requests)],
-    ["Tests on main + work", `${l.checks.passed}/${total} pass`],
+    ["Tests on main with the work", `${l.checks.passed}/${total} pass`],
     ["How", METHOD_TEXT[l.method]],
   ];
   return (
@@ -360,7 +364,7 @@ function CommitFacts({ step, script }: { step: ReplayStep; script: ReplayScript 
         <span className="rp-commit__sha voice-agent">{shortSha(l.mainAfter)}</span>
         <span className="rp-commit__title voice-human">{script.intents.get(l.intentId)?.title ?? "a task"}</span>
       </p>
-      <p className="rp-card__label">Why-record (git notes)</p>
+      <p className="rp-card__label">Merge record (git notes)</p>
       <dl className="rp-why">
         {rows.map(([k, v], i) => (
           <div key={k} style={{ animationDelay: `${150 + i * 110}ms` }}>

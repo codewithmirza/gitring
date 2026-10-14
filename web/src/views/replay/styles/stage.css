@@ -6,9 +6,10 @@
 
 .replay {
   --rp-side: clamp(330px, 25vw, 470px);
-  --rp-cap: clamp(17px, 1.45vw, 30px);
-  --rp-text: clamp(12.5px, 0.86vw, 17px);
-  --rp-label: clamp(13px, 0.92vw, 18px);
+  /* Three sizes: the caption, the text and the small facts. They match the tokens at 1440 px and grow on a large screen. */
+  --rp-cap: clamp(var(--t-lg), 1.38vw, 30px);
+  --rp-text: clamp(var(--t-sm), 0.9vw, 17px);
+  --rp-small: clamp(var(--t-xs), 0.76vw, 14px);
   --rp-pad: clamp(14px, 1.25vw, 26px);
   position: relative;
   display: grid;
@@ -91,14 +92,12 @@
   outline-offset: 3px;
 }
 .rp-cartouche__eyebrow {
-  font-size: calc(var(--rp-text) * .8);
+  font-size: var(--rp-small);
   font-weight: 500;
-  letter-spacing: .14em;
-  text-transform: uppercase;
   color: var(--accent);
 }
-.rp-cartouche__title { font-size: calc(var(--rp-label) * 1.35); line-height: 1.2; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rp-cartouche__meta { font-size: calc(var(--rp-text) * .9); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-cartouche__title { font-size: var(--rp-cap); line-height: 1.2; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-cartouche__meta { font-size: var(--rp-small); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Tasks, top right. */
 .rp-tasks {
@@ -127,8 +126,8 @@
   transition: border-color var(--dur-3) var(--ease-out), background var(--dur-3) var(--ease-out);
 }
 .rp-task__dot { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--ink-3); }
-.rp-task__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.08em; }
-.rp-task__state { font-size: .86em; font-weight: 500; color: var(--ink-3); }
+.rp-task__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-task__state { font-size: var(--rp-small); font-weight: 500; color: var(--ink-3); }
 .rp-task--working .rp-task__dot { --stage: var(--accent); border-color: var(--accent); background: var(--accent); }
 .rp-task--working .rp-task__state { color: var(--accent); }
 .rp-task--merged { border-color: color-mix(in oklch, var(--clear) 45%, var(--line)); background: color-mix(in oklch, var(--clear) 9%, var(--bg)); }
@@ -150,15 +149,15 @@
   border-radius: 999px;
   background: color-mix(in oklch, var(--bg) 92%, transparent);
   font-family: var(--font-agent);
-  font-size: calc(var(--rp-text) * .92);
+  font-size: var(--rp-small);
   overflow: hidden;
 }
-.rp-mainlane__name { font-weight: 600; color: var(--ink-2); }
+.rp-mainlane__name { font-weight: 500; color: var(--ink-2); }
 .rp-mainlane__line { width: 18px; height: 2px; background: var(--line-strong); }
 .rp-mainlane__commit { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-3); animation: rp-slide 520ms var(--ease-out) both; }
 .rp-mainlane__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--clear); animation: rp-pop 620ms var(--ease-out) both; }
-.rp-mainlane__commit:last-of-type .rp-mainlane__sha { color: var(--clear); font-weight: 600; }
-.rp-mainlane__head { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); color: var(--ink-1); font-weight: 600; }
+.rp-mainlane__commit:last-of-type .rp-mainlane__sha { color: var(--clear); font-weight: 500; }
+.rp-mainlane__head { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); color: var(--ink-1); font-weight: 500; }
 
 /* Title card (autoplay) and end card. */
 .rp-title,
@@ -176,7 +175,7 @@
   transition: opacity 700ms var(--ease-out), visibility 0s linear 0s;
 }
 .rp-title.is-gone { opacity: 0; visibility: hidden; transition: opacity 700ms var(--ease-out), visibility 0s linear 700ms; }
-.rp-title__eyebrow { font-size: var(--rp-label); font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); animation: rp-rise 600ms var(--ease-out) both; }
+.rp-title__eyebrow { font-size: var(--rp-text); font-weight: 500; color: var(--accent); animation: rp-rise 600ms var(--ease-out) both; }
 .rp-title__name { font-size: clamp(30px, 3.6vw, 72px); line-height: 1.1; font-weight: 500; animation: rp-rise 700ms 120ms var(--ease-out) both; }
 .rp-title__line { max-width: 34em; font-size: var(--rp-cap); line-height: 1.35; color: var(--ink-2); animation: rp-rise 700ms 260ms var(--ease-out) both; }
 .rp-end { background: color-mix(in oklch, var(--bg) 76%, transparent); animation: rp-fade-in 900ms var(--ease-out) both; }

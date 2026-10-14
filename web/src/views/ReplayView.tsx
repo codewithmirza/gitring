@@ -2,7 +2,7 @@
  * The replay page: the real history of a project, played back on the map.
  * It shows the inside of gitring. Tasks appear, plans draw their course, and each conflict check shows its candidates on
  * the distance ladder with the facts, the rule, the model and the verdict. Change requests fly to their agents, tests run,
- * the merge queue gives its lease, the work composes onto main, the commit gets its why-record, and the other work moves
+ * the merge queue gives its lease, the work composes onto main, the commit gets its merge record, and the other work moves
  * onto the new main. One plain caption for each step.
  * Address: /replay?project=<id>. For a recording: &autoplay=1&speed=<1–120>&kiosk=1 (kiosk hides the app bar and the controls; &theme=night picks a theme).
  */
