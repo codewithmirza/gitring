@@ -13,9 +13,13 @@ import { codeHref, Link } from "./router";
 import { useNow } from "./useNow";
 import { useCanAct } from "../state/account";
 
+/* ───────────── constants ───────────── */
+
 const EMPTY: VesselModel[] = [];
 
 const KIND_TEXT: Record<AgentInfo["kind"], string> = { builtin: "Built-in", mcp: "MCP", git: "Git" };
+
+/* ───────────── rows and detail ───────────── */
 
 const VesselRow = memo(function VesselRow({
   v,
@@ -212,6 +216,8 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
     </div>
   );
 }
+
+/* ───────────── the rail ───────────── */
 
 export function TrafficRail({
   selected,

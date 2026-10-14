@@ -16,6 +16,8 @@ import { Link } from "../../app/router";
 import { RepoSelect } from "../newproject/RepoSelect";
 import { SaveError, type SectionProps, useSave } from "./shared";
 
+/* ───────────── words and types ───────────── */
+
 const SYNC_STATE: Record<GithubSyncState, { tone: BadgeTone; icon: IconName; text: string }> = {
   off: { tone: "neutral", icon: "ring", text: "Off" },
   "not-linked": { tone: "neutral", icon: "ring", text: "No repository" },
@@ -55,6 +57,8 @@ const PULL_STATE: Record<PullStatus["state"], { tone: BadgeTone; icon: IconName;
 function pullOf(status: GithubSyncStatus | null): PullStatus | undefined {
   return (status as (GithubSyncStatus & { pull?: PullStatus }) | null)?.pull;
 }
+
+/* ───────────── the sync status ───────────── */
 
 function SyncStatus({ status }: { status: GithubSyncStatus }) {
   const st = SYNC_STATE[status.state] ?? SYNC_STATE.error;
@@ -124,6 +128,8 @@ function SyncStatus({ status }: { status: GithubSyncStatus }) {
     </>
   );
 }
+
+/* ───────────── the section ───────────── */
 
 export function GithubSection({ projectId, owner, settings, onSaved, imported, me }: SectionProps & { imported: string | null; me: MeWithInstall | null }) {
   const uid = useId().replace(/:/g, "");

@@ -10,6 +10,8 @@ import type { LineRange } from "../../../../src/core/types";
 import { CLASS_NAMES, highlighterFor, LineHighlighter, type LangInfo } from "./highlight";
 import type { HeadChanges, LineMark } from "./annotations";
 
+/* ───────────── constants and types ───────────── */
+
 export const LINE_H = 20;
 /** Soft wrap renders every line; above this many lines it is off. */
 export const WRAP_MAX = 3000;
@@ -47,6 +49,8 @@ interface Props {
   focusMark: { line: number; n: number } | null;
 }
 
+/* ───────────── helpers ───────────── */
+
 export function splitLines(text: string): string[] {
   const lines = text.split(/\r\n|\r|\n/);
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
@@ -74,6 +78,8 @@ const cancelIdle = (id: number) => {
   if (typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(id);
   else clearTimeout(id);
 };
+
+/* ───────────── lines and static code ───────────── */
 
 function Code({ text, tokens }: { text: string; tokens: number[] | undefined }): ReactNode {
   if (!text) return "​";
@@ -197,6 +203,8 @@ export function StaticCode({ text, info, max = 300 }: { text: string; info: Lang
     </pre>
   );
 }
+
+/* ───────────── the file view ───────────── */
 
 export function CodeLines({ text, info, label, wrap, lanes, byLine, head, selected, flash, onLines, onMark, jump, markStarts, focusMark }: Props) {
   const lines = useMemo(() => splitLines(text), [text]);

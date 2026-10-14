@@ -7,6 +7,8 @@ import { ATTR, COM, FN, KW, LIT, META, NUM, OP, PLAIN, PROP, PUNC, RE, STR, TAG,
 import type { LineFn } from "./emit";
 import { at, isDigit, isIdStart, nextNonSpace, quoted, sticky, WS } from "./scanners";
 
+/* ───────────── word lists ───────────── */
+
 const JS_KW = new Set(
   "break case catch class const continue debugger default delete do else export extends finally for function if import in instanceof let new of return static super switch this throw try typeof var void while with yield async await get set from as".split(
     " ",
@@ -20,6 +22,8 @@ const JS_LIT = new Set(["true", "false", "null", "undefined", "NaN", "Infinity"]
 const TS_TYPES = new Set(["string", "number", "boolean", "any", "unknown", "never", "void", "object", "symbol", "bigint"]);
 /** After these words an expression starts: a "/" is a regex and a "<" opens JSX. */
 const EXPR_KW = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await", "extends", "default"]);
+
+/* ───────────── state ───────────── */
 
 type JsFrame =
   | { k: "bcom" }
@@ -35,12 +39,16 @@ export interface JsState {
   ex: boolean;
 }
 
+/* ───────────── patterns ───────────── */
+
 const JS_NUM = sticky(/(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:\d[\d_]*(?:\.[\d_]*)?|\.\d[\d_]*)(?:[eE][+-]?\d[\d_]*)?)n?/);
 const JS_ID = sticky(/[A-Za-z_$À-￿][\w$À-￿]*/);
 const JS_RE = sticky(/\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[dgimsuyv]*/);
 const JS_OP = sticky(/(?:=>|\?\?=|\?\?|\?\.|\.\.\.|\*\*=|>>>=|>>=|<<=|&&=|\|\|=|===|!==|==|!=|<=|>=|&&|\|\||\+\+|--|[-+*%&|^]=|<<|>>>?|[=+\-*%&|^!~?:<>])/);
 const JSX_NAME = sticky(/[A-Za-z_$][\w$.:-]*/);
 const JSX_ATTR = sticky(/[A-Za-z_$][\w$:-]*/);
+
+/* ───────────── the scanner ───────────── */
 
 export function jsLine(ts: boolean, jsx: boolean): LineFn<JsState> {
   const KWS = ts ? TS_KW : JS_KW;

@@ -30,6 +30,8 @@ import { answerApproval, useAnswering } from "../app/approvalActions";
 import { QuestionCard } from "../app/QuestionCard";
 import "./inbox.css";
 
+/* ───────────── parts of the page ───────────── */
+
 /** The age of an item: "5 min" (no "ago": the meta line reads "shop · 5 min"). */
 function age(at: number, now: number): string {
   const t = ago(at, now);
@@ -181,6 +183,8 @@ function PushSwitch() {
     </div>
   );
 }
+
+/* ───────────── the page ───────────── */
 
 export function InboxView() {
   const me = useMe();

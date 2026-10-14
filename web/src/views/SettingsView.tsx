@@ -20,6 +20,8 @@ import { WebhooksSection } from "./settings/WebhooksSection";
 import { SaveError } from "./settings/shared";
 import "./projects.css";
 
+/* ───────────── sections and helpers ───────────── */
+
 const SECTIONS: { id: string; label: string; owner?: boolean }[] = [
   { id: "st-general", label: "General" },
   { id: "st-members", label: "Members" },
@@ -38,6 +40,8 @@ function jumpTo(id: string) {
   el.setAttribute("tabindex", "-1");
   el.focus({ preventScroll: true });
 }
+
+/* ───────────── the page ───────────── */
 
 export function SettingsView() {
   const access = useAccess();

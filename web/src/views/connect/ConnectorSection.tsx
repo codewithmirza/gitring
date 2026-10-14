@@ -20,6 +20,8 @@ import { CopyField, Inline, useRemembered } from "./shared";
 
 const NO_AGENTS: AgentInfo[] = [];
 
+/* ───────────── parts of the section ───────────── */
+
 /** "Not yet linked" until an app signs in through OAuth; then the apps and the agents that work here. */
 function LiveStatus({ client }: { client: Client }) {
   const me = useMe();
@@ -194,6 +196,8 @@ function AfterConnect({ endpoints }: { endpoints: ReturnType<typeof mcpEndpoints
     </div>
   );
 }
+
+/* ───────────── the section ───────────── */
 
 export function ConnectorSection({ mcpUrl }: { mcpUrl: string }) {
   const [client, setClient] = useRemembered<Client>("gitring.connect.client", "claude", CLIENT_IDS);

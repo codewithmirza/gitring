@@ -14,6 +14,8 @@ import type { LineRequestInput } from "../../design/components";
 import { MergePanel, RedoPanel } from "./MergePanels";
 import { loadDiff, useMergeResult } from "./helpers";
 
+/* ───────────── parts of a lane ───────────── */
+
 function FileList({ attempt }: { attempt: Attempt }) {
   const files = Object.entries(attempt.footprint.files).sort(([a], [b]) => a.localeCompare(b));
   if (!files.length) return <p className="ink-3 lane__empty">No files changed yet.</p>;
@@ -91,6 +93,8 @@ interface LaneProps {
   mainSha: string;
   now: number;
 }
+
+/* ───────────── the lane ───────────── */
 
 export function Lane({ attempt: a, all, agent, intent, corrections, checks, names, landing, rederivedFromName, canAct, preview, mainSha, now }: LaneProps) {
   const callsign = agent?.callsign ?? a.agentId;

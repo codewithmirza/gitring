@@ -5,6 +5,8 @@
 import { store } from "../store";
 import { fetchState } from "./fetch-state";
 
+/* ───────────── timing ───────────── */
+
 /** After this long in a hidden tab the socket closes; it opens again (with a fresh snapshot) when the tab shows. */
 const HIDDEN_CLOSE_MS = 5 * 60_000;
 /** A visible tab that heard nothing for this long sends a ping; no answer in PONG_WAIT_MS → reconnect. */
@@ -12,6 +14,8 @@ const IDLE_PING_MS = 60_000;
 const PONG_WAIT_MS = 10_000;
 /** After a reconnect the server sends a snapshot. Without one in this time, one state request resyncs. */
 const SNAPSHOT_WAIT_MS = 5_000;
+
+/* ───────────── the socket ───────────── */
 
 /**
  * The live connection of one project. It reconnects with backoff (and at once when the network or the

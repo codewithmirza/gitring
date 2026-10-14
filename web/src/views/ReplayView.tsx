@@ -24,6 +24,8 @@ import { endLine, introLine, STAGE_NAME, STAGES, type Stage } from "./replay/cap
 import { SPEEDS } from "./replay/model";
 import "./replay/replay.css";
 
+/* ───────────── constants ───────────── */
+
 /** The title card before the first step (autoplay only). */
 const INTRO_MS = 2600;
 /** Without autoplay the replay opens before the first step, with the prompt to press play. */
@@ -31,6 +33,8 @@ const LEAD_MS = 500;
 const NO_FILES: FileNode[] = [];
 
 type Load = { state: "loading"; records: number } | { state: "error"; message: string } | { state: "ready"; history: History };
+
+/* ───────────── the page ───────────── */
 
 export function ReplayView() {
   const projectId = useStore((s) => s.projectId);
@@ -83,6 +87,8 @@ export function ReplayView() {
     </div>
   );
 }
+
+/* ───────────── the player and its parts ───────────── */
 
 function Player({ history, files, name, kiosk, autoplay, speed }: { history: History; files: FileNode[]; name: string; kiosk: boolean; autoplay: boolean; speed: number }) {
   const script = useMemo(() => buildScript(history.records, history.agents), [history]);

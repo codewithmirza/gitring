@@ -25,6 +25,8 @@ import { TRAIN_HELP, parseMaxTrain } from "../trains-copy";
 import { STEWARD_LABEL, stewardHelp } from "../steward-copy";
 import { SaveError, type SectionProps, useSave } from "./shared";
 
+/* ───────────── words and rule rows ───────────── */
+
 const REDO_OPTIONS: { value: RedoPolicy; label: string }[] = [
   { value: "agent-first", label: "Give it back to the same agent first, then to a built-in agent" },
   { value: "agent-only", label: "Give it back to the same agent only" },
@@ -48,6 +50,8 @@ interface RuleRow {
 let ruleSeq = 0;
 const newRuleRow = (r?: FolderRule): RuleRow => ({ key: `r${++ruleSeq}`, pattern: r?.pattern ?? "", kind: r?.rule ?? "owner-yes", members: r?.rule === "members" ? r.members : [] });
 const ruleOf = (r: RuleRow): FolderRule => (r.kind === "members" ? { pattern: r.pattern.trim(), rule: "members", members: r.members } : { pattern: r.pattern.trim(), rule: r.kind });
+
+/* ───────────── the section ───────────── */
 
 export function MergingSection({ projectId, owner, settings, onSaved, members }: SectionProps & { members: MemberInfo[] | null }) {
   // A server from before `landing` sends only `autoLand`; a server from before `approver` sends neither.

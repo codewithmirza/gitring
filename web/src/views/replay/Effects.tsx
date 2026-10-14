@@ -10,6 +10,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { ReplayClock } from "./clock";
 import { easeInOut, easeOut, effectsAt, type Effect, type ReplayScript } from "./model";
 
+/* ───────────── types ───────────── */
+
 export interface Point {
   x: number;
   y: number;
@@ -33,6 +35,8 @@ export interface Geo {
 
 type Paint = (p: number) => void;
 type Register = (id: string, paint: Paint | null) => void;
+
+/* ───────────── small helpers ───────────── */
 
 const TONE: Record<Effect["tone"], string> = { accent: "var(--accent)", magenta: "var(--magenta)", clear: "var(--clear)", danger: "var(--danger)", caution: "var(--caution)" };
 
@@ -67,6 +71,8 @@ function reducedMotion(): boolean {
     return false;
   }
 }
+
+/* ───────────── the effects layer ───────────── */
 
 /** The effects layer. */
 export function Effects({ script, clock, geo }: { script: ReplayScript; clock: ReplayClock; geo: Geo }) {
@@ -108,6 +114,8 @@ export function Effects({ script, clock, geo }: { script: ReplayScript; clock: R
     </svg>
   );
 }
+
+/* ───────────── shared parts of the effects ───────────── */
 
 const EffectShape = memo(function EffectShape({ e, geo, register }: { e: Effect; geo: Geo; register: Register }) {
   switch (e.kind) {
@@ -158,6 +166,8 @@ function along(points: Point[], lengths: number[], total: number, t: number): Po
   }
   return points[points.length - 1];
 }
+
+/* ───────────── one component for each effect ───────────── */
 
 /** A plan draws its course: from the agent through the files of the plan. */
 function Course({ e, geo, register }: ShapeProps) {

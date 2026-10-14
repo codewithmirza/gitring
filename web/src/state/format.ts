@@ -4,6 +4,8 @@
  */
 import type { ApprovalStatus, AttemptStatus, CorrectionKind, CourseCheck, IntentStatus, LandingMethod, Range, RuleOfTheRoad, Verdict } from "../../../src/core/types";
 
+/* ───────────── short forms of values ───────────── */
+
 export function shortSha(sha: string | undefined | null, n = 7): string {
   return sha ? sha.slice(0, n) : "———————";
 }
@@ -66,6 +68,8 @@ export function kb(bytes: number): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/* ───────────── plain words ───────────── */
 
 /** Who continues and who adapts when two pieces of work collide (the conflict-check rules). */
 export const RULE_TEXT: Record<RuleOfTheRoad | "human", string> = {
@@ -182,6 +186,8 @@ export const INTENT_STATUS_TEXT: Record<IntentStatus, string> = {
   parked: "Paused",
   "merged-into": "Duplicate",
 };
+
+/* ───────────── text helpers ───────────── */
 
 export function slugify(s: string): string {
   return s

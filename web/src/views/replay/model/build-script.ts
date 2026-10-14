@@ -20,9 +20,13 @@ import * as C from "../captions";
 import type { SubmitOutcome } from "../captions";
 import { KIND_ORDER, type ReplayScript, type ReplayStep, STAGE_OF, type TestSummary } from "./steps";
 
+/* ───────────── constants ───────────── */
+
 const MOVE_KINDS = new Set<LogEntry["kind"]>(["write", "log", "push"]);
 const RUN_SUMMARY = /(\d+)\/(\d+) pass/;
 const CALLSIGN = /\b[A-Z][A-Z]+-\d+\b/g;
+
+/* ───────────── the script builder ───────────── */
 
 /** The first sentences of a text, at most `max` characters. */
 export function firstSentences(text: string, n = 1, max = 220): string {
@@ -176,6 +180,8 @@ export function buildScript(records: TimelineRecord[], agentList: AgentInfo[]): 
   };
 }
 
+/* ───────────── one log line ───────────── */
+
 interface LogContext {
   attempts: Map<string, Attempt>;
   agents: Map<string, AgentInfo>;
@@ -239,6 +245,8 @@ function logStep(g: LogEntry, x: LogContext): Omit<ReplayStep, "stage"> | null {
       return null;
   }
 }
+
+/* ───────────── helpers ───────────── */
 
 /** Work copies named by callsign in a log line: the latest copy of that agent that started before the line. */
 function attemptsNamed(message: string, at: number, x: LogContext): string[] {

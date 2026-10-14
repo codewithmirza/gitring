@@ -15,6 +15,8 @@ import { GithubMark, SearchIcon } from "./marks";
 import { rankRepos, readPasted } from "./match";
 import { RepoRow } from "./RepoRow";
 
+/* ───────────── types and constants ───────────── */
+
 export type SourceOption =
   | { key: string; kind: "import-github"; repo: string; known?: GithubRepo }
   | { key: string; kind: "import-git"; url: string }
@@ -34,6 +36,8 @@ interface SourceListProps {
   returnTo: string;
   autoFocus?: boolean;
 }
+
+/* ───────────── the list ───────────── */
 
 export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: SourceListProps) {
   const base = useId().replace(/:/g, "");

@@ -6,6 +6,8 @@ import { Icon, Mark, type IconName } from "../../design/icons";
 import { type ConnectInfo } from "../../state/api";
 import { FLOW_STAGES } from "../connect-text";
 
+/* ───────────── types ───────────── */
+
 interface FlowNode {
   label: string;
   via: string;
@@ -18,6 +20,8 @@ interface Stage {
   icon: IconName;
   note: string;
 }
+
+/* ───────────── helpers ───────────── */
 
 /** Only real parts: the inputs this deployment has, the outputs this project uses. */
 function flowParts(info: ConnectInfo, githubOn: boolean) {
@@ -57,6 +61,8 @@ function NodeBox({ x, y, w, h, label, via, icon, side }: { x: number; y: number;
     </g>
   );
 }
+
+/* ───────────── the diagram ───────────── */
 
 export function FlowDiagram({ vertical, info, githubOn }: { vertical: boolean; info: ConnectInfo; githubOn: boolean }) {
   const { inputs, stages, outputs } = flowParts(info, githubOn);
@@ -153,6 +159,8 @@ export function FlowDiagram({ vertical, info, githubOn }: { vertical: boolean; i
     </svg>
   );
 }
+
+/* ───────────── drawing parts ───────────── */
 
 function Defs() {
   return (

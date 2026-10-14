@@ -10,6 +10,8 @@ import { canAnswerQuestion, questionDetail } from "../../../../src/core/inbox";
 import { isActiveAttempt } from "./indexes";
 import { byId, memo } from "./memo";
 
+/* ───────────── types ───────────── */
+
 /**
  * A question that asks a person to say yes to a merge. There is one for each work copy that is ready and
  * waits for the answer (`approval.status` is "waiting").
@@ -81,6 +83,8 @@ export interface Who {
   id?: string | null;
   role?: Role | null;
 }
+
+/* ───────────── the queue ───────────── */
 
 const NO_QUESTIONS: Question[] = [];
 

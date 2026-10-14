@@ -14,6 +14,8 @@ import { rankRepos } from "./match";
 import { RepoRow } from "./RepoRow";
 import "./newproject.css";
 
+/* ───────────── types ───────────── */
+
 type Opt = { key: string; kind: "repo"; repo: GithubRepo } | { key: string; kind: "typed"; repo: string } | { key: string; kind: "connect" } | { key: string; kind: "install"; url: string };
 
 interface RepoSelectProps {
@@ -29,6 +31,8 @@ interface RepoSelectProps {
   /** The repository from the list, when the person picks one (for push rights and privacy). */
   onRepoInfo?: (repo: GithubRepo | null) => void;
 }
+
+/* ───────────── the field ───────────── */
 
 export function RepoSelect({ id, value, onChange, me, returnTo, disabled, describedBy, invalid, onRepoInfo }: RepoSelectProps) {
   const uid = useId().replace(/:/g, "");

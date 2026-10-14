@@ -19,6 +19,8 @@ import { draftFromLink, EMPTY_DRAFT, LINK_PARAMS, type NewProjectDraft } from ".
 import { GithubMark, LockIcon, RepoIcon } from "./newproject/marks";
 import "./projects.css";
 
+/* ───────────── helpers ───────────── */
+
 const RETURN_TO = "/projects?new=1";
 
 function sourceLine(p: ProjectInfo): string {
@@ -53,6 +55,8 @@ function clearLinkParams() {
   const params = new URLSearchParams(location.search);
   for (const k of LINK_PARAMS) if (params.has(k)) setSearchParam(k, null);
 }
+
+/* ───────────── the page ───────────── */
 
 export function ProjectsView() {
   const me = useMe();
@@ -190,6 +194,8 @@ export function ProjectsView() {
     </div>
   );
 }
+
+/* ───────────── parts of the page ───────────── */
 
 function GridSkeleton() {
   return (

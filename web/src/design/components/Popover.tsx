@@ -6,6 +6,8 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import { place, type Align, type Side } from "./placement";
 
+/* ───────────── types, the stack and focus helpers ───────────── */
+
 export type PopoverCloseReason = "escape" | "outside" | "blur" | "tab" | "anchor-gone";
 
 /** Open popovers, bottom to top. Escape and outside clicks act on the top one only. */
@@ -35,6 +37,8 @@ export function nextTabbable(from: Element, dir: 1 | -1, skip?: Element | null):
   for (let i = all.length - 1; i >= 0; i--) if (from.compareDocumentPosition(all[i]) & Node.DOCUMENT_POSITION_PRECEDING) return all[i];
   return null;
 }
+
+/* ───────────── the popover ───────────── */
 
 export interface PopoverProps {
   /** The trigger. The tail points at it, and focus goes back to it on Escape. */
@@ -260,6 +264,8 @@ export function Popover({
     document.body,
   );
 }
+
+/* ───────────── hooks and keys ───────────── */
 
 /** Trigger + popover wiring: aria-expanded, aria-controls, aria-haspopup and the open state. */
 export function usePopover<T extends HTMLElement = HTMLButtonElement>(haspopup: "dialog" | "menu" | "listbox" = "dialog") {

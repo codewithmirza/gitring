@@ -21,6 +21,8 @@ import { splitTask } from "./taskText";
 
 export type { TaskDraft };
 
+/* ───────────── drafts and placeholders ───────────── */
+
 const BLANK: TaskDraft = { title: "", goal: "", checkPath: "", checkCode: "", priority: "normal", fanout: null, models: null };
 const EMPTY: string[] = [];
 
@@ -68,6 +70,8 @@ import { feature } from "../src/feature.js";
 test("does the new thing", () => {
   assert.equal(feature("input"), "expected output");
 });`;
+
+/* ───────────── the composer ───────────── */
 
 export function TaskComposer({ autoOpen = false }: { autoOpen?: boolean }) {
   const ui = useUi();

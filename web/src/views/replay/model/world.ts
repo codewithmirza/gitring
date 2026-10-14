@@ -8,6 +8,8 @@ import { hullName } from "../../../design/icons";
 import { RANGE_TEXT } from "../../../state/format";
 import type { ReplayScript } from "./steps";
 
+/* ───────────── types ───────────── */
+
 export type TaskState = "open" | "working" | "merged" | "paused";
 
 export interface WorldTask {
@@ -53,6 +55,8 @@ export interface World {
   counts: { tasks: number; plans: number; checks: number; requests: number; acks: number; tests: number; merges: number };
 }
 
+/* ───────────── constants ───────────── */
+
 const SHOWN: ReadonlySet<AttemptStatus> = new Set<AttemptStatus>(["declared", "underway", "submitted", "checking", "ready", "landing", "stale", "rederiving"]);
 
 interface Live {
@@ -66,6 +70,8 @@ interface Live {
 }
 
 const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+/* ───────────── the world after a step ───────────── */
 
 /** What the map and the panels show after step `index` (-1: before the first step). */
 export function worldAt(script: ReplayScript, index: number): World {

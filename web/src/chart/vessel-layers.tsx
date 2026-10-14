@@ -11,6 +11,8 @@ import { ATTEMPT_STATUS_TEXT, RANGE_TEXT } from "../state/format";
 import { anchorOf, type ChartLayout } from "./layout";
 import type { Placement } from "./placement";
 
+/* ───────────── small marks ───────────── */
+
 export const Ripples = memo(function Ripples({ layout }: { layout: ChartLayout }) {
   const ripples = useStore((s) => s.ripples);
   const now = Date.now();
@@ -36,6 +38,8 @@ const Track = memo(function Track({ d, color, kind, dim, quiet }: { d: string; c
 const Waypoint = memo(function Waypoint({ x, y, k, color, dim }: { x: number; y: number; k: number; color: number; dim: boolean }) {
   return <circle className={`c-waypoint${dim ? " is-dim" : ""}`} cx={x} cy={y} r={3 / k} style={{ "--vc": `var(--v${color % 12})` } as CSSProperties} />;
 });
+
+/* ───────────── one vessel ───────────── */
 
 interface VesselProps {
   id: string;
@@ -102,6 +106,8 @@ const Vessel = memo(function Vessel(p: VesselProps) {
     </g>
   );
 });
+
+/* ───────────── the layers ───────────── */
 
 export const TracksLayer = memo(function TracksLayer({
   vessels,

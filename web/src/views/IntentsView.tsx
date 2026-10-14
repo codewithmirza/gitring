@@ -21,6 +21,8 @@ import { AmendPanel, LivingSpec, PausePanel } from "./intents/TaskPanels";
 import { sourceText } from "./intents/helpers";
 import "./intents.css";
 
+/* ───────────── the detail of a task ───────────── */
+
 function IntentDetail({ intent }: { intent: Intent }) {
   const now = useNow(15_000);
   const st = useStore((s) => s.state);
@@ -219,6 +221,8 @@ function IntentDetail({ intent }: { intent: Intent }) {
     </article>
   );
 }
+
+/* ───────────── the page ───────────── */
 
 export function IntentsView({ id }: { id?: string }) {
   const intent = useStore((s) => (id ? s.state?.intents.find((i) => i.id === id) : undefined));

@@ -19,6 +19,8 @@ import { copyMcpUrl, launchAllNow } from "./actions";
 import { pushRecent, rank, readRecent, type PaletteEntry } from "./palette";
 import { MOD } from "./keys";
 
+/* ───────────── types and constants ───────────── */
+
 interface Item extends PaletteEntry {
   icon: IconName;
   shortcut?: string;
@@ -34,6 +36,8 @@ function go(to: string) {
 const NO_INTENTS: Intent[] = [];
 const NO_FILES: FileNode[] = [];
 const NO_VESSELS: VesselModel[] = [];
+
+/* ───────────── the entries ───────────── */
 
 /**
  * The entries come from narrow slices of the store (tasks, files, agents), so a live event that changes
@@ -136,6 +140,8 @@ function useEntries(): Item[] {
   return useMemo(() => [...base, ...tasks, ...agents, ...fileItems], [base, tasks, agents, fileItems]);
 }
 
+/* ───────────── parts of the panel ───────────── */
+
 function Highlight({ text, hits }: { text: string; hits: number[] }) {
   if (!hits.length) return <>{text}</>;
   const set = new Set(hits);
@@ -158,6 +164,8 @@ function Highlight({ text, hits }: { text: string; hits: number[] }) {
   flush(text.length);
   return <>{parts}</>;
 }
+
+/* ───────────── the palette ───────────── */
 
 /** The Search button in the top bar (the visible one). Read at open time, so that the panel opens in the same frame. */
 function paletteAnchor(): HTMLElement | null {

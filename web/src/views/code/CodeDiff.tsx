@@ -11,10 +11,14 @@ import { CLASS_NAMES, languageOf, tokenizeAll } from "./highlight";
 import { CodeLink } from "./CodeLink";
 import type { CodeLocation } from "./links";
 
+/* ───────────── constants and types ───────────── */
+
 const STATUS_TEXT = { A: "Added", M: "Changed", D: "Deleted" } as const;
 const FIRST_ROWS = 1200;
 
 type DiffRow = ReturnType<typeof parseUnified>[number];
+
+/* ───────────── helpers ───────────── */
 
 function Code({ text, tokens }: { text: string; tokens: number[] | undefined }): ReactNode {
   if (!text) return "​";
@@ -50,6 +54,8 @@ function diffTokens(rows: DiffRow[], path: string): (number[] | undefined)[] {
   oldIdx.forEach((ri, k) => (out[ri] = ot[k]));
   return out;
 }
+
+/* ───────────── the diff ───────────── */
 
 /**
  * `onRequest`: a person may ask the agent to change lines of this work copy. The new line numbers become

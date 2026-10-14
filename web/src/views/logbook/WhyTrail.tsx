@@ -16,6 +16,8 @@ import { methodSentence, testsSentence, trainText } from "../trains-copy";
 import { ChecksTable, Ladder } from "./Evidence";
 import { openInApp, withProject } from "./links";
 
+/* ───────────── parts of the record ───────────── */
+
 function Step({ icon, title, children, tone, id }: { icon: IconName; title: string; children: ReactNode; tone?: string; id: string }) {
   return (
     <li className={["trail__step", tone && `is-${tone}`].filter(Boolean).join(" ")} aria-labelledby={`trail-${id}`}>
@@ -63,6 +65,8 @@ function DiffSkeleton() {
     </div>
   );
 }
+
+/* ───────────── the why-record of one merge ───────────── */
 
 export function WhyTrail({ id }: { id: string }) {
   const now = useNow(15_000);
