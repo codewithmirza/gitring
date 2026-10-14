@@ -4,17 +4,19 @@ Written by the design agent, following `docs/design/CRITIQUE.md`. This review ch
 
 ## Verdict
 
-The three acts of the editor work, also on a phone: the map shows what the agents do, the approve page and the inbox answer a merge question in one screen, and the history entry explains why a change is in main. The biggest problem is the edge of the product: a stranger or a person with a link meets jargon, dead ends and a card that covers the page, while the product has a strong idea (the map) that the first screens do not show.
+The three acts of the editor work, also on a phone. The map shows what the agents do. The approve page and the inbox put a merge question on one screen. The merge record says why a change is in main.
+
+The biggest problem is the edge of the product. A stranger, or a person with a link, meets jargon, dead ends and a card that covers the page. The strong idea of the product (the map) is not on the first screens.
 
 There is no S1 finding. There are 11 S2 findings and 15 S3 findings.
 
 ## How it was made
 
 - **Commit:** branch `ws/design`, on top of `main` at `048bd93`. The app is the code of that commit (the build of the web app is the pre-refactor code).
-- **Command:** `node scripts/shots.mjs --full`. It started a local gitring on a free port, signed up a test person with a virtual passkey, and made the project `corner-shop` through the real API and the real MCP tools: three merges, three change requests, one merge question that waits for a person, and three more agents at work. A second project has 80 tasks, a third has a very long name and no activity.
+- **Command:** `node scripts/shots.mjs --full`. It started a local gitring on a free port. It signed up a test person with a virtual passkey. It made the project `corner-shop` through the real API and the real MCP tools: three merges, three change requests, one merge question that waits for a person, and three more agents at work. A second project has 80 tasks. A third has a very long name and no activity.
 - **Result:** 246 pictures: 41 screens, 3 themes (day, dusk, night), 2 sizes (desktop 1440x900, phone 390x844). All 246 rendered. The names are `<screen>-<theme>-<size>.png` in `tmp/shots/`. A picture that is named in a finding shows the problem in the day theme unless the finding says another theme. `-full.png` is the whole page.
 - **Measures used:** `tmp/shots/details/<name>.json` (contrast, small controls, sideways scroll, type sizes, words, focus rings). I read each number against the picture.
-- **What the shots cannot show:** motion (the tool runs with reduced motion), a screen reader, and the states that `SCREENS.md` marks "not seen": a history with 200 merges, the page of a viewer or a member, an empty inbox, a failed passkey, a GitHub repository step, the answer of a merge that somebody else answered. Those states are not reviewed.
+- **What the shots cannot show:** motion (the tool runs with reduced motion) and a screen reader. They also cannot show the states that `SCREENS.md` marks "not seen". Those are a history with 200 merges, the pages of a viewer and a member, an empty inbox, a failed passkey, a GitHub step, and a merge that somebody else answered. They are not reviewed.
 - **Limits of the measures:** the contrast test skips text on pictures. The focus test looks at the first 12 stops of the Tab key.
 
 ## Score table
