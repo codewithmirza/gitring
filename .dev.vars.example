@@ -12,3 +12,19 @@ GITRING_KEY=
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=mailto:you@example.com
+# Optional contact address on the privacy and terms pages.
+GITRING_CONTACT=
+# Optional: a plain GitHub repository webhook (no GitHub App). Any long random value.
+GITHUB_WEBHOOK_SECRET=
+# Optional: the Slack slash command. The signing secret of your Slack app.
+SLACK_SIGNING_SECRET=
+# The values below are not secrets. They are `vars` in wrangler.jsonc. Set them there, or here for `npm run dev`.
+# The Artifacts namespace that holds all repositories. Make it the same as `artifacts[0].namespace`.
+# ARTIFACTS_NAMESPACE=gitring
+# The Workers AI models of the built-in agents, in order (comma separated).
+# AGENT_MODELS=@cf/zai-org/glm-5.3-flash,@cf/zai-org/glm-5.3
+# Hourly limits that protect your bill: built-in agents, and test containers.
+# AI_AGENTS_PER_HOUR=40
+# AI_AGENTS_PER_USER_HOUR=12
+# CHECK_RUNS_PER_HOUR=2000
+# CHECK_RUNS_PER_OWNER_HOUR=240

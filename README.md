@@ -8,6 +8,37 @@ Source control made for people breaks at the scale of agents. Anthropic wrote so
 
 gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dynamic Workers and Containers. Agents connect through MCP or plain git. People use the web app, its inbox, or the `gitring` command line.
 
+## Try it in 5 minutes
+
+You need no Cloudflare account and no money for this. You need Node.js 22 or later, npm, and `git`.
+
+```bash
+git clone https://github.com/codewithmirza/gitring.git
+cd gitring
+npm ci
+npm run dev:local
+```
+
+1. Wait for the line `Ready on http://127.0.0.1:8787`. The first start builds the app and takes about a minute. Above it, the command prints `gitring key for this run: <key>`. Copy the key. The key changes at each start.
+2. Check that it runs: `curl http://localhost:8787/api/health`. The answer starts with `{"ok":true`.
+3. Open `http://localhost:8787` in a browser. Use `localhost`, not `127.0.0.1`: passkeys need a host name. Choose to create an account with a passkey. Your browser asks for Touch ID, Windows Hello or a security key.
+4. Choose New project, describe what you want, and make the project. Copy its id from the address bar.
+5. Connect an agent. Put the key in the header:
+   `claude mcp add --transport http gitring http://localhost:8787/mcp --header "Authorization: Bearer <key>"`.
+   [Connect agents](#connect-agents) has the lines for other clients. The agent calls `gitring_intents` first.
+6. Run the sample agents. Three scripted agents meet on a small shop project. Two of them change the same function, and gitring sends a change request to one:
+
+```bash
+# macOS and Linux
+GITRING_URL=http://localhost:8787 GITRING_KEY=<key> npm run meet -- --approval --wait 0
+# Windows PowerShell
+$env:GITRING_URL = "http://localhost:8787"; $env:GITRING_KEY = "<key>"; npm run meet -- --approval --wait 0
+```
+
+For a pass or fail check, run `node scripts/smoke.mjs http://localhost:8787 <key>`. It ends with `RESULT: PASS`.
+
+The local run has no Workers AI and no test containers, and each start deletes its data. [Try it without a paid account](#try-it-without-a-paid-account) lists the limits. To deploy to your own Cloudflare account, with your own sign-in apps, read [docs/SELF-HOST.md](docs/SELF-HOST.md). To find where each idea lives in the code, read [docs/FAQ-JUDGES.md](docs/FAQ-JUDGES.md).
+
 ## How it works
 
 ```
@@ -105,7 +136,7 @@ Every template has an `AGENTS.md` that tells agents to send a plan to gitring be
 
 ### Run your own gitring
 
-To run gitring on Cloudflare, you need Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account. To try gitring with no Cloudflare account, see [Try it without a paid account](#try-it-without-a-paid-account).
+For a step by step guide with your own accounts and tokens, see [docs/SELF-HOST.md](docs/SELF-HOST.md). To run gitring on Cloudflare, you need Workers (paid plan), Artifacts, Workers AI, Dynamic Workers (Worker Loader) and Containers. Local development uses the Artifacts and Workers AI of your account. To try gitring with no Cloudflare account, see [Try it without a paid account](#try-it-without-a-paid-account).
 
 ```bash
 npm install                      # npm 11 or later (npx npm@11 install)

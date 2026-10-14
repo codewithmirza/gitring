@@ -26,3 +26,8 @@ private/
 *.zip
 *.bundle
 .claude/
+
+# Stray local output
+*.err
+tmp_*
+scratchpad_dummy
