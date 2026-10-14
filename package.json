@@ -43,6 +43,8 @@
     "deploy": "vite build && wrangler deploy",
     "load": "node scripts/load.mjs",
     "meet": "node scripts/meet.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "setup": "node scripts/setup.mjs",
     "bench": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./bench/register.mjs bench/coordination.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
