@@ -189,78 +189,108 @@ export function landingNote(args: {
   testsAfter?: boolean;
 }): string {
   const { intent, attempt, agent, method, corrections, courseChecks, checks, decision, train, testsAfter } = args;
-  const fpFiles = Object.entries(attempt.footprint?.files ?? {})
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([path, t]) => ({ path, status: t.status, additions: t.additions, deletions: t.deletions }));
-  const sym = attempt.footprint?.symbols;
   const note = {
     schema: LOGBOOK_SCHEMA,
-    intent: {
-      id: intent.id,
-      title: intent.title,
-      goal: intent.goal,
-      constraints: intent.constraints ?? [],
-      version: intent.version,
-      amendments: intent.amendments ?? [],
-    },
-    attempt: {
-      id: attempt.id,
-      generation: attempt.lineage?.generation ?? 1,
-      rederivedFrom: attempt.lineage?.rederivedFrom ?? null,
-      base: { sha: attempt.baseSha, tree: attempt.baseTree },
-      course: attempt.course,
-      footprint: {
-        files: fpFiles,
-        symbols: {
-          defined: sym?.defined ?? [],
-          modified: sym?.modified ?? [],
-          removed: sym?.removed ?? [],
-          signatureChanged: sym?.signatureChanged ?? [],
-        },
-        stats: attempt.stats,
-      },
-      summary: attempt.summary ?? null,
-    },
-    agent: {
-      id: agent.id,
-      callsign: agent.callsign,
-      kind: agent.kind,
-      model: agent.model ?? null,
-      client: agent.client ?? null,
-    },
+    intent: noteIntent(intent),
+    attempt: noteAttempt(attempt),
+    agent: noteAgent(agent),
     method,
-    corrections: corrections.map((c) => ({
-      id: c.id,
-      kind: c.kind,
-      rule: c.rule,
-      message: c.message,
-      standOn: c.standOnAttemptId ?? null,
-      ...(c.alsoStandOn?.length ? { alsoStandOn: c.alsoStandOn } : {}),
-      // The note is written at the merge: a change request that the agent did not confirm closes with it.
-      status: c.status === "pending" || c.status === "delivered" ? "closed" : c.status,
-      ...(c.ackNote ? { ackNote: c.ackNote } : {}),
-      ...(c.check ? { check: { applied: c.check.applied, reason: c.check.reason } } : {}),
-    })),
-    courseChecks: courseChecks.map((k) => ({
-      id: k.id,
-      trigger: k.trigger,
-      verdict: k.verdict,
-      source: k.source,
-      confidence: k.confidence,
-      latencyMs: k.latencyMs,
-      assessments: k.assessments,
-    })),
-    checks: {
-      // "after": the tests of the work alone; main is tested after the merge (post-merge test mode).
-      ...(testsAfter ? { when: "after" } : {}),
-      passed: checks?.passed ?? 0,
-      failed: checks?.failed ?? 0,
-      cases: (checks?.cases ?? []).map((c) => ({ file: c.file, name: c.name, ok: c.ok, ...(c.error ? { error: c.error } : {}) })),
-    },
+    corrections: noteCorrections(corrections),
+    courseChecks: noteCourseChecks(courseChecks),
+    checks: noteChecks(checks, testsAfter),
     decision: decision ?? null,
     ...(train ? { train: { id: train.id, place: train.place, size: train.size, attempts: train.attemptIds } } : {}),
   };
   return `${JSON.stringify(note, null, 2)}\n`;
+}
+
+/** The task as it was when the work merged. */
+function noteIntent(intent: Intent) {
+  return {
+    id: intent.id,
+    title: intent.title,
+    goal: intent.goal,
+    constraints: intent.constraints ?? [],
+    version: intent.version,
+    amendments: intent.amendments ?? [],
+  };
+}
+
+/** The work copy: its base, its plan and its real changes. */
+function noteAttempt(attempt: Attempt) {
+  const fpFiles = Object.entries(attempt.footprint?.files ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, t]) => ({ path, status: t.status, additions: t.additions, deletions: t.deletions }));
+  const sym = attempt.footprint?.symbols;
+  return {
+    id: attempt.id,
+    generation: attempt.lineage?.generation ?? 1,
+    rederivedFrom: attempt.lineage?.rederivedFrom ?? null,
+    base: { sha: attempt.baseSha, tree: attempt.baseTree },
+    course: attempt.course,
+    footprint: {
+      files: fpFiles,
+      symbols: {
+        defined: sym?.defined ?? [],
+        modified: sym?.modified ?? [],
+        removed: sym?.removed ?? [],
+        signatureChanged: sym?.signatureChanged ?? [],
+      },
+      stats: attempt.stats,
+    },
+    summary: attempt.summary ?? null,
+  };
+}
+
+/** The agent that did the work. */
+function noteAgent(agent: AgentInfo) {
+  return {
+    id: agent.id,
+    callsign: agent.callsign,
+    kind: agent.kind,
+    model: agent.model ?? null,
+    client: agent.client ?? null,
+  };
+}
+
+/** The change requests of the work copy, with how each one ended. */
+function noteCorrections(corrections: Correction[]) {
+  return corrections.map((c) => ({
+    id: c.id,
+    kind: c.kind,
+    rule: c.rule,
+    message: c.message,
+    standOn: c.standOnAttemptId ?? null,
+    ...(c.alsoStandOn?.length ? { alsoStandOn: c.alsoStandOn } : {}),
+    // The note is written at the merge: a change request that the agent did not confirm closes with it.
+    status: c.status === "pending" || c.status === "delivered" ? "closed" : c.status,
+    ...(c.ackNote ? { ackNote: c.ackNote } : {}),
+    ...(c.check ? { check: { applied: c.check.applied, reason: c.check.reason } } : {}),
+  }));
+}
+
+/** The conflict checks of the work copy. */
+function noteCourseChecks(courseChecks: CourseCheck[]) {
+  return courseChecks.map((k) => ({
+    id: k.id,
+    trigger: k.trigger,
+    verdict: k.verdict,
+    source: k.source,
+    confidence: k.confidence,
+    latencyMs: k.latencyMs,
+    assessments: k.assessments,
+  }));
+}
+
+/** The test result: the counts and every case. */
+function noteChecks(checks: CheckRun, testsAfter?: boolean) {
+  return {
+    // "after": the tests of the work alone; main is tested after the merge (post-merge test mode).
+    ...(testsAfter ? { when: "after" } : {}),
+    passed: checks?.passed ?? 0,
+    failed: checks?.failed ?? 0,
+    cases: (checks?.cases ?? []).map((c) => ({ file: c.file, name: c.name, ok: c.ok, ...(c.error ? { error: c.error } : {}) })),
+  };
 }
 
 /** YAML double-quoted scalar (JSON escapes are valid YAML escapes). */
