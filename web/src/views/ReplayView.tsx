@@ -242,4 +242,3 @@ function useReplayKeys(clock: ReplayClock) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onKey]);
 }
-

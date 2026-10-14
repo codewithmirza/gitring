@@ -404,4 +404,3 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
     </div>
   );
 }
-

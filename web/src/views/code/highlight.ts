@@ -12,4 +12,3 @@ export { languageOf } from "./highlight/language";
 export type { Lang, LangInfo } from "./highlight/language";
 export { tokenizeAll, runsOf, LineHighlighter } from "./highlight/lines";
 export { highlighterFor } from "./highlight/registry";
-
