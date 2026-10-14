@@ -77,7 +77,7 @@ The local run needs no secret. The key in step 1 is the only token, and `dev:loc
 | Sign-in with Google or another outside account | Not available | Your own OAuth app and the secrets in `.dev.vars.example` |
 | The deployed app | Not applicable | `npm run setup`, then the steps in [docs/SELF-HOST.md](docs/SELF-HOST.md) |
 
-The local run has no Workers AI and no test containers, and each start deletes its data. [Try it without a paid account](#try-it-without-a-paid-account) lists the limits. To deploy to your own Cloudflare account, with your own sign-in apps, read [docs/SELF-HOST.md](docs/SELF-HOST.md). To find where each idea lives in the code, read [docs/FAQ-JUDGES.md](docs/FAQ-JUDGES.md).
+The local run has no Workers AI and no test containers, and each start deletes its data. [Try it without a paid account](#try-it-without-a-paid-account) lists the limits. To deploy to your own Cloudflare account, with your own sign-in apps, read [docs/SELF-HOST.md](docs/SELF-HOST.md). To find where each idea lives in the code, read [docs/FAQ-JUDGES.md](docs/FAQ-JUDGES.md). To learn the folders and the path of one merge through the code, read [docs/CODE-MAP.md](docs/CODE-MAP.md).
 
 ## How it works
 
