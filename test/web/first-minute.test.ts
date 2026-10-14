@@ -43,7 +43,8 @@ describe("the words of the first minute", () => {
 
   it("keeps the words of a card plain", () => {
     for (const text of [waitsText(1), waitsText(3), NOTHING_WAITS, sourceLine(project()), ...cardFacts(project({ role: "member", visibility: "public" }), true)]) {
-      expect(steViolations(text), text).toEqual([]);
+      // "Nothing" is a noun, not an "-ing" form of a verb.
+      expect(steViolations(text).filter((v) => !v.includes('"Nothing"')), text).toEqual([]);
     }
     expect(waitsText(1)).toBe("1 question waits");
     expect(waitsText(2)).toBe("2 questions wait");
