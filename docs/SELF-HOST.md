@@ -9,7 +9,7 @@ To try gitring first with no Cloudflare account, see "Try it in 5 minutes" in th
 | Need | Why |
 |---|---|
 | A Cloudflare account on the **Workers Paid** plan | Artifacts, Durable Objects with SQLite, Dynamic Workers and Containers all need it. |
-| Node.js 22 or later, npm 11 or later, and `git` | The build and the scripts. |
+| Node.js 22 or later, npm 10 or later, and `git` | The build and the scripts. |
 | Access to **Artifacts** | It stores the git repositories of all projects. Artifacts is in open beta. |
 | Access to **Workers AI** | It runs the conflict-check model and the built-in agents. |
 | **Dynamic Workers** (Worker Loader) | It runs the tests of the `worker` runner and the live previews. It is in open beta for paid Workers accounts. |
@@ -38,7 +38,7 @@ cd gitring
 npm ci
 ```
 
-`npm ci` installs the exact versions of `package-lock.json`. If it complains about the npm version, run `npx npm@11 ci`.
+`npm ci` installs the exact versions of `package-lock.json`. It was tested with Node.js 22 and npm 10. If npm complains about its version, run `npx npm@11 ci`.
 
 ### 2. Sign in to Cloudflare
 
@@ -184,7 +184,7 @@ These two commands need no Cloudflare account. `npm run load` and `npm run bench
 
 | Sign | Cause and fix |
 |---|---|
-| `npm ci` fails on the npm version | Use npm 11 or later: `npx npm@11 ci`. |
+| `npm ci` fails on the npm version | Run `npx npm@11 ci`. |
 | The deploy says that a binding is not available | Your account lacks that service or the Paid plan. See "What you need". |
 | `/api/health` says `"ai":false` | The `AI` binding is not there. Do not delete it from `wrangler.jsonc`. |
 | `/setup` says that the token is wrong | Use the exact `GITRING_SETUP_TOKEN` value. Set it again with `wrangler secret put`. |

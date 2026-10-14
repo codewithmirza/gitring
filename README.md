@@ -19,7 +19,7 @@ npm ci
 npm run dev:local
 ```
 
-1. Wait for the line `Ready on http://localhost:8787`. Above it, the command prints `gitring key for this run: <key>`. Copy the key. The key changes at each start.
+1. Wait for the line `Ready on http://127.0.0.1:8787`. The first start builds the app and takes about a minute. Above it, the command prints `gitring key for this run: <key>`. Copy the key. The key changes at each start.
 2. Check that it runs: `curl http://localhost:8787/api/health`. The answer starts with `{"ok":true`.
 3. Open `http://localhost:8787` in a browser. Use `localhost`, not `127.0.0.1`: passkeys need a host name. Choose to create an account with a passkey. Your browser asks for Touch ID, Windows Hello or a security key.
 4. Choose New project, describe what you want, and make the project. Copy its id from the address bar.
