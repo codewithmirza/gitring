@@ -61,15 +61,7 @@ export class TsStripper extends TsDeclarationReader {
         return;
       }
       case ",":
-        if (ctx.k === "params") {
-          ctx.paramStart = true;
-          ctx.inDefault = false;
-        } else if (ctx.k === "object") ctx.atKey = true;
-        else if (ctx.varDecl) {
-          this.i = this.varBinding(this.i + 1);
-          return;
-        }
-        this.i++;
+        this.scanComma(ctx);
         return;
       case ";":
         ctx.varDecl = false;
@@ -81,21 +73,10 @@ export class TsStripper extends TsDeclarationReader {
         this.i++;
         return;
       case "?":
-        if (ctx.k === "params" && !ctx.inDefault) {
-          const next = this.t(this.i + 1);
-          if (next === ":" || next === "," || next === ")" || next === "=") this.cut(this.i, this.i + 1);
-        }
-        this.i++;
+        this.scanQuestionMark(ctx);
         return;
       case ":":
-        if (ctx.k === "params" && !ctx.inDefault) {
-          const k = this.skipType(this.i + 1);
-          if (k < 0) return void this.fail();
-          this.cut(this.i, k);
-          this.i = k;
-          return;
-        }
-        this.i++;
+        this.scanColon(ctx);
         return;
       case "!":
         if (this.i > 0 && !tok.nl && this.endsExpr(this.effPrev(this.i))) this.cut(this.i, this.i + 1);
@@ -127,6 +108,40 @@ export class TsStripper extends TsDeclarationReader {
         this.i++;
         return;
     }
+  }
+
+  /** A comma: the next parameter or object key starts, or the next declarator of a `const` list. */
+  protected scanComma(ctx: ScanCtx): void {
+    if (ctx.k === "params") {
+      ctx.paramStart = true;
+      ctx.inDefault = false;
+    } else if (ctx.k === "object") ctx.atKey = true;
+    else if (ctx.varDecl) {
+      this.i = this.varBinding(this.i + 1);
+      return;
+    }
+    this.i++;
+  }
+
+  /** A `?` in a parameter list: an optional parameter mark is a type position, so it is cut. */
+  protected scanQuestionMark(ctx: ScanCtx): void {
+    if (ctx.k === "params" && !ctx.inDefault) {
+      const next = this.t(this.i + 1);
+      if (next === ":" || next === "," || next === ")" || next === "=") this.cut(this.i, this.i + 1);
+    }
+    this.i++;
+  }
+
+  /** A `:` in a parameter list: the type after it is cut. */
+  protected scanColon(ctx: ScanCtx): void {
+    if (ctx.k === "params" && !ctx.inDefault) {
+      const k = this.skipType(this.i + 1);
+      if (k < 0) return void this.fail();
+      this.cut(this.i, k);
+      this.i = k;
+      return;
+    }
+    this.i++;
   }
 
   /** An opening `(`: a parameter list (a function, a catch clause or an arrow), or a plain group or call. */
