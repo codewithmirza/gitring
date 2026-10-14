@@ -49,6 +49,7 @@ describe("retryAfterReset", () => {
       read: fire("read", "text"),
       submit: fire("submit", "submitted"),
       declare: fire("declare", "declared"),
+      wait: fire("wait", "news"),
       name: "object",
     };
   }
@@ -104,6 +105,16 @@ describe("retryAfterReset", () => {
     // Another error of declare stays as it is.
     const other = retryAfterReset(() => fakeObject([], 1, 1, () => new Error("Unknown task.")), async () => undefined);
     expect(fail(await other.declare("task").catch((e: unknown) => e)).content[0].text).toBe("Error: Unknown task.");
+  });
+
+  it("does not send a wait again by itself, and tells the agent to call it again (a restart loses the waiter, not the news)", async () => {
+    const log: string[] = [];
+    const sleeps: number[] = [];
+    const stub = retryAfterReset(() => fakeObject(log, 1, 1), async (ms) => void sleeps.push(ms));
+    const err = await stub.wait("a_1").catch((e: unknown) => e);
+    expect(log).toEqual(["1:wait(a_1)"]);
+    expect(sleeps).toEqual([]);
+    expect(fail(err).content[0].text).toBe("Error: gitring restarted this project for a moment. The work you already sent is kept. Send the same call again.");
   });
 
   it("passes other errors through at once", async () => {
