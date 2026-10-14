@@ -10,7 +10,7 @@
  */
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import type { Env } from "../worker/env";
-import { gzip, modeFor, tar } from "../platform/checks/tar";
+import { gzip, modeFor, tar, type TarEntry } from "../platform/checks/tar";
 
 export const DRYDOCK_IMAGE = "cloudflare/debian-trixie";
 const CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
@@ -235,8 +235,21 @@ export class Seawall extends WorkerEntrypoint<Env> {
   }
 }
 
-/** The tree under test as gzip tar bytes. */
-export async function packTree(files: Map<string, string>): Promise<Uint8Array> {
-  const entries = [...files].map(([path, content]) => ({ path, content, mode: modeFor(path) }));
+/** A file of the tree under test: its text or bytes, and its git mode ("100755" executable, "120000" symlink). */
+export interface PackFile {
+  content: string | Uint8Array;
+  mode?: string;
+}
+
+/**
+ * The tree under test as gzip tar bytes. A plain text gets the mode that its path suggests; a file with its
+ * git mode keeps the executable bit, and a symlink stays a symlink.
+ */
+export async function packTree(files: Map<string, string | PackFile>): Promise<Uint8Array> {
+  const entries: TarEntry[] = [...files].map(([path, f]) => {
+    if (typeof f === "string") return { path, content: f, mode: modeFor(path) };
+    if (f.mode === "120000") return { path, content: "", link: typeof f.content === "string" ? f.content : new TextDecoder().decode(f.content) };
+    return { path, content: f.content, mode: f.mode === "100755" ? 0o755 : modeFor(path) };
+  });
   return gzip(tar(entries));
 }

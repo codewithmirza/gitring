@@ -13,10 +13,12 @@ import {
   encodeTree,
   frameObject,
   hashObject,
+  hashObjectSync,
   isValidBranchName,
   modeToType,
   normalizeCommitMessage,
   sha1Hex,
+  sha1HexSync,
   utf8,
 } from "../../src/core/git/objects";
 import { buildTrees, type Snapshot } from "../../src/core/git/snapshot";
@@ -53,6 +55,15 @@ describe("blobs", () => {
       expect(await hashObject("blob", bytes)).toBe(gitBlob(bytes));
     });
   }
+
+  it("hashObjectSync and sha1HexSync give the same ids as git and WebCrypto, at every block edge", async () => {
+    for (const [label, bytes] of samples) expect(hashObjectSync("blob", bytes), label).toBe(gitBlob(bytes));
+    let seed = 7;
+    for (const n of [0, 1, 3, 4, 55, 56, 57, 63, 64, 65, 119, 120, 128, 1000, 4099]) {
+      const data = new Uint8Array(n).map(() => (seed = (seed * 1103515245 + 12345) >>> 0) & 0xff);
+      expect(sha1HexSync(data), `${n} bytes`).toBe(await sha1Hex(data));
+    }
+  });
 
   it("frames objects as '<type> <len>\\0<body>'", async () => {
     const framed = frameObject("blob", utf8.encode("abc"));

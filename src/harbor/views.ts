@@ -17,12 +17,15 @@ import type {
   TrafficVessel,
   Verdict,
 } from "../core/types";
-import type { Snapshot } from "../core/git/snapshot";
+import { diffSnapshots, pathProblem, type Snapshot, type SnapshotChange } from "../core/git/snapshot";
+import { hashObject, utf8 } from "../core/git/objects";
 import type { ImportGraph } from "../core/analysis/graph";
 import { analyzeModule, isAnalyzable } from "../core/analysis/symbols";
 import { analyzeFootprint, type FileVersions } from "../core/analysis/footprint";
 import type { SignatureInfo } from "../core/analysis/range";
 import { buildVesselView, type VesselView } from "../core/coord/facts";
+import type { NotCarried } from "../core/land/carry";
+import { diffHunks, normalizeNewlines } from "../core/text/diff";
 
 /** A tree with the text of its files (binary files have no entry in `text`). */
 export interface TreeText {
@@ -45,9 +48,23 @@ export interface AttemptView {
   version: number;
   /** Full text tree of the attempt (base + work). */
   files: Map<string, string>;
-  /** Changed paths with base/head versions. */
+  /** Changed paths with base/head versions (text changes only; see `opaque`). */
   changed: FileVersions[];
   signatures: Record<SymbolKey, SignatureInfo>;
+  /**
+   * The whole tree that merges: the real entry (blob id, mode) of every file, text or not. In git mode it
+   * is the tree of the last push (plus shadow edits); in api mode the base plus the written files. Parts of
+   * the work that gitring does not merge (`notCarried`) keep their base entry here.
+   */
+  snapshot: Snapshot;
+  /** The repository that holds the blobs of the work (the work copy's fork in git mode, else main's). */
+  repo: string;
+  /** Blobs that exist only as text in gitring (api-mode writes, shadow edits): blob id → text. */
+  textBlobs: Map<string, string>;
+  /** Changes without a text change: binary or large files, files in opaque folders, mode changes. */
+  opaque: SnapshotChange[];
+  /** Parts of the work that do not merge (see core/land/carry). */
+  notCarried: NotCarried[];
 }
 
 export const ACTIVE: ReadonlySet<AttemptStatus> = new Set<AttemptStatus>([
@@ -104,15 +121,106 @@ export function overlayFiles(base: Map<string, string>, overlay: Map<string, str
   return files;
 }
 
-export function changedVersions(base: Map<string, string>, files: Map<string, string>, paths: Iterable<string>): FileVersions[] {
+/**
+ * Text changes of `paths`. With `trees`, a path that exists on one side without text there (a binary or
+ * large file, a file past the text limits) is not a text change: it is not a delete or an add of text.
+ * `opaqueChanges` lists such paths.
+ */
+export function changedVersions(
+  base: Map<string, string>,
+  files: Map<string, string>,
+  paths: Iterable<string>,
+  trees?: { base: Snapshot; head: Snapshot },
+): FileVersions[] {
   const out: FileVersions[] = [];
   for (const path of new Set(paths)) {
     const b = base.has(path) ? base.get(path)! : null;
     const h = files.has(path) ? files.get(path)! : null;
     if (b === h) continue;
+    if (trees && ((b === null && trees.base.has(path)) || (h === null && trees.head.has(path)))) continue;
     out.push({ path, base: b, head: h });
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : 1));
+}
+
+/** Entry changes from `base` to `head` that are not text changes: binary, large or opaque files, and mode changes. */
+export function opaqueChanges(base: Snapshot, head: Snapshot, changed: FileVersions[]): SnapshotChange[] {
+  const text = new Set(changed.map((c) => c.path));
+  return diffSnapshots(base, head).filter((c) => !text.has(c.path));
+}
+
+/**
+ * A text tree with text written on top (`null` deletes), as real entries: each text becomes a blob id.
+ * `textBlobs` maps those blob ids to their text, so a merge can read blobs that exist in no repository yet.
+ * `blobId` gives the blob id of a text; a caller with a cache answers at once (no wait for a hash).
+ * A written file keeps the mode of its path (an executable stays executable).
+ */
+export async function overlaySnapshot(
+  tree: Snapshot,
+  overlay: Map<string, string | null>,
+  blobId: (text: string) => string | Promise<string> = (text) => hashObject("blob", utf8.encode(text)),
+): Promise<{ snapshot: Snapshot; textBlobs: Map<string, string> }> {
+  const snapshot: Snapshot = new Map(tree);
+  const textBlobs = new Map<string, string>();
+  for (const [path, content] of overlay) {
+    // A path that git cannot hold (".git/x", "a//b") cannot merge: it stays out of the tree.
+    if (pathProblem(path)) continue;
+    if (content === null) {
+      snapshot.delete(path);
+      continue;
+    }
+    const id = blobId(content);
+    const sha = typeof id === "string" ? id : await id;
+    const mode = snapshot.get(path)?.mode;
+    snapshot.set(path, { sha, mode: mode === "100755" || mode === "120000" ? mode : "100644" });
+    textBlobs.set(sha, content);
+  }
+  return { snapshot, textBlobs };
+}
+
+/** Lines with their "\n" (the last one may lack it), as the line diff counts them. */
+function linesOf(text: string): string[] {
+  if (text === "") return [];
+  const parts = normalizeNewlines(text).split("\n");
+  const out = parts.slice(0, -1).map((l) => `${l}\n`);
+  if (parts[parts.length - 1] !== "") out.push(parts[parts.length - 1]);
+  return out;
+}
+
+/**
+ * The agent's own contribution, without line numbers and without the text around it: per text change the
+ * removed and added lines of each change block, per other change the new entry. A person says yes to this.
+ * When gitring merges main into the work and the agent's blocks stay the same, the rows stay the same.
+ */
+export function contributionRows(changed: FileVersions[], opaque: SnapshotChange[]): string[] {
+  const rows: string[] = [];
+  for (const c of changed) {
+    if (c.head === null) {
+      rows.push(`${c.path}\0delete`);
+      continue;
+    }
+    if (c.base === null) {
+      rows.push(`${c.path}\0add\0${c.head}`);
+      continue;
+    }
+    const hunks = diffHunks(c.base, c.head);
+    if (!hunks.length) {
+      // Only the line ends changed: the new text is the change.
+      rows.push(`${c.path}\0text\0${c.head}`);
+      continue;
+    }
+    const before = linesOf(c.base);
+    const after = linesOf(c.head);
+    for (const h of hunks) {
+      const removed = h.oldLines ? before.slice(h.oldStart - 1, h.oldStart - 1 + h.oldLines).join("") : "";
+      const added = h.newLines ? after.slice(h.newStart - 1, h.newStart - 1 + h.newLines).join("") : "";
+      rows.push(`${c.path}\0-${removed}\0+${added}`);
+    }
+  }
+  for (const o of [...opaque].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+    rows.push(o.status === "D" ? `${o.path}\0delete` : `${o.path}\0${o.mode}\0${o.newSha}`);
+  }
+  return rows;
 }
 
 export function footprintOf(changed: FileVersions[], allFiles: Set<string>) {

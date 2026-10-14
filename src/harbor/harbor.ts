@@ -20,8 +20,8 @@ import type { Env } from "../worker/env";
 import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError, type CommitMeta, type FileChange } from "../platform/repo/backend";
 import { ArtifactsBackend } from "../platform/repo/artifacts";
-import { MemoryTreeCache, readSnapshot, diffSnapshots, type Snapshot } from "../core/git/snapshot";
-import { hashObject, isValidBranchName, utf8 } from "../core/git/objects";
+import { MemoryTreeCache, readSnapshot, diffSnapshots, applyFileChanges, type Snapshot, type SnapshotChange } from "../core/git/snapshot";
+import { hashObject, hashObjectSync, isValidBranchName, utf8 } from "../core/git/objects";
 import { buildImportGraph, graphFromEdges } from "../core/analysis/graph";
 import { isAnalyzable } from "../core/analysis/symbols";
 import { unifiedDiff, isProbablyText, lineDiff } from "../core/text/diff";
@@ -46,11 +46,12 @@ import {
 import { computeRange, shapeFromFootprint } from "../core/analysis/range";
 import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
+import { MAX_CARRY_FILE_BYTES, MAX_CARRY_TOTAL_BYTES, notCarriedText, overSize, planCarry, withoutChanges, type NotCarried } from "../core/land/carry";
 import { merge3 } from "../core/text/merge3";
 import { landingMessage, landingNote, intentFile, parseTrailers } from "../core/logbook";
 import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, publicHostname, textEligible } from "../core/repo-rules";
 import { runChecks, contentKey } from "../platform/checks/runner";
-import { packTree, type DrydockResult } from "../drydock/drydock";
+import { packTree, type DrydockResult, type PackFile } from "../drydock/drydock";
 import { callClef, chat } from "../platform/ai/models";
 import { syncToGithub, type UpstreamMark } from "../platform/github/sync";
 import { guessModel } from "../platform/ai/guess";
@@ -72,7 +73,10 @@ import {
   latestCheck,
   median,
   notices,
+  opaqueChanges,
   overlayFiles,
+  overlaySnapshot,
+  contributionRows,
   signaturesOf,
   trafficVessel,
   vesselView,
@@ -114,6 +118,29 @@ const LANDING_LEASE_MS = 5 * 60_000;
 const MAX_LANDING_STARTS = 4;
 /** What people and agents read when the gitring test harness ran no test (nothing is verified). */
 const NO_TEST_RAN = "No test ran. A person must decide to merge.";
+/** The UTF-8 byte order mark as text. gitring's text of a file never starts with it (TextDecoder takes it away). */
+const BOM = "﻿";
+/**
+ * Bytes that one blob reader keeps after a read (a merge reads a file for its size, then for the commit).
+ * The project object has 128 MB of memory: these limits, and MAX_CARRY_TOTAL_BYTES, keep a merge far below it.
+ */
+const READER_CACHE_BYTES = MAX_CARRY_TOTAL_BYTES;
+/** The test container gets at most this many bytes of files without text, and reads at most this many such files. */
+const MAX_TEST_TREE_BYTES = 16_000_000;
+const MAX_TEST_TREE_READS = 5000;
+/** Blobs of unknown size that gitring reads at once (it learns the size of a blob only when it reads it). */
+const SIZE_READS = 4;
+/** Characters of text that the cache of blob ids keeps (about 8 MB of memory). */
+const TEXT_ID_CHARS = 4_000_000;
+
+/** Reads blobs for a merge (see HarborMaster.blobReader). */
+interface BlobReader {
+  /** Exact text, or null for a blob that is not text (or not exactly text). */
+  readText(sha: string): Promise<string | null>;
+  readBytes(sha: string): Promise<Uint8Array | null>;
+  /** Like readText, from what gitring holds only: undefined when gitring must read a repository for it. */
+  knownText(sha: string): Promise<string | null | undefined>;
+}
 
 /** The merge run in progress (meta "landing"): written before the landing work starts, cleared when it ends. */
 interface LandingRun {
@@ -171,6 +198,8 @@ export class HarborMaster extends DurableObject<Env> {
   private decisions: T.Decision[] = [];
   private questions = new Map<string, T.Question>();
   private radar = new Map<string, T.RadarPair>();
+  /** Every commit that was main → its place in main's history (the table main_seq). */
+  private mainIndex = new Map<string, number>();
   private stats: T.HarborStats = emptyStats();
   private checkLatencies: number[] = [];
 
@@ -179,7 +208,12 @@ export class HarborMaster extends DurableObject<Env> {
   private treeTexts = new Map<string, Promise<TreeText>>();
   private mainView?: MainView;
   private mainLoading?: Promise<MainView>;
-  private attemptViews = new Map<string, { version: number; view: AttemptView }>();
+  private attemptViews = new Map<string, { key: string; view: AttemptView }>();
+  /** Views of work copies that gitring makes now (see attemptView). */
+  private attemptViewLoads = new Map<string, { key: string; view: Promise<AttemptView> }>();
+  /** Text → blob id, for the files that agents wrote (see textBlobId). */
+  private textIds = new Map<string, string>();
+  private textIdChars = 0;
   private attemptVersion = new Map<string, number>();
   private forks = new Map<string, Promise<void>>();
   private landingChain: Promise<unknown> = Promise.resolve();
@@ -211,6 +245,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.decisions = this.db.all<T.Decision>("decisions").sort((a, b) => a.at - b.at);
     for (const q of this.db.all<T.Question>("questions")) this.questions.set(q.id, q);
     for (const r of this.db.all<T.RadarPair>("radar")) this.radar.set(pairKey(r.a, r.b), r);
+    for (const r of this.db.mainSeq()) this.mainIndex.set(r.sha, r.seq);
     this.stats = this.db.getMeta<T.HarborStats>("stats") ?? emptyStats();
     this.checkLatencies = this.db.getMeta<number[]>("latencies") ?? [];
     this.seq = this.db.getMeta<number>("seq") ?? 0;
@@ -383,7 +418,7 @@ export class HarborMaster extends DurableObject<Env> {
     draft.mainSha = seed.sha;
     draft.mainTree = seed.tree;
     this.db.setMeta("project", draft);
-    this.db.setMeta("mainSeq", [seed.sha]);
+    this.resetMainSeq(seed.sha);
     this.addLog({ kind: "system", message: `Project ready. Main is ${seed.sha.slice(0, 7)} in Cloudflare Artifacts (${repoName}).` });
     await this.loadMain();
     this.persistStats();
@@ -479,7 +514,7 @@ export class HarborMaster extends DurableObject<Env> {
     if (p.importing?.github && !p.importing.github.snapshot) this.setGh(p.importing.github.repo, { last: sha, private: false });
     p.importing = undefined;
     this.db.setMeta("project", p);
-    this.db.setMeta("mainSeq", [sha]);
+    this.resetMainSeq(sha);
     this.mainView = undefined;
     const main = await this.loadMain();
     this.addLog({ kind: "system", message: `${url === "git push" ? "Push received" : `Import done: ${url}`} at ${sha.slice(0, 7)} on ${branch} (${main.files.length} files). Write tasks for agents.` });
@@ -762,6 +797,171 @@ export class HarborMaster extends DurableObject<Env> {
     return text;
   }
 
+  /** Blob ids → how the text that gitring holds gives the blob: as it is, with a byte order mark first, or not at all. */
+  private exactBlobs = new Map<string, "same" | "bom" | "no">();
+  /** Blob ids → size in bytes, for blobs that gitring read for a merge. */
+  private blobSizes = new Map<string, number>();
+
+  /**
+   * The text of the blob `sha` that gives exactly its bytes again as UTF-8, from `text` (the text that gitring
+   * holds), or null. The text that gitring reads has no byte order mark: a blob with one gets it back here.
+   * Latin-1 text, for example, gives null.
+   */
+  private async exactText(sha: string, text: string): Promise<string | null> {
+    let how = this.exactBlobs.get(sha);
+    if (how === undefined) {
+      how = (await hashObject("blob", utf8.encode(text))) === sha ? "same" : (await hashObject("blob", utf8.encode(`${BOM}${text}`))) === sha ? "bom" : "no";
+      if (this.exactBlobs.size > 20_000) this.exactBlobs.clear();
+      this.exactBlobs.set(sha, how);
+    }
+    return how === "same" ? text : how === "bom" ? `${BOM}${text}` : null;
+  }
+
+  /**
+   * Blob reads for a merge, a re-plot or the test container. Text comes from what gitring holds (text that
+   * only gitring has, the text trees it read, `known` contents), then from the repositories in order. Text is
+   * given only when it is exactly the blob, so gitring never changes the bytes of a file that it carries:
+   * any other blob goes as bytes. `knownText` never reads a repository (it reads the blob store of the object).
+   */
+  private blobReader(o: { trees: TreeText[]; repos: string[]; textBlobs?: Map<string, string>; known?: Map<string, string | Uint8Array>; texts?: [string, string][] }): BlobReader {
+    const index = new Map<string, string>(o.texts ?? []);
+    for (const t of o.trees) {
+      for (const [path, e] of t.snapshot) {
+        const text = t.text.get(path);
+        if (text !== undefined && !index.has(e.sha)) index.set(e.sha, text);
+      }
+    }
+    const repos = [...new Set(o.repos)];
+    // Bytes that this reader read once (a merge reads a blob for its size, then for the commit).
+    const cache = new Map<string, Uint8Array>();
+    let cached = 0;
+    const knownText = async (sha: string): Promise<string | null | undefined> => {
+      const own = o.textBlobs?.get(sha);
+      if (own !== undefined) return own;
+      const k = o.known?.get(sha);
+      if (k !== undefined) return typeof k === "string" ? k : null;
+      let text = index.get(sha);
+      if (text === undefined) {
+        // A blob that gitring read before (in this project object's store): no repository read.
+        const stored = this.db.getBlobText(sha);
+        if (!stored) return undefined;
+        if (stored.text === null) return null;
+        text = stored.text;
+      }
+      return this.exactText(sha, text);
+    };
+    const readBytes = async (sha: string): Promise<Uint8Array | null> => {
+      const own = o.textBlobs?.get(sha);
+      if (own !== undefined) return utf8.encode(own);
+      const k = o.known?.get(sha);
+      if (k !== undefined) return typeof k === "string" ? utf8.encode(k) : k;
+      const hit = cache.get(sha);
+      if (hit) return hit;
+      for (const repo of repos) {
+        const bytes = await this.backend.readBlob(repo, sha).catch(() => null);
+        if (!bytes) continue;
+        // Keep what readText keeps, so that the next merge or test run knows this blob without a read.
+        if (!this.db.getBlobText(sha)) this.db.putBlobText(sha, bytes.length <= MAX_TEXT_BYTES && isProbablyText(bytes) ? utf8.decode(bytes) : null);
+        this.blobSizes.set(sha, bytes.length);
+        if (this.blobSizes.size > 20_000) this.blobSizes.clear();
+        if (cached + bytes.length <= READER_CACHE_BYTES) {
+          cache.set(sha, bytes);
+          cached += bytes.length;
+        }
+        return bytes;
+      }
+      return null;
+    };
+    const readText = async (sha: string): Promise<string | null> => {
+      const held = await knownText(sha);
+      if (held !== undefined) return held;
+      for (const repo of repos) {
+        const text = await this.readText(repo, sha);
+        if (text !== null) return this.exactText(sha, text);
+      }
+      return null;
+    };
+    return { readText, readBytes, knownText };
+  }
+
+  /** A blob reader for the tree of a work copy: its own text first, then its base, then the repositories. */
+  private async workReader(a: T.Attempt, view: AttemptView, more: TreeText[] = []): Promise<BlobReader> {
+    const p = this.requireProject();
+    const base = await this.treeText(p.repo.name, a.baseTree);
+    const texts: [string, string][] = [];
+    for (const c of view.changed) {
+      const e = view.snapshot.get(c.path);
+      if (c.head !== null && e) texts.push([e.sha, c.head]);
+    }
+    return this.blobReader({ trees: [base, ...more], repos: [view.repo, p.repo.name], textBlobs: view.textBlobs, texts });
+  }
+
+  /** The parts of the work of a work copy that do not merge, and why. */
+  private async leftOut(a: T.Attempt): Promise<NotCarried[]> {
+    const view = await this.attemptView(a);
+    if (!view.opaque.length) return view.notCarried;
+    return [...view.notCarried, ...(await this.largeChanges(view, await this.workReader(a, view)))];
+  }
+
+  /**
+   * Changes of the work that are too large to carry (see overSize): the size of each changed file without
+   * text. A mode change counts too, because the merge writes the bytes of the file again.
+   */
+  private async largeChanges(view: AttemptView, reader: BlobReader): Promise<NotCarried[]> {
+    const sized = view.opaque.filter((c) => c.status !== "D" && c.newSha && c.mode !== "160000");
+    const sizes: { path: string; bytes: number }[] = [];
+    for (let i = 0; i < sized.length; i += SIZE_READS) {
+      await Promise.all(
+        sized.slice(i, i + SIZE_READS).map(async (c) => {
+          sizes.push({ path: c.path, bytes: this.blobSizes.get(c.newSha!) ?? (await reader.readBytes(c.newSha!))?.length ?? 0 });
+        }),
+      );
+    }
+    return overSize(sizes);
+  }
+
+  /**
+   * The whole tree for the test container: text files as text, the other files as bytes, with their git modes.
+   * A file larger than MAX_CARRY_FILE_BYTES, and files past the limits of the test tree, stay out (`left`).
+   */
+  private async fullTree(snapshot: Snapshot, reader: BlobReader): Promise<{ files: Map<string, PackFile>; left: string[] }> {
+    const files = new Map<string, PackFile>();
+    const left: string[] = [];
+    // Text that gitring holds first; the other files are read from the repositories, a few at a time.
+    const blobs: [string, { sha: string; mode: string }][] = [];
+    const entries = [...snapshot].filter(([, e]) => e.mode !== "160000");
+    for (let i = 0; i < entries.length; i += 64) {
+      await Promise.all(
+        entries.slice(i, i + 64).map(async ([path, e]) => {
+          const text = await reader.knownText(e.sha);
+          if (typeof text === "string") files.set(path, { content: text, mode: e.mode });
+          else blobs.push([path, e]);
+        }),
+      );
+    }
+    blobs.sort((x, y) => (x[0] < y[0] ? -1 : 1));
+    let bytes = 0;
+    for (let i = 0; i < blobs.length; i += SIZE_READS) {
+      await Promise.all(
+        blobs.slice(i, i + SIZE_READS).map(async ([path, e], j) => {
+          const size = this.blobSizes.get(e.sha);
+          if (i + j >= MAX_TEST_TREE_READS || (size !== undefined && (size > MAX_CARRY_FILE_BYTES || bytes + size > MAX_TEST_TREE_BYTES))) {
+            left.push(path);
+            return;
+          }
+          const content = await reader.readBytes(e.sha);
+          if (!content || content.length > MAX_CARRY_FILE_BYTES || bytes + content.length > MAX_TEST_TREE_BYTES) {
+            left.push(path);
+            return;
+          }
+          bytes += content.length;
+          files.set(path, { content, mode: e.mode });
+        }),
+      );
+    }
+    return { files, left: left.sort() };
+  }
+
   /** Snapshot + text of a tree (cached forever: trees are content-addressed). */
   private treeText(repo: string, tree: string): Promise<TreeText> {
     let p = this.treeTexts.get(tree);
@@ -812,35 +1012,86 @@ export class HarborMaster extends DurableObject<Env> {
     return this.mainLoading;
   }
 
+  /** The place of a commit in main's history, or -1 when it never was main. */
+  private mainPlace(sha: string): number {
+    return this.mainIndex.get(sha) ?? -1;
+  }
+
+  /** A commit becomes main: it gets the next place (a commit that was main already keeps its place). */
+  private appendMainSeq(sha: string): void {
+    this.mainIndex.set(sha, this.db.appendMain(sha));
+  }
+
+  /** Main starts at one commit (a new repository). */
+  private resetMainSeq(sha: string): void {
+    this.mainIndex = new Map([[sha, this.db.resetMain(sha)]]);
+  }
+
   private bump(attemptId: string): void {
     this.attemptVersion.set(attemptId, (this.attemptVersion.get(attemptId) ?? 0) + 1);
   }
 
-  /** Files, changes and signatures of an attempt (cached per content version). */
-  private async attemptView(a: T.Attempt): Promise<AttemptView> {
+  /**
+   * Files, changes and signatures of an attempt (cached per content version, base and head). Calls that come
+   * while the view is made wait for the same view: they do not make it again.
+   */
+  private attemptView(a: T.Attempt): Promise<AttemptView> {
     const version = this.attemptVersion.get(a.id) ?? 0;
+    const key = `${version}:${a.baseTree}:${a.headSha ?? ""}`;
     const cached = this.attemptViews.get(a.id);
-    if (cached && cached.version === version) return cached.view;
-    const p = this.requireProject();
-    const base = await this.treeText(p.repo.name, a.baseTree);
-    let files: Map<string, string>;
-    let paths: string[];
-    if (a.mode === "git") {
-      const head = a.headSha ? await this.backend.readCommit(a.fork.repo, a.headSha) : null;
-      const tt = head ? await this.treeText(a.fork.repo, head.treeHash) : base;
-      // Shadow edits (from the Claude Code hook) sit on top of the last push.
-      const shadow = this.db.worktree(a.id);
-      files = overlayFiles(tt.text, shadow);
-      paths = [...diffSnapshots(base.snapshot, tt.snapshot).map((c) => c.path), ...shadow.keys()];
-    } else {
-      const overlay = this.db.worktree(a.id);
-      files = overlayFiles(base.text, overlay);
-      paths = [...overlay.keys()];
+    if (cached && cached.key === key) return Promise.resolve(cached.view);
+    const loading = this.attemptViewLoads.get(a.id);
+    if (loading && loading.key === key) return loading.view;
+    const view = this.makeAttemptView(a, version, key).finally(() => {
+      if (this.attemptViewLoads.get(a.id)?.view === view) this.attemptViewLoads.delete(a.id);
+    });
+    this.attemptViewLoads.set(a.id, { key, view });
+    return view;
+  }
+
+  /**
+   * Blob id of a text, at once: a view of a work copy must not wait for WebCrypto, or many calls wait for the
+   * same view. A view hashes the same written files again and again, so the ids stay cached.
+   */
+  private textBlobId(text: string): string {
+    const hit = this.textIds.get(text);
+    if (hit) return hit;
+    const sha = hashObjectSync("blob", utf8.encode(text));
+    if (this.textIdChars + text.length > TEXT_ID_CHARS) {
+      this.textIds.clear();
+      this.textIdChars = 0;
     }
-    const changed = changedVersions(base.text, files, paths);
+    this.textIds.set(text, sha);
+    this.textIdChars += text.length;
+    return sha;
+  }
+
+  private async makeAttemptView(a: T.Attempt, version: number, key: string): Promise<AttemptView> {
+    const p = this.requireProject();
+    const headSha = a.headSha;
+    const base = await this.treeText(p.repo.name, a.baseTree);
+    // The tree that the work starts from: the last push in git mode, else the base.
+    let tt = base;
+    let repo = p.repo.name;
+    if (a.mode === "git") {
+      const head = headSha ? await this.backend.readCommit(a.fork.repo, headSha) : null;
+      if (head) {
+        tt = await this.treeText(a.fork.repo, head.treeHash);
+        repo = a.fork.repo;
+      }
+    }
+    // Text on top: shadow edits (from the Claude Code hook) on the last push, or the written files of api mode.
+    const overlay = this.db.worktree(a.id);
+    const files = overlayFiles(tt.text, overlay);
+    const { snapshot: real, textBlobs } = await overlaySnapshot(tt.snapshot, overlay, (text) => this.textBlobId(text));
+    // What merges: every real change, with a few parts left out (and named to the agent).
+    const plan = planCarry(base.snapshot, real, new Set(overlay.keys()));
+    const paths = diffSnapshots(base.snapshot, plan.work).map((c) => c.path);
+    const changed = changedVersions(base.text, files, paths, { base: base.snapshot, head: plan.work });
+    const opaque = opaqueChanges(base.snapshot, plan.work, changed);
     const { signatures } = footprintOf(changed, new Set(files.keys()));
-    const view: AttemptView = { version, files, changed, signatures };
-    this.attemptViews.set(a.id, { version, view });
+    const view: AttemptView = { version, files, changed, signatures, snapshot: plan.work, repo, textBlobs, opaque, notCarried: plan.notCarried };
+    this.attemptViews.set(a.id, { key, view });
     return view;
   }
 
@@ -861,7 +1112,7 @@ export class HarborMaster extends DurableObject<Env> {
       additions += t.additions;
       deletions += t.deletions;
     }
-    a.stats = { ...a.stats, filesChanged: Object.keys(footprint.files).length, additions, deletions };
+    a.stats = { ...a.stats, filesChanged: Object.keys(footprint.files).length + view.opaque.length, additions, deletions };
     await this.withdrawIfChanged(a, view);
     return view;
   }
@@ -1255,11 +1506,8 @@ export class HarborMaster extends DurableObject<Env> {
    */
   private async refreshGitBase(a: T.Attempt): Promise<void> {
     if (a.mode !== "git" || !a.headSha) return;
-    const seq = this.db.getMeta<string[]>("mainSeq") ?? [];
-    const from = seq.indexOf(a.baseSha);
-    const newer = new Map(seq.slice(from + 1).map((sha, i) => [sha, from + 1 + i]));
-    if (!newer.size) return;
-    let best = -1;
+    const from = this.mainPlace(a.baseSha);
+    let best = from;
     let bestSha: string | undefined;
     const seen = new Set<string>();
     const queue = [a.headSha];
@@ -1267,8 +1515,8 @@ export class HarborMaster extends DurableObject<Env> {
       const sha = queue.shift()!;
       if (seen.has(sha) || sha === a.baseSha) continue;
       seen.add(sha);
-      const at = newer.get(sha);
-      if (at !== undefined) {
+      const at = this.mainIndex.get(sha);
+      if (at !== undefined && at > from) {
         if (at > best) {
           best = at;
           bestSha = sha;
@@ -1424,9 +1672,8 @@ export class HarborMaster extends DurableObject<Env> {
     if (this.sentBy(a, call.viewer)) this.heard(a);
     const main = await this.loadMain();
     const vessels = this.trafficFor(a);
-    const seqList = this.db.getMeta<string[]>("mainSeq") ?? [];
-    const baseIdx = seqList.indexOf(a.baseSha);
-    const landed = this.landings.filter((l) => seqList.indexOf(l.mainAfter) > baseIdx);
+    const baseIdx = this.mainPlace(a.baseSha);
+    const landed = this.landings.filter((l) => this.mainPlace(l.mainAfter) > baseIdx);
     return {
       attemptId,
       vessels,
@@ -1611,8 +1858,7 @@ export class HarborMaster extends DurableObject<Env> {
   /* ════════════════════════════ course check ════════════════════════════ */
 
   private trafficViews(incoming: T.Attempt, main: MainView, signatures: Map<string, AttemptView>): VesselView[] {
-    const seqList = this.db.getMeta<string[]>("mainSeq") ?? [];
-    const baseIdx = seqList.indexOf(incoming.baseSha);
+    const baseIdx = this.mainPlace(incoming.baseSha);
     const views: VesselView[] = [];
     for (const other of this.attempts.values()) {
       if (other.id === incoming.id) continue;
@@ -1623,7 +1869,7 @@ export class HarborMaster extends DurableObject<Env> {
       if (ACTIVE.has(other.status)) state = WAITING.has(other.status) ? "waiting" : "active";
       else if (other.status === "landed") {
         const landing = this.landings.find((l) => l.attemptId === other.id);
-        if (landing && seqList.indexOf(landing.mainAfter) > baseIdx) state = "landed";
+        if (landing && this.mainPlace(landing.mainAfter) > baseIdx) state = "landed";
       }
       if (!state) continue;
       views.push(vesselView(other, intent, agent, signatures.get(other.id)?.signatures, main.signatures, state));
@@ -1971,10 +2217,16 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   /**
-   * Run the checks on a tree: the gitring harness in a Dynamic Worker, or the project's install and
-   * test commands in the attempt's check container.
+   * Run the checks on a tree: the gitring harness in a Dynamic Worker (the text files), or the project's
+   * install and test commands in the attempt's check container. The container gets the whole tree from
+   * `full` (binary files and modes too), so it tests the same tree that merges.
    */
-  private async runTreeChecks(files: Map<string, string>, scope: T.CheckRun["scope"], attemptId: string): Promise<T.CheckRun> {
+  private async runTreeChecks(
+    files: Map<string, string>,
+    scope: T.CheckRun["scope"],
+    attemptId: string,
+    full?: () => Promise<{ files: Map<string, PackFile>; left: string[] }>,
+  ): Promise<T.CheckRun> {
     const cs = this.checkSettings();
     const key = await contentKey(files);
     if (cs.runner !== "container") {
@@ -1992,10 +2244,17 @@ export class HarborMaster extends DurableObject<Env> {
     if (!budget.granted) return budgetWait(key, scope, budget.retryAt);
     const dock = this.env.DRYDOCK.get(this.env.DRYDOCK.idFromName(`${p.id}:${attemptId}`));
     let res: DrydockResult;
+    let left: string[] = [];
     try {
-      res = (await dock.run({ tree: await packTree(files), install: cs.install, test: cs.test, timeoutSec: cs.timeoutSec ?? 600 })) as DrydockResult;
+      const tree = full ? await full() : undefined;
+      left = tree?.left ?? [];
+      res = (await dock.run({ tree: await packTree(tree?.files ?? files), install: cs.install, test: cs.test, timeoutSec: cs.timeoutSec ?? 600 })) as DrydockResult;
     } catch (e) {
       res = { ok: false, stage: "start", exitCode: -1, installMs: 0, testMs: 0, reused: false, log: `The test container did not answer: ${String((e as Error)?.message ?? e)}` };
+    }
+    if (left.length) {
+      const names = `${left.slice(0, 5).join(", ")}${left.length > 5 ? ` and ${left.length - 5} more` : ""}`;
+      res = { ...res, log: `gitring did not copy ${left.length} large file${left.length === 1 ? "" : "s"} into the test container: ${names}.\n${res.log}` };
     }
     return containerRun(res, { key, scope, cs, ms: Date.now() - t0 });
   }
@@ -2006,7 +2265,7 @@ export class HarborMaster extends DurableObject<Env> {
     this.heard(a);
     await this.adoptForkTip(a);
     const view = await this.attemptView(a);
-    const run = await this.runTreeChecks(view.files, "attempt", a.id);
+    const run = await this.runTreeChecks(view.files, "attempt", a.id, async () => this.fullTree(view.snapshot, await this.workReader(a, view)));
     if (run.wait) {
       // The test budget is used: no test ran. This is not a failure. Keep the last result and say when gitring tries again.
       this.addLog({
@@ -2045,7 +2304,7 @@ export class HarborMaster extends DurableObject<Env> {
     }
     this.heard(a);
     await this.adoptForkTip(a);
-    if (a.status === "ready" && a.approval?.status === "waiting" && (!a.approval.digest || a.approval.digest === (await this.digestOf(a)))) {
+    if (a.status === "ready" && a.approval?.status === "waiting" && (!a.approval.digest || (await this.digestOf(a)) === a.approval.digest)) {
       // The agent asks again, and a person has not answered: the same work, the same question.
       return { attemptId, status: a.status, checks: a.composedChecks ?? a.checks, next: "awaiting-approval", approval: a.approval, ...this.mayAnswerOf(a, call.viewer), message: this.waitingMessage(a), clearance: this.clearanceFor(a.id) };
     }
@@ -2054,6 +2313,8 @@ export class HarborMaster extends DurableObject<Env> {
     this.putAttempt(a);
     await this.flushToFork(a).catch((e) => console.warn("flush to fork failed", String(e)));
     const run = await this.check(a.id);
+    // Parts of the work that gitring does not merge: the agent hears it now, not after the merge.
+    const left = await this.leftOut(a);
     if (a.status !== "submitted") {
       // Another submit of this work copy was faster: it already queued or merged the work while these tests ran.
       return { attemptId, status: a.status, checks: run, next: a.status === "landed" ? "landed" : a.status === "underway" ? "fix-checks" : "landing-queue", message: `The work copy is ${copyStatusWord(a.status)}.`, clearance: this.clearanceFor(a.id) };
@@ -2094,6 +2355,7 @@ export class HarborMaster extends DurableObject<Env> {
         this.enqueueLanding(a);
       }
     }
+    if (left.length) message = `${message} ${notCarriedText(left)}`;
     this.putAttempt(a);
     this.addLog({
       kind: "submit",
@@ -2119,9 +2381,21 @@ export class HarborMaster extends DurableObject<Env> {
     const tip = (await this.backend.resolve(a.fork.repo, this.branch)) ?? a.baseSha;
     const view = await this.attemptView(a);
     const forkTip = tip === a.baseSha ? undefined : await this.backend.readCommit(a.fork.repo, tip);
-    const forkFiles = forkTip ? (await this.treeText(a.fork.repo, forkTip.treeHash)).text : (await this.treeText(this.requireProject().repo.name, a.baseTree)).text;
-    // All paths: after a re-plot the attempt also carries the main changes since the fork point.
-    const changes = changedVersions(forkFiles, view.files, new Set([...forkFiles.keys(), ...view.files.keys()])).map((fv) => ({ path: fv.path, content: fv.head }));
+    const forkTree = forkTip ? await this.treeText(a.fork.repo, forkTip.treeHash) : await this.treeText(this.requireProject().repo.name, a.baseTree);
+    // Every entry that differs: after a re-plot the attempt also carries the main changes since the fork point,
+    // binary files included, and a delete of a binary file is a change too.
+    const reader = await this.workReader(a, view, [forkTree]);
+    const changes: FileChange[] = [];
+    for (const ch of diffSnapshots(forkTree.snapshot, view.snapshot)) {
+      const e = view.snapshot.get(ch.path);
+      if (!e) {
+        changes.push({ path: ch.path, content: null });
+        continue;
+      }
+      if (e.mode === "160000") continue; // a submodule entry cannot be written
+      const content = (await reader.readText(e.sha)) ?? (await reader.readBytes(e.sha));
+      if (content !== null) changes.push({ path: ch.path, content, mode: e.mode });
+    }
     if (!changes.length) return;
     const agent = this.agents.get(a.agentId);
     const res = await this.backend.commit({
@@ -2362,7 +2636,7 @@ export class HarborMaster extends DurableObject<Env> {
     // A question that a person has not answered: nothing merges. This is the rule, whatever put the work in the queue.
     if (a.approval?.status === "waiting") return "done";
     // A yes counts for the work that the person saw. If the work changed since, the yes does not count.
-    if (a.approval?.status === "approved" && a.approval.digest && a.approval.digest !== (await this.digestOf(a))) {
+    if (a.approval?.status === "approved" && a.approval.digest && (await this.digestOf(a)) !== a.approval.digest) {
       a.approval = { ...a.approval, status: "withdrawn", closed: "The agent changed the work after the yes." };
       a.status = "underway";
       this.putAttempt(a);
@@ -2378,30 +2652,27 @@ export class HarborMaster extends DurableObject<Env> {
     const main = await this.loadMain();
     const base = await this.treeText(p.repo.name, a.baseTree);
     const view = await this.attemptView(a);
-    const attemptSnap: Snapshot = await snapshotFromText(base.snapshot, view);
-    const result = await compose({
-      base: base.snapshot,
-      main: main.snapshot,
-      attempt: attemptSnap,
-      readText: async (sha) => {
-        const fromBase = findText(sha, [base, main]);
-        if (fromBase !== undefined) return fromBase;
-        const fromView = view.changed.find((c) => c.head !== null && attemptSnap.get(c.path)?.sha === sha);
-        if (fromView) return fromView.head;
-        return this.readText(p.repo.name, sha);
-      },
-    });
+    const reader = await this.workReader(a, view, [main]);
+    // The real tree of the work: binary and large files, modes and symlinks merge too. A file too large to carry stays out.
+    const large = await this.largeChanges(view, reader);
+    const left = [...view.notCarried, ...large];
+    const work = large.length ? withoutChanges(base.snapshot, view.snapshot, large.map((n) => n.path)) : view.snapshot;
+    const result = await compose({ base: base.snapshot, main: main.snapshot, attempt: work, readText: reader.readText, readBytes: reader.readBytes });
     if (!result.clean) {
       await this.markStale(a, `${result.conflicts.length} conflict${result.conflicts.length > 1 ? "s" : ""} on the new main: ${result.conflicts.map((c) => `${c.path} (${c.reason})`).join(", ")}`);
       return "done";
     }
-    // Composed tree = main + changes (+ the intent file).
+    // Composed tree = main + changes (+ the intent file). The text tree is for the gitring harness; the
+    // test container gets the whole tree.
     const composed = new Map(main.text);
     for (const ch of result.changes) {
-      if (ch.content === null) composed.delete(ch.path);
-      else composed.set(ch.path, typeof ch.content === "string" ? ch.content : utf8.decode(ch.content));
+      if (typeof ch.content === "string" && textEligible(ch.path)) composed.set(ch.path, ch.content);
+      else composed.delete(ch.path);
     }
-    const run = await this.runTreeChecks(composed, "composed", a.id);
+    const run = await this.runTreeChecks(composed, "composed", a.id, async () => {
+      const { snapshot, blobs } = await applyFileChanges(main.snapshot, result.changes);
+      return this.fullTree(snapshot, this.blobReader({ trees: [main], repos: [p.repo.name, view.repo], known: blobs }));
+    });
     if (run.wait) {
       // The test budget is used: no test ran. This is not a failure. The work copy stays queued,
       // it does not go back to its agent, and the alarm starts the merge again at the next window.
@@ -2447,13 +2718,66 @@ export class HarborMaster extends DurableObject<Env> {
     try {
       committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes, message, note, author: GITRING_AUTHOR });
     } catch (err) {
-      if (err instanceof RepoConflictError || String(err).includes("RepoConflict")) {
-        if (attempt < 2) return this.landOne(a, attempt + 1);
+      // Main is not where gitring thinks: a run that stopped after its commit, or a commit from outside gitring.
+      // A second try on the same main fails the same way. Catch up with the real main, then compose and test again.
+      if ((err instanceof RepoConflictError || String(err).includes("RepoConflict")) && attempt < 1 && (await this.catchUpMain(a))) {
+        return this.landOne(a, attempt + 1);
       }
       throw err;
     }
-    await this.recordLanding(a, { committed, before: main.sha, method, applied, run, message, note, touched: result.touched });
+    await this.recordLanding(a, { committed, before: main.sha, method, applied, run, message, note, touched: result.touched, left });
     return "done";
+  }
+
+  /**
+   * A commit to main failed because main moved. Read the real main and catch up, oldest commit first: a merge
+   * of a work copy that a stopped run made gets its record now (finishFromMain); a commit that gitring did not
+   * make becomes main as it is. True when gitring's main moved, so that the merge of `current` can try again.
+   */
+  private async catchUpMain(current: T.Attempt): Promise<boolean> {
+    const p = this.requireProject();
+    const before = p.mainSha;
+    const tip = await this.backend.resolve(p.repo.name, this.branch).catch(() => null);
+    if (!tip || tip === before) return false;
+    const recent = await this.backend.log(p.repo.name, this.branch, 20).catch(() => [] as CommitMeta[]);
+    const at = recent.findIndex((c) => c.hash === before);
+    // When gitring's main is not among the last commits, only the tip counts.
+    const newer = (at >= 0 ? recent.slice(0, at) : recent.slice(0, 1)).reverse();
+    for (const c of newer) {
+      const id = parseTrailers(c.message)["Gitring-Attempt"];
+      // The merge of this work copy itself: the next try finds it on main and writes its record.
+      if (id === current.id) break;
+      const other = id ? this.attempts.get(id) : undefined;
+      if (other && !this.landings.some((l) => l.mainAfter === c.hash)) {
+        this.addLog({ kind: "system", attemptId: current.id, message: `Main moved under the merge of the work of ${this.callsign(current.id)}: a stopped run merged the work of ${this.callsign(other.id)} (${c.hash.slice(0, 7)}). gitring writes that record first.` });
+        await this.finishFromMain(other, c);
+      }
+      if (p.mainSha !== c.hash) await this.adoptMainCommit(c);
+    }
+    return p.mainSha !== before;
+  }
+
+  /**
+   * A commit on main that gitring did not record becomes gitring's main: a commit from outside gitring, or
+   * one that a stopped run made. The agents near its files hear that main moved.
+   */
+  private async adoptMainCommit(c: CommitMeta): Promise<void> {
+    const p = this.requireProject();
+    const old = await this.loadMain();
+    p.mainSha = c.hash;
+    p.mainTree = c.treeHash;
+    this.db.setMeta("project", p);
+    this.appendMainSeq(c.hash);
+    const main = await this.loadMain();
+    const files = diffSnapshots(old.snapshot, main.snapshot).map((ch) => ch.path);
+    this.emit({ type: "main", sha: main.sha, tree: main.tree, files: main.files, imports: main.imports });
+    this.addLog({
+      kind: "system",
+      message: `Main has a commit that gitring did not record: ${c.hash.slice(0, 7)} "${c.message.split("\n")[0].slice(0, 80)}". It is main now (${files.length} file${files.length === 1 ? "" : "s"}).`,
+      files,
+    });
+    this.webhook("main", { reason: "outside", mainBefore: old.sha, mainSha: c.hash, files });
+    if (files.length) await this.mainMovedUnder(main, { title: `Commit ${c.hash.slice(0, 7)}`, files });
   }
 
   /**
@@ -2463,9 +2787,20 @@ export class HarborMaster extends DurableObject<Env> {
    */
   private async recordLanding(
     a: T.Attempt,
-    done: { committed: { sha: string; tree: string }; before: string; method: T.LandingMethod; applied: T.Correction[]; run: T.CheckRun; message: string; note: string; touched: string[] },
+    done: {
+      committed: { sha: string; tree: string };
+      before: string;
+      method: T.LandingMethod;
+      applied: T.Correction[];
+      run: T.CheckRun;
+      message: string;
+      note: string;
+      touched: string[];
+      /** Parts of the work that gitring did not merge. */
+      left?: NotCarried[];
+    },
   ): Promise<void> {
-    const { committed, before, method, applied, run, message, note, touched } = done;
+    const { committed, before, method, applied, run, message, note, touched, left = [] } = done;
     const p = this.requireProject();
     const intent = this.intents.get(a.intentId)!;
     const agent = this.agents.get(a.agentId)!;
@@ -2473,8 +2808,7 @@ export class HarborMaster extends DurableObject<Env> {
       p.mainSha = committed.sha;
       p.mainTree = committed.tree;
       this.db.setMeta("project", p);
-      const seq = this.db.getMeta<string[]>("mainSeq") ?? [];
-      if (!seq.includes(committed.sha)) this.db.setMeta("mainSeq", [...seq, committed.sha]);
+      this.appendMainSeq(committed.sha);
     }
     let landing = this.landings.find((l) => l.attemptId === a.id && l.mainAfter === committed.sha);
     const counted = !!landing;
@@ -2535,7 +2869,7 @@ export class HarborMaster extends DurableObject<Env> {
       attemptId: a.id,
       agentId: a.agentId,
       intentId: intent.id,
-      message: `"${intent.title}" merged into main by ${METHOD_WORD[method]} (${committed.sha.slice(0, 7)}). Tests ${run.passed}/${run.passed + run.failed} pass.`,
+      message: `"${intent.title}" merged into main by ${METHOD_WORD[method]} (${committed.sha.slice(0, 7)}). Tests ${run.passed}/${run.passed + run.failed} pass.${left.length ? ` ${notCarriedText(left, false)}` : ""}`,
       files: touched,
     });
     this.webhook("landing", { landing, intent: { id: intent.id, title: intent.title }, callsign: agent.callsign, mainSha: committed.sha });
@@ -2603,20 +2937,11 @@ export class HarborMaster extends DurableObject<Env> {
     const p = this.requireProject();
     const base = await this.treeText(p.repo.name, a.baseTree);
     const view = await this.attemptView(a);
-    const attemptSnap: Snapshot = await snapshotFromText(base.snapshot, view);
-    const result = await compose({
-      base: base.snapshot,
-      main: main.snapshot,
-      attempt: attemptSnap,
-      readText: async (sha) => {
-        const known = findText(sha, [base, main]);
-        if (known !== undefined) return known;
-        const fromView = view.changed.find((c) => c.head !== null && attemptSnap.get(c.path)?.sha === sha);
-        if (fromView) return fromView.head;
-        return this.readText(p.repo.name, sha);
-      },
-    });
-    if (result.changes.some((c) => c.content !== null && typeof c.content !== "string")) return undefined; // binary: leave it to the landing ladder
+    const reader = await this.workReader(a, view, [main]);
+    // Without readBytes: a binary file that the work changes is no text to move. It stays for the landing ladder.
+    const result = await compose({ base: base.snapshot, main: main.snapshot, attempt: view.snapshot, readText: reader.readText });
+    if (result.conflicts.some((c) => c.reason === "binary")) return undefined; // binary: leave it to the landing ladder
+    if (result.changes.some((c) => c.content !== null && typeof c.content !== "string")) return undefined;
     const conflicts = new Set(result.conflicts.map((c) => c.path));
     if (conflicts.size && !working) {
       // A waiting attempt does not move. Show the human why its landing will re-derive.
@@ -3093,13 +3418,21 @@ export class HarborMaster extends DurableObject<Env> {
   /* ════════════════════════════ approvals ════════════════════════════ */
 
   /**
-   * A hash of what a person approves: each changed file of the work copy and its new text. It does not
-   * hold the base. When main moves and the work does not change, the answer still counts.
+   * A hash of what a person approves: the agent's own contribution (the removed and added lines of each change
+   * block, whole files that it adds or deletes, binary files and modes), without the base and without line
+   * numbers. When main moves, or gitring merges main into the work, and the agent changes nothing, the answer
+   * still counts. Any change by the agent changes the hash.
    */
   private async digestOf(a: T.Attempt, view?: AttemptView): Promise<string> {
     const v = view ?? (await this.attemptView(a));
-    const rows = await Promise.all(v.changed.map(async (c) => `${c.path}\0${c.head === null ? "-" : await sha256Hex(c.head)}`));
-    return sha256Hex(rows.sort().join("\n"));
+    const digest = `${DIGEST_V2}${await sha256Hex(contributionRows(v.changed, v.opaque).join("\n"))}`;
+    // A question from an older version holds the hash of whole files. When it still names this work, it takes the new hash.
+    const ap = a.approval;
+    if (ap?.digest && !ap.digest.startsWith(DIGEST_V2) && ap.digest === (await legacyDigest(v))) {
+      ap.digest = digest;
+      this.db.putAttempt(a);
+    }
+    return digest;
   }
 
   /** Does this work need a person before it merges? The project setting, the signs of the change and the rivals decide. */
@@ -3107,7 +3440,7 @@ export class HarborMaster extends DurableObject<Env> {
     const need = approvalNeeded({ mode: this.requireProject().settings.landing, untested: f.untested && !f.picked, competing: f.picked ? 0 : f.competing, signs: riskSigns(a) });
     if (!need) return null;
     // The same work that a person said yes to: no second question.
-    if (a.approval?.status === "approved" && a.approval.digest && a.approval.digest === (await this.digestOf(a))) return null;
+    if (a.approval?.status === "approved" && a.approval.digest && (await this.digestOf(a)) === a.approval.digest) return null;
     return need;
   }
 
@@ -3701,18 +4034,19 @@ export class HarborMaster extends DurableObject<Env> {
   async attemptDiff(attemptId: string): Promise<{ files: { path: string; status: T.FileChangeStatus; additions: number; deletions: number; diff: string }[] }> {
     const a = this.mustAttempt(attemptId);
     const view = await this.attemptView(a);
-    return {
-      files: view.changed.map((c) => {
-        const d = lineDiff(c.base ?? "", c.head ?? "");
-        return {
-          path: c.path,
-          status: c.base === null ? "A" : c.head === null ? "D" : "M",
-          additions: d.additions,
-          deletions: d.deletions,
-          diff: unifiedDiff(c.path, c.base, c.head),
-        };
-      }),
-    };
+    const text = view.changed.map((c) => {
+      const d = lineDiff(c.base ?? "", c.head ?? "");
+      return {
+        path: c.path,
+        status: (c.base === null ? "A" : c.head === null ? "D" : "M") as T.FileChangeStatus,
+        additions: d.additions,
+        deletions: d.deletions,
+        diff: unifiedDiff(c.path, c.base, c.head),
+      };
+    });
+    // Changes without text (binary or large files, modes): they merge too, so people see them.
+    const other = view.opaque.map((c) => ({ path: c.path, status: c.status, additions: 0, deletions: 0, diff: opaqueDiff(c) }));
+    return { files: [...text, ...other].sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0)) };
   }
 
   async landingDetail(id: string): Promise<{ landing: T.Landing; note: unknown; diff: Awaited<ReturnType<HarborMaster["attemptDiff"]>> } | null> {
@@ -3754,10 +4088,8 @@ export class HarborMaster extends DurableObject<Env> {
     const a = this.attempts.get(ref);
     if (a) {
       const view = await this.attemptView(a);
-      const base = await this.treeText(p.repo.name, a.baseTree);
-      const deleted = new Set(view.changed.filter((ch) => ch.head === null).map((ch) => ch.path));
-      // Text files come from the view; other files (binary, very large) stay as they are on the base.
-      const paths = new Set([...view.files.keys(), ...[...base.snapshot.keys()].filter((path) => !deleted.has(path))]);
+      // Every file of the work, text or not (the tree that merges), plus text the agent wrote to a path git cannot hold.
+      const paths = new Set([...view.snapshot.keys(), ...view.files.keys()]);
       const files = [...paths].sort().map((path) => ({ path, size: view.files.get(path)?.length ?? 0, lang: langOf(path) }));
       return { ref, sha: (await this.refVersion(ref)) ?? a.id, files };
     }
@@ -4252,7 +4584,7 @@ export class HarborMaster extends DurableObject<Env> {
     p.mainSha = committed.sha;
     p.mainTree = committed.tree;
     this.db.setMeta("project", p);
-    this.db.setMeta("mainSeq", [...(this.db.getMeta<string[]>("mainSeq") ?? []), committed.sha]);
+    this.appendMainSeq(committed.sha);
     const st = this.gh(repo);
     this.setGh(repo, { upstreamOf: { ...st.upstreamOf, [committed.sha]: links.length ? { head: res.head, gitlinks: res.gitlinks } : res.head }, last: res.head });
     this.closeConflictTask(repo, "GitHub's changes are in main now.");
@@ -4984,21 +5316,20 @@ function round(x: number): number {
   return Math.round(x * 1000) / 1000;
 }
 
+/** The start of an approval hash of the agent's contribution (see digestOf). */
+const DIGEST_V2 = "v2:";
 
-function findText(sha: string, trees: TreeText[]): string | undefined {
-  for (const t of trees) {
-    for (const [path, e] of t.snapshot) {
-      if (e.sha === sha) return t.text.get(path) ?? undefined;
-    }
-  }
-  return undefined;
+/** The approval hash of older versions: each changed text file and its new text. */
+async function legacyDigest(v: AttemptView): Promise<string> {
+  const rows = await Promise.all(v.changed.map(async (c) => `${c.path}\0${c.head === null ? "-" : await sha256Hex(c.head)}`));
+  return sha256Hex(rows.sort().join("\n"));
 }
 
-async function snapshotFromText(base: Snapshot, view: AttemptView): Promise<Snapshot> {
-  const { applyFileChanges } = await import("../core/git/snapshot");
-  const changes = view.changed.map((c) => ({ path: c.path, content: c.head }));
-  const { snapshot } = await applyFileChanges(base, changes);
-  return snapshot;
+/** A short git-style note for a change without text: a binary file, or a new mode. */
+function opaqueDiff(c: SnapshotChange): string {
+  if (c.status === "M" && c.oldSha === c.newSha) return `Mode changes to ${c.mode}.`;
+  if (c.status === "D") return "Binary or large file deleted.";
+  return c.mode === "120000" ? "Symbolic link." : "Binary or large file.";
 }
 
 function slackText(event: string, p: Record<string, unknown>): string {

@@ -18,7 +18,9 @@
  *      (retried on a lost race). The note goes first, so a landed commit always has its note;
  *   6. push the branch without force. isomorphic-git refuses a non-fast-forward and the server
  *      compare-and-swaps the ref on the advertised old id; a rejected push whose tip moved
- *      becomes RepoConflictError.
+ *      becomes RepoConflictError. A push that fails removes the note of step 5 again (best
+ *      effort, a second notes commit), so no note names a commit that never landed. When the
+ *      branch holds the commit after all (the answer got lost), the commit counts and keeps its note.
  *
  * See ARTIFACTS_CHECKS at the end of this file for what the real service answered.
  */
@@ -381,6 +383,11 @@ export class ArtifactsBackend implements RepoBackend {
     return c?.hash ?? null;
   }
 
+  /** The last commits of a branch (first parents), newest first. Empty for a branch that does not exist. */
+  private async recentCommits(repo: ArtifactsRepo, branch: string, limit = 20): Promise<string[]> {
+    return (await repo.log({ ref: branch, limit })).map((c) => c.hash);
+  }
+
   /** Remote URL + a cached short-lived write token secret + a fresh in-memory git dir. */
   private async session(name: string, repo: ArtifactsRepo): Promise<GitSession> {
     let url = this.remotes.get(name);
@@ -739,19 +746,26 @@ export class ArtifactsBackend implements RepoBackend {
         await git.push({ ...this.gitOpts(s), remote: "origin", ref: branchRef, remoteRef: branchRef });
       } catch (err) {
         const code = gitErrorCode(err);
-        if (code === "PushRejectedError" || code === "GitPushError") {
-          const now = await this.branchTip(repo, input.branch);
-          if (now === prepared.sha) return { sha: prepared.sha, tree: prepared.tree };
-          if (now !== expected) throw branchConflict(input, now);
-        }
+        const rejected = code === "PushRejectedError" || code === "GitPushError";
+        // undefined: the branch cannot be read now. Then the note stays: an extra note is better than a merge without its note.
+        const recent = await this.recentCommits(repo, input.branch).catch(() => undefined);
+        // The answer got lost, but the branch holds the commit (maybe under a newer one): it landed, with its note.
+        if (recent?.includes(prepared.sha)) return { sha: prepared.sha, tree: prepared.tree };
+        const now = recent ? (recent[0] ?? null) : undefined;
+        // The commit did not land: its note names a commit that no branch holds. Remove it again (best effort).
+        if (input.note && now !== undefined) await this.pushNote(s.url, s.secret, prepared.sha, null).catch(() => undefined);
+        if (rejected && now !== undefined && now !== expected) throw branchConflict(input, now);
         throw err;
       }
       return { sha: prepared.sha, tree: prepared.tree };
     });
   }
 
-  /** Add a note for `commitSha` to refs/notes/gitring and push it (3 tries on a lost race). */
-  private async pushNote(url: string, secret: string, commitSha: string, note: string): Promise<void> {
+  /**
+   * Add a note for `commitSha` to refs/notes/gitring and push it (3 tries on a lost race). `null` removes the
+   * note of `commitSha` (nothing to push when it has none).
+   */
+  private async pushNote(url: string, secret: string, commitSha: string, note: string | null): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       const s: GitSession = { fs: new MemoryFS(), dir: "/notes", cache: {}, url, secret };
       await this.initLocal(s, DEFAULT_BRANCH);
@@ -775,17 +789,18 @@ export class ArtifactsBackend implements RepoBackend {
       }
       const flat = commitSha;
       const fanned = `${commitSha.slice(0, 2)}/${commitSha.slice(2)}`;
+      if (note === null && !base.has(flat) && !base.has(fanned)) return;
       const changes: FileChange[] = [
         { path: flat, content: null },
         { path: fanned, content: null },
-        { path: fanout ? fanned : flat, content: note, mode: "100644" },
+        ...(note === null ? [] : [{ path: fanout ? fanned : flat, content: note, mode: "100644" }]),
       ];
       const prepared = await prepareCommit({
         base,
         changes,
         parents: tip ? [tip] : [],
         author: this.author,
-        message: `Notes added by gitring for ${commitSha}`,
+        message: note === null ? `Notes removed by gitring for ${commitSha}` : `Notes added by gitring for ${commitSha}`,
         timestamp: Math.floor(this.now() / 1000),
       });
       await writeLocalObjects(s, preparedObjects(prepared, fetched));

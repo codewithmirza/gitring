@@ -55,7 +55,7 @@ type Internals = {
   stats: { landings: number; escalations: number };
   db: { queue(): string[]; getMeta<T>(key: string): T | undefined; setMeta(key: string, value: unknown): void; dequeue(id: string): void; putAttempt(a: unknown): void };
   landingChain: Promise<unknown>;
-  runTreeChecks: (files: Map<string, string>, scope: string, attemptId: string) => Promise<unknown>;
+  runTreeChecks: (files: Map<string, string>, scope: string, attemptId: string, ...rest: unknown[]) => Promise<unknown>;
 };
 
 export class CrashWorld {
@@ -154,10 +154,10 @@ export class CrashWorld {
     Object.defineProperty(h, "backend", { get: () => wrapped, configurable: true });
     const inner = h as unknown as Internals;
     const original = inner.runTreeChecks.bind(h);
-    inner.runTreeChecks = async (files, scope, attemptId) => {
+    inner.runTreeChecks = async (files, scope, attemptId, ...rest) => {
       if (scope === "composed" && this.armed === "before-tests") return this.stop();
       this.testRuns.push(scope);
-      return original(files, scope, attemptId);
+      return original(files, scope, attemptId, ...rest);
     };
     return h;
   }

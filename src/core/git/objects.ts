@@ -1,8 +1,9 @@
 /**
  * Git object model: encode, decode and hash blob / tree / commit objects.
  *
- * Pure module: WebCrypto SHA-1 (`globalThis.crypto.subtle`), TextEncoder and TextDecoder only.
- * It runs unchanged in Node 22 (vitest) and in workerd.
+ * Pure module: WebCrypto SHA-1 (`globalThis.crypto.subtle`), TextEncoder and TextDecoder only (plus a
+ * plain JavaScript SHA-1 for callers that need an id at once). It runs unchanged in Node 22 (vitest) and
+ * in workerd.
  *
  * Hashes are byte-for-byte identical to real git. `test/git/objects.test.ts` cross-checks
  * `hashObject`, `encodeTree` and `encodeCommit` against `git hash-object`, `git mktree`
@@ -79,6 +80,60 @@ export function frameObject(type: GitObjectType, body: Uint8Array): Uint8Array {
 /** The git object id of `body` stored as `type` (what `git hash-object -t <type>` prints). */
 export function hashObject(type: GitObjectType, body: Uint8Array): Promise<string> {
   return sha1Hex(frameObject(type, body));
+}
+
+/**
+ * SHA-1 of `data` as lowercase hex, in plain JavaScript: the answer comes at once, with no wait for
+ * WebCrypto. For a caller that must not give way to other work in the middle of a step (a view of a work
+ * copy that many calls read). WebCrypto is faster for large data.
+ */
+export function sha1HexSync(data: Uint8Array): string {
+  const blocks = (((data.length + 8) >>> 6) + 1) * 16;
+  const m = new Uint32Array(blocks);
+  for (let i = 0; i < data.length; i++) m[i >>> 2] |= data[i] << (24 - (i & 3) * 8);
+  m[data.length >>> 2] |= 0x80 << (24 - (data.length & 3) * 8);
+  const bits = data.length * 8;
+  m[blocks - 1] = bits >>> 0;
+  m[blocks - 2] = Math.floor(bits / 0x100000000);
+  let h0 = 0x67452301;
+  let h1 = 0xefcdab89;
+  let h2 = 0x98badcfe;
+  let h3 = 0x10325476;
+  let h4 = 0xc3d2e1f0;
+  const w = new Int32Array(80);
+  for (let off = 0; off < blocks; off += 16) {
+    for (let t = 0; t < 16; t++) w[t] = m[off + t];
+    for (let t = 16; t < 80; t++) {
+      const x = w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16];
+      w[t] = (x << 1) | (x >>> 31);
+    }
+    let a = h0;
+    let b = h1;
+    let c = h2;
+    let d = h3;
+    let e = h4;
+    for (let t = 0; t < 80; t++) {
+      const f = t < 20 ? (b & c) | (~b & d) : t < 40 || t >= 60 ? b ^ c ^ d : (b & c) | (b & d) | (c & d);
+      const k = t < 20 ? 0x5a827999 : t < 40 ? 0x6ed9eba1 : t < 60 ? 0x8f1bbcdc : 0xca62c1d6;
+      const next = (((a << 5) | (a >>> 27)) + f + e + k + w[t]) | 0;
+      e = d;
+      d = c;
+      c = (b << 30) | (b >>> 2);
+      b = a;
+      a = next;
+    }
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + b) | 0;
+    h2 = (h2 + c) | 0;
+    h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0;
+  }
+  return [h0, h1, h2, h3, h4].map((h) => (h >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+/** hashObject, computed at once (see sha1HexSync). */
+export function hashObjectSync(type: GitObjectType, body: Uint8Array): string {
+  return sha1HexSync(frameObject(type, body));
 }
 
 /* ───────────────────────────── modes ───────────────────────────── */
