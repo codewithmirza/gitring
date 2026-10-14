@@ -94,6 +94,12 @@ export function hookRoutes(app: Hono<HonoEnv>): void {
 
 /** Hooks from a key and from GitHub: open a task from outside. */
 function keyAndGithubHookRoutes(app: Hono<HonoEnv>): void {
+  keyHookRoutes(app);
+  githubHookRoutes(app);
+}
+
+/** The hook for any app that holds a member key. */
+function keyHookRoutes(app: Hono<HonoEnv>): void {
   /** Any app: a member's API key (Authorization: Bearer gk_…) opens an intent, and can launch agents. */
   app.post("/hooks/intents", async (c) => {
     try {
@@ -109,7 +115,10 @@ function keyAndGithubHookRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** The hooks of GitHub: the GitHub App and a plain repository webhook. */
+function githubHookRoutes(app: Hono<HonoEnv>): void {
   /**
    * GitHub App webhook: an issue labeled "gitring" becomes an intent in each project imported from that
    * repository, when the person who labeled it is a member of the project.

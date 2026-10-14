@@ -192,6 +192,22 @@ export async function createProjectFor(env: Env, principal: Principal, input: Cr
     throw new ProjectError(400, String((e as Error)?.message ?? e).replace(/^Error: /, ""));
   }
   const h = harbor(env, info.id);
+  const state = await seedProject(dir, h, info, source, user, input, gh);
+  // The project exists from here on: a first task or agents that fail do not undo it (the note says why).
+  const out: CreatedProject = { project: info, state, launched: [] };
+  return openFirstTask(principal, h, input, out);
+}
+
+/** Put the files and settings into the new project. A project that cannot start is removed again. */
+async function seedProject(
+  dir: ReturnType<typeof directory>,
+  h: ReturnType<typeof harbor>,
+  info: A.ProjectInfo,
+  source: T.ProjectSource,
+  user: A.UserInfo | null,
+  input: CreateProjectInput,
+  gh: { canPush: boolean; verified: boolean } | undefined,
+): Promise<T.ProjectState> {
   let state: T.ProjectState;
   try {
     const files = source.kind === "upload" && Array.isArray(input.files) ? input.files : undefined;
@@ -215,8 +231,11 @@ export async function createProjectFor(env: Env, principal: Principal, input: Cr
     await dir.dropProject(info.id).catch(() => undefined);
     throw e instanceof ProjectError ? e : new ProjectError(400, String((e as Error)?.message ?? e).replace(/^Error: /, ""));
   }
-  // The project exists from here on: a first task or agents that fail do not undo it (the note says why).
-  const out: CreatedProject = { project: info, state, launched: [] };
+  return state;
+}
+
+/** The first task of a new project, and the built-in agents that start on it. A failure here does not undo the project. */
+async function openFirstTask(principal: Principal, h: ReturnType<typeof harbor>, input: CreateProjectInput, out: CreatedProject): Promise<CreatedProject> {
   const goal = String(input.firstTask?.goal ?? "").trim();
   const title = String(input.firstTask?.title ?? "").trim() || titleOf(goal);
   if (!title) return out;

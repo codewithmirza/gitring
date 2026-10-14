@@ -76,6 +76,12 @@ function intentRoutes(app: Hono<HonoEnv>): void {
 
 /** Where a person decides: merge a work copy, answer an approval, answer a question. */
 function decisionRoutes(app: Hono<HonoEnv>): void {
+  mergeRoutes(app);
+  approvalRoutes(app);
+}
+
+/** Merge a work copy. Only a person in the gitring app can. */
+function mergeRoutes(app: Hono<HonoEnv>): void {
   // ───── attempts ─────
 
   app.post("/api/projects/:p/attempts/:id/land", async (c) => {
@@ -91,7 +97,10 @@ function decisionRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** Answer an approval or a question. Only a person in the gitring app can. */
+function approvalRoutes(app: Hono<HonoEnv>): void {
   /**
    * A person answers the approval of a work copy: "approve" or "send-back" (with a note). A person answers in the
    * gitring app (a browser session), or with gitring's own command line when the person allows answers outside

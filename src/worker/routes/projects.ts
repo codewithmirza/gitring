@@ -18,6 +18,12 @@ export function projectRoutes(app: Hono<HonoEnv>): void {
 
 /** The project list and one project: list, create, read, rename, archive. */
 function projectCrudRoutes(app: Hono<HonoEnv>): void {
+  projectListRoutes(app);
+  projectItemRoutes(app);
+}
+
+/** The project list, and a new project. */
+function projectListRoutes(app: Hono<HonoEnv>): void {
   // ───── projects ─────
 
   app.get("/api/projects", async (c) => {
@@ -44,7 +50,10 @@ function projectCrudRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** One project: read, rename, archive. */
+function projectItemRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/projects/:p", async (c) => {
     const { id } = await access(c, c.req.param("p"), "viewer");
     return c.json(await directory(c.env).project(id, c.get("principal").user?.id ?? null));
