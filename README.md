@@ -37,6 +37,21 @@ $env:GITRING_URL = "http://localhost:8787"; $env:GITRING_KEY = "<key>"; npm run 
 
 For a pass or fail check, run `node scripts/smoke.mjs http://localhost:8787 <key>`. It ends with `RESULT: PASS`.
 
+### What needs your own credentials
+
+The local run needs no secret. The key in step 1 is the only token, and `dev:local` makes a new one at each start. Some parts need your own Cloudflare account or your own sign-in apps:
+
+| Part | Local run | What you need for it |
+|---|---|---|
+| Projects, plans, conflicts, change requests, trains, approvals, replay, history | Works | No setup |
+| Passkey sign-up and sign-in | Works | No setup |
+| Smoke test and sample agents | Work | The key from step 1 |
+| Built-in agents (GLM 5.3) | Not available | A Cloudflare account with Workers AI. Use `npm run dev` |
+| Real git repositories | A local copy | A Cloudflare account with Artifacts. Use `npm run dev` |
+| Tests for other languages | Not available | Containers on a paid Workers plan |
+| Sign-in with Google or another outside account | Not available | Your own OAuth app and the secrets in `.dev.vars.example` |
+| The deployed app | Not applicable | `npm run setup`, then the steps in [docs/SELF-HOST.md](docs/SELF-HOST.md) |
+
 The local run has no Workers AI and no test containers, and each start deletes its data. [Try it without a paid account](#try-it-without-a-paid-account) lists the limits. To deploy to your own Cloudflare account, with your own sign-in apps, read [docs/SELF-HOST.md](docs/SELF-HOST.md). To find where each idea lives in the code, read [docs/FAQ-JUDGES.md](docs/FAQ-JUDGES.md).
 
 ## How it works
