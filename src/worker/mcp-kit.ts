@@ -39,6 +39,7 @@ export type HarborApi = Pick<
   | "decide"
   | "news"
   | "wait"
+  | "holdCorrections"
 >;
 
 /** The four MCP hints. Every tool sets all four: directories need a read-only or a destructive hint on each tool. */
@@ -74,6 +75,8 @@ export interface AskState {
   approvalId: string;
   /** The person who may answer. Another caller cannot use this state. */
   user: string;
+  /** Change requests that the first call delivered: the answer of the second call holds them again. */
+  cr?: string[];
 }
 
 /** What a handler gets: the deployment, the caller and the role check. */

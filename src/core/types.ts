@@ -506,6 +506,11 @@ export interface Attempt {
    * example). gitring tries the merge again after a short wait, and asks a person after the fourth stop.
    */
   mergeStops?: number;
+  /**
+   * Set when the work copy stopped and a person decides what happens next (a redo question): the plain
+   * reason. The agent reads it in the answer of its next call.
+   */
+  stoppedFor?: string;
   summary?: string;
   /**
    * The person who sent the agent: the one who connected it, or who started the built-in agent. Absent on
@@ -759,6 +764,65 @@ export interface Decision {
   at: Millis;
 }
 
+/**
+ * A question for a person that is not "say yes to a merge" (that is an Approval):
+ *
+ *   escalation  a conflict check could not decide which of two work copies adapts. A person chooses one,
+ *               or says that the two do not conflict. Both agents continue while they wait.
+ *   redo        the work could not merge, and no agent may try again (the redo limit, or the agent did not
+ *               answer in time). A person starts a redo on the new main, or pauses the task.
+ *
+ * The first valid answer counts. A question closes without an answer when its work copies close.
+ */
+export type QuestionKind = "escalation" | "redo";
+
+export type QuestionStatus = "open" | "answered" | "closed";
+
+/** One answer that a person can give. `label` is the plain text of the button. */
+export interface QuestionOption {
+  id: string;
+  label: string;
+}
+
+export interface Question {
+  /** q_… */
+  id: string;
+  kind: QuestionKind;
+  status: QuestionStatus;
+  /** The task of the first work copy. */
+  intentId: string;
+  /** The two work copies of an escalation (the incoming one first), or the work copy that did not merge. */
+  attemptIds: string[];
+  /** Escalation: the conflict check that asked (the latest one, when the same pair asks again). */
+  checkId?: string;
+  /** Plain sentences: what gitring knows. */
+  facts: string[];
+  options: QuestionOption[];
+  /**
+   * Escalation: the change request for each option where one side adapts, drafted when gitring asked. The
+   * answer sends it to that side.
+   */
+  drafts?: Record<string, { attemptId: string; standOnAttemptId: string; kind: CorrectionKind; message: string; constraints: Correction["constraints"] }>;
+  askedAt: Millis;
+  updatedAt: Millis;
+  answer?: { by: Person; option: string; note?: string; at: Millis };
+  /** Closed without an answer: the plain reason. */
+  closed?: string;
+}
+
+/** What a person sends to answer a question. */
+export interface QuestionAnswer {
+  option: string;
+  note?: string;
+}
+
+/** The result of an answer to a question. "refused": this person may not answer. "already" and "closed": nothing changed. */
+export interface QuestionResult {
+  outcome: "answered" | "already" | "closed" | "refused";
+  question: Question;
+  message: string;
+}
+
 /* ───────────────────────────── traffic (what an agent sees about others) ───────────────────────────── */
 
 export interface TrafficVessel {
@@ -812,6 +876,8 @@ export interface ProjectState {
   checks: CourseCheck[];
   landings: Landing[];
   decisions: Decision[];
+  /** Questions for a person (open ones, and the latest answered ones). Absent from old project objects. */
+  questions?: Question[];
   logs: LogEntry[];
   radar: RadarPair[];
   /** Files of main (the chart's land mass). */
@@ -849,7 +915,8 @@ export type GitringEventType =
   | "main"
   | "stats"
   | "github"
-  | "approval";
+  | "approval"
+  | "question";
 
 export type GitringEvent =
   | { type: "snapshot"; state: ProjectState }
@@ -866,7 +933,9 @@ export type GitringEvent =
   | { type: "stats"; stats: HarborStats }
   | { type: "github"; github: GithubSyncStatus }
   /** Webhooks only: an approval was asked, answered or withdrawn. The UI reads `attempt.approval` from "attempt" events. */
-  | { type: "approval"; attemptId: string; approval: Approval };
+  | { type: "approval"; attemptId: string; approval: Approval }
+  /** A question for a person was asked, answered or closed. */
+  | { type: "question"; question: Question };
 
 /* ───────────────────────────── agent protocol (MCP + built-in vessels) ───────────────────────────── */
 

@@ -1,16 +1,19 @@
 /**
- * /account — the person: profile, sign-in methods and the GitHub connection, the apps they allowed through
- * OAuth (MCP clients such as Claude, Claude Code, Cursor and Codex), personal API keys, and sign out.
+ * /account — the person: profile, where they answer merge questions, sign-in methods and the GitHub connection,
+ * the apps they allowed through OAuth (MCP clients such as Claude, Claude Code, Cursor and Codex), personal API
+ * keys, and sign out.
  * Destructive actions confirm in place; nothing opens a modal.
  */
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { ApiKeyInfo, OAuthGrantInfo } from "../../../src/core/accounts";
-import { Button, CodeBlock, InlineConfirm, Input, SkeletonRows } from "../design/components";
+import type { ApiKeyInfo, ApprovalsIn, OAuthGrantInfo } from "../../../src/core/accounts";
+import { APPROVALS_IN } from "../../../src/core/accounts";
+import { Button, CodeBlock, InlineConfirm, Input, Segmented, SkeletonRows } from "../design/components";
 import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
 import { useMe, signOut, signOutEverywhere } from "../state/account";
 import { connectGithub, createKey, disconnectGithub, listGrants, listKeys, revokeGrant, revokeKey, useResource } from "../state/connections";
 import { ago } from "../state/format";
+import { APPROVALS_IN_TEXT, loadPrefs, savePrefs } from "../state/inbox";
 import { useNow } from "../app/useNow";
 import { Link } from "../app/router";
 import { SignInChoices } from "../app/Account";
@@ -27,6 +30,73 @@ function host(uri?: string): string | null {
 
 function dateText(ms: number): string {
   return new Date(ms).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
+
+/* ───────────── merge questions ───────────── */
+
+/**
+ * Where the person answers merge questions (contract C3): in the chat of the agent, in the gitring app, or in
+ * both. One segmented control; the help under it says what the choice does.
+ */
+function AnswersIn() {
+  const [value, setValue] = useState<ApprovalsIn | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    loadPrefs()
+      .then((p) => live && setValue(p.approvalsIn))
+      .catch((e: Error) => live && setError(`gitring could not load your choice. ${e.message}`));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const change = async (next: ApprovalsIn) => {
+    const before = value;
+    setValue(next);
+    setSaving(true);
+    setError(null);
+    try {
+      setValue((await savePrefs({ approvalsIn: next })).approvalsIn);
+    } catch (e) {
+      setValue(before);
+      setError(`gitring did not save your choice. ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section className="acct-sec" aria-labelledby="acct-answers-h" id="acct-answers">
+      <div className="acct-sec__head">
+        <h2 className="page__h2" id="acct-answers-h">
+          Merge questions
+        </h2>
+        <p className="acct-sec__lede">An agent that you send can ask for a merge that needs your yes. Where do you answer merge questions?</p>
+      </div>
+      {value ? (
+        <Segmented<ApprovalsIn>
+          label="Where do you answer merge questions?"
+          size="md"
+          value={value}
+          disabled={saving}
+          onChange={(v) => void change(v)}
+          options={APPROVALS_IN.map((v) => ({ value: v, label: APPROVALS_IN_TEXT[v].label }))}
+        />
+      ) : (
+        !error && <SkeletonRows rows={1} label="Loading your choice" />
+      )}
+      {value && (
+        <p className="acct-sec__lede" aria-live="polite">
+          {APPROVALS_IN_TEXT[value].help} <Link to="/inbox">Open the inbox</Link>
+        </p>
+      )}
+      {error && (
+        <p className="acct-error" role="alert">
+          <Icon name="cross" size={14} /> {error}
+        </p>
+      )}
+    </section>
+  );
 }
 
 /* ───────────── sign-in methods ───────────── */
@@ -396,6 +466,7 @@ export function AccountView() {
           />
         </div>
       </div>
+      <AnswersIn />
       <SignInMethods />
       <ConnectedApps now={now} />
       <ApiKeys now={now} />

@@ -7,3 +7,8 @@ GITRING_SETUP_TOKEN=
 GITRING_OWNERS=github:your-login,google:you@example.com
 # Optional operator key for scripts and MCP clients (acts as an owner on every project). Make one: openssl rand -hex 24
 GITRING_KEY=
+# Optional push notifications for the inbox (Web Push). Make the keys: npx web-push generate-vapid-keys
+# Leave them empty to turn push off: the app then hides the switch.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:you@example.com

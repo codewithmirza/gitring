@@ -13,6 +13,8 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS logs (seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, json TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS landings (id TEXT PRIMARY KEY, at INTEGER NOT NULL, json TEXT NOT NULL, note TEXT)`,
   `CREATE TABLE IF NOT EXISTS decisions (id TEXT PRIMARY KEY, at INTEGER NOT NULL, json TEXT NOT NULL)`,
+  // Questions for a person (an escalated conflict check, work that did not merge).
+  `CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, json TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS radar (a TEXT NOT NULL, b TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (a, b))`,
   `CREATE TABLE IF NOT EXISTS worktree (attempt_id TEXT NOT NULL, path TEXT NOT NULL, content TEXT, deleted INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (attempt_id, path))`,
   `CREATE TABLE IF NOT EXISTS blobs (sha TEXT PRIMARY KEY, text TEXT, binary INTEGER NOT NULL DEFAULT 0)`,
@@ -24,7 +26,7 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS mustread (attempt_id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (attempt_id, path))`,
 ];
 
-export type DocTable = "intents" | "attempts" | "agents" | "corrections" | "decisions";
+export type DocTable = "intents" | "attempts" | "agents" | "corrections" | "decisions" | "questions";
 
 export class Db {
   constructor(private readonly sql: SqlStorage) {
@@ -60,6 +62,9 @@ export class Db {
   }
   putDecision(doc: { id: string; at: number }): void {
     this.sql.exec("INSERT OR REPLACE INTO decisions (id, at, json) VALUES (?, ?, ?)", doc.id, doc.at, JSON.stringify(doc));
+  }
+  putQuestion(doc: { id: string }): void {
+    this.sql.exec("INSERT OR REPLACE INTO questions (id, json) VALUES (?, ?)", doc.id, JSON.stringify(doc));
   }
   putCheck(doc: { id: string; attemptId: string; at: number }): void {
     this.sql.exec("INSERT OR REPLACE INTO checks (id, attempt_id, at, json) VALUES (?, ?, ?, ?)", doc.id, doc.attemptId, doc.at, JSON.stringify(doc));

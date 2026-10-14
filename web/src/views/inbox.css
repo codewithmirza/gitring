@@ -1,0 +1,52 @@
+/* Inbox page: one column, made for a phone. Type sizes here: 11, 13, 15, 28. */
+
+.inbox { max-width: 640px; }
+.inbox .page__lede a { font-weight: 500; }
+
+.inbox-list { display: grid; gap: var(--s-4); margin: var(--s-5) 0 0; padding: 0; list-style: none; }
+
+.inbox-card {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface-1, transparent);
+}
+.inbox-card__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.inbox-card__title { font-size: var(--t-md, 15px); font-weight: 600; color: var(--ink-1); overflow-wrap: anywhere; }
+.inbox-card__headline { font-size: var(--t-sm); font-weight: 500; color: var(--ink-1); }
+.inbox-card__line { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.inbox-card__why { display: grid; gap: var(--s-1); margin: 0; padding-left: var(--s-4); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+/* Big answers: a thumb reaches them on a phone. */
+.inbox-card__acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); margin-top: var(--s-2); }
+.inbox-card__acts .b-btn { min-height: 44px; }
+.inbox-card__open { min-height: 44px; margin-top: var(--s-2); text-decoration: none; justify-content: center; }
+.inbox-card__note { display: grid; gap: var(--s-2); }
+.inbox-card__note .b-btn { min-height: 44px; }
+.inbox-card__notelabel { font-size: var(--t-xs); font-weight: 500; color: var(--ink-1); }
+.inbox-card__link { display: inline-flex; align-items: center; gap: var(--s-1); justify-self: start; font-size: var(--t-xs); font-weight: 500; }
+
+/* A question in the inbox: the shared card, with big buttons in one column. */
+.inbox-card--question .qcard__acts { display: grid; grid-template-columns: 1fr; justify-content: stretch; }
+.inbox-card--question .qcard__acts .b-btn { min-height: 44px; width: 100%; }
+.inbox-card--question .apcard__review { margin: 0; justify-self: start; }
+
+.inbox-push {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-3);
+}
+.inbox-push__text { flex: 1 1 240px; font-size: var(--t-sm); color: var(--ink-2); }
+.inbox-push__error, .inbox-error { display: flex; align-items: center; gap: var(--s-1); width: 100%; font-size: var(--t-xs); color: var(--danger); }
+.inbox-error { margin-top: var(--s-4); font-size: var(--t-sm); }
+.inbox-error button { color: var(--accent); text-decoration: underline; font-weight: 500; background: none; border: 0; padding: 0; cursor: pointer; }
+
+@media (min-width: 720px) {
+  .inbox-card { padding: var(--s-5); }
+}

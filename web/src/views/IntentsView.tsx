@@ -26,6 +26,8 @@ import { ago, ATTEMPT_STATUS_TEXT, METHOD_TEXT, modelShort, plural, shortSha } f
 import { useStore } from "../state/store";
 import { useCanAct } from "../state/account";
 import { byId, indexes, selectIntentGroups } from "../state/selectors";
+import { lineRequester, mayRequestLines } from "../app/lineRequest";
+import type { LineRequestInput } from "../design/components";
 import "./intents.css";
 
 const SOURCE_TEXT: Record<Intent["source"]["kind"], string> = {
@@ -252,8 +254,11 @@ function FileList({ attempt }: { attempt: Attempt }) {
   );
 }
 
-/** The diff of a work copy, under its file list (one request per version of the work copy). */
-function LaneDiff({ attempt }: { attempt: Attempt }) {
+/**
+ * The diff of a work copy, under its file list (one request per version of the work copy). With `onRequest`, a
+ * person selects lines and asks the agent to change them.
+ */
+function LaneDiff({ attempt, onRequest }: { attempt: Attempt; onRequest?: (input: LineRequestInput) => Promise<void> }) {
   const [res, setRes] = useState<DiffResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -277,7 +282,7 @@ function LaneDiff({ attempt }: { attempt: Attempt }) {
       </p>
     );
   if (!res) return <SkeletonRows rows={3} label="Loading the diff" />;
-  return <DiffView files={res.files} />;
+  return <DiffView files={res.files} onRequest={onRequest} />;
 }
 
 type LanePanel = "merge" | "redo" | null;
@@ -301,6 +306,7 @@ interface LaneProps {
 
 function Lane({ attempt: a, all, agent, intent, corrections, checks, names, landing, rederivedFromName, canAct, preview, mainSha, now }: LaneProps) {
   const callsign = agent?.callsign ?? a.agentId;
+  const projectId = useStore((s) => s.projectId);
   const alternate = a.status === "alternate" || a.status === "abandoned" || (a.status === "stale" && intent.status === "landed");
   const landed = a.status === "landed";
   const canLand = a.status === "ready";
@@ -411,7 +417,7 @@ function Lane({ attempt: a, all, agent, intent, corrections, checks, names, land
           )}
         </h3>
         <FileList attempt={a} />
-        {showDiff && <LaneDiff attempt={a} />}
+        {showDiff && <LaneDiff attempt={a} onRequest={canAct && mayRequestLines(a) ? lineRequester(projectId, a.id, callsign) : undefined} />}
       </section>
 
       <section className="lane__sec" aria-label="Plan">

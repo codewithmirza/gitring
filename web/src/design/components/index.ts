@@ -8,6 +8,7 @@ export { Callsign } from "./Callsign";
 export { Panel, SectionLabel } from "./Panel";
 export { EvidenceBar } from "./EvidenceBar";
 export { DiffView, parseUnified, type DiffFileLike } from "./DiffView";
+export { LineRequestForm, pickLine, inSelection, linesText, lineRequestProblem, type LineRequestInput, type LineSelection } from "./LineRequest";
 export { PreviewFrame } from "./PreviewFrame";
 export { CorrectionNotice, CorrectionMessage } from "./CorrectionNotice";
 export { CourseCheckReadout } from "./CourseCheckReadout";

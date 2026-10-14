@@ -39,6 +39,10 @@ export interface Env {
   GITHUB_WEBHOOK_SECRET?: string;
   /** Optional: verify Slack request signatures (X-Slack-Signature). */
   SLACK_SIGNING_SECRET?: string;
+  /** Optional Web Push keys (src/worker/push.ts). All three set: people can get push notifications for their inbox. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
   /** Rate limits (src/worker/limits.ts). Absent in local development and tests. */
   RL_AUTH?: RateLimit;
   RL_TOKEN?: RateLimit;

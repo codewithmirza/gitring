@@ -3,8 +3,8 @@
  * numbers, colors for the code, and collapsed unchanged lines. Long diffs show their first rows and a
  * button for the rest.
  */
-import { useMemo, useState, type ReactNode } from "react";
-import { parseUnified } from "../../design/components";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { inSelection, LineRequestForm, parseUnified, pickLine, type LineRequestInput, type LineSelection } from "../../design/components";
 import { Icon } from "../../design/icons";
 import type { DiffFile } from "../../state/api";
 import { CLASS_NAMES, languageOf, tokenizeAll } from "./highlight";
@@ -51,8 +51,23 @@ function diffTokens(rows: DiffRow[], path: string): (number[] | undefined)[] {
   return out;
 }
 
-export function FileDiff({ file, open, headingLevel = 2 }: { file: DiffFile; open?: Partial<CodeLocation> & { ref: string }; headingLevel?: 2 | 3 }) {
+/**
+ * `onRequest`: a person may ask the agent to change lines of this work copy. The new line numbers become
+ * buttons (Shift selects more lines), and the form opens under the selected lines.
+ */
+export function FileDiff({
+  file,
+  open,
+  headingLevel = 2,
+  onRequest,
+}: {
+  file: DiffFile;
+  open?: Partial<CodeLocation> & { ref: string };
+  headingLevel?: 2 | 3;
+  onRequest?: (input: LineRequestInput) => Promise<void>;
+}) {
   const rows = useMemo(() => parseUnified(file.diff), [file.diff]);
+  const [sel, setSel] = useState<LineSelection | null>(null);
   const tokens = useMemo(() => (file.diff.length < 400_000 ? diffTokens(rows, file.path) : []), [rows, file.path, file.diff.length]);
   const [all, setAll] = useState(false);
   const shown = all ? rows : rows.slice(0, FIRST_ROWS);
@@ -99,27 +114,58 @@ export function FileDiff({ file, open, headingLevel = 2 }: { file: DiffFile; ope
                 </div>
               );
             }
+            const picked = onRequest ? inSelection(sel, file.path, r.b) : false;
             return (
-              <div key={i} className={`cv-drow cv-drow--${r.kind}`} role="row">
-                <span className="cv-drow__n" role="cell" aria-hidden="true" data-n={r.a ?? ""} />
-                <span className="cv-drow__n" role="cell" aria-hidden="true" data-n={r.b ?? ""} />
-                <span className="cv-drow__sign" role="cell">
-                  {r.kind === "add" ? (
-                    <>
-                      <span aria-hidden="true">+</span>
-                      <span className="vh">Added</span>
-                    </>
-                  ) : r.kind === "del" ? (
-                    <>
-                      <span aria-hidden="true">−</span>
-                      <span className="vh">Removed</span>
-                    </>
-                  ) : null}
-                </span>
-                <span className="cv-drow__code" role="cell">
-                  <Code text={r.text} tokens={tokens[i]} />
-                </span>
-              </div>
+              <Fragment key={i}>
+                <div className={`cv-drow cv-drow--${r.kind}${picked ? " is-picked" : ""}`} role="row">
+                  <span className="cv-drow__n" role="cell" aria-hidden="true" data-n={r.a ?? ""} />
+                  {onRequest && r.b !== undefined ? (
+                    <span className="cv-drow__n cv-drow__n--btn" role="cell">
+                      <button
+                        type="button"
+                        className="cv-drow__nbtn"
+                        data-n={r.b}
+                        aria-pressed={picked}
+                        aria-label={`Ask the agent to change ${file.path} line ${r.b}`}
+                        title="Ask the agent to change this line. Shift-click selects more lines."
+                        onClick={(e) => setSel((s) => pickLine(s, file.path, r.b!, e.shiftKey))}
+                      />
+                    </span>
+                  ) : (
+                    <span className="cv-drow__n" role="cell" aria-hidden="true" data-n={r.b ?? ""} />
+                  )}
+                  <span className="cv-drow__sign" role="cell">
+                    {r.kind === "add" ? (
+                      <>
+                        <span aria-hidden="true">+</span>
+                        <span className="vh">Added</span>
+                      </>
+                    ) : r.kind === "del" ? (
+                      <>
+                        <span aria-hidden="true">−</span>
+                        <span className="vh">Removed</span>
+                      </>
+                    ) : null}
+                  </span>
+                  <span className="cv-drow__code" role="cell">
+                    <Code text={r.text} tokens={tokens[i]} />
+                  </span>
+                </div>
+                {onRequest && sel && picked && r.b === sel.to && (
+                  <div className="cv-drow cv-drow--request" role="row">
+                    <span role="cell">
+                      <LineRequestForm
+                        sel={sel}
+                        onSend={async (input) => {
+                          await onRequest(input);
+                          setSel(null);
+                        }}
+                        onCancel={() => setSel(null)}
+                      />
+                    </span>
+                  </div>
+                )}
+              </Fragment>
             );
           })}
           {!all && rows.length > FIRST_ROWS && (
@@ -138,7 +184,7 @@ export function FileDiff({ file, open, headingLevel = 2 }: { file: DiffFile; ope
 }
 
 /** Every changed file of a work copy, with a short list at the top. */
-export function AllDiffs({ files, openOf }: { files: DiffFile[]; openOf: (path: string) => Partial<CodeLocation> & { ref: string } }) {
+export function AllDiffs({ files, openOf, onRequest }: { files: DiffFile[]; openOf: (path: string) => Partial<CodeLocation> & { ref: string }; onRequest?: (input: LineRequestInput) => Promise<void> }) {
   const adds = files.reduce((n, f) => n + f.additions, 0);
   const dels = files.reduce((n, f) => n + f.deletions, 0);
   if (!files.length) return <p className="cv-note">This work copy has no changes yet.</p>;
@@ -151,7 +197,7 @@ export function AllDiffs({ files, openOf }: { files: DiffFile[]; openOf: (path: 
         </span>
       </p>
       {files.map((f) => (
-        <FileDiff key={f.path} file={f} open={openOf(f.path)} headingLevel={3} />
+        <FileDiff key={f.path} file={f} open={openOf(f.path)} headingLevel={3} onRequest={onRequest} />
       ))}
     </div>
   );

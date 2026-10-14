@@ -7,6 +7,8 @@ import { THEMES, setTheme, useTheme, type Theme } from "../design/theme";
 import { useStore } from "../state/store";
 import { indexes, type JudgmentItem, type OtherJudgmentItem } from "../state/selectors";
 import { useJudgmentQueue } from "../state/approvals";
+import { badgeText, useInboxCount } from "../state/inbox";
+import { taskPath } from "../../../src/core/inbox";
 import { int, shortSha } from "../state/format";
 import { isProjectRoute, Link, navigate, type Route } from "./router";
 import { ProjectSwitcher, UserMenu } from "./Account";
@@ -15,6 +17,7 @@ import { launchAllNow } from "./actions";
 import { closePalette, openPalette, openShortcuts, setUi, useUi } from "./ui";
 import { PALETTE_KEY } from "./keys";
 import { ApprovalCard } from "./ApprovalCard";
+import { QuestionCard } from "./QuestionCard";
 import { landingOf, quietText } from "../views/approval-copy";
 
 interface NavItem {
@@ -211,6 +214,7 @@ function OtherRow({ item, first, onDone }: { item: OtherJudgmentItem; first: boo
 function Decisions() {
   const queue = useJudgmentQueue();
   const canAct = useCanAct();
+  const projectId = useStore((s) => s.state?.project.id ?? "");
   const mode = useStore((s) => landingOf(s.state?.project.settings));
   const pop = usePopover();
   const { setOpen } = pop;
@@ -231,8 +235,9 @@ function Decisions() {
 
   // A member decides on the questions that wait for them and on the other items. A question that waits for
   // somebody else is in the list too, but it is not theirs. People who only view see everything as "waits".
-  const mine = useMemo(() => (canAct ? queue.filter((q) => q.kind !== "approval" || q.mayAnswer) : EMPTY_Q), [queue, canAct]);
-  const rest = useMemo(() => (canAct ? queue.filter((q) => q.kind === "approval" && !q.mayAnswer) : queue), [queue, canAct]);
+  const theirs = (q: JudgmentItem) => (q.kind === "approval" || q.kind === "question" ? q.mayAnswer : true);
+  const mine = useMemo(() => (canAct ? queue.filter(theirs) : EMPTY_Q), [queue, canAct]);
+  const rest = useMemo(() => (canAct ? queue.filter((q) => !theirs(q)) : queue), [queue, canAct]);
   const rows = useMemo(() => [...mine, ...rest], [mine, rest]);
   const n = canAct ? mine.length : queue.length;
   const w = canAct ? rest.length : 0;
@@ -289,6 +294,22 @@ function Decisions() {
                   <li key={q.key} className="queue__item queue__item--approval">
                     <ApprovalCard item={q} variant="row" onOpen={pop.close} focusReview={i === 0} />
                   </li>
+                ) : q.kind === "question" ? (
+                  <li key={q.key} className="queue__item queue__item--approval">
+                    <QuestionCard
+                      projectId={projectId}
+                      questionId={q.question.id}
+                      title={q.title}
+                      headline={q.detail}
+                      facts={q.question.facts}
+                      options={q.question.options.map((o, n) => ({ ...o, primary: n === 0, note: q.question.kind === "escalation" && o.id !== "both" }))}
+                      mayAnswer={canAct && q.mayAnswer}
+                      to={taskPath(projectId, q.intentId)}
+                      variant="row"
+                      first={i === 0}
+                      onOpen={pop.close}
+                    />
+                  </li>
                 ) : (
                   <OtherRow key={q.key} item={q} first={i === 0} onDone={pop.close} />
                 ),
@@ -298,6 +319,28 @@ function Decisions() {
         </div>
       </Popover>
     </>
+  );
+}
+
+/** The inbox: what waits for the signed-in person in all projects. The count shows on every page. */
+function InboxButton({ route }: { route: Route }) {
+  const n = useInboxCount();
+  return (
+    <Link
+      to="/inbox"
+      className={["topbar__queue", "topbar__inbox", n > 0 && "has-items"].filter(Boolean).join(" ")}
+      aria-current={route.name === "inbox" ? "page" : undefined}
+      aria-label={n ? `Inbox: ${n} ${n === 1 ? "thing waits" : "things wait"} for you` : "Inbox: nothing waits for you"}
+      title="Inbox (g i)"
+    >
+      <Icon name="inbox" />
+      <span className="topbar__queuetext">Inbox</span>
+      {n > 0 && (
+        <span className="topbar__queuecount" aria-hidden="true">
+          {badgeText(n)}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -370,6 +413,7 @@ export function TopBar({ route }: { route: Route }) {
           <SearchButton />
           {project && <Connection />}
           {project && <Decisions />}
+          {signedIn && <InboxButton route={route} />}
           <UserMenu />
           <ThemeControl />
         </div>

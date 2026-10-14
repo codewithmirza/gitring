@@ -16,6 +16,7 @@ import type {
   LogEntry,
   Person,
   ProjectState,
+  Question,
   RadarPair,
   Range,
   Verdict,
@@ -23,6 +24,7 @@ import type {
 import { noTestRan } from "../../../src/core/types";
 import type { Role } from "../../../src/core/accounts";
 import { approvalLine, canDecide } from "../../../src/core/approvals";
+import { canAnswerQuestion } from "../../../src/core/inbox";
 import { hullName, type HullName } from "../design/icons";
 import { RANGE_TEXT } from "./format";
 
@@ -425,7 +427,25 @@ export interface OtherJudgmentItem {
   at: number;
 }
 
-export type JudgmentItem = ApprovalItem | OtherJudgmentItem;
+/**
+ * A question for a person (contract C4): an escalated conflict check asks which work adapts, or work that did
+ * not merge asks for a redo or a pause. The answers are the options of the question.
+ */
+export interface QuestionItem {
+  key: string;
+  kind: "question";
+  intentId: string;
+  title: string;
+  /** What the person decides, in a few words. */
+  detail: string;
+  question: Question;
+  /** The signed-in person may answer this question (canAnswerQuestion). */
+  mayAnswer: boolean;
+  attemptIds: string[];
+  at: number;
+}
+
+export type JudgmentItem = ApprovalItem | OtherJudgmentItem | QuestionItem;
 
 /** The person who looks at the queue: the account id and the role on this project. */
 export interface Who {
@@ -433,12 +453,40 @@ export interface Who {
   role?: Role | null;
 }
 
+const NO_QUESTIONS: Question[] = [];
+
 const queueMemo = memo(
-  (intents: Intent[], attempts: Attempt[], checks: CourseCheck[], agents: AgentInfo[], rule: "sender" | "owner", userId: string, role: string): JudgmentItem[] => {
+  (intents: Intent[], attempts: Attempt[], checks: CourseCheck[], agents: AgentInfo[], questions: Question[], rule: "sender" | "owner", userId: string, role: string): JudgmentItem[] => {
     const out: JudgmentItem[] = [];
     const agentById = byId(agents);
     const intentById = byId(intents);
+    const attemptsById = byId(attempts);
     const who = { id: userId || null, role: (role || null) as Role | null };
+
+    // One item for each open question. A question names its work copies: the older items for them do not show,
+    // also after a person answered it (the check that asked stays the latest check of the work copy).
+    const asked = new Set<string>();
+    const askedTasks = new Set<string>();
+    for (const q of questions) {
+      for (const id of q.attemptIds) asked.add(id);
+      if (q.status !== "open") continue;
+      if (q.kind === "redo") askedTasks.add(q.intentId);
+      out.push({
+        key: `q:${q.id}`,
+        kind: "question",
+        intentId: q.intentId,
+        title: intentById.get(q.intentId)?.title ?? "A decision needs a person",
+        detail: q.kind === "escalation" ? "Which work adapts? A person decides" : "The work did not merge. A person decides what happens next",
+        question: q,
+        mayAnswer: canAnswerQuestion(
+          q.attemptIds.map((id) => attemptsById.get(id)?.sender),
+          who,
+          rule,
+        ),
+        attemptIds: q.attemptIds,
+        at: q.askedAt,
+      });
+    }
 
     // One question for each ready work copy that waits for a yes.
     for (const a of attempts) {
@@ -469,6 +517,8 @@ const queueMemo = memo(
       if (i.status !== "judging") continue;
       const ready = attempts.filter((a) => a.intentId === i.id && a.status === "ready");
       if (!ready.length) {
+        // A redo question asks this already.
+        if (askedTasks.has(i.id)) continue;
         // No work copy is ready: the work could not merge, or its agent did not answer.
         const open = attempts.filter((a) => a.intentId === i.id && isActiveAttempt(a));
         out.push({
@@ -508,11 +558,10 @@ const queueMemo = memo(
       const p = latest.get(c.attemptId);
       if (!p || p.at <= c.at) latest.set(c.attemptId, c);
     }
-    const attemptById = byId(attempts);
     for (const c of latest.values()) {
       if (c.verdict !== "escalate") continue;
-      const a = attemptById.get(c.attemptId);
-      if (!a || !isActiveAttempt(a)) continue;
+      const a = attemptsById.get(c.attemptId);
+      if (!a || !isActiveAttempt(a) || asked.has(a.id)) continue;
       out.push({
         key: `esc:${c.id}`,
         kind: "escalation",
@@ -528,11 +577,12 @@ const queueMemo = memo(
 );
 
 /**
- * What needs a person, oldest first: one question for each merge that waits for a yes, tasks that could not
- * merge, and course checks that ask for a person. `who` is the signed-in person: it decides `mayAnswer`.
+ * What needs a person, oldest first: one question for each merge that waits for a yes, the open questions
+ * (which work adapts, a redo or a pause), tasks that could not merge, and course checks that ask for a person
+ * (from before questions existed). `who` is the signed-in person: it decides `mayAnswer`.
  */
 export function selectJudgmentQueue(st: ProjectState, who: Who = {}): JudgmentItem[] {
-  return queueMemo(st.intents, st.attempts, st.checks, st.agents, st.project?.settings?.approver === "owner" ? "owner" : "sender", who.id ?? "", who.role ?? "");
+  return queueMemo(st.intents, st.attempts, st.checks, st.agents, st.questions ?? NO_QUESTIONS, st.project?.settings?.approver === "owner" ? "owner" : "sender", who.id ?? "", who.role ?? "");
 }
 
 /* ───────────── intents ───────────── */

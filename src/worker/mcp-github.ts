@@ -31,7 +31,7 @@ import type { Role } from "../core/accounts";
 import { approvalPath } from "../core/approvals";
 import { actorOf, directory, type Principal } from "./auth";
 import { ADDS, CHANGES, READS, callOf, defineTool, fail, joinClearance, newsFor, plain, text, VERDICT_WORD, withNews, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
-import { answerNote, approvalView, askInChat, statusHeadline, takeAnswer } from "./mcp-approval";
+import { answerNote, answerPlace, approvalView, askInChat, statusHeadline, takeAnswer } from "./mcp-approval";
 
 /** Said in the error of a bad project id (the gitring tool for it is not in this set). */
 export const GITHUB_LIST_HOW = "Call get_me to list your projects.";
@@ -320,14 +320,14 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * The answer about a pull request after a question to a person: what the work copy is now (waits for a person, sent
  * back, queued, merged). The change request of a send-back comes first, as in every answer of gitring.
  */
-async function pullReply(ctx: ToolContext, h: Project, attemptId: string, st: T.WorkStatus, opts: { asked?: boolean; before?: string; extra?: Record<string, unknown> } = {}): Promise<ToolResult> {
+async function pullReply(ctx: ToolContext, h: Project, attemptId: string, st: T.WorkStatus, opts: { asked?: boolean; before?: string; extra?: Record<string, unknown>; app?: boolean } = {}): Promise<ToolResult> {
   const state = await h.stub.state();
   const p = myPulls(state, ctx.who).find((x) => x.attempt.id === attemptId);
   if (!p) throw new Error("This pull request is not yours.");
   const info = pullInfo(p, state, ctx.origin);
   const waiting = st.approval?.status === "waiting" && st.status === "ready";
   const headline = waiting
-    ? statusHeadline(st, { check: `To see the answer, call merge_pull_request for pull request ${p.number}.`, asked: opts.asked, before: opts.before, header: `Pull request ${p.number}: ${info.status}. The work is not merged yet.` })
+    ? statusHeadline(st, { check: `To see the answer, call merge_pull_request for pull request ${p.number}.`, asked: opts.asked, before: opts.before, header: `Pull request ${p.number}: ${info.status}. The work is not merged yet.`, app: opts.app })
     : `${opts.before ? `${opts.before} ` : ""}Pull request ${p.number}: ${info.status}. ${info.message}`;
   return data(
     { number: p.number, state: info.state, merged: info.merged, status: info.status, message: info.message, ...(st.approval ? { approval: approvalView(st.approval) } : {}), ...(info.approvalUrl ? { approvalUrl: info.approvalUrl } : {}), ...(opts.extra ?? {}) },
@@ -686,7 +686,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
     description:
       "GitHub-compatible: ask for a merge of your branch into main. base must be main. gitring runs the tests first. " +
       "The answer says: queued, merged, waits for a person, or the tests failed. " +
-      "Sometimes a person must say yes first. Then gitring asks the person. It asks in this chat if the client can show a question. If not, the answer has a link to the gitring app. " +
+      "Sometimes a person must say yes first. Then gitring asks the person. It asks in this chat if the client can show a question and the person allows it. If not, the answer has a link to the gitring app. " +
       "Wait for the person. Do not change the branch. Call merge_pull_request to see the answer. " +
       "After a failure, fix the files and call this tool again. gitring has no draft pull requests and no reviewers.",
     inputSchema: {
@@ -713,7 +713,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         if (!at) throw new Error(`The branch "${head}" does not exist. Write to it with push_files first.`);
         // The second call of a question in chat: the person answered, so pass the answer on.
         const taken = await takeAnswer(ctx, req, h, at.id);
-        if (taken) return pullReply(ctx, h, at.id, taken.status, { asked: !taken.result, before: answerNote(taken.result) });
+        if (taken) return pullReply(ctx, h, at.id, taken.status, { asked: !taken.result, before: answerNote(taken.result), app: taken.app });
         if (a.draft) return plain(`gitring has no draft pull requests. The branch "${head}" stays a work copy. Call create_pull_request again without draft when it is ready.`);
         if (DONE.has(at.status)) {
           throw new Error(
@@ -725,9 +725,15 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         if (!(await h.stub.attemptDiff(at.id)).files.length) throw new Error(`The branch "${head}" has no changes. Write files to it first.`);
         const res = await h.stub.submit(at.id, [a.title, a.body].filter(Boolean).join("\n\n"), { origin: ctx.origin, viewer });
         if (res.next === "awaiting-approval") {
-          // A person must say yes. Ask in this chat when the client can show a question. Else the answer holds the link.
-          const st = await h.stub.status(at.id, { origin: ctx.origin, viewer });
-          return (await askInChat(ctx, req, h, st)) ?? (await pullReply(ctx, h, at.id, st, { extra: { checks: res.checks ? { passed: res.checks.passed, failed: res.checks.failed } : undefined } }));
+          // A person must say yes. Submit delivered its change requests already: the next answer holds them again.
+          const again = res.clearance.corrections.map((c) => c.id);
+          const st = await h.stub.status(at.id, { origin: ctx.origin, viewer, again });
+          // Ask in this chat when the client can show a question and the person allows it. Else the answer holds the link.
+          const place = await answerPlace(ctx, st);
+          return (
+            (await askInChat(ctx, req, h, st, { place, again })) ??
+            (await pullReply(ctx, h, at.id, st, { extra: { checks: res.checks ? { passed: res.checks.passed, failed: res.checks.failed } : undefined }, app: place === "app" }))
+          );
         }
         const state = await h.stub.state();
         const mine = myPulls(state, ctx.who).find((x) => x.attempt.id === at.id);

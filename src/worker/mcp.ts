@@ -24,7 +24,7 @@ import { actorOf, directory, type Principal } from "./auth";
 import { MCP_PATH, SCOPE_READ, type McpSet } from "../directory/oauth";
 import { ADDS, CHANGES, READS, callOf, defineTool, fail, makeContext, newsFor, plain, readOnlyTools, registerTools, text, VERDICT_WORD, withClearance, withNews, writeAnswer, type ToolDef } from "./mcp-kit";
 import { GITHUB_CHECK_HOW, GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
-import { answerNote, askCodec, askInChat, statusReply, takeAnswer } from "./mcp-approval";
+import { answerNote, answerPlace, askCodec, askInChat, isWaiting, statusReply, takeAnswer } from "./mcp-approval";
 
 /** The version that the server tells to clients. */
 export const MCP_VERSION = "0.9.2";
@@ -244,7 +244,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       "Ask for a merge when your tests pass. gitring tests again. " +
       "Then it merges the work (fast-forward, 3-way merge, or a redo on the new main). " +
       "Sometimes a person must say yes first. The project can ask for it. It is also needed when the change looks risky, when no test ran, or when work copies compete. " +
-      "gitring then asks the person. It asks in this chat if the client can show a question. If not, the answer has a link to the gitring app. " +
+      "gitring then asks the person. It asks in this chat if the client can show a question and the person allows it. If not, the answer has a link to the gitring app. " +
       "Wait for the person. Do not change the work copy. Call gitring_status to see the answer. " +
       "When the project sends merges to GitHub, the merge goes there too.",
     inputSchema: { project, attemptId, summary: z.string() },
@@ -256,12 +256,15 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
         const viewer = { id: ctx.who.user?.id ?? "", role: h.role };
         // The second call of a question in chat: the person answered, so pass the answer on.
         const taken = await takeAnswer(ctx, req, h, args.attemptId);
-        if (taken) return statusReply(taken.status, { asked: !taken.result, before: answerNote(taken.result) });
+        if (taken) return statusReply(taken.status, { asked: !taken.result, before: answerNote(taken.result), app: taken.app });
         const res = await h.stub.submit(args.attemptId, args.summary, { origin: ctx.origin, viewer: viewer.id ? viewer : undefined });
         if (res.next !== "awaiting-approval") return text(res, `${res.message} Next: ${res.next}.`, res.clearance);
-        // A person must say yes. Ask in this chat when the client can show a question. Else the answer holds the link.
-        const st = await h.stub.status(args.attemptId, { origin: ctx.origin, viewer: viewer.id ? viewer : undefined });
-        return (await askInChat(ctx, req, h, st)) ?? statusReply(st, { extra: { next: res.next, checks: res.checks } });
+        // A person must say yes. Submit delivered its change requests already: the next answer holds them again.
+        const again = res.clearance.corrections.map((c) => c.id);
+        const st = await h.stub.status(args.attemptId, { origin: ctx.origin, viewer: viewer.id ? viewer : undefined, again });
+        // Ask in this chat when the client can show a question and the person allows it. Else the answer holds the link.
+        const place = await answerPlace(ctx, st);
+        return (await askInChat(ctx, req, h, st, { place, again })) ?? statusReply(st, { extra: { next: res.next, checks: res.checks }, app: place === "app" });
       } catch (e) {
         return fail(e);
       }
@@ -281,7 +284,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       try {
         const h = await ctx.access(args.project);
         const st = await h.stub.status(args.attemptId, { origin: ctx.origin, viewer: ctx.who.user ? { id: ctx.who.user.id, role: h.role } : undefined });
-        return statusReply(st);
+        return statusReply(st, { app: isWaiting(st) && (await answerPlace(ctx, st)) === "app" });
       } catch (e) {
         return fail(e);
       }

@@ -220,6 +220,7 @@ export const ICONS = {
   apps: P("M2.25 2.25h4.5v4.5h-4.5ZM9.25 2.25h4.5v4.5h-4.5ZM2.25 9.25h4.5v4.5h-4.5ZM9.25 9.25h4.5v4.5h-4.5Z"),
   "sign-out": P("M6.25 2.25h-4v11.5h4M10.25 4.75 13.5 8l-3.25 3.25M13.25 8h-7"),
   folder: P("M1.75 3.25h4.5l1.5 1.75h6.5v7.75H1.75Z"),
+  inbox: P("M2.25 9.25h3.25l1 1.75h3l1-1.75h3.25M4 3.25h8l1.75 6v4.5H2.25v-4.5Z"),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;
