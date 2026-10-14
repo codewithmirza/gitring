@@ -44,7 +44,7 @@ function Confirmation({ entry, onChange, onLeave, busy }: { entry: WaitlistEntry
       <p className="wl-lede">{INTEREST.next}</p>
       {plan && (
         <p className="wl-chosen">
-          <strong>{plan.name}</strong> · {priceLabel(plan)}
+          <strong>{plan.name}</strong>: {priceLabel(plan)}
           {plan.monthlyUsd > 0 ? ` ${INTEREST.perMonth}` : ""}
         </p>
       )}
