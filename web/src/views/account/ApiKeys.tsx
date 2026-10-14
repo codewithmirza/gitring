@@ -83,8 +83,7 @@ export function ApiKeys({ now }: { now: number }) {
           API keys
         </h2>
         <p className="acct-sec__lede">
-          For scripts, hooks and agents without OAuth: they send <span className="code-inline">Authorization: Bearer gk_…</span>. A key acts as you. Agents that sign
-          in with OAuth do not need a key.
+          A key is for scripts, hooks and agents that cannot sign in. A key acts as you. An agent that signs in does not need a key.
         </p>
       </div>
       {fresh && (

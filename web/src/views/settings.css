@@ -29,6 +29,8 @@
 .st-sync__when { display: block; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 
 @media (max-width: 600px) {
+  /* Seven tabs do not fit in one row: they wrap, so that no tab hides at the right. */
+  .settings .st-tabs { flex-wrap: wrap; overflow-x: visible; }
   .settings .st-tabs .b-tab { height: 44px; }
   .st-facts > div { grid-template-columns: 1fr; gap: 0; }
 }
