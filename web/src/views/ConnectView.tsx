@@ -17,7 +17,7 @@ import { approvalExample, flowText, mcpEndpoints } from "./connect-text";
 import { ConnectorSection } from "./connect/ConnectorSection";
 import { FlowDiagram } from "./connect/FlowDiagram";
 import { KeySection } from "./connect/KeySection";
-import { Section, useNarrow } from "./connect/parts";
+import { Section, useNarrow } from "./connect/shared";
 import "./connect.css";
 import "./projects.css";
 

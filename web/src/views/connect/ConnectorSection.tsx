@@ -16,7 +16,7 @@ import { ago } from "../../state/format";
 import { useStore } from "../../state/store";
 import { GITHUB_SWAP, MERGE_QUESTION, READ_ONLY, TOOLS, mcpEndpoints } from "../connect-text";
 import { type Client, CLIENT_IDS, clientName, CLIENTS, cursorLink } from "./clients";
-import { CopyField, Inline, useRemembered } from "./parts";
+import { CopyField, Inline, useRemembered } from "./shared";
 
 const NO_AGENTS: AgentInfo[] = [];
 

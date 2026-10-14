@@ -9,7 +9,7 @@ import { openSignIn } from "../../app/ui";
 import { Link } from "../../app/router";
 import { Icon } from "../../design/icons";
 import { type ConnectInfo } from "../../state/api";
-import { Section, useRemembered } from "./parts";
+import { Section, useRemembered } from "./shared";
 
 type KeyClient = "claude-code" | "codex" | "cursor" | "other";
 const KEY_TABS: { id: KeyClient; label: string }[] = [

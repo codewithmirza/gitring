@@ -35,7 +35,7 @@ import {
   toast,
 } from "../../design/components";
 import { Icon } from "../../design/icons";
-import { Section, Specimen } from "./parts";
+import { Section, Specimen } from "./layout";
 import { AGENT, AGENT2, CASES, CHECK, corr, DIFF, LOGS, names, run } from "./sample-data";
 import type { DesignState } from "./useDesignState";
 

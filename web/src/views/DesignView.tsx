@@ -4,7 +4,7 @@
  */
 import { Button, Dialog, Field, Textarea } from "../design/components";
 import { Icon, Mark } from "../design/icons";
-import { TOC } from "./design/parts";
+import { TOC } from "./design/layout";
 import { ChartAndRules } from "./design/ChartAndRules";
 import { ComponentsSection } from "./design/ComponentsSection";
 import { Foundations } from "./design/Foundations";

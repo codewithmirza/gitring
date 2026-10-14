@@ -8,5 +8,5 @@ The parts of the style guide page ("/design", a development aid). `../DesignView
 - `ChartAndRules.tsx`: chart primitives, patterns, accessibility and the copy rules.
 - `ThemeColumn.tsx`: one theme with its tokens and their contrast.
 - `demos.tsx`: the sample chart and the motion demo.
-- `parts.tsx`: the table of contents, a section and a specimen box.
+- `layout.tsx`: the table of contents, a section and a specimen box.
 - `sample-data.ts`: static sample data (a test run, a conflict check, change requests, a diff).
