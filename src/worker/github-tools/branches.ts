@@ -8,7 +8,7 @@ import type * as T from "../../core/types";
 import type { Role } from "../../core/accounts";
 import { actorOf, type Principal } from "../auth";
 import { callOf, joinClearance, writeAnswer, type HarborApi, type ToolContext, type ToolResult } from "../mcp-kit";
-import { byAge, sha7 } from "./answers";
+import { byAge, sha7 } from "./shared";
 
 export type Project = { id: string; stub: HarborApi; role: Role };
 

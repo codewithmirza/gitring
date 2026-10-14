@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { ADDS, CHANGES, defineTool, fail, VERDICT_WORD, type ToolDef } from "../mcp-kit";
-import { data, owner, repo, sha7 } from "./answers";
+import { data, owner, repo, sha7 } from "./shared";
 import { MAIN, branchCopy, cleanBranch, open, workBranch, writeToBranch } from "./branches";
 
 export const writeTools: readonly ToolDef[] = [

@@ -16,7 +16,7 @@ const SERVER = [
   "src/worker/mcp-approval.ts",
   "src/worker/mcp-github.ts",
   // The GitHub-compatible tools live in these files since mcp-github.ts was split.
-  "src/worker/github-tools/answers.ts",
+  "src/worker/github-tools/shared.ts",
   "src/worker/github-tools/branches.ts",
   "src/worker/github-tools/pulls.ts",
   "src/worker/github-tools/tools-issues.ts",

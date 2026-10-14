@@ -7,7 +7,7 @@ import { z } from "zod";
 import type * as T from "../../core/types";
 import { ADDS, CHANGES, READS, callOf, defineTool, fail, plain, withNews, type ToolDef } from "../mcp-kit";
 import { answerNote, answerPlace, askInChat, takeAnswer } from "../mcp-approval";
-import { data, github, newsOf, owner, page, page_, perPage, repo } from "./answers";
+import { data, github, newsOf, owner, page, page_, perPage, repo } from "./shared";
 import { DONE, MAIN, cleanBranch, myBranches, open, workBranch } from "./branches";
 import { MERGE_WAIT, myPulls, pullAt, pullInfo, pullJson, pullReply, sleep } from "./pulls";
 

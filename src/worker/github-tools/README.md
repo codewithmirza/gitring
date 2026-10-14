@@ -4,7 +4,7 @@ The tools of the GitHub-compatible endpoint (`/mcp/github`). An agent or a plugi
 
 | File | What it is for |
 |---|---|
-| `answers.ts` | Argument schemas, answer helpers, paging and small formatters that every tool file uses. |
+| `shared.ts` | Argument schemas, answer helpers, paging and small formatters that every tool file uses. |
 | `branches.ts` | A branch name is a work copy of the caller. Open a project, find the branches of the caller, write to a branch. |
 | `pulls.ts` | Which work copies count as pull requests, their numbers and the state that each one shows. |
 | `tools-read.ts` | `get_me`, `search_repositories`, `get_file_contents`, `get_repository_tree`, `list_branches`, `list_commits`, `get_commit`, `search_code`. |

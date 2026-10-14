@@ -9,7 +9,7 @@ import { approvalPath } from "../../core/approvals";
 import type { Principal } from "../auth";
 import { type ToolContext, type ToolResult } from "../mcp-kit";
 import { approvalView, statusHeadline } from "../mcp-approval";
-import { byAge, data, sha7 } from "./answers";
+import { byAge, data, sha7 } from "./shared";
 import { MAIN, agentFor, branchIn, type Project } from "./branches";
 
 /** How long merge_pull_request waits for a merge to finish, in milliseconds. The tests can change it. */
