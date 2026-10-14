@@ -57,7 +57,8 @@ describe("metadata", () => {
     const as = authorizationServerMetadata(O);
     expect(as.issuer).toBe(O);
     expect(as.code_challenge_methods_supported).toEqual(["S256"]);
-    expect(as.grant_types_supported).toEqual(["authorization_code", "refresh_token"]);
+    expect(as.grant_types_supported).toEqual(["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"]);
+    expect(as.device_authorization_endpoint).toBe(`${O}/oauth/device_authorization`);
     expect(as.client_id_metadata_document_supported).toBe(true);
     expect(as.registration_endpoint).toBe(`${O}/oauth/register`);
   });

@@ -18,7 +18,7 @@ import { PROJECT_ID } from "../core/accounts";
 import type { ProjectSource } from "../core/types";
 import { rand } from "../harbor/ids";
 import { githubAppJwt, randomToken, sameString, seal, sha256B64url, unseal } from "./crypto";
-import { OAuthStore, type JsonObject, type PendingRequest, type TokenAnswer } from "./oauth";
+import { OAuthStore, type JsonObject, type PendingDevice, type PendingRequest, type TokenAnswer } from "./oauth";
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, avatar TEXT, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL)`,
@@ -218,6 +218,22 @@ export class Directory extends DurableObject<Env> {
 
   async oauthRevokeGrant(userId: string, grantId: string): Promise<boolean> {
     return this.oauth.revokeUserGrant(userId, grantId);
+  }
+
+  /** The device grant (RFC 8628): a program asks for a sign-in (POST /oauth/device_authorization). */
+  async oauthDeviceStart(form: Record<string, string | undefined>, basic: { id: string; secret: string } | null, origin: string, address?: string): Promise<TokenAnswer> {
+    return this.oauth.deviceStart(form, basic, origin, address);
+  }
+
+  /** The device sign-in that waits for the user code that this person typed on /device. */
+  async oauthDevice(userCode: string, userId: string): Promise<{ ok: true; device: PendingDevice } | { ok: false; reason: "unknown" | "locked" }> {
+    return this.oauth.deviceLookup(userCode, userId);
+  }
+
+  /** The person allows the device sign-in, or not. Null when the code does not wait any more. */
+  async oauthDeviceDecide(userCode: string, userId: string, allow: boolean): Promise<PendingDevice | null> {
+    if (!this.userInfo(userId)) return null;
+    return this.oauth.deviceDecide(userCode, userId, allow);
   }
 
   /* ════════════════════ sealed config ════════════════════ */

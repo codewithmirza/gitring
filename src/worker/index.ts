@@ -8,6 +8,7 @@
  *   /preview/:p/:ref/*         live preview of main or an attempt (Dynamic Worker)
  *   /hooks/*                   inbound webhooks (generic, GitHub App, GitHub, Slack, Claude Code)
  *   /auth/*, /setup            sign-in (GitHub, Google) and the owner's setup page
+ *   /oauth/*, /device          the OAuth server for MCP clients and the gitring command line (device grant)
  *   everything else            the React UI (static assets, SPA)
  *
  * Access: every project has an owner and members (Directory). Public projects can be watched by anyone;
@@ -23,6 +24,8 @@ import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, closeUserSockets, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, mcpScopeChallenge, oauthRoutes } from "./oauth";
+import { deviceRoutes } from "./device";
+import { cliMayCall } from "./cli";
 import { MCP_PATH, mcpSetOf, resourceOf, SCOPE, SCOPE_READ, type McpSet } from "../directory/oauth";
 import { githubRoutes, readAsPerson } from "./github";
 import type { RepoJson } from "../platform/github/repos";
@@ -83,7 +86,7 @@ app.use("*", async (c, next) => {
   // Credential lookups are limited per address before the lookup: keys and cookies that are not valid
   // are never cached, so a flood of them must stop here and not at the account store.
   if (kind === "api" && hasCredential(c.req.raw) && (await overLimit(c.env, "cred", clientAddress(c.req.raw)))) return tooMany();
-  const p = await resolvePrincipal(c.env, c.req.raw);
+  const p = await resolvePrincipal(c.env, c.req.raw, { cli: cliMayCall(c.req.method, path) });
   if (p.badKey) return c.json({ error: "The API key is not valid. Create a new key in gitring (Account → API keys)." }, 401);
   c.set("principal", p);
   if (kind === "api" && (await overLimit(c.env, "api", p.user?.id ?? (p.via === "operator" ? "operator" : clientAddress(c.req.raw))))) return tooMany();
@@ -184,6 +187,7 @@ app.get("/api/health", async (c) =>
 
 authRoutes(app);
 oauthRoutes(app);
+deviceRoutes(app);
 githubRoutes(app);
 
 /* ───────────── API keys ───────────── */
@@ -1048,6 +1052,7 @@ export default {
       path.startsWith("/hooks/") ||
       path.startsWith("/auth/") ||
       path.startsWith("/oauth/") ||
+      path === "/device" ||
       path.startsWith("/.well-known/") ||
       path === "/setup" ||
       path.startsWith("/setup/") ||

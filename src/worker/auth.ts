@@ -8,6 +8,7 @@ import type * as A from "../core/accounts";
 import type * as T from "../core/types";
 import { randomToken, sameString } from "../directory/crypto";
 import type { ManifestConversion } from "../directory/directory";
+import { CLI_CLIENT_ID } from "../directory/device";
 import { privacyBody, termsBody } from "./legal";
 
 export const SESSION_COOKIE = "__Host-gitring";
@@ -94,9 +95,11 @@ export function forgetPrincipal(opts: { session?: string; userId?: string; all?:
 /**
  * Who sends this request. `oauth: true` (the MCP endpoints only) also accepts OAuth access tokens: they
  * are for one MCP endpoint (RFC 8707), not for the rest of the API. `resource` is the endpoint that gets
- * this request (default <origin>/mcp): a token works only at the resource it was issued for.
+ * this request (default <origin>/mcp): a token works only at the resource it was issued for. `cli: true`
+ * (a REST route of a command of the gitring command line, src/worker/cli.ts) accepts the token of that
+ * command line too.
  */
-export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: boolean; resource?: string } = {}): Promise<Principal> {
+export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: boolean; resource?: string; cli?: boolean } = {}): Promise<Principal> {
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "");
   if (m) {
     const token = m[1].trim();
@@ -116,6 +119,17 @@ export async function resolvePrincipal(env: Env, req: Request, opts: { oauth?: b
       const found = await directory(env).oauthUser(token, origin, resource);
       // OAuth tokens are cached for at most 15 seconds: a revoked token stops working soon everywhere.
       if (found) return remember(`o:${resource}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId, scope: found.scope }, Math.min(found.expiresAt, Date.now() + 15_000));
+    }
+    if (opts.cli && !opts.oauth && token.startsWith("goa_")) {
+      // gitring's own command line: its token (for /mcp, with the full scope) also works for the REST
+      // routes of its commands (src/worker/cli.ts). Tokens of other apps do not.
+      const origin = new URL(req.url).origin;
+      const hit = cached(`c:${origin}:${token}`);
+      if (hit) return hit;
+      const found = await directory(env).oauthUser(token, origin, `${origin}/mcp`);
+      if (found && found.clientId === CLI_CLIENT_ID && found.scope === "mcp") {
+        return remember(`c:${origin}:${token}`, { user: found.user, via: "oauth", clientId: found.clientId, scope: found.scope }, Math.min(found.expiresAt, Date.now() + 15_000));
+      }
     }
     return { user: null, via: null, badKey: true };
   }
