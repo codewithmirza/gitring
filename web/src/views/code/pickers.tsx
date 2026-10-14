@@ -3,7 +3,7 @@
  * None is modal. The lists follow the WAI-ARIA combobox pattern: focus stays in the text field, ↑/↓ move the active option,
  * Enter chooses it, Escape closes the panel and focus goes back to the button.
  */
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Popover } from "../../design/components";
 import { findFiles, hitRuns, baseName, dirName } from "./tree";
 import { parseLineHash } from "./links";
@@ -280,9 +280,17 @@ export function FileFinder({
         listLabel="Files"
         empty={paths.length ? `No file matches “${q}”.` : "This ref has no files."}
         footer={
-          <span>
-            <kbd className="b-kbd">↑</kbd>
-            <kbd className="b-kbd">↓</kbd> move · <kbd className="b-kbd">Enter</kbd> open · <kbd className="b-kbd">Ctrl</kbd>+<kbd className="b-kbd">Enter</kbd> new tab
+          <span className="cv-pick__keys">
+            <span>
+              <kbd className="b-kbd">↑</kbd>
+              <kbd className="b-kbd">↓</kbd> move
+            </span>
+            <span>
+              <kbd className="b-kbd">Enter</kbd> open
+            </span>
+            <span>
+              <kbd className="b-kbd">Ctrl</kbd>+<kbd className="b-kbd">Enter</kbd> new tab
+            </span>
           </span>
         }
       />
@@ -301,12 +309,18 @@ export interface MenuAction {
   href?: string;
   external?: boolean;
   disabled?: boolean;
+  /** The action opens a panel that takes the focus, so the menu must not give the focus back to its button. */
+  opensPanel?: boolean;
 }
 
-/** "More": a menu that grows from its button. ↑/↓ move, Enter chooses, Escape closes (WAI-ARIA menu button). */
-export function MoreMenu({ label = "More", actions, className }: { label?: string; actions: MenuAction[]; className?: string }) {
+/**
+ * "More": a menu that grows from its button. ↑/↓ move, Enter chooses, Escape closes (WAI-ARIA menu button).
+ * With `bar` the button is a square icon button for the toolbar, and `label` is its name. `buttonRef` lets a panel anchor to it.
+ */
+export function MoreMenu({ label = "More", actions, className, bar, buttonRef }: { label?: string; actions: MenuAction[]; className?: string; bar?: boolean; buttonRef?: RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false);
-  const btn = useRef<HTMLButtonElement | null>(null);
+  const ownRef = useRef<HTMLButtonElement | null>(null);
+  const btn = buttonRef ?? ownRef;
   const menu = useRef<HTMLDivElement | null>(null);
   const items = () => [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? [])];
   const close = (focusBack = true) => {
@@ -333,9 +347,11 @@ export function MoreMenu({ label = "More", actions, className }: { label?: strin
       <button
         ref={btn}
         type="button"
-        className={["cv-tool", className].filter(Boolean).join(" ")}
+        className={[bar ? "cv-iconbtn" : "cv-tool", className].filter(Boolean).join(" ")}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={bar ? label : undefined}
+        title={bar ? label : undefined}
         onClick={() => setOpen(!open)}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" && !open) {
@@ -344,13 +360,23 @@ export function MoreMenu({ label = "More", actions, className }: { label?: strin
           }
         }}
       >
-        {label}
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" className="cv-tool__caret">
-          <path d="M4 6l4 4 4-4" />
-        </svg>
+        {bar ? (
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" className="cv-dots">
+            <circle cx="3.5" cy="8" r="1.4" />
+            <circle cx="8" cy="8" r="1.4" />
+            <circle cx="12.5" cy="8" r="1.4" />
+          </svg>
+        ) : (
+          <>
+            {label}
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" className="cv-tool__caret">
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </>
+        )}
       </button>
-      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} label={`${label} actions`} align="end">
-        <div className="cv-menu" role="menu" aria-label={`${label} actions`} ref={menu} onKeyDown={onKey}>
+      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} label={bar ? label : `${label} actions`} align="end">
+        <div className="cv-menu" role="menu" aria-label={bar ? label : `${label} actions`} ref={menu} onKeyDown={onKey}>
           {actions.map((a, i) => {
             const body = (
               <>
@@ -383,7 +409,7 @@ export function MoreMenu({ label = "More", actions, className }: { label?: strin
                 {...common}
                 onClick={() => {
                   if (a.disabled) return;
-                  close();
+                  close(!a.opensPanel);
                   a.onSelect?.();
                 }}
               >

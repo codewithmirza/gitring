@@ -55,6 +55,9 @@
 .cv-iconbtn { padding: 0 8px; color: var(--ink-2); }
 .cv-iconbtn[aria-pressed="true"] { color: var(--ink-1); background: var(--surface-2); }
 .cv-iconbtn svg path { fill: none; stroke: currentColor; stroke-width: 1.5; }
+/* The menu of the bar on a phone: three dots in a square button. */
+.cv-bar__more { justify-content: center; min-width: 32px; }
+.cv-dots { fill: currentColor; }
 .cv-refbtn { min-width: 0; max-width: min(460px, 100%); }
 .cv-refbtn__name { font-weight: 500; flex: none; }
 .cv-refbtn__sha { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }

@@ -79,7 +79,8 @@ export function ContextStrip({
           <span>
             <strong>{w.wc.callsign}</strong>{" "}
             {w.touch ? (hunks.length ? `changes ${rangesText(hunks)}` : w.touch.status === "A" ? "adds this file" : w.touch.status === "D" ? "deletes this file" : "changes this file") : "plans to change this file"}
-            {info.kind === "work" ? " too" : ""} · <span className="voice-human">{w.wc.intentTitle}</span> · {ATTEMPT_STATUS_TEXT[w.wc.status]}
+            {info.kind === "work" ? " too" : ""} for <span className="voice-human">{w.wc.intentTitle}</span>
+            <span className="cv-ctx__state">{ATTEMPT_STATUS_TEXT[w.wc.status]}</span>
           </span>
           <span className="cv-ctx__acts">
             {w.touch && (
@@ -129,7 +130,8 @@ export function ContextStrip({
           <Icon name="anchor" size={12} />
           <span>
             Last merge: <span className="voice-human">{last.intentTitle}</span>
-            {last.callsign ? ` by ${last.callsign}` : ""} · {ago(last.landing.at, now)}
+            {last.callsign ? ` by ${last.callsign}` : ""}
+            <span className="cv-ctx__state">{ago(last.landing.at, now)}</span>
           </span>
           <span className="cv-ctx__acts">
             <Link to={`/history/${encodeURIComponent(last.landing.id)}`} className="cv-ctx__act">

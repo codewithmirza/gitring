@@ -7,6 +7,7 @@
 .cv-pick__group { padding: var(--s-2) var(--s-2) 2px; font-size: var(--t-xs); font-weight: 500; color: var(--ink-3); }
 .cv-pick__empty { padding: var(--s-2); font-size: var(--t-sm); color: var(--ink-3); }
 .cv-pick__foot { padding: var(--s-1) var(--s-2) 0; border-top: 1px solid var(--line); font-size: var(--t-2xs); color: var(--ink-3); }
+.cv-pick__keys { display: flex; flex-wrap: wrap; gap: 2px var(--s-4); }
 .cv-opt {
   display: grid;
   gap: 1px;
@@ -42,7 +43,7 @@
 
 /* ───────────── a ref without a file ───────────── */
 .cv-over { display: grid; gap: var(--s-3); max-width: 860px; padding: var(--s-6) var(--s-6) var(--s-10); }
-.cv-over__eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--ink-3); }
+.cv-over__eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s-4); font-size: var(--t-xs); color: var(--ink-3); }
 .cv-over__eyebrow strong { color: var(--ink-1); }
 .cv-over__title { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 500; }
 .cv-over__h { margin-top: var(--s-3); font-size: var(--t-sm); font-weight: 600; }
@@ -98,12 +99,16 @@
   .cv-opt, .cv-menu__item { min-height: 44px; }
   .cv-metabtn { min-height: 44px; }
   .cv-linkbtn, .cv-crumbs__dir { min-height: 44px; }
+  .cv-bar__more { min-width: 44px; }
 }
 @media (max-width: 760px) {
   .cv-bar { padding: var(--s-2) var(--s-3); }
   .cv-bar__meta { display: none; }
   .cv-findbtn .b-kbd { display: none; }
-  .cv-refbtn { flex: 1 1 160px; }
+  /* One row: Files, the ref and the menu. The ref takes the room that is left (a work copy with Code and Diff wraps to a second row). */
+  .cv-refbtn { flex: 1 1 100px; }
+  /* The sheet of "Why" covers the strip of who works here, so that the code has room above the sheet. */
+  .cv.has-sheet .cv-ctx { display: none; }
   .cv.is-narrow .cv-body { grid-template-columns: minmax(0, 1fr); }
   .cv.is-narrow[data-panel="tree"] .cv-main { display: none; }
   .cv-tree { border-right: 0; }

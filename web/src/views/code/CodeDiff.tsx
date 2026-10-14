@@ -197,7 +197,7 @@ export function AllDiffs({ files, openOf, onRequest }: { files: DiffFile[]; open
   return (
     <div className="cv-alldiffs">
       <p className="cv-alldiffs__sum">
-        <Icon name="diff" size={14} /> {files.length} {files.length === 1 ? "file" : "files"} changed ·{" "}
+        <Icon name="diff" size={14} /> {files.length} {files.length === 1 ? "file" : "files"} changed,{" "}
         <span className="voice-agent">
           <span className="cv-plus">+{adds}</span> <span className="cv-minus">−{dels}</span>
         </span>

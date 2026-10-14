@@ -45,7 +45,7 @@ export function useCodeNavigation(source: CodeSource, treeRows: FileTreeState, o
         current: info.kind === "main",
         hint: (
           <span className="voice-agent">
-            {shortSha(mainSha)} · {plural(mainFiles.length, "file")}
+            {shortSha(mainSha)}, {plural(mainFiles.length, "file")}
           </span>
         ),
       },
@@ -55,11 +55,11 @@ export function useCodeNavigation(source: CodeSource, treeRows: FileTreeState, o
       out.push({
         id: w.id,
         ref: w.id,
-        name: `${w.callsign} · ${w.intentTitle}`,
+        name: `${w.callsign}: ${w.intentTitle}`,
         group: "Work copies",
         color: w.color,
         current: isWork && info.wc.id === w.id,
-        hint: `${ATTEMPT_STATUS_TEXT[w.status]} · ${plural(n, "file")} changed`,
+        hint: `${ATTEMPT_STATUS_TEXT[w.status]}, ${plural(n, "file")} changed`,
       });
     }
     const titles = new Map((intents ?? []).map((i) => [i.id, i.title]));
@@ -74,7 +74,7 @@ export function useCodeNavigation(source: CodeSource, treeRows: FileTreeState, o
         current: info.kind === "commit" && info.sha === l.mainAfter,
         hint: (
           <span className="voice-agent">
-            {shortSha(l.mainAfter)} · {ago(l.at, now)}
+            {shortSha(l.mainAfter)}, {ago(l.at, now)}
           </span>
         ),
       });

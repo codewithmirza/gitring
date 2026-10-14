@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import type { HistoryAnswer, HistoryStep, WhyAnswer, WhyRecord } from "../../../../src/core/history";
 import { getJson, HttpError, isAbort } from "../../state/http";
-import { METHOD_TEXT, plural, shortSha } from "../../state/format";
+import { ago, METHOD_TEXT, plural, shortSha } from "../../state/format";
 import type { Loaded } from "./data";
 
 export type { HistoryAnswer, HistoryStep, WhyAnswer, WhyRecord };
@@ -46,12 +46,41 @@ export function requestStatusText(status: string): string {
   }
 }
 
-/** One line about who made a change of main: "Work of Robin-4 · 3-way merge · commit abc1234". */
-export function stepMeta(s: HistoryStep): string {
-  const sha = `commit ${shortSha(s.sha)}`;
-  if (s.kind === "merge" && s.merge) return `Work of ${s.merge.callsign} · ${METHOD_TEXT[s.merge.method] ?? s.merge.method} · ${sha}`;
-  if (s.kind === "root") return `The start of the history · ${sha}`;
-  return `Main moved without a merge · ${sha}`;
+/** One fact of a change of main, for a list with one fact in each row. */
+export interface StepFact {
+  label: string;
+  value: string;
+  /** Machine words (a commit id) use the voice of agents. */
+  agent?: boolean;
+}
+
+/** The facts of the change that wrote a line: when, who and which commit. Each fact has its own row. */
+export function stepFacts(s: HistoryStep, now: number): StepFact[] {
+  const commit = shortSha(s.sha);
+  if (s.kind === "merge" && s.merge) {
+    const method = (METHOD_TEXT[s.merge.method] ?? s.merge.method).toLowerCase();
+    return [
+      { label: "Merged", value: `${ago(s.at, now)} by ${s.merge.callsign}` },
+      { label: "Commit", value: `${commit}, ${method}`, agent: true },
+    ];
+  }
+  if (s.kind === "root") return [{ label: "Commit", value: commit, agent: true }];
+  return [
+    { label: "Changed", value: ago(s.at, now) },
+    { label: "Commit", value: commit, agent: true },
+  ];
+}
+
+/** Who made a change of main and when: "Merged by Robin-4, 3 min ago". */
+export function stepWho(s: HistoryStep, now: number): string {
+  if (s.kind === "merge" && s.merge) return `Merged by ${s.merge.callsign}, ${ago(s.at, now)}`;
+  if (s.kind === "root") return "The start of the history";
+  return `Main moved without a merge, ${ago(s.at, now)}`;
+}
+
+/** What the change did, with its commit: "+4 −1 in 2 files, commit abc1234". */
+export function stepWhat(s: HistoryStep): string {
+  return [changeText(s), `commit ${shortSha(s.sha)}`].filter(Boolean).join(", ");
 }
 
 /** What a change did to the file: "+4 −1", "added", "deleted". */

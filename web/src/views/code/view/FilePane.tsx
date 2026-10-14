@@ -14,7 +14,7 @@ export function FilePane({ model }: { model: CodeViewModel }) {
   const {
     path, diffMode, info, setExpanded, narrow, setPhonePanel, setTreeOn, text, lineBtn, lineOpen, setLineOpen, lineCount, copied,
     selectLines, setFlash, jumpTo, projectId, whyRef, loc, fileVersion, now, wrap, setWrap, copyPermalink, githubHref, copy,
-    rawHref, marks, lastMerges, own, main, files,
+    rawHref, marks, lastMerges, own, main, files, lineAnswer, setLineAnswer, chooseWhyLine,
   } = model;
   const fileSize = path ? files.find((f) => f.path === path)?.size : undefined;
   const crumbs = path ? path.split("/") : [];
@@ -76,7 +76,18 @@ export function FilePane({ model }: { model: CodeViewModel }) {
             }}
           />
           <span className="cv-filehead__acts">
-            <LineHistory projectId={projectId} refName={whyRef} path={path} line={loc.lines?.[0] ?? null} version={fileVersion} now={now} />
+            <LineHistory
+              projectId={projectId}
+              refName={whyRef}
+              path={path}
+              line={loc.lines?.[0] ?? null}
+              version={fileVersion}
+              now={now}
+              answer={lineAnswer}
+              onAnswer={setLineAnswer}
+              chooseLine={chooseWhyLine}
+              sheet={narrow}
+            />
             <button
               type="button"
               className="cv-tool"

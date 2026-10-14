@@ -27,9 +27,9 @@ export function MarkCard({ lanes, line, path, now }: { lanes: Lane[]; line: numb
               </p>
               <p className="cv-markcard__msg voice-agent">{k.correction.message}</p>
               <p className="cv-markcard__meta">
-                {k.correction.status === "acknowledged" ? "The agent acknowledged it" : k.correction.status === "closed" ? "Closed at merge" : k.correction.status === "delivered" ? "Sent to the agent" : "Not sent to the agent yet"} ·{" "}
-                {ago(k.correction.createdAt, now)}
+                {k.correction.status === "acknowledged" ? "The agent acknowledged it" : k.correction.status === "closed" ? "Closed at merge" : k.correction.status === "delivered" ? "Sent to the agent" : "Not sent to the agent yet"}
               </p>
+              <p className="cv-markcard__meta">Made {ago(k.correction.createdAt, now)}</p>
               <div className="cv-markcard__actions">
                 {k.to && (
                   <Link className="b-btn b-btn--secondary b-btn--sm" to={`/tasks/${encodeURIComponent(k.to.intentId)}`}>
@@ -54,9 +54,8 @@ export function MarkCard({ lanes, line, path, now }: { lanes: Lane[]; line: numb
             <p className="voice-human cv-markcard__task">{wc.intentTitle}</p>
             {l.approx && <p className="cv-markcard__note">These line numbers are on the base of its work copy. Main moved since then, so they can be a little off.</p>}
             {wc.approach && <p className="cv-markcard__msg voice-agent">{wc.approach}</p>}
-            <p className="cv-markcard__meta">
-              {ATTEMPT_STATUS_TEXT[wc.status]} · updated {ago(wc.updatedAt, now)}
-            </p>
+            <p className="cv-markcard__meta">{ATTEMPT_STATUS_TEXT[wc.status]}</p>
+            <p className="cv-markcard__meta">Updated {ago(wc.updatedAt, now)}</p>
             <div className="cv-markcard__actions">
               <CodeLink className="b-btn b-btn--secondary b-btn--sm" to={{ ref: wc.id, path, view: "diff" }}>
                 Show the change
