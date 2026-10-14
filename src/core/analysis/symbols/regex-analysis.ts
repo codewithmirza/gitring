@@ -53,83 +53,355 @@ function stripParamTypes(p: string): string | null {
   return s;
 }
 
-// ───── The scanner ─────
+// A line that starts a top-level statement.
+const TOP = /^(?:export\b|import\b|(?:async\s+)?function\b|class\b|const\b|let\b|var\b|interface\b|type\s+[A-Za-z_$]|enum\b|declare\b|abstract\s+class\b)/;
 
-export function regexAnalysis(path: string, source: string, ts: boolean, parseError: string): ModuleAnalysis {
-  const a = emptyAnalysis(path, parseError);
-  const code = maskSource(source, true);
-  const plain = maskSource(source, false);
-  const lines = code.split("\n");
-  const n = lines.length;
+/** The offset of the start of each line. */
+function lineStartsOf(lines: string[]): number[] {
   const lineStart: number[] = [];
-  {
-    let off = 0;
-    for (const l of lines) {
-      lineStart.push(off);
-      off += l.length + 1;
+  let off = 0;
+  for (const l of lines) {
+    lineStart.push(off);
+    off += l.length + 1;
+  }
+  return lineStart;
+}
+
+/** How deep in brackets each line starts. A line that starts a new top-level statement resets the depth. */
+function depthBeforeEachLine(lines: string[]): number[] {
+  const depthBefore: number[] = new Array(lines.length).fill(0);
+  let d = 0;
+  for (let k = 0; k < lines.length; k++) {
+    if (d > 0 && TOP.test(lines[k])) d = 0;
+    depthBefore[k] = d;
+    for (const ch of lines[k]) {
+      if (ch === "{" || ch === "(" || ch === "[") d++;
+      else if (ch === "}" || ch === ")" || ch === "]") d = Math.max(0, d - 1);
     }
   }
-  const TOP = /^(?:export\b|import\b|(?:async\s+)?function\b|class\b|const\b|let\b|var\b|interface\b|type\s+[A-Za-z_$]|enum\b|declare\b|abstract\s+class\b)/;
-  const depthBefore: number[] = new Array(n).fill(0);
-  {
-    let d = 0;
-    for (let k = 0; k < n; k++) {
-      if (d > 0 && TOP.test(lines[k])) d = 0;
-      depthBefore[k] = d;
-      for (const ch of lines[k]) {
-        if (ch === "{" || ch === "(" || ch === "[") d++;
-        else if (ch === "}" || ch === ")" || ch === "]") d = Math.max(0, d - 1);
+  return depthBefore;
+}
+
+export function regexAnalysis(path: string, source: string, ts: boolean, parseError: string): ModuleAnalysis {
+  return new RegexReader(path, source, ts, parseError).read();
+}
+
+/**
+ * The state of one scan: the masked text, its lines, and the result (`analysis`). `read` walks the top-level statements.
+ * Each `read...` method handles one form of statement.
+ */
+class RegexReader {
+  private readonly analysis: ModuleAnalysis;
+  private readonly code: string;
+  private readonly plain: string;
+  private readonly lines: string[];
+  private readonly n: number;
+  private readonly lineStart: number[];
+  private readonly depthBefore: number[];
+  private readonly topLevel = new Set<string>();
+  private readonly refSets = new Map<string, Set<string>>();
+
+  constructor(
+    path: string,
+    source: string,
+    private readonly ts: boolean,
+    parseError: string,
+  ) {
+    this.analysis = emptyAnalysis(path, parseError);
+    this.code = maskSource(source, true);
+    this.plain = maskSource(source, false);
+    this.lines = this.code.split("\n");
+    this.n = this.lines.length;
+    this.lineStart = lineStartsOf(this.lines);
+    this.depthBefore = depthBeforeEachLine(this.lines);
+  }
+
+  /** Reads every top-level statement, one after the other, and gives the result. */
+  read(): ModuleAnalysis {
+    let k = 0;
+    while (k < this.n) {
+      if (!this.lines[k].trim() || this.depthBefore[k] > 0) {
+        k++;
+        continue;
+      }
+      const end = this.statementEnd(k);
+      const from = this.lineStart[k];
+      const to = this.lineEndOffset(end);
+      const stmt = this.code.slice(from, to);
+      const range: LineRange = [k + 1, end + 1];
+      this.readStatement(stmt, from, to, range);
+      k = end + 1;
+    }
+    this.finish();
+    return this.analysis;
+  }
+
+  /** One top-level statement. The first form that matches reads it. */
+  private readStatement(stmt: string, from: number, to: number, range: LineRange): void {
+    let m: RegExpExecArray | null;
+    if (/^\s*import\b(?!\s*[(.])/.test(stmt)) {
+      this.readImport(stmt, from);
+    } else if ((m = /^\s*export\s+(type\s+)?(\*(?:\s*as\s+([A-Za-z_$][\w$]*))?|\{([\s\S]*?)\})\s*from\s*(["'])/.exec(stmt))) {
+      this.readReexport(m, from);
+    } else if ((m = /^\s*export\s+(type\s+)?\{([\s\S]*?)\}/.exec(stmt))) {
+      this.readExportList(m, range);
+    } else if ((m = /^\s*export\s+default\s+(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)?\s*(?:<[^(]*?>)?\s*\(/.exec(stmt))) {
+      this.readDefaultFunction(m, from, to, range);
+    } else if ((m = /^\s*export\s+default\s+(?:abstract\s+)?class\b\s*([A-Za-z_$][\w$]*)?/.exec(stmt))) {
+      this.readDefaultClass(m, from, to, range);
+    } else if ((m = /^\s*export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$/.exec(stmt)) && !this.isWord(m[1])) {
+      this.readDefaultName(m, range);
+    } else if ((m = /^\s*export\s+default\b/.exec(stmt))) {
+      this.readDefaultExpression(stmt, from, to, range);
+    } else if ((m = /^\s*(export\s+)?(?:declare\s+)?(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^(]*?>)?\s*\(/.exec(stmt))) {
+      this.readFunction(m, from, to, range);
+    } else if ((m = /^\s*(export\s+)?(?:declare\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/.exec(stmt))) {
+      this.readClass(m, from, to, range);
+    } else if (this.ts && (m = /^\s*(export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/.exec(stmt))) {
+      this.readEnum(m, from, to, range);
+    } else if ((m = /^\s*(export\s+)?(?:declare\s+)?(const|let|var)\s+/.exec(stmt))) {
+      this.readVariables(m, from, to, range);
+    } else if (this.ts && /^\s*(?:export\s+)?(?:declare\s+)?(?:interface\b|type\s+[A-Za-z_$][\w$]*\s*(?:<|=)|namespace\b|module\b|global\b|declare\b)/.test(stmt)) {
+      // type-only or ambient TypeScript: not code
+    } else {
+      this.readOtherStatement(from, to, range);
+    }
+  }
+
+  /** An `import` statement in any of its forms: bare, `import x = require()`, or with names. */
+  private readImport(stmt: string, from: number): void {
+    let m: RegExpExecArray | null;
+    if ((m = /^\s*import\s*(["'])/.exec(stmt))) {
+      this.analysis.imports.push({ from: this.specText(from, from + m[0].length - 1), names: [] });
+    } else if ((m = /^\s*import\s+([\w$]+)\s*=\s*require\s*\(\s*(["'])/.exec(stmt))) {
+      const spec = this.specText(from, from + m[0].length - 1);
+      this.analysis.imports.push({ from: spec, names: [{ imported: "*", local: m[1] }] });
+      this.analysis.bindings[m[1]] = { from: spec, imported: "*" };
+    } else if ((m = /^\s*import\s+([\s\S]*?)\s*\bfrom\s*(["'])/.exec(stmt))) {
+      const spec = this.specText(from, from + m[0].length - 1);
+      const clause = m[1].replace(/^type\s+/, "");
+      const names: { imported: string; local: string }[] = [];
+      const def = /^([A-Za-z_$][\w$]*)\s*(?:,|$)/.exec(clause);
+      if (def) names.push({ imported: "default", local: def[1] });
+      const ns = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(clause);
+      if (ns) names.push({ imported: "*", local: ns[1] });
+      const named = /\{([\s\S]*?)\}/.exec(clause);
+      if (named) names.push(...this.parseNamed(named[1]));
+      this.analysis.imports.push({ from: spec, names });
+      for (const x of names) this.analysis.bindings[x.local] = { from: spec, imported: x.imported };
+    }
+  }
+
+  /** `export { a } from "x"` and `export * from "x"`: an import and an export in one. */
+  private readReexport(m: RegExpExecArray, from: number): void {
+    const spec = this.specText(from, from + m[0].length - 1);
+    let names: { imported: string; local: string }[];
+    if (m[4] !== undefined) names = this.parseNamed(m[4]).map((x) => ({ imported: x.imported, local: x.local }));
+    else names = [{ imported: "*", local: m[3] ?? "*" }];
+    this.analysis.imports.push({ from: spec, names });
+    for (const x of names) if (x.local !== "*") this.analysis.exports[x.local] = x.local;
+  }
+
+  /** `export { a, b as c }` without `from`: names that are exported, and used. */
+  private readExportList(m: RegExpExecArray, range: LineRange): void {
+    if (!(this.ts && m[1])) {
+      const refs = new Set<string>();
+      for (const x of this.parseNamed(m[2])) {
+        this.analysis.exports[x.local] = x.imported;
+        refs.add(x.imported);
+      }
+      for (const r of refs) this.topLevel.add(r);
+      if (refs.size) this.analysis.statements.push({ range, references: sortedArray(refs) });
+    }
+  }
+
+  /** `export default function`: a declaration with a name, or the name `default`. */
+  private readDefaultFunction(m: RegExpExecArray, from: number, to: number, range: LineRange): void {
+    const name = m[1] ?? "default";
+    const p = this.paramsAt(from + m[0].length - 1);
+    const params = p?.params ?? [];
+    this.addDecl({ name, kind: "function", params, signature: `${name}(${params.join(", ")})`, range, exported: true }, from, to);
+    this.analysis.exports.default = name;
+  }
+
+  /** `export default class`. */
+  private readDefaultClass(m: RegExpExecArray, from: number, to: number, range: LineRange): void {
+    const name = m[1] ?? "default";
+    this.addDecl({ name, kind: "class", range, exported: true }, from, to);
+    this.analysis.exports.default = name;
+  }
+
+  /** `export default name;` */
+  private readDefaultName(m: RegExpExecArray, range: LineRange): void {
+    this.analysis.exports.default = m[1];
+    this.topLevel.add(m[1]);
+    this.analysis.statements.push({ range, references: [m[1]] });
+  }
+
+  /** `export default` with any other expression. An arrow function with a parameter list gets its parameters. */
+  private readDefaultExpression(stmt: string, from: number, to: number, range: LineRange): void {
+    const arrow = /^\s*export\s+default\s+(?:async\s+)?\(/.exec(stmt);
+    let info: DeclInfo = { name: "default", kind: "const", range, exported: true };
+    if (arrow) {
+      const p = this.paramsAt(from + arrow[0].length - 1);
+      if (p && /^\s*(?::[^=]*)?=>/.test(this.code.slice(p.close + 1, to))) {
+        info = { name: "default", kind: "function", params: p.params, signature: `default(${p.params.join(", ")})`, range, exported: true };
+      }
+    }
+    this.addDecl(info, from, to);
+    this.analysis.exports.default = "default";
+  }
+
+  /** A function declaration, exported or not. */
+  private readFunction(m: RegExpExecArray, from: number, to: number, range: LineRange): void {
+    const p = this.paramsAt(from + m[0].length - 1);
+    const params = p?.params ?? [];
+    const name = m[2];
+    this.addDecl({ name, kind: "function", params, signature: `${name}(${params.join(", ")})`, range, exported: !!m[1] }, from, to);
+    if (m[1]) this.analysis.exports[name] = name;
+  }
+
+  /** A class declaration, exported or not. */
+  private readClass(m: RegExpExecArray, from: number, to: number, range: LineRange): void {
+    this.addDecl({ name: m[2], kind: "class", range, exported: !!m[1] }, from, to);
+    if (m[1]) this.analysis.exports[m[2]] = m[2];
+  }
+
+  /** A TypeScript enum: a declaration that holds a value. */
+  private readEnum(m: RegExpExecArray, from: number, to: number, range: LineRange): void {
+    this.addDecl({ name: m[2], kind: "const", range, exported: !!m[1] }, from, to);
+    if (m[1]) this.analysis.exports[m[2]] = m[2];
+  }
+
+  /** `const`, `let` or `var` with one or more names. A name that holds a function gets its parameters. */
+  private readVariables(m: RegExpExecArray, from: number, to: number, range: LineRange): void {
+    const exported = !!m[1];
+    const kind = m[2] as DeclInfo["kind"];
+    const bodyFrom = from + m[0].length;
+    // declarators: split the statement at top-level commas
+    const rest = this.code.slice(bodyFrom, to);
+    let offset = bodyFrom;
+    const declared: string[] = [];
+    for (const part of splitTopLevel(rest)) {
+      const partFrom = offset;
+      offset += part.length + 1;
+      const id = /^\s*([A-Za-z_$][\w$]*)/.exec(part);
+      const pat = /^\s*([{[])/.exec(part);
+      let names: string[] = [];
+      if (id) names = [id[1]];
+      else if (pat) {
+        const close = matchBracket(this.code, partFrom + pat[0].length - 1);
+        const inner = close > 0 ? this.code.slice(partFrom + pat[0].length, close) : "";
+        names = inner
+          .split(",")
+          .map((x) => x.split("=")[0])
+          .map((x) => (x.includes(":") ? x.split(":")[1] : x).replace(/\.\.\./, "").trim())
+          .filter((x) => /^[A-Za-z_$][\w$]*$/.test(x));
+      } else continue;
+      let params: string[] | undefined;
+      if (id) {
+        const afterId = partFrom + id[0].length;
+        // `= (a) =>`, `= ((a) => …)`, `= async (a) =>`, `= <T>(a: T) =>`, `= a =>`, `= function (a)`
+        const init = /^\s*(?::[^=]*)?=\s*((?:\(\s*)*)(?:async\s+)?(?:(function\b\s*\*?\s*[\w$]*\s*(?:<[^(]*?>)?\s*\()|(?:<[^(]*?>\s*)?(\()|([A-Za-z_$][\w$]*)\s*=>)/.exec(this.code.slice(afterId, to));
+        let called = false;
+        if (init && init[1]) {
+          // `= (() => …)()` is a call (an IIFE), not a function value
+          const group = afterId + init[0].indexOf("(", init[0].indexOf("="));
+          const close = matchBracket(this.code, group);
+          called = close > 0 && /^\s*(?:\?\.\s*)?\(/.test(this.code.slice(close + 1, close + 40));
+        }
+        if (init && !called) {
+          if (init[4]) params = [init[4]];
+          else {
+            const open = afterId + init[0].length - 1;
+            const p = this.paramsAt(open);
+            if (p && (init[2] || /^\s*(?::[^=;{]*)?=>/.test(this.code.slice(p.close + 1, to)))) params = p.params;
+          }
+        }
+      }
+      for (const name of names) {
+        if (this.isWord(name)) continue;
+        const info: DeclInfo = { name, kind, range, exported };
+        if (params) {
+          info.params = params;
+          info.signature = `${name}(${params.join(", ")})`;
+        }
+        this.addDecl(info, from, to, names.filter((x) => x !== name));
+        declared.push(name);
+        if (exported) this.analysis.exports[name] = name;
       }
     }
   }
-  const nextNonBlank = (k: number): number => {
-    for (let m = k; m < n; m++) if (lines[m].trim()) return m;
+
+  /** Any other statement: it keeps the names that it uses. */
+  private readOtherStatement(from: number, to: number, range: LineRange): void {
+    const refs = this.identifiers(from, to, new Set());
+    for (const r of refs) this.topLevel.add(r);
+    if (refs.size) this.analysis.statements.push({ range, references: sortedArray(refs) });
+  }
+
+  /** The index of the first line at or after `k` that is not blank, or -1. */
+  private nextNonBlank(k: number): number {
+    for (let m = k; m < this.n; m++) if (this.lines[m].trim()) return m;
     return -1;
-  };
-  const statementEnd = (k: number): number => {
+  }
+
+  /** The index of the last line of the statement that starts at line `k`. */
+  private statementEnd(k: number): number {
     let d = 0;
     let lastCode = k;
     let inTemplate = false; // a template literal open across lines (its text is masked, its backticks are not)
-    for (let m = k; m < n; m++) {
-      if (m > k && d > 0 && !inTemplate && TOP.test(lines[m])) return lastCode;
-      for (const ch of lines[m]) {
+    for (let m = k; m < this.n; m++) {
+      if (m > k && d > 0 && !inTemplate && TOP.test(this.lines[m])) return lastCode;
+      for (const ch of this.lines[m]) {
         if (ch === "{" || ch === "(" || ch === "[") d++;
         else if (ch === "}" || ch === ")" || ch === "]") d--;
         else if (ch === "`") inTemplate = !inTemplate;
       }
-      const t = lines[m].trim();
+      const t = this.lines[m].trim();
       if (t) lastCode = m;
       if (d <= 0 && t && !inTemplate) {
         const last = t[t.length - 1];
-        const nx = nextNonBlank(m + 1);
-        const cont = "=,([{+-*/%&|^!?:<>.".includes(last) || (nx >= 0 && /^\s*(?:\.(?!\.\.)|\?\.|\?(?!\?)|:|&&|\|\||\?\?|=>|[+*/%](?![+=]))/.test(lines[nx]));
+        const nx = this.nextNonBlank(m + 1);
+        const cont = "=,([{+-*/%&|^!?:<>.".includes(last) || (nx >= 0 && /^\s*(?:\.(?!\.\.)|\?\.|\?(?!\?)|:|&&|\|\||\?\?|=>|[+*/%](?![+=]))/.test(this.lines[nx]));
         if (!cont) return m;
       }
     }
     return lastCode;
-  };
-  const isWord = (w: string): boolean => JS_WORDS.has(w) || (ts && TS_WORDS.has(w));
-  const stripParam = (p: string): string | null => (ts ? stripParamTypes(p) : p);
-  const paramsAt = (open: number): { params: string[]; close: number } | undefined => {
-    const close = matchBracket(code, open);
+  }
+
+  /** True for a word that is not a name: a keyword, and with TypeScript a type word. */
+  private isWord(w: string): boolean {
+    return JS_WORDS.has(w) || (this.ts && TS_WORDS.has(w));
+  }
+
+  /** One parameter text, without its TypeScript parts when the file is TypeScript. */
+  private stripParam(p: string): string | null {
+    return (this.ts ? stripParamTypes(p) : p);
+  }
+
+  /** The parameter texts of the list that opens at `open`, and the index of its closing bracket. */
+  private paramsAt(open: number): { params: string[]; close: number } | undefined {
+    const close = matchBracket(this.code, open);
     if (close < 0) return undefined;
-    const inner = plain.slice(open + 1, close);
+    const inner = this.plain.slice(open + 1, close);
     const params: string[] = [];
     for (const raw of splitTopLevel(inner)) {
-      const p = stripParam(raw);
+      const p = this.stripParam(raw);
       if (p !== null && collapse(p)) params.push(collapse(p));
     }
     return { params, close };
-  };
+  }
+
   /** Identifiers used in code[from, to), minus `locals` and the definition sites in `skip` (offsets in the slice). */
-  const identifiers = (from: number, to: number, locals: Set<string>, skip: Set<number> = new Set()): Set<string> => {
-    const text = code.slice(from, to);
+  private identifiers(from: number, to: number, locals: Set<string>, skip: Set<number> = new Set()): Set<string> {
+    const text = this.code.slice(from, to);
     const out = new Set<string>();
     IDENT_RE.lastIndex = 0;
     for (let m = IDENT_RE.exec(text); m; m = IDENT_RE.exec(text)) {
       const name = m[0];
       const p = m.index;
-      if (/^[0-9]/.test(name) || isWord(name) || locals.has(name) || skip.has(p)) continue;
+      if (/^[0-9]/.test(name) || this.isWord(name) || locals.has(name) || skip.has(p)) continue;
       let b = p - 1;
       while (b >= 0 && /\s/.test(text[b])) b--;
       if (text[b] === "." && text.slice(b - 2, b + 1) !== "...") continue;
@@ -146,10 +418,11 @@ export function regexAnalysis(path: string, source: string, ts: boolean, parseEr
       }
     }
     return out;
-  };
+  }
+
   /** Names bound by one parameter or destructuring pattern (keys, computed keys, defaults and TS types left out). */
-  const patternNames = (raw: string): string[] => {
-    const p = ts ? stripParamTypes(raw) : raw;
+  private patternNames(raw: string): string[] {
+    const p = this.ts ? stripParamTypes(raw) : raw;
     if (p === null) return [];
     let s = "";
     for (let i = 0; i < p.length; i++) {
@@ -182,16 +455,17 @@ export function regexAnalysis(path: string, source: string, ts: boolean, parseEr
     s = s.replace(/[A-Za-z_$][\w$]*\s*:(?!:)/g, " ").replace(/\.\.\./g, " ");
     const out: string[] = [];
     IDENT_RE.lastIndex = 0;
-    for (let m = IDENT_RE.exec(s); m; m = IDENT_RE.exec(s)) if (!isWord(m[0])) out.push(m[0]);
+    for (let m = IDENT_RE.exec(s); m; m = IDENT_RE.exec(s)) if (!this.isWord(m[0])) out.push(m[0]);
     return out;
-  };
+  }
+
   /** Names declared inside a declaration's text (approximate locals), and method-name sites to skip. */
-  const innerLocals = (from: number, to: number): { names: Set<string>; skip: Set<number> } => {
-    const text = code.slice(from, to);
+  private innerLocals(from: number, to: number): { names: Set<string>; skip: Set<number> } {
+    const text = this.code.slice(from, to);
     const names = new Set<string>();
     const skip = new Set<number>();
     const addList = (list: string): void => {
-      for (const raw of splitTopLevel(list)) for (const name of patternNames(raw)) names.add(name);
+      for (const raw of splitTopLevel(list)) for (const name of this.patternNames(raw)) names.add(name);
     };
     const addParamsAt = (open: number): void => {
       const close = matchBracket(text, open);
@@ -202,7 +476,7 @@ export function regexAnalysis(path: string, source: string, ts: boolean, parseEr
     for (const m of text.matchAll(/\b(?:const|let|var)\s*(?=[{[])/g)) {
       const open = m.index + m[0].length;
       const close = matchBracket(text, open);
-      if (close > 0) for (const name of patternNames(text.slice(open, close + 1))) names.add(name);
+      if (close > 0) for (const name of this.patternNames(text.slice(open, close + 1))) names.add(name);
     }
     for (const m of text.matchAll(/\bfunction\b\s*\*?\s*([A-Za-z_$][\w$]*)?\s*(?:<[^(]*?>)?\s*\(/g)) {
       if (m[1]) names.add(m[1]);
@@ -225,203 +499,58 @@ export function regexAnalysis(path: string, source: string, ts: boolean, parseEr
     for (const m of text.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1]);
     // method definitions (class bodies, object literals): the name site is not a use; the params are locals
     for (const m of text.matchAll(/^([ \t]*(?:(?:static|async|get|set|public|private|protected|readonly)[ \t]+)*\*?[ \t]*)([A-Za-z_$][\w$]*)([ \t]*)\([^()\n]*\)[ \t]*(?::[^{\n]{0,200})?\{/gm)) {
-      if (isWord(m[2])) continue;
+      if (this.isWord(m[2])) continue;
       skip.add(m.index + m[1].length);
       addParamsAt(m.index + m[1].length + m[2].length + m[3].length);
     }
     return { names, skip };
-  };
-  const lineEndOffset = (m: number): number => lineStart[m] + lines[m].length;
-  const topLevel = new Set<string>();
-  const refSets = new Map<string, Set<string>>();
+  }
 
-  const addDecl = (info: DeclInfo, from: number, to: number, extraLocals: Iterable<string> = []): void => {
-    if (a.decls[info.name]) return;
-    a.decls[info.name] = info;
-    const { names: locals, skip } = innerLocals(from, to);
+  /** The offset of the end of line `m`. */
+  private lineEndOffset(m: number): number {
+    return this.lineStart[m] + this.lines[m].length;
+  }
+
+  /** Records a top-level declaration with the names that its text uses. The first declaration of a name wins. */
+  private addDecl(info: DeclInfo, from: number, to: number, extraLocals: Iterable<string> = []): void {
+    if (this.analysis.decls[info.name]) return;
+    this.analysis.decls[info.name] = info;
+    const { names: locals, skip } = this.innerLocals(from, to);
     for (const l of extraLocals) locals.add(l);
     locals.add(info.name);
-    for (const p of info.params ?? []) for (const name of patternNames(p)) locals.add(name);
-    const refs = identifiers(from, to, locals, skip);
+    for (const p of info.params ?? []) for (const name of this.patternNames(p)) locals.add(name);
+    const refs = this.identifiers(from, to, locals, skip);
     for (const r of [...refs]) if (r.startsWith(info.name + ".")) refs.delete(r);
-    refSets.set(info.name, refs);
-  };
-  const specText = (_stmtFrom: number, quoteAt: number): string => {
-    const q = plain[quoteAt];
-    const end = plain.indexOf(q, quoteAt + 1);
-    return plain.slice(quoteAt + 1, end < 0 ? quoteAt + 1 : end);
-  };
-  const parseNamed = (inner: string): { imported: string; local: string }[] => {
+    this.refSets.set(info.name, refs);
+  }
+
+  /** The module specifier of an import, read from the unmasked text. */
+  private specText(_stmtFrom: number, quoteAt: number): string {
+    const q = this.plain[quoteAt];
+    const end = this.plain.indexOf(q, quoteAt + 1);
+    return this.plain.slice(quoteAt + 1, end < 0 ? quoteAt + 1 : end);
+  }
+
+  /** The names in `{ a, b as c }` of an import or export. */
+  private parseNamed(inner: string): { imported: string; local: string }[] {
     const out: { imported: string; local: string }[] = [];
     for (const part of inner.split(",")) {
       // a `type` modifier keeps the specifier (a type-only import is still a dependency)
-      const p = ts ? part.trim().replace(/^type\s+(?!as\b)(?=[\w$])/, "") : part.trim();
+      const p = this.ts ? part.trim().replace(/^type\s+(?!as\b)(?=[\w$])/, "") : part.trim();
       if (!p) continue;
       const m = /^([\w$]+)(?:\s+as\s+([\w$]+))?$/.exec(p);
       if (m) out.push({ imported: m[1], local: m[2] ?? m[1] });
     }
     return out;
-  };
-
-  let k = 0;
-  while (k < n) {
-    if (!lines[k].trim() || depthBefore[k] > 0) {
-      k++;
-      continue;
-    }
-    const end = statementEnd(k);
-    const from = lineStart[k];
-    const to = lineEndOffset(end);
-    const stmt = code.slice(from, to);
-    const range: LineRange = [k + 1, end + 1];
-    let m: RegExpExecArray | null;
-
-    if (/^\s*import\b(?!\s*[(.])/.test(stmt)) {
-      if ((m = /^\s*import\s*(["'])/.exec(stmt))) {
-        a.imports.push({ from: specText(from, from + m[0].length - 1), names: [] });
-      } else if ((m = /^\s*import\s+([\w$]+)\s*=\s*require\s*\(\s*(["'])/.exec(stmt))) {
-        const spec = specText(from, from + m[0].length - 1);
-        a.imports.push({ from: spec, names: [{ imported: "*", local: m[1] }] });
-        a.bindings[m[1]] = { from: spec, imported: "*" };
-      } else if ((m = /^\s*import\s+([\s\S]*?)\s*\bfrom\s*(["'])/.exec(stmt))) {
-        const spec = specText(from, from + m[0].length - 1);
-        const clause = m[1].replace(/^type\s+/, "");
-        const names: { imported: string; local: string }[] = [];
-        const def = /^([A-Za-z_$][\w$]*)\s*(?:,|$)/.exec(clause);
-        if (def) names.push({ imported: "default", local: def[1] });
-        const ns = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(clause);
-        if (ns) names.push({ imported: "*", local: ns[1] });
-        const named = /\{([\s\S]*?)\}/.exec(clause);
-        if (named) names.push(...parseNamed(named[1]));
-        a.imports.push({ from: spec, names });
-        for (const x of names) a.bindings[x.local] = { from: spec, imported: x.imported };
-      }
-    } else if ((m = /^\s*export\s+(type\s+)?(\*(?:\s*as\s+([A-Za-z_$][\w$]*))?|\{([\s\S]*?)\})\s*from\s*(["'])/.exec(stmt))) {
-      const spec = specText(from, from + m[0].length - 1);
-      let names: { imported: string; local: string }[];
-      if (m[4] !== undefined) names = parseNamed(m[4]).map((x) => ({ imported: x.imported, local: x.local }));
-      else names = [{ imported: "*", local: m[3] ?? "*" }];
-      a.imports.push({ from: spec, names });
-      for (const x of names) if (x.local !== "*") a.exports[x.local] = x.local;
-    } else if ((m = /^\s*export\s+(type\s+)?\{([\s\S]*?)\}/.exec(stmt))) {
-      if (!(ts && m[1])) {
-        const refs = new Set<string>();
-        for (const x of parseNamed(m[2])) {
-          a.exports[x.local] = x.imported;
-          refs.add(x.imported);
-        }
-        for (const r of refs) topLevel.add(r);
-        if (refs.size) a.statements.push({ range, references: sortedArray(refs) });
-      }
-    } else if ((m = /^\s*export\s+default\s+(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)?\s*(?:<[^(]*?>)?\s*\(/.exec(stmt))) {
-      const name = m[1] ?? "default";
-      const p = paramsAt(from + m[0].length - 1);
-      const params = p?.params ?? [];
-      addDecl({ name, kind: "function", params, signature: `${name}(${params.join(", ")})`, range, exported: true }, from, to);
-      a.exports.default = name;
-    } else if ((m = /^\s*export\s+default\s+(?:abstract\s+)?class\b\s*([A-Za-z_$][\w$]*)?/.exec(stmt))) {
-      const name = m[1] ?? "default";
-      addDecl({ name, kind: "class", range, exported: true }, from, to);
-      a.exports.default = name;
-    } else if ((m = /^\s*export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$/.exec(stmt)) && !isWord(m[1])) {
-      a.exports.default = m[1];
-      topLevel.add(m[1]);
-      a.statements.push({ range, references: [m[1]] });
-    } else if ((m = /^\s*export\s+default\b/.exec(stmt))) {
-      const arrow = /^\s*export\s+default\s+(?:async\s+)?\(/.exec(stmt);
-      let info: DeclInfo = { name: "default", kind: "const", range, exported: true };
-      if (arrow) {
-        const p = paramsAt(from + arrow[0].length - 1);
-        if (p && /^\s*(?::[^=]*)?=>/.test(code.slice(p.close + 1, to))) {
-          info = { name: "default", kind: "function", params: p.params, signature: `default(${p.params.join(", ")})`, range, exported: true };
-        }
-      }
-      addDecl(info, from, to);
-      a.exports.default = "default";
-    } else if ((m = /^\s*(export\s+)?(?:declare\s+)?(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^(]*?>)?\s*\(/.exec(stmt))) {
-      const p = paramsAt(from + m[0].length - 1);
-      const params = p?.params ?? [];
-      const name = m[2];
-      addDecl({ name, kind: "function", params, signature: `${name}(${params.join(", ")})`, range, exported: !!m[1] }, from, to);
-      if (m[1]) a.exports[name] = name;
-    } else if ((m = /^\s*(export\s+)?(?:declare\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/.exec(stmt))) {
-      addDecl({ name: m[2], kind: "class", range, exported: !!m[1] }, from, to);
-      if (m[1]) a.exports[m[2]] = m[2];
-    } else if (ts && (m = /^\s*(export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/.exec(stmt))) {
-      addDecl({ name: m[2], kind: "const", range, exported: !!m[1] }, from, to);
-      if (m[1]) a.exports[m[2]] = m[2];
-    } else if ((m = /^\s*(export\s+)?(?:declare\s+)?(const|let|var)\s+/.exec(stmt))) {
-      const exported = !!m[1];
-      const kind = m[2] as DeclInfo["kind"];
-      const bodyFrom = from + m[0].length;
-      // declarators: split the statement at top-level commas
-      const rest = code.slice(bodyFrom, to);
-      let offset = bodyFrom;
-      const declared: string[] = [];
-      for (const part of splitTopLevel(rest)) {
-        const partFrom = offset;
-        offset += part.length + 1;
-        const id = /^\s*([A-Za-z_$][\w$]*)/.exec(part);
-        const pat = /^\s*([{[])/.exec(part);
-        let names: string[] = [];
-        if (id) names = [id[1]];
-        else if (pat) {
-          const close = matchBracket(code, partFrom + pat[0].length - 1);
-          const inner = close > 0 ? code.slice(partFrom + pat[0].length, close) : "";
-          names = inner
-            .split(",")
-            .map((x) => x.split("=")[0])
-            .map((x) => (x.includes(":") ? x.split(":")[1] : x).replace(/\.\.\./, "").trim())
-            .filter((x) => /^[A-Za-z_$][\w$]*$/.test(x));
-        } else continue;
-        let params: string[] | undefined;
-        if (id) {
-          const afterId = partFrom + id[0].length;
-          // `= (a) =>`, `= ((a) => …)`, `= async (a) =>`, `= <T>(a: T) =>`, `= a =>`, `= function (a)`
-          const init = /^\s*(?::[^=]*)?=\s*((?:\(\s*)*)(?:async\s+)?(?:(function\b\s*\*?\s*[\w$]*\s*(?:<[^(]*?>)?\s*\()|(?:<[^(]*?>\s*)?(\()|([A-Za-z_$][\w$]*)\s*=>)/.exec(code.slice(afterId, to));
-          let called = false;
-          if (init && init[1]) {
-            // `= (() => …)()` is a call (an IIFE), not a function value
-            const group = afterId + init[0].indexOf("(", init[0].indexOf("="));
-            const close = matchBracket(code, group);
-            called = close > 0 && /^\s*(?:\?\.\s*)?\(/.test(code.slice(close + 1, close + 40));
-          }
-          if (init && !called) {
-            if (init[4]) params = [init[4]];
-            else {
-              const open = afterId + init[0].length - 1;
-              const p = paramsAt(open);
-              if (p && (init[2] || /^\s*(?::[^=;{]*)?=>/.test(code.slice(p.close + 1, to)))) params = p.params;
-            }
-          }
-        }
-        for (const name of names) {
-          if (isWord(name)) continue;
-          const info: DeclInfo = { name, kind, range, exported };
-          if (params) {
-            info.params = params;
-            info.signature = `${name}(${params.join(", ")})`;
-          }
-          addDecl(info, from, to, names.filter((x) => x !== name));
-          declared.push(name);
-          if (exported) a.exports[name] = name;
-        }
-      }
-    } else if (ts && /^\s*(?:export\s+)?(?:declare\s+)?(?:interface\b|type\s+[A-Za-z_$][\w$]*\s*(?:<|=)|namespace\b|module\b|global\b|declare\b)/.test(stmt)) {
-      // type-only or ambient TypeScript: not code
-    } else {
-      const refs = identifiers(from, to, new Set());
-      for (const r of refs) topLevel.add(r);
-      if (refs.size) a.statements.push({ range, references: sortedArray(refs) });
-    }
-    k = end + 1;
   }
 
-  for (const local of Object.values(a.exports)) {
-    const d = a.decls[local];
-    if (d) d.exported = true;
+  /** Marks the exported declarations and turns the collected sets into sorted lists. */
+  private finish(): void {
+    for (const local of Object.values(this.analysis.exports)) {
+      const d = this.analysis.decls[local];
+      if (d) d.exported = true;
+    }
+    for (const [name, set] of this.refSets) this.analysis.references[name] = sortedArray(set);
+    this.analysis.topLevelReferences = sortedArray(this.topLevel);
   }
-  for (const [name, set] of refSets) a.references[name] = sortedArray(set);
-  a.topLevelReferences = sortedArray(topLevel);
-  return a;
 }
