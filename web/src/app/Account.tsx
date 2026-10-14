@@ -7,6 +7,7 @@ import type { ProjectInfo, Provider, SignInKind } from "../../../src/core/accoun
 import { Button, Input, Menu, MenuItem, MenuSeparator, Popover, SkeletonRows, usePopover } from "../design/components";
 import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
+import { THEMES, setTheme, useTheme } from "../design/theme";
 import { useStore } from "../state/store";
 import { openProject, signOut, useCanAct, useMe } from "../state/account";
 import { githubSignInUrl, googleSignInUrl, orderedProviders } from "../state/signin";
@@ -213,12 +214,33 @@ export function UserMenu() {
             Sign-in setup
           </MenuItem>
         )}
+        <ThemeChoices />
         <MenuSeparator />
         <MenuItem icon="sign-out" onSelect={() => void signOut()}>
           Sign out
         </MenuItem>
       </Menu>
     </>
+  );
+}
+
+/** Day, Dusk and Night in the account menu. A phone has no theme control in the bar, so it shows only there (see accounts.css). */
+function ThemeChoices() {
+  const theme = useTheme();
+  return (
+    <div className="acct-menu__themes" role="presentation">
+      <MenuSeparator />
+      <div role="group" aria-label="Theme">
+        <div className="acct-menu__label" aria-hidden="true">
+          Theme
+        </div>
+        {THEMES.map((t) => (
+          <MenuItem key={t.id} icon={t.id} checked={theme === t.id} keepOpen onSelect={() => setTheme(t.id)}>
+            {t.label}
+          </MenuItem>
+        ))}
+      </div>
+    </div>
   );
 }
 

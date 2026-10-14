@@ -8,6 +8,7 @@ import { useEffect, useId, useState } from "react";
 import { Button, EmptyState, SkeletonRows, Textarea } from "../design/components";
 import { Icon } from "../design/icons";
 import { useMe } from "../state/account";
+import { factsLine } from "../state/approvals";
 import { ago } from "../state/format";
 import {
   currentSubscription,
@@ -24,6 +25,7 @@ import {
   type PushStatus,
 } from "../state/inbox";
 import { useNow } from "../app/useNow";
+import { ReasonText } from "../app/ReasonText";
 import { Link } from "../app/router";
 import { SignInChoices } from "../app/Account";
 import { answerApproval, useAnswering } from "../app/approvalActions";
@@ -62,11 +64,13 @@ function ApprovalItemCard({ item, now }: { item: InboxItem; now: number }) {
       </h2>
       <p className="inbox-card__headline">{item.headline}</p>
       <p className="inbox-card__line">
-        {item.agent && <span className="voice-agent">{item.agent}</span>} {item.line}
+        {item.agent && <span className="voice-agent">{item.agent}</span>} {factsLine(item.line, item.why)}
       </p>
       <ul className="inbox-card__why">
         {item.why.map((w, i) => (
-          <li key={i}>{w}</li>
+          <li key={i}>
+            <ReasonText text={w} />
+          </li>
         ))}
       </ul>
       <div className="inbox-card__acts">

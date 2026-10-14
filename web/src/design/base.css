@@ -209,6 +209,35 @@ samp {
   white-space: break-spaces;
 }
 
+/* ───────────── touch screens: hit areas ───────────── */
+/*
+ * On a touch screen a link, a checkbox and a small segment button get a hit area of 24 to 32 px. The look stays.
+ * A link in a line is an inline box: its padding adds hit area and does not move the lines.
+ * A link that is a box (a flex row) gets an invisible layer, because padding would move its neighbors.
+ */
+@media (pointer: coarse) {
+  a:not([class]) {
+    padding-block: 9px;
+  }
+  :is(a.cv-ctx__act, a.inbox-card__link, a.backlink, a.apcard__review) {
+    position: relative;
+  }
+  :is(a.cv-ctx__act, a.inbox-card__link, a.backlink, a.apcard__review)::after {
+    content: "";
+    position: absolute;
+    inset: -8px -4px;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 24px;
+    height: 24px;
+  }
+  .b-seg__opt {
+    min-width: 32px;
+    min-height: 32px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

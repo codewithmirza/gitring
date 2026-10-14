@@ -3,7 +3,8 @@
  * Type sizes here: 11, 13, 15, 28.
  */
 
-.inbox { max-width: 640px; }
+/* The page column is the same on every document page (--page-w). The inbox keeps a reading width inside it. */
+.inbox > :not(.page__title) { max-width: 640px; }
 .inbox .page__lede a { font-weight: 500; }
 
 .inbox-list { display: grid; gap: var(--s-4); margin: var(--s-5) 0 0; padding: 0; list-style: none; }

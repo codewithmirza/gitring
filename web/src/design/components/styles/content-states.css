@@ -47,3 +47,5 @@
 }
 .b-empty__art { color: var(--line-strong); }
 .b-empty__text { max-width: 36ch; font-size: var(--t-sm); }
+/* The row of actions under the sentence. */
+.b-empty__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--s-3) var(--s-5); }

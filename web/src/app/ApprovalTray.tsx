@@ -15,35 +15,49 @@ import { useMedia } from "./useMedia";
 
 const MAX_CHIPS = 3;
 
-/** How many chips fit: three on a wide screen, two on a phone, one where the window is low. */
-function useMaxChips(): number {
+/** How many chips fit: three on a wide screen, one on a phone (the tray sits in the page there), fewer where the window is low. */
+export function useMaxChips(): number {
   const wide = useMedia("(min-width: 761px)");
   const high = useMedia("(min-height: 640px)");
   const low = useMedia("(min-height: 480px)");
   if (wide) return high ? MAX_CHIPS : low ? 2 : 1;
-  return high ? 2 : 1;
+  return 1;
 }
 
-/** Tell the toasts how tall the tray is, so that they sit above it (CSS: --tray-h). */
+/**
+ * Tell the page how much room the tray takes (CSS: --tray-h and --tray-room).
+ * --tray-h is the height of the tray: the toasts sit above it.
+ * --tray-room is the part of the page that the tray covers: the panes that scroll keep that much free at their end,
+ * so that the tray never hides the last rows or a control. It is 0 where the tray is a row of the page (narrow screens).
+ */
 function useTrayHeight(el: HTMLElement | null) {
   useEffect(() => {
     const root = document.documentElement;
-    if (!el) {
+    const clear = () => {
       root.style.removeProperty("--tray-h");
+      root.style.removeProperty("--tray-room");
+    };
+    if (!el) {
+      clear();
       return;
     }
+    const page = document.getElementById("main");
     const set = () => {
-      const h = Math.ceil(el.getBoundingClientRect().height);
-      // A tray that the page hides (display: none) has no height: the toasts need no room.
-      if (h > 0) root.style.setProperty("--tray-h", `${h + 8}px`);
-      else root.style.removeProperty("--tray-h");
+      const box = el.getBoundingClientRect();
+      // A tray that the page hides (display: none) has no height: the toasts and the page need no room.
+      if (Math.ceil(box.height) <= 0) return clear();
+      root.style.setProperty("--tray-h", `${Math.ceil(box.height) + 8}px`);
+      const covered = page ? Math.ceil(page.getBoundingClientRect().bottom - box.top) : 0;
+      if (covered > 0) root.style.setProperty("--tray-room", `${covered + 8}px`);
+      else root.style.removeProperty("--tray-room");
     };
     set();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(set) : null;
     ro?.observe(el);
+    if (page) ro?.observe(page);
     return () => {
       ro?.disconnect();
-      root.style.removeProperty("--tray-h");
+      clear();
     };
   }, [el]);
 }

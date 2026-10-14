@@ -6,6 +6,10 @@
 
 /* ───────────── the card ───────────── */
 .apcard { display: grid; gap: var(--s-2); min-width: 0; }
+.apcard__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-2); min-width: 0; }
+.apcard__head .apcard__title { flex: 1; min-width: 0; }
+.apcard__head .b-iconbtn { flex: none; margin: calc(-1 * var(--s-1)) calc(-1 * var(--s-2)) 0 0; }
+.apcard__facts { display: grid; gap: var(--s-2); min-width: 0; }
 .apcard__title {
   font-size: var(--t-md);
   line-height: 1.3;
@@ -47,7 +51,8 @@
   right: var(--s-5);
   bottom: var(--s-5);
   z-index: 30; /* above the rails (20), under popovers (40) and toasts (50) */
-  width: min(380px, calc(100vw - 32px));
+  /* As wide as the right rail of the map, so that on the overview it covers the rail and not the activity log. */
+  width: min(calc(var(--rail-right) - 2 * var(--s-5)), calc(100vw - 32px));
   pointer-events: none;
 }
 .aptray__list { display: flex; flex-direction: column; gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
@@ -80,17 +85,27 @@
 /* Toasts sit above the tray (the tray tells its height in --tray-h). */
 .app .b-toasts { bottom: calc(var(--s-5) + var(--tray-h, 0px)); }
 
-/* Narrow screens: the tray is centered at the bottom. */
+/* Narrow screens: the tray is a row of the page, above the bottom bar. The page gets shorter by the height of the
+   tray, so the tray never covers a row, a map control or a button (App grid: styles/shell-topbar.css). */
 @media (max-width: 760px) {
-  .aptray { left: 50%; right: auto; width: min(420px, calc(100vw - 24px)); transform: translateX(-50%); }
+  .aptray {
+    position: static;
+    grid-row: 3;
+    width: auto;
+    padding: var(--s-3) var(--s-3) var(--s-3);
+    border-top: 1px solid var(--line);
+    background: var(--surface-1);
+  }
+  .aptray--line { display: block; text-align: center; padding: var(--s-2) var(--s-3); }
+  .aptray .apcard--chip,
+  .aptray .aptray__morebtn { box-shadow: none; }
 }
 /* The approve page has its own answer bar at the bottom of the screen (the page changes its layout at 900px). */
 @media (max-width: 900px) {
   .aptray[data-route="approve"] { display: none; }
 }
-/* Phones: above the bottom bar of the views. */
+/* Phones: the toasts stay above the tray and the bottom bar. */
 @media (max-width: 600px) {
-  .aptray { bottom: calc(52px + var(--s-3) + env(safe-area-inset-bottom)); }
   .apcard--chip { padding: var(--s-3) var(--s-4); }
   .app.app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom) + var(--tray-h, 0px)); }
 }

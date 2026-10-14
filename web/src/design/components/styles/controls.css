@@ -53,19 +53,20 @@
 .b-btn--danger:hover, .b-btn--danger.is-hover { background: var(--danger-tint); }
 .b-btn--danger:active, .b-btn--danger.is-active { background: color-mix(in oklch, var(--danger) 18%, transparent); }
 
+/* Disabled: a flat grey button, not a faded copy of the enabled one. The text keeps 3 to 1 against the fill in all three themes. */
 .b-btn[aria-disabled="true"],
 .b-btn:disabled {
-  opacity: .45;
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink-3);
   cursor: not-allowed;
 }
+.b-btn--ghost[aria-disabled="true"],
+.b-btn--ghost:disabled { background: transparent; border-color: transparent; }
 .b-btn[aria-disabled="true"]:hover,
-.b-btn:disabled:hover {
-  background: revert-layer;
-}
-.b-btn--primary[aria-disabled="true"]:hover { background: var(--accent); }
-.b-btn--secondary[aria-disabled="true"]:hover { background: var(--bg); }
-.b-btn--ghost[aria-disabled="true"]:hover { background: transparent; color: var(--ink-2); }
-.b-btn--danger[aria-disabled="true"]:hover { background: transparent; }
+.b-btn:disabled:hover { background: var(--surface-2); color: var(--ink-3); }
+.b-btn--ghost[aria-disabled="true"]:hover,
+.b-btn--ghost:disabled:hover { background: transparent; }
 
 .b-btn.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 .b-btn[aria-busy="true"] { cursor: progress; }

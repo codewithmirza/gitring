@@ -3,7 +3,8 @@
  * Type sizes here: 11, 13, 15, 28.
  */
 
-.acct { max-width: 920px; }
+/* The page column is the same on every document page (--page-w). The account keeps a reading width inside it. */
+.acct-profile, .acct-sec { max-width: 920px; }
 .acct-profile {
   display: flex;
   flex-wrap: wrap;

@@ -199,7 +199,7 @@ describe("words for a question", () => {
   });
 
   it("puts the count in front of the tab title", () => {
-    expect(tabTitle(2, "Tasks · shop · gitring")).toBe("(2) gitring");
+    expect(tabTitle(2, "Tasks · shop · gitring")).toBe("(2) Tasks · shop · gitring");
     expect(tabTitle(0, "Tasks · shop · gitring")).toBe("Tasks · shop · gitring");
   });
 });

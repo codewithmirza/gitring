@@ -1,11 +1,19 @@
 /* The generic page, the responsive rules (tablets, phones, touch) and the shared back link. */
 
-/* generic page */
+/* generic page: one column width and one left edge for every page that is a document. The map, the task list and the code use the whole width. */
 .page {
-  max-width: 1240px;
+  max-width: var(--page-w);
   margin: 0 auto;
   padding: var(--s-8) var(--s-8) var(--s-11);
 }
+/* Room for the tray of the merge question. The tray tells --tray-room (ApprovalTray.tsx): the part of the page that it
+   covers. A pane that scrolls keeps that much free at its end. On a phone the tray is a row of the page, and the room is 0. */
+.page { padding-bottom: max(var(--s-11), var(--tray-room, 0px)); }
+.logbook.no-detail::after,
+.logbook__detail::after,
+.intents-view__main::after,
+.traffic__list::after,
+.vdetail::after { content: ""; display: block; height: var(--tray-room, 0px); }
 .page__eyebrow { font-size: var(--t-xs); color: var(--ink-3); display: flex; align-items: center; gap: var(--s-2); }
 .page__title { font-size: var(--t-xl); line-height: var(--lh-xl); font-weight: 500; letter-spacing: -.005em; }
 .page__lede { margin-top: var(--s-3); max-width: 66ch; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); }
@@ -125,9 +133,9 @@
   /* Toasts stay above the bottom bar. */
   .app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom)); right: var(--s-3); }
   .topbar .topbar__conn, .topbar .topbar__queue, .topbar .topbar__search, .topbar .topbar__themecycle { min-width: 40px; height: 40px; justify-content: center; }
-  /* Room for the name and Sign in: the theme follows the system, a live connection needs no badge, and
-     people who only watch get no decisions button (the decisions page still lists them). */
-  .topbar .topbar__themecycle { display: none; }
+  /* Room for the name and Sign in: a person with an account chooses the theme in the account menu, a live connection
+     needs no badge, and people who only watch get no decisions button (the decisions page still lists them). */
+  .topbar .topbar__themecycle--spare { display: none; }
   .topbar .topbar__conn--clear { display: none; }
   .topbar .topbar__queue--watch { display: none; }
   .topbar__projname { max-width: 120px; }

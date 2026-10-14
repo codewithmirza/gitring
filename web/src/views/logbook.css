@@ -6,7 +6,7 @@
 /* ───────────── the list of merges ───────────── */
 
 .logbook { min-height: 100%; }
-.logbook.no-detail .logbook__list { max-width: 1240px; margin: 0 auto; padding: var(--s-8) var(--s-8) var(--s-10); }
+.logbook.no-detail .logbook__list { max-width: var(--page-w); margin: 0 auto; padding: var(--s-8) var(--s-8) var(--s-10); }
 .logbook.has-detail {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
@@ -298,7 +298,7 @@
   .why { padding: var(--s-6) var(--s-6) var(--s-10); }
 }
 @media (max-width: 760px) {
-  .logbook.no-detail .logbook__list { padding: var(--s-6) var(--s-4) var(--s-10); }
+  .logbook.no-detail .logbook__list { padding: var(--s-6) var(--s-5) var(--s-10); }
   .lrow,
   .lrow--compact {
     grid-template-columns: auto 1fr;
