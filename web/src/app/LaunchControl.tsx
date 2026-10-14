@@ -2,7 +2,7 @@
  * Chooses how many built-in agents work on a task and which models they use, and the button that starts them.
  * Used by the composer, the task rail and the tasks page. The wait for the test budget comes from ./actions.ts.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { Intent } from "../../../src/core/types";
 import { Button, Checkbox, Popover, Segmented, toast, usePopover } from "../design/components";
 import { harbor } from "../state/api";
@@ -29,6 +29,7 @@ export function FanoutPicker({
   setModels: (m: string[]) => void;
   available: string[];
 }) {
+  const modelsId = useId();
   if (!available.length) {
     return (
       <p className="launch__help">
@@ -47,17 +48,22 @@ export function FanoutPicker({
           options={FANOUT.map((v) => ({ value: v, label: v, ariaLabel: `${v} ${v === "1" ? "agent" : "agents"}` }))}
         />
       </div>
-      <fieldset className="launch__models">
-        <legend className="launch__label">Models</legend>
-        {available.map((m) => (
-          <Checkbox
-            key={m}
-            label={<span className="voice-agent">{modelShort(m)}</span>}
-            checked={models.includes(m)}
-            onChange={(e) => setModels(e.target.checked ? [...models, m] : models.filter((x) => x !== m))}
-          />
-        ))}
-      </fieldset>
+      {/* A group, not a fieldset: a legend floats beside the first box and the next boxes wrap under it. */}
+      <div className="launch__row" role="group" aria-labelledby={modelsId}>
+        <span className="launch__label" id={modelsId}>
+          Models
+        </span>
+        <div className="launch__models">
+          {available.map((m) => (
+            <Checkbox
+              key={m}
+              label={<span className="voice-agent">{modelShort(m)}</span>}
+              checked={models.includes(m)}
+              onChange={(e) => setModels(e.target.checked ? [...models, m] : models.filter((x) => x !== m))}
+            />
+          ))}
+        </div>
+      </div>
       <p className="launch__help">
         {fanout === 1
           ? "One agent works in its own work copy."
