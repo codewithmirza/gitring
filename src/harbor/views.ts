@@ -17,7 +17,8 @@ import type {
   TrafficVessel,
   Verdict,
 } from "../core/types";
-import { applyFileChanges, diffSnapshots, pathProblem, type Snapshot, type SnapshotChange } from "../core/git/snapshot";
+import { diffSnapshots, pathProblem, type Snapshot, type SnapshotChange } from "../core/git/snapshot";
+import { hashObject, utf8 } from "../core/git/objects";
 import type { ImportGraph } from "../core/analysis/graph";
 import { analyzeModule, isAnalyzable } from "../core/analysis/symbols";
 import { analyzeFootprint, type FileVersions } from "../core/analysis/footprint";
@@ -151,15 +152,28 @@ export function opaqueChanges(base: Snapshot, head: Snapshot, changed: FileVersi
 /**
  * A text tree with text written on top (`null` deletes), as real entries: each text becomes a blob id.
  * `textBlobs` maps those blob ids to their text, so a merge can read blobs that exist in no repository yet.
+ * `blobId` gives the blob id of a text; a caller with a cache answers at once (no wait for a hash).
+ * A written file keeps the mode of its path (an executable stays executable).
  */
-export async function overlaySnapshot(tree: Snapshot, overlay: Map<string, string | null>): Promise<{ snapshot: Snapshot; textBlobs: Map<string, string> }> {
-  // A path that git cannot hold (".git/x", "a//b") cannot merge: it stays out of the tree.
-  const changes = [...overlay].filter(([path]) => !pathProblem(path)).map(([path, content]) => ({ path, content }));
-  const { snapshot, blobs } = await applyFileChanges(tree, changes);
+export async function overlaySnapshot(
+  tree: Snapshot,
+  overlay: Map<string, string | null>,
+  blobId: (text: string) => string | Promise<string> = (text) => hashObject("blob", utf8.encode(text)),
+): Promise<{ snapshot: Snapshot; textBlobs: Map<string, string> }> {
+  const snapshot: Snapshot = new Map(tree);
   const textBlobs = new Map<string, string>();
   for (const [path, content] of overlay) {
-    const e = content === null ? undefined : snapshot.get(path);
-    if (e && blobs.has(e.sha)) textBlobs.set(e.sha, content!);
+    // A path that git cannot hold (".git/x", "a//b") cannot merge: it stays out of the tree.
+    if (pathProblem(path)) continue;
+    if (content === null) {
+      snapshot.delete(path);
+      continue;
+    }
+    const id = blobId(content);
+    const sha = typeof id === "string" ? id : await id;
+    const mode = snapshot.get(path)?.mode;
+    snapshot.set(path, { sha, mode: mode === "100755" || mode === "120000" ? mode : "100644" });
+    textBlobs.set(sha, content);
   }
   return { snapshot, textBlobs };
 }

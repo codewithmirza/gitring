@@ -19,7 +19,7 @@ import type { RepoBackend } from "../platform/repo/backend";
 import { RepoConflictError, type CommitMeta, type FileChange } from "../platform/repo/backend";
 import { ArtifactsBackend } from "../platform/repo/artifacts";
 import { MemoryTreeCache, readSnapshot, diffSnapshots, applyFileChanges, type Snapshot, type SnapshotChange } from "../core/git/snapshot";
-import { hashObject, isValidBranchName, utf8 } from "../core/git/objects";
+import { hashObject, hashObjectSync, isValidBranchName, utf8 } from "../core/git/objects";
 import { buildImportGraph, graphFromEdges } from "../core/analysis/graph";
 import { isAnalyzable } from "../core/analysis/symbols";
 import { unifiedDiff, isProbablyText, lineDiff } from "../core/text/diff";
@@ -123,6 +123,8 @@ const MAX_TEST_TREE_BYTES = 16_000_000;
 const MAX_TEST_TREE_READS = 5000;
 /** Blobs of unknown size that gitring reads at once (it learns the size of a blob only when it reads it). */
 const SIZE_READS = 4;
+/** Characters of text that the cache of blob ids keeps (about 8 MB of memory). */
+const TEXT_ID_CHARS = 4_000_000;
 
 /** Reads blobs for a merge (see HarborMaster.blobReader). */
 interface BlobReader {
@@ -193,7 +195,12 @@ export class HarborMaster extends DurableObject<Env> {
   private treeTexts = new Map<string, Promise<TreeText>>();
   private mainView?: MainView;
   private mainLoading?: Promise<MainView>;
-  private attemptViews = new Map<string, { version: number; view: AttemptView }>();
+  private attemptViews = new Map<string, { key: string; view: AttemptView }>();
+  /** Views of work copies that gitring makes now (see attemptView). */
+  private attemptViewLoads = new Map<string, { key: string; view: Promise<AttemptView> }>();
+  /** Text → blob id, for the files that agents wrote (see textBlobId). */
+  private textIds = new Map<string, string>();
+  private textIdChars = 0;
   private attemptVersion = new Map<string, number>();
   private forks = new Map<string, Promise<void>>();
   private landingChain: Promise<unknown> = Promise.resolve();
@@ -917,18 +924,50 @@ export class HarborMaster extends DurableObject<Env> {
     this.attemptVersion.set(attemptId, (this.attemptVersion.get(attemptId) ?? 0) + 1);
   }
 
-  /** Files, changes and signatures of an attempt (cached per content version). */
-  private async attemptView(a: T.Attempt): Promise<AttemptView> {
+  /**
+   * Files, changes and signatures of an attempt (cached per content version, base and head). Calls that come
+   * while the view is made wait for the same view: they do not make it again.
+   */
+  private attemptView(a: T.Attempt): Promise<AttemptView> {
     const version = this.attemptVersion.get(a.id) ?? 0;
+    const key = `${version}:${a.baseTree}:${a.headSha ?? ""}`;
     const cached = this.attemptViews.get(a.id);
-    if (cached && cached.version === version) return cached.view;
+    if (cached && cached.key === key) return Promise.resolve(cached.view);
+    const loading = this.attemptViewLoads.get(a.id);
+    if (loading && loading.key === key) return loading.view;
+    const view = this.makeAttemptView(a, version, key).finally(() => {
+      if (this.attemptViewLoads.get(a.id)?.view === view) this.attemptViewLoads.delete(a.id);
+    });
+    this.attemptViewLoads.set(a.id, { key, view });
+    return view;
+  }
+
+  /**
+   * Blob id of a text, at once: a view of a work copy must not wait for WebCrypto, or many calls wait for the
+   * same view. A view hashes the same written files again and again, so the ids stay cached.
+   */
+  private textBlobId(text: string): string {
+    const hit = this.textIds.get(text);
+    if (hit) return hit;
+    const sha = hashObjectSync("blob", utf8.encode(text));
+    if (this.textIdChars + text.length > TEXT_ID_CHARS) {
+      this.textIds.clear();
+      this.textIdChars = 0;
+    }
+    this.textIds.set(text, sha);
+    this.textIdChars += text.length;
+    return sha;
+  }
+
+  private async makeAttemptView(a: T.Attempt, version: number, key: string): Promise<AttemptView> {
     const p = this.requireProject();
+    const headSha = a.headSha;
     const base = await this.treeText(p.repo.name, a.baseTree);
     // The tree that the work starts from: the last push in git mode, else the base.
     let tt = base;
     let repo = p.repo.name;
     if (a.mode === "git") {
-      const head = a.headSha ? await this.backend.readCommit(a.fork.repo, a.headSha) : null;
+      const head = headSha ? await this.backend.readCommit(a.fork.repo, headSha) : null;
       if (head) {
         tt = await this.treeText(a.fork.repo, head.treeHash);
         repo = a.fork.repo;
@@ -937,7 +976,7 @@ export class HarborMaster extends DurableObject<Env> {
     // Text on top: shadow edits (from the Claude Code hook) on the last push, or the written files of api mode.
     const overlay = this.db.worktree(a.id);
     const files = overlayFiles(tt.text, overlay);
-    const { snapshot: real, textBlobs } = await overlaySnapshot(tt.snapshot, overlay);
+    const { snapshot: real, textBlobs } = await overlaySnapshot(tt.snapshot, overlay, (text) => this.textBlobId(text));
     // What merges: every real change, with a few parts left out (and named to the agent).
     const plan = planCarry(base.snapshot, real, new Set(overlay.keys()));
     const paths = diffSnapshots(base.snapshot, plan.work).map((c) => c.path);
@@ -945,7 +984,7 @@ export class HarborMaster extends DurableObject<Env> {
     const opaque = opaqueChanges(base.snapshot, plan.work, changed);
     const { signatures } = footprintOf(changed, new Set(files.keys()));
     const view: AttemptView = { version, files, changed, signatures, snapshot: plan.work, repo, textBlobs, opaque, notCarried: plan.notCarried };
-    this.attemptViews.set(a.id, { version, view });
+    this.attemptViews.set(a.id, { key, view });
     return view;
   }
 
