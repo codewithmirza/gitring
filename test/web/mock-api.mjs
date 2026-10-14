@@ -368,6 +368,11 @@ async function api(req, res, url) {
     }
     if (rest === "/import/check" && req.method === "POST") return json(res, 200, { importing: proj.importing ?? null, mainSha: "" });
     if (rest === "/push-token" && req.method === "POST") return json(res, 200, { remote: `https://artifacts.example/${id}.git`, token: "tok_123", expiresAt: new Date(now() + DAY).toISOString() });
+    if (rest === "/clone-token" && req.method === "POST") {
+      const remote = `https://artifacts.example/${id}.git`;
+      const header = `Authorization: Basic ${Buffer.from("x:tok_read").toString("base64")}`;
+      return json(res, 200, { remote, branch: "main", token: "tok_read?expires=1", expiresAt: new Date(now() + 6 * 3600_000).toISOString(), header, clone: `git -c http.extraHeader="${header}" clone --branch main ${remote} ${id}`, pull: `git -c http.extraHeader="${header}" pull` });
+    }
   }
   return json(res, 404, { error: `No mock for ${req.method} ${p}.` });
 }

@@ -1,6 +1,6 @@
 /**
  * "/projects": the person's projects and the public ones. "New project" grows a panel from the button
- * (one combobox for every source); a person without projects sees that picker right on the page.
+ * (a description, then the sources); a person without projects sees that picker right on the page.
  * The project list comes from the boot request; this page asks again only when the tab comes back
  * after a minute or more.
  */
@@ -8,12 +8,13 @@ import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { Button, EmptyState } from "../design/components";
 import { Icon } from "../design/icons";
 import type { ProjectInfo } from "../../../src/core/accounts";
+import { TEMPLATES } from "../../../src/core/templates";
 import { loadProjects, openProject, useMe } from "../state/account";
 import { ago } from "../state/format";
 import { useStore } from "../state/store";
 import { setSearchParam, useLocationKey } from "../app/router";
 import { AnchoredPanel } from "./newproject/AnchoredPanel";
-import { NewProject } from "./newproject/NewProject";
+import { NEW_PROJECT_LEDE, NewProject } from "./newproject/NewProject";
 import { draftFromLink, EMPTY_DRAFT, LINK_PARAMS, type NewProjectDraft } from "./newproject/draft";
 import { GithubMark, LockIcon, RepoIcon } from "./newproject/marks";
 import "./projects.css";
@@ -33,6 +34,8 @@ function sourceLine(p: ProjectInfo): string {
       return `Uploaded folder · ${s.files} ${s.files === 1 ? "file" : "files"}`;
     case "push":
       return "Pushed with git";
+    case "template":
+      return `From the ${TEMPLATES.find((t) => t.id === s.template)?.title ?? s.template} template`;
     default:
       return "Project";
   }
@@ -42,6 +45,7 @@ function SourceIcon({ p }: { p: ProjectInfo }) {
   if (p.source.kind === "github") return <GithubMark className="pj-card__icon" />;
   if (p.source.kind === "git") return <Icon name="fork" className="pj-card__icon" />;
   if (p.source.kind === "upload") return <Icon name="launch" className="pj-card__icon" />;
+  if (p.source.kind === "template") return <Icon name="grid" className="pj-card__icon" />;
   return <RepoIcon className="pj-card__icon" />;
 }
 
@@ -89,7 +93,7 @@ export function ProjectsView() {
       if (e.key !== "N" || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
       if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable='true']")) return;
       e.preventDefault();
-      if (inline) document.querySelector<HTMLInputElement>(".pj-start [role='combobox']")?.focus();
+      if (inline) document.querySelector<HTMLInputElement>(".pj-start .np-describe__input")?.focus();
       else setOpen(true);
     };
     window.addEventListener("keydown", onKey);
@@ -122,7 +126,10 @@ export function ProjectsView() {
           <h1 className="page__title" tabIndex={-1}>
             Projects
           </h1>
-          <p className="page__lede">A project is one repository. Many agents change it at the same time. gitring checks their plans and merges their work when the tests pass. You say yes to risky work.</p>
+          <p className="page__lede">
+            A project is one git repository. gitring holds it in Cloudflare Artifacts. Many agents change it at the same time: gitring checks their plans and merges
+            their work when the tests pass. You say yes to risky work. Agents can also create projects through MCP.
+          </p>
         </div>
         {ready && !inline && (
           <div className="projects__new">
@@ -157,7 +164,7 @@ export function ProjectsView() {
             returnTo={RETURN_TO}
             autoFocus={focusInline}
             title="Start your first project"
-            lede="Pick a repository from GitHub. gitring guesses the test commands, and agents can start at once."
+            lede={NEW_PROJECT_LEDE}
           />
         </section>
       )}

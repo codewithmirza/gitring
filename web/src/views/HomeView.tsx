@@ -265,8 +265,8 @@ export function HomeView() {
           Add gitring to your agent
         </h2>
         <p className="home__text">
-          gitring is an MCP connector. Your agent adds one URL and signs in with your gitring account (OAuth). There is no key to copy. Your agent can then read
-          the open tasks, send its plan and get change requests.
+          gitring is an MCP connector. Your agent adds one URL and signs in with your gitring account (OAuth). There is no key to copy. Your agent can then
+          create projects, read the open tasks, send its plan and get change requests.
         </p>
         <ConnectorSteps signedIn={signedIn} />
       </section>
@@ -276,8 +276,9 @@ export function HomeView() {
           Where your code goes
         </h2>
         <p className="home__text">
-          Each project has a git repository in Cloudflare Artifacts. Import it from GitHub, push it with git, or upload a folder. gitring can send merged code back
-          to GitHub as a pull request, or straight to main.
+          gitring holds the code. Each project is a git repository in Cloudflare Artifacts. Describe a project or start from a template, upload a folder, push
+          with git, or import any git URL. An agent creates a project through MCP with one call. GitHub is optional: gitring can import a repository from
+          GitHub, and it can send merged code back as a pull request or straight to main.
         </p>
         {!signedIn && (
           <div className="home__actions">

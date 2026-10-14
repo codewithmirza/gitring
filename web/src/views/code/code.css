@@ -625,3 +625,10 @@
   .cv-skel { animation: none; }
   .cv-line.is-flash .cv-code { animation: none; background: color-mix(in oklch, var(--caution) 18%, transparent); }
 }
+
+/* Clone (members): the git command with a read token. */
+.cv-clone { display: grid; gap: var(--s-3); padding: var(--s-1); min-width: 0; }
+.cv-clone__title { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--ink-1); }
+.cv-clone__text { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+.cv-clone__error { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--danger); }
+.cv-clone .b-btn { justify-self: start; }

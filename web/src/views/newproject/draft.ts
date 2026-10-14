@@ -8,6 +8,9 @@ import { githubRepoName } from "../../../../src/core/repo-rules";
 
 export type SourceStep =
   | { kind: "list" }
+  /** A description: gitring picks a template, writes the first task and starts built-in agents. */
+  | { kind: "describe"; text: string }
+  | { kind: "template" }
   | { kind: "github"; repo: string; known?: GithubRepo }
   | { kind: "git"; url: string; note?: string }
   | { kind: "upload" }
@@ -22,10 +25,19 @@ export interface FormValues {
   sync: GithubSyncMode;
   visibility: Visibility;
   url: string;
+  /** The template of a new project (the describe and template steps). */
+  template: string;
+  /** Built-in agents that start on the first task (the describe step). */
+  agents: number;
+  /** The text of the describe step. */
+  description: string;
 }
 
 export interface NewProjectDraft {
+  /** The text of the GitHub repository search. */
   query: string;
+  /** The text of "Describe what you want to build". */
+  description: string;
   step: SourceStep;
   /** Values the person changed. A value that is not here comes from gitring's guess. */
   form: Partial<FormValues>;
@@ -33,12 +45,13 @@ export interface NewProjectDraft {
   upload: { files: File[]; folder: string } | null;
 }
 
-export const EMPTY_DRAFT: NewProjectDraft = { query: "", step: { kind: "list" }, form: {}, upload: null };
+export const EMPTY_DRAFT: NewProjectDraft = { query: "", description: "", step: { kind: "list" }, form: {}, upload: null };
 
 /**
  * The draft that a link asks for:
  *   ?new=1 (or github)       the source list (a draft of an earlier opening stays)
  *   ?new=upload|push|empty   that source
+ *   ?new=template            the template list
  *   ?new=git&url=…           a public git URL
  *   &repo=owner/name         the guesses for that GitHub repository
  *   &q=…                     text in the search field (it comes back after "Connect GitHub")
@@ -55,6 +68,8 @@ export function draftFromLink(params: URLSearchParams, prev: NewProjectDraft): N
       return { ...EMPTY_DRAFT, query, step: { kind: "push" } };
     case "empty":
       return { ...EMPTY_DRAFT, query, step: { kind: "empty" } };
+    case "template":
+      return { ...EMPTY_DRAFT, query, step: { kind: "template" } };
     case "upload":
     case "folder":
       return { ...EMPTY_DRAFT, query, step: { kind: "upload" } };

@@ -141,3 +141,17 @@ export function reasonFor(reasons: string[], field: "branch" | "install" | "test
   };
   return reasons.find((r) => tests[field].test(r));
 }
+
+/**
+ * A project name from a description: its first sentence up to a comma, without a leading "a", "an" or
+ * "the", at most 40 characters (cut at a word). "A JSON API for my shop, with tests." → "JSON API for my shop".
+ */
+export function nameFromDescription(text: string): string {
+  const first = text.trim().split(/(?<=[.!?])\s+|\n/)[0]?.trim().replace(/[.!?]+$/, "") ?? "";
+  const clause = first.split(/\s*[,;:(]\s*|\s+[-–—]\s+/)[0] ?? "";
+  const bare = (clause.length >= 3 ? clause : first).replace(/^(?:a|an|the)\s+/i, "");
+  let cut = bare.length <= 40 ? bare : bare.slice(0, 41).replace(/\s+\S*$/, "") || bare.slice(0, 40);
+  // A name does not end in a small word: "Shop with a cart and" → "Shop with a cart".
+  while (/\s(?:a|an|the|and|or|with|for|of|to|in|on|that|which)$/i.test(cut)) cut = cut.replace(/\s+\S+$/, "");
+  return cut ? cut[0].toUpperCase() + cut.slice(1) : "";
+}

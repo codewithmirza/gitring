@@ -6,7 +6,8 @@
  *   right  the file: line numbers, colors, soft wrap; a gutter with each agent's changed lines and the
  *          lines that change requests keep agents out of; "who works here" above the code.
  *   top    the ref switcher (w), Code | Diff for a work copy (d), Find file (t), Go to line (l),
- *          Copy link with the commit (y), the tree on or off ([), j / k between marks.
+ *          Copy link with the commit (y), the tree on or off ([), j / k between marks, Clone (members:
+ *          a git clone command with a 6-hour read token).
  *
  * Address: /code/<ref>/<path>?view=diff#L10-L20 (see ./code/links). The path stays in the address,
  * so every view of a file has a link.
@@ -46,6 +47,7 @@ import { resolveRef, useAttemptDiff, useDelayedFlag, useFileText, useHarbor, use
 import { languageOf } from "./code/highlight";
 import { absoluteUrl, codeUrl, goCode, useCodeLocation, type CodeLocation } from "./code/links";
 import { FileFinder, LinePicker, MoreMenu, RefPicker, type RefOption } from "./code/pickers";
+import { CloneButton } from "./code/CloneButton";
 import { allFolders, ancestors, baseName, buildTree, flattenTree, foldersToShow, looksBinary } from "./code/tree";
 import type { DiffFile } from "../state/api";
 import "./code/code.css";
@@ -1012,6 +1014,7 @@ export function CodeView() {
               ? `${plural(files.length, "file")}`
               : ""}
         </span>
+        {canAct && projectId && !importing && <CloneButton project={projectId} />}
       </div>
 
       <div className="cv-body">

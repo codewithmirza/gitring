@@ -1,7 +1,7 @@
 /**
- * GitHub and onboarding data for the web app: the person's repositories, the guesses for a new project,
- * project creation with settings, the GitHub sync of a project, and the apps (MCP clients) that the
- * person allowed through OAuth.
+ * GitHub data for the web app: the person's repositories, the guesses for a new project from one of
+ * them, the GitHub sync of a project, and the apps (MCP clients) that the person allowed through OAuth.
+ * The shared request layer is here too; project creation and cloning are in ./projects.
  *
  * Requests:
  *   - identical GET requests in flight share one fetch;
@@ -10,9 +10,8 @@
  * The browser never holds GitHub tokens: the Worker keeps and refreshes them.
  */
 import { useEffect, useRef, useState } from "react";
-import type { GithubRepo, GithubRepoList, OAuthGrantInfo, ProjectGuess, ProjectInfo, Visibility } from "../../../src/core/accounts";
-import type { GithubSyncStatus, ProjectSettings, ProjectSource } from "../../../src/core/types";
-import type { UploadFile } from "./account";
+import type { GithubRepo, GithubRepoList, OAuthGrantInfo, ProjectGuess } from "../../../src/core/accounts";
+import type { GithubSyncStatus } from "../../../src/core/types";
 
 export class RequestError extends Error {
   constructor(
@@ -45,7 +44,8 @@ export function isAbort(e: unknown): boolean {
   return (e as { name?: string } | null)?.name === "AbortError";
 }
 
-async function send<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+/** A JSON request. An error answer becomes a RequestError with the server's plain sentence. */
+export async function send<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, {
@@ -246,25 +246,7 @@ function saneGuess(g: ProjectGuess): ProjectGuess {
 
 export { githubConnectUrl, githubSignInUrl, googleSignInUrl } from "./signin";
 
-/* ───────────── projects ───────────── */
-
-export interface NewProjectInput {
-  name: string;
-  visibility: Visibility;
-  source: ProjectSource;
-  settings?: Partial<ProjectSettings>;
-  files?: UploadFile[];
-}
-
-/**
- * Create a project; the answer is the new project. The caller opens it with a full page load, which reads
- * the project list again, so no list request goes out here (it would race the page change).
- */
-export async function createProjectFrom(input: NewProjectInput): Promise<ProjectInfo> {
-  const res = await send<{ project: ProjectInfo }>("POST", "/api/projects", input);
-  if (!res?.project?.id) throw new RequestError(0, "gitring did not send the new project. Open your projects and look for it.");
-  return res.project;
-}
+/* ───────────── GitHub sync of a project ───────────── */
 
 const p = (project: string) => `/api/projects/${encodeURIComponent(project)}`;
 
