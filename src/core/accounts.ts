@@ -7,6 +7,8 @@
 import type { ProjectSource } from "./types";
 import type { WaitlistState } from "./waitlist";
 
+// ───── Roles and access ─────
+
 export type Role = "owner" | "member" | "viewer";
 export type Provider = "github" | "google";
 /** A way to sign in: a passkey (built in, no outside account) or an outside provider. */
@@ -18,6 +20,8 @@ export const ROLE_RANK: Record<Role, number> = { viewer: 1, member: 2, owner: 3 
 export function atLeast(role: Role | null | undefined, need: Role): boolean {
   return Boolean(role) && ROLE_RANK[role as Role] >= ROLE_RANK[need];
 }
+
+// ───── People and passkeys ─────
 
 export interface Identity {
   provider: Provider;
@@ -82,6 +86,8 @@ export interface PasskeyRequestOptions {
   allowCredentials: PasskeyDescriptor[];
 }
 
+// ───── Projects and the current person ─────
+
 export interface ProjectInfo {
   id: string;
   name: string;
@@ -106,6 +112,8 @@ export interface MeInfo {
   /** The waitlist gate (src/core/waitlist.ts). Absent when this deployment has no gate. */
   waitlist?: WaitlistState;
 }
+
+// ───── GitHub connections and the guess for a new project ─────
 
 /** The GitHub connection of a person: gitring holds their GitHub token, sealed, to list and import repositories. */
 export interface GithubConnection {
@@ -172,6 +180,8 @@ export interface ProjectGuess {
   canSync?: boolean;
 }
 
+// ───── Grants, keys and members ─────
+
 /** An app that a person allowed to use gitring as them (OAuth, for MCP clients such as Claude). */
 export interface OAuthGrantInfo {
   id: string;
@@ -201,6 +211,8 @@ export interface MemberInfo {
   /** True until the person signs in for the first time. */
   pending: boolean;
 }
+
+// ───── Project ids and person preferences ─────
 
 /** Project ids: lowercase letters, digits and dashes (1–40). */
 export const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;

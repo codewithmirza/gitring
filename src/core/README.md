@@ -49,7 +49,7 @@ gitring runs the check when an agent declares a plan, logs, writes or pushes, wh
    - 5: no link.
 
    The symbol reader (`analysis/symbols.ts`) finds the symbols. The import graph (`analysis/graph.ts`) counts the import steps. The real changes (`analysis/footprint.ts`) add the lines, the signature changes and the uses that a plan cannot know yet.
-2. **Pick the candidates.** Only near work goes on (`coord/facts.ts`). A work copy is a candidate when its distance is 3 or less, or when the distance fell since the last check (the two are closing in). The list has at most 20. Work of the same agent and work on the same task are not candidates. The work copies of one task are alternatives, not traffic.
+2. **Pick the candidates.** Only near work goes on (`coord/facts.ts`). A work copy is a candidate when its distance is 3 or less, or when the distance fell since the last check (the two are closing in). The list has at most 20. Work of the same agent is not a candidate, unless it has already merged. Work on the same task is never a candidate: the work copies of one task are alternatives, not traffic.
 3. **Write the facts.** For each candidate pair gitring writes plain facts: the shared files, the shared symbols, the interface hits, the overlapping lines, the distance, and how much the two task titles look alike. The facts are exact. No model is involved. Every other step reads them.
 4. **Assess each pair.** Two sources give the same answer shape: the chance of a collision, the level of interference (0 none, 4 contradictory), the chance that the two tasks are duplicates, and the side that adapts.
    - The rules (`coord/rules.ts`) use fixed numbers for each distance and each fact. They work offline. They are also the fallback.

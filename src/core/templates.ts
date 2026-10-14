@@ -16,6 +16,8 @@
  * No runtime dependencies: the Worker, the project object and the web UI share this file.
  */
 
+// ───── Types and the list of templates ─────
+
 export type TemplateId = "empty" | "js-library" | "worker-api" | "static-site";
 
 export interface Template {
@@ -41,6 +43,8 @@ export interface TemplateFile {
   path: string;
   content: string;
 }
+
+// ───── Helpers for the file contents ─────
 
 const lines = (...rows: string[]): string => `${rows.join("\n")}\n`;
 
@@ -93,6 +97,8 @@ function agentsGuide(extra: string[]): string {
 function readme(name: string, about: string[], extra: string[] = []): string {
   return lines(`# ${name}`, "", ...about, "", "Agents work on this repository through gitring. See AGENTS.md.", ...(extra.length ? ["", ...extra] : []));
 }
+
+// ───── The files of each template ─────
 
 function emptyFiles(name: string): TemplateFile[] {
   return [
@@ -347,6 +353,8 @@ export function templateFiles(id: TemplateId, opts: { name: string }): TemplateF
       return siteFiles(name);
   }
 }
+
+// ───── Choosing a template for a description ─────
 
 /** Words in a description that point to a template. */
 const SIGNS: Record<Exclude<TemplateId, "empty">, RegExp> = {

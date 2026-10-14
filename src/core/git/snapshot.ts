@@ -27,6 +27,8 @@ import {
   utf8,
 } from "./objects";
 
+// ───── Types and the tree cache ─────
+
 export interface SnapshotEntry {
   sha: string;
   mode: string;
@@ -76,6 +78,8 @@ export class MemoryTreeCache implements TreeCache {
     this.map.clear();
   }
 }
+
+// ───── Reading a tree ─────
 
 /** Code-unit order; the order of the git index for ASCII paths. */
 export function comparePaths(a: string, b: string): number {
@@ -150,6 +154,8 @@ async function runPool<T>(initial: T[], limit: number, worker: (job: T, push: (j
   });
 }
 
+// ───── Comparing two snapshots ─────
+
 export interface SnapshotChange {
   path: string;
   status: "A" | "M" | "D";
@@ -174,6 +180,8 @@ export function diffSnapshots(base: Snapshot, head: Snapshot): SnapshotChange[] 
   return out;
 }
 
+// ───── Checking paths ─────
+
 /** Why `path` is not a valid repo-relative file path, or null if it is. */
 export function pathProblem(path: string): string | null {
   if (typeof path !== "string" || path === "") return "path is empty";
@@ -192,6 +200,8 @@ export function assertValidPath(path: string): void {
   const problem = pathProblem(path);
   if (problem) throw new Error(`invalid path ${JSON.stringify(path)}: ${problem}`);
 }
+
+// ───── Building the tree objects ─────
 
 interface DirNode {
   files: Map<string, SnapshotEntry>;
@@ -241,6 +251,8 @@ export async function buildTrees(snapshot: Snapshot): Promise<{ root: string; tr
   const rootSha = await build(root);
   return { root: rootSha, trees };
 }
+
+// ───── Applying changes and preparing a commit ─────
 
 /** Modes a FileChange may set. Gitlinks (160000) are preserved but cannot be written. */
 const WRITABLE_MODES = new Set(["100644", "100755", "120000"]);

@@ -17,9 +17,13 @@
 
 import type { AgentInfo, Attempt, CheckRun, Correction, CourseCheck, Decision, Intent, LandingMethod } from "./types";
 
+// ───── Constants ─────
+
 export const LOGBOOK_SCHEMA = "gitring.logbook/v1";
 export const SUBJECT_MAX = 72;
 const BODY_WIDTH = 72;
+
+// ───── Small helpers ─────
 
 /** URL- and file-safe slug: lowercase ASCII words joined by "-", at most 60 characters. */
 export function slugify(s: string): string {
@@ -81,6 +85,8 @@ function checksTotal(checks: CheckRun): { passed: number; total: number } {
   const total = passed + (checks?.failed ?? 0) || checks?.cases?.length || 0;
   return { passed, total };
 }
+
+// ───── The commit message ─────
 
 /** A merge that rode in a train: its place and the size of the train, and every work copy of the train. */
 export interface TrainInfo {
@@ -157,6 +163,8 @@ export function revertMessage(args: { intent: Intent; attempt: Attempt; agent: A
   ];
   return `${subjectOf(`Revert "${intent.title}"`)}\n\n${body.join("\n\n")}\n\n${trailers.join("\n")}\n`;
 }
+
+// ───── The git note ─────
 
 /** Git note of a revert: the why-record ("reverted: tests failed on main"), with the tests that failed. */
 export function revertNote(args: { intent: Intent; attempt: Attempt; agent: AgentInfo; mergeSha: string; landingId: string; checks: CheckRun; approvedBy?: string }): string {
@@ -300,6 +308,8 @@ function noteChecks(checks: CheckRun, testsAfter?: boolean) {
   };
 }
 
+// ───── The task file ─────
+
 /** YAML double-quoted scalar (JSON escapes are valid YAML escapes). */
 const yq = (s: string): string => JSON.stringify(s ?? "");
 
@@ -338,6 +348,8 @@ export function intentFile(
   } else lines.push("_None._");
   return { path: `.gitring/intents/${slug}.md`, content: `${lines.join("\n")}\n` };
 }
+
+// ───── Reading the trailers back ─────
 
 const TRAILER = /^([A-Za-z0-9][A-Za-z0-9-]*):\s?(.*)$/;
 
