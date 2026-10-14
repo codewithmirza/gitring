@@ -93,6 +93,11 @@ export function Inline({ text }: { text: string }) {
   );
 }
 
+/** A flag such as `--scope` must not break after its two hyphens when a narrow screen wraps the command. */
+function keepFlagsWhole(line: string): ReactNode[] {
+  return line.split(/(--[a-z][a-z-]*)/).map((part, i) => (i % 2 === 1 ? <span key={i} className="cx-nobreak">{part}</span> : part));
+}
+
 interface CopyFieldProps {
   value: string;
   label: string;
@@ -125,7 +130,7 @@ export function CopyField({ value, label, button = "Copy URL", variant = "primar
           {value.split("\n").map((line, i) => (
             <code key={i}>
               <span className="tok-p">$ </span>
-              {line}
+              {keepFlagsWhole(line)}
               {"\n"}
             </code>
           ))}

@@ -1,6 +1,6 @@
 /**
  * The General settings: the name, who can see the project, and the repository (its id, branch and git address).
- * The repository part names the host of main, because Settings is the page that needs it.
+ * The repository part shows the git address of main, so that a person can clone it. It does not name the storage host.
  */
 import { useEffect, useState } from "react";
 import { Button, CodeBlock, Field, Input, Segmented } from "../../design/components";

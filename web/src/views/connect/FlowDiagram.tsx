@@ -37,7 +37,7 @@ function flowParts(info: ConnectInfo, githubOn: boolean) {
   ];
   const stages: Stage[] = FLOW_STAGES;
   const outputs: { label: string; via: string; icon: IconName }[] = [
-    { label: "main in Cloudflare Artifacts", via: "only gitring writes main", icon: "anchor" },
+    { label: "The main branch", via: "only gitring writes main", icon: "anchor" },
     ...(githubOn ? [{ label: "GitHub", via: "pull request or main", icon: "fork" as IconName }] : []),
     { label: "Webhooks", via: "JSON or Slack message", icon: "send" },
     { label: "Live web pages", via: "updates over a WebSocket", icon: "compass" },
