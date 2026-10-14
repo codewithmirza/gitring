@@ -355,7 +355,8 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
           <div role="group" aria-labelledby={`${base}-g-gh`} className="np-group">
             <div id={`${base}-g-gh`} role="presentation" className="np-group__head">
               <GithubMark size={12} />
-              <span>GitHub{login ? ` · @${login}` : ""}</span>
+              <span>GitHub</span>
+              {login && <span>@{login}</span>}
             </div>
             {skeleton &&
               [0, 1, 2].map((i) => (

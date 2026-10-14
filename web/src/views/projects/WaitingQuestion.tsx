@@ -5,7 +5,6 @@
  */
 import { useId } from "react";
 import { Button } from "../../design/components";
-import { Icon } from "../../design/icons";
 import { answerApproval, useAnswering } from "../../app/approvalActions";
 import { Link } from "../../app/router";
 import { dropInboxItem, refreshInbox, type InboxItem } from "../../state/inbox";
@@ -40,7 +39,7 @@ export function WaitingQuestion({ item, more }: { item: InboxItem; more: number 
               {yes?.label ?? "Yes, merge"}
             </Button>
             <Link to={item.link} className="pj-ask__link">
-              See the change <Icon name="arrow-right" size={14} />
+              See the change
             </Link>
           </>
         ) : (

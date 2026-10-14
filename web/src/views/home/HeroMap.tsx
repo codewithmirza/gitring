@@ -116,8 +116,8 @@ function Plans() {
 
 /** The dashed line between two agents whose plans meet, with its label. Magenta is the colour of a change request. */
 function Meeting() {
-  const mx = PETREL.x + (HERON.x - PETREL.x) * 0.55;
-  const my = PETREL.y + (HERON.y - PETREL.y) * 0.55;
+  const mx = PETREL.x + (HERON.x - PETREL.x) * 0.6;
+  const my = PETREL.y + (HERON.y - PETREL.y) * 0.6;
   const label = "same lines";
   const width = label.length * 6.1 + 12;
   return (
@@ -183,7 +183,7 @@ export function HeroMap() {
         <Vessel agent={HERON} />
       </svg>
       <figcaption className="hm__caption">
-        The map of a project. Two agents plan to change the same lines. gitring sends one of them a change request before any code is written.
+        The map of a project. Two agents plan to change the same lines. gitring sends one of them a change request.
       </figcaption>
     </figure>
   );

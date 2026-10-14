@@ -190,6 +190,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.np-opt__fact { margin-right: var(--s-3); }
 .np-opt__ext { display: inline-block; color: var(--ink-3); }
 .np-opt__enter { flex: none; align-self: center; }
 .np-opt--lead .np-opt__title { color: var(--accent); }
@@ -229,8 +230,7 @@
 .np-describe__label { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
 .np-describe__field { display: flex; gap: var(--s-2); min-width: 0; }
 .np-describe__input { flex: 1; min-width: 0; padding-left: var(--s-3); }
-.np-describe__wait { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-2); }
-.np-describe__wait:empty { display: none; }
+.np-describe__wait { margin: 0; min-height: var(--lh-xs); font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-2); }
 .np-describe__hint { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 .np-starts { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
 .np-start__opt { width: 100%; border: 0; background: none; font: inherit; text-align: left; }

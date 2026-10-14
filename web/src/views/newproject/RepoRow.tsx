@@ -18,8 +18,12 @@ export function RepoRow({ repo }: { repo: GithubRepo }) {
           {!repo.canPush && <span className="np-tag">read only</span>}
         </span>
         <span className="np-opt__text">
-          {[repo.defaultBranch, repo.language, repo.pushedAt && `pushed ${agoIso(repo.pushedAt)}`].filter(Boolean).join(" · ")}
-          {repo.description ? <span className="np-opt__desc"> · {repo.description}</span> : null}
+          {[repo.defaultBranch, repo.language, repo.pushedAt && `pushed ${agoIso(repo.pushedAt)}`].filter(Boolean).map((fact) => (
+            <span key={String(fact)} className="np-opt__fact">
+              {fact}
+            </span>
+          ))}
+          {repo.description ? <span className="np-opt__desc">{repo.description}</span> : null}
         </span>
       </span>
     </>
