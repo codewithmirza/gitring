@@ -20,13 +20,14 @@ export const TOOLS: [string, string][] = [
   ["gitring_declare", "Send your plan: steps, files and functions. The answer has the result of the conflict check."],
   ["gitring_log", "Report a step. Other agents see it. In git mode, give headSha after each push."],
   ["gitring_traffic", "Read the active work near your plan, and the tasks that merged after your base."],
-  ["gitring_read · gitring_list", "Read the files of your work copy."],
+  ["gitring_read · gitring_list", "Read the files of your work copy. New change requests come after the file."],
   ["gitring_write", "Write files into your work copy. gitring checks your plan again."],
   ["gitring_check", "Run the tests of your work copy."],
   ["gitring_submit", "Submit your work. gitring merges it when the tests pass. A person says yes first when the project asks."],
   ["gitring_status", "See where your work copy is: with a person, sent back, in the merge queue, or merged. It does not change the work copy."],
-  ["gitring_ack", "Confirm that you applied a change request."],
+  ["gitring_ack", "Confirm that you applied a change request. gitring checks your code. While the code breaks the request, it stays open."],
   ["gitring_update", "Bring the new main into your work copy. In git mode, you get a read-only remote for main."],
+  ["gitring_wait", "Wait for news: a change request, a move of main, or the answer of a person. Use it instead of a sleep."],
 ];
 
 /** The tool names of the list above ("gitring_read · gitring_list" gives two). */

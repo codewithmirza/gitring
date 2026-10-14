@@ -167,7 +167,7 @@ function MarkCard({ lanes, line, path, now }: { lanes: Lane[]; line: number; pat
               </p>
               <p className="cv-markcard__msg voice-agent">{k.correction.message}</p>
               <p className="cv-markcard__meta">
-                {k.correction.status === "acknowledged" ? "The agent acknowledged it" : k.correction.status === "delivered" ? "Sent to the agent" : "Waiting to go to the agent"} ·{" "}
+                {k.correction.status === "acknowledged" ? "The agent acknowledged it" : k.correction.status === "closed" ? "Closed at merge" : k.correction.status === "delivered" ? "Sent to the agent" : "Waiting to go to the agent"} ·{" "}
                 {ago(k.correction.createdAt, now)}
               </p>
               <div className="cv-markcard__actions">

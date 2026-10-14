@@ -287,7 +287,7 @@ describe("the three endpoints", () => {
     const ok = await callTool(world, key, "gitring_intents", { project }, "/mcp/readonly");
     expect(ok.isError).toBe(false);
     expect(ok.text).toMatch(/0 open tasks/);
-    for (const name of ["gitring_declare", "gitring_write", "gitring_submit", "gitring_check", "gitring_update", "gitring_ack", "gitring_log"]) {
+    for (const name of ["gitring_declare", "gitring_write", "gitring_submit", "gitring_check", "gitring_update", "gitring_ack", "gitring_log", "gitring_wait"]) {
       const res = await callTool(world, key, name, { project, attemptId: "a_x", files: [], plan: [], approach: "x", message: "x", summary: "x", correctionId: "c" }, "/mcp/readonly");
       // The tool is not there: a protocol error, or an error result. It is never a success.
       expect(res.rpc.body?.error !== undefined || res.isError, name).toBe(true);

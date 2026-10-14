@@ -524,7 +524,7 @@ const Buoys = memo(function Buoys({
         const by = p ? p.y0 + 10 / k : a.y;
         const kind = CORRECTION_KIND_SHORT[b.correction.kind];
         const dim = Boolean(selected && b.attemptId !== selected);
-        const done = b.correction.status === "acknowledged";
+        const done = b.correction.status === "acknowledged" || b.correction.status === "closed";
         return (
           <g
             key={b.id}

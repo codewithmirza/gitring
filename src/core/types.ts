@@ -678,7 +678,11 @@ export interface Correction {
     replot?: { mainSha: string };
   };
   checkId: string;
-  status: "pending" | "delivered" | "acknowledged" | "superseded";
+  /**
+   * "acknowledged": the agent confirmed it (and the code check did not fail). "closed": the work merged
+   * before the agent confirmed it.
+   */
+  status: "pending" | "delivered" | "acknowledged" | "superseded" | "closed";
   /** Severity of the situation when issued (higher = closer / more overlap). gitring re-sends only when it grows. */
   severity?: number;
   /** How many times the advice was refreshed in place without a new delivery. */
@@ -687,6 +691,12 @@ export interface Correction {
   deliveredAt?: Millis;
   acknowledgedAt?: Millis;
   ackNote?: string;
+  /**
+   * The code check at the last confirmation of the agent: does the code of the work copy keep the
+   * constraints? `applied` is null when the constraints have nothing that gitring can check.
+   * With `applied: false` the change request stays open.
+   */
+  check?: { applied: boolean | null; reason: string; at: Millis };
 }
 
 /* ───────────────────────────── logs, landings, decisions ───────────────────────────── */
@@ -905,6 +915,42 @@ export interface Clearance {
   traffic: TrafficVessel[];
   /** One-line summary for the agent. */
   advice: string;
+}
+
+/** Answer of gitring_ack. */
+export interface AckResult {
+  correctionId: string;
+  /**
+   * "acknowledged": the change request is closed. "open": the code check failed, so the change request
+   * stays open. "already": the agent confirmed it before, or the work merged.
+   */
+  outcome: "acknowledged" | "open" | "already";
+  check?: Correction["check"];
+  /** One sentence for the agent. */
+  message: string;
+  clearance: Clearance;
+}
+
+/** Something new for a work copy, for an agent that waits (gitring_wait). */
+export interface WaitEvent {
+  kind: "change-request" | "main-moved" | "approval" | "status";
+  at: Millis;
+  /** One sentence for the agent. */
+  message: string;
+  correctionId?: string;
+  mainSha?: string;
+  status?: AttemptStatus;
+  approval?: Approval["status"];
+}
+
+/** Answer of gitring_wait: the news, or no news after the time ran out. */
+export interface WaitResult {
+  attemptId: string;
+  status: AttemptStatus;
+  events: WaitEvent[];
+  clearance: Clearance;
+  /** One sentence for the agent: what to do now. */
+  message: string;
 }
 
 export interface DeclareResult {

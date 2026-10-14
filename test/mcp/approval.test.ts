@@ -302,15 +302,29 @@ describe("a client that can show a form: gitring asks in the chat", () => {
   });
 
   it("does not ask a person who may not answer: the answer holds the link", async () => {
+    // Only an owner answers. Bob is a member of the project: he sends his agent, and he may not answer.
+    await askBeforeMerge("owner");
+    world.person("bob", 2);
+    const bob = await world.signIn("bob");
+    await world.call("POST", `/api/projects/${project}/members`, { key, body: { who: "@bob", role: "member" } });
+    const id = await shoutWork(bob.key);
+    const rpc = await call("gitring_submit", { project, attemptId: id, summary: "Add shout" }, { token: bob.key, capabilities: FORMS });
+    expect(resultOf(rpc).resultType).not.toBe("input_required");
+    expect(textOf(rpc)).toMatch(/^A PERSON MUST SAY YES\./);
+    expect(textOf(rpc)).toMatch(new RegExp(`Link: ${ORIGIN}/approve/${id}\\?project=${project}`));
+  });
+
+  it("does not let a member submit the work copy of another person", async () => {
     // Alice (an owner) sent the agent. Bob is a member of the project, and he is not the sender.
     const id = await shoutWork();
+    const before = await mainSha();
     world.person("bob", 2);
     const bob = await world.signIn("bob");
     await world.call("POST", `/api/projects/${project}/members`, { key, body: { who: "@bob", role: "member" } });
     const rpc = await call("gitring_submit", { project, attemptId: id, summary: "Add shout" }, { token: bob.key, capabilities: FORMS });
-    expect(resultOf(rpc).resultType).not.toBe("input_required");
-    expect(textOf(rpc)).toMatch(/^A PERSON MUST SAY YES\./);
-    expect(textOf(rpc)).toContain("alice must say yes");
+    expect(resultOf(rpc).isError).toBe(true);
+    expect(textOf(rpc)).toBe(`Error: Work copy ${id} belongs to the agent of alice. Only that person or an owner of the project can change it.`);
+    expect(await mainSha()).toBe(before);
   });
 
   it("is the same for the pull request of the GitHub-compatible tools", async () => {

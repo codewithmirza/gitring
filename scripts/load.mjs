@@ -41,11 +41,13 @@ async function runAgent(ctx, index) {
       try {
         const res = await client.callTool({ name, arguments: { project: options.project, ...args } });
         metrics.record(name, performance.now() - t0);
-        const text = String(res.content?.find((c) => c.type === "text")?.text ?? "");
+        const texts = (res.content ?? []).filter((c) => c.type === "text").map((c) => String(c.text ?? ""));
+        const text = texts[0] ?? "";
         if (res.isError) metrics.count("toolErrors");
         // GITRING_LOAD_TRACE=1 prints each call of each agent (no key, no header) to the error output, to find out why a task did not merge.
         if (process.env.GITRING_LOAD_TRACE) console.error(`[agent ${index}] ${name} ${Math.round(performance.now() - t0)} ms${res.isError ? " ERROR" : ""} :: ${safe(text.split("\n")[0].slice(0, 140))}`);
-        return { text, json: lastJson(text), isError: Boolean(res.isError) };
+        // gitring_read and gitring_list keep the file text in the first block. Change requests can follow in a second block.
+        return { text, json: lastJson(text), isError: Boolean(res.isError), more: texts.slice(1) };
       } catch (e) {
         metrics.record(name, performance.now() - t0);
         if (e?.code === 429 || /\b429\b/.test(String(e?.message))) {
@@ -67,9 +69,15 @@ async function runAgent(ctx, index) {
   const waitFor = new Set();
   /** Count the change requests in an answer and confirm each one. */
   async function obey(attemptId, res) {
-    const clr = res.json?.clearance ?? res.json;
-    const known = new Map((Array.isArray(clr?.corrections) ? clr.corrections : []).map((c) => [c.id, c]));
-    for (const c of changeRequestsIn(res.text)) {
+    const blocks = [res.text, ...(res.more ?? [])];
+    const known = new Map(
+      blocks.flatMap((b, i) => {
+        const json = i === 0 ? res.json : lastJson(b);
+        const clr = json?.clearance ?? json;
+        return Array.isArray(clr?.corrections) ? clr.corrections : [];
+      }).map((c) => [c.id, c]),
+    );
+    for (const c of blocks.flatMap((b) => changeRequestsIn(b))) {
       if (seen.has(c.id)) continue;
       seen.add(c.id);
       metrics.count("changeRequests");
@@ -87,6 +95,7 @@ async function runAgent(ctx, index) {
     const until = Date.now() + 30_000;
     for (let poll = 0; Date.now() < until; poll++) {
       const t = await tool("gitring_traffic", { attemptId });
+      await obey(attemptId, t);
       const near = Array.isArray(t.json?.vessels) ? t.json.vessels : [];
       if (!names.some((n) => near.some((v) => v.callsign === n))) return;
       await sleep(pollMs * Math.min(4, 1 + Math.floor(poll / 3)) + Math.floor(rng() * (pollMs / 2)));
@@ -131,6 +140,7 @@ async function runAgent(ctx, index) {
           if (useShared) {
             // gitring_read answers with the text of the file, or with a sentence when the file does not exist.
             const cur = await tool("gitring_read", { attemptId, path: shared });
+            await obey(attemptId, cur);
             const text = cur.isError || /^The file .* does not exist\.$/.test(cur.text) ? "" : cur.text;
             files.push({ path: shared, content: text.includes(line) ? text : `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n` });
           }
@@ -140,6 +150,7 @@ async function runAgent(ctx, index) {
         }
         if (written.json?.refused?.length) continue; // refused ten times: a try is used
         const checked = await tool("gitring_check", { attemptId });
+        await obey(attemptId, checked);
         if (checked.json?.ok === false) continue; // the tests fail: a try is used
         const sent = await tool("gitring_submit", { attemptId, summary: title });
         await obey(attemptId, sent);

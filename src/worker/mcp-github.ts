@@ -21,19 +21,23 @@
  *   issues                      gitring tasks
  *
  * A pull request number is the place of the work copy in the age order of all branch work copies of the
- * project (a task has its own order). A branch belongs to the caller who made it. That is a name space,
- * not a lock: every member of a project can already act on every work copy with the gitring tools.
+ * project (a task has its own order). A branch belongs to the caller who made it. Its work copy is the work
+ * copy of that person: only that person (or an owner) can change it, and only that person gets its change
+ * requests. The read tools bring them too, after the text of a file or above the GitHub-shaped JSON.
  */
 import { z } from "zod";
 import type * as T from "../core/types";
 import type { Role } from "../core/accounts";
 import { approvalPath } from "../core/approvals";
 import { actorOf, directory, type Principal } from "./auth";
-import { ADDS, CHANGES, READS, defineTool, fail, joinClearance, plain, text, VERDICT_WORD, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
+import { ADDS, CHANGES, READS, callOf, defineTool, fail, joinClearance, newsFor, plain, text, VERDICT_WORD, withNews, writeAnswer, type HarborApi, type ToolContext, type ToolDef, type ToolResult } from "./mcp-kit";
 import { answerNote, approvalView, askInChat, statusHeadline, takeAnswer } from "./mcp-approval";
 
 /** Said in the error of a bad project id (the gitring tool for it is not in this set). */
 export const GITHUB_LIST_HOW = "Call get_me to list your projects.";
+
+/** Said after a restart stopped a call that is not safe to send again (the gitring tools for it are not in this set). */
+export const GITHUB_CHECK_HOW = "Call list_branches or list_issues to see if your call took effect before you send it again.";
 
 export const GITHUB_INSTRUCTIONS =
   "These tools work like the GitHub tools, but they work on gitring. A repo is a gitring project. " +
@@ -174,6 +178,12 @@ function entriesOf(files: T.FileNode[], dir: string): { type: "file" | "dir"; na
 const github = { github: true } as const;
 const data = (obj: unknown, headline: string, clr?: T.Clearance): ToolResult => text(obj, headline, clr, github);
 
+/** The new change requests of a branch of the caller, for the answer of a read (none for main or a commit). */
+async function newsOf(ctx: ToolContext, h: Project, attemptId: string | undefined): Promise<T.Clearance | undefined> {
+  if (!attemptId) return undefined;
+  return (await newsFor(ctx, h, attemptId)) ?? undefined;
+}
+
 /* ───────────────────────── a work copy for a branch ───────────────────────── */
 
 const titleFrom = (message: string | undefined, branch: string): string => String(message ?? "").split("\n")[0].trim().slice(0, 140) || `Branch ${branch}`;
@@ -206,7 +216,7 @@ async function writeToBranch(ctx: ToolContext, a: { repo: string; branch: string
   if (!files.length) throw new Error("Give at least one file.");
   const h = await open(ctx, a.repo, "member");
   const { attemptId, declared } = await branchCopy(ctx, h, branch, { title: titleFrom(a.message, branch), paths: files.map((f) => f.path) });
-  const res = await h.stub.write({ attemptId, files, message: a.message });
+  const res = await h.stub.write({ attemptId, files, message: a.message }, callOf(ctx, h));
   return writeAnswer(res, {
     github: true,
     clr: declared ? joinClearance(declared.clearance, res.clearance) : res.clearance,
@@ -440,12 +450,12 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const t = await resolve(h, ctx.who, a.ref, a.sha);
         const path = String(a.path ?? "/").replace(/^\/+/, "").replace(/\/+$/, "");
         if (path) {
-          const body = t.attemptId ? (await h.stub.read(t.attemptId, path)).content : await h.stub.file(t.ref, path);
-          if (body !== null) return plain(body);
+          const body = t.attemptId ? (await h.stub.read(t.attemptId, path, callOf(ctx, h))).content : await h.stub.file(t.ref, path);
+          if (body !== null) return withNews(plain(body), await newsOf(ctx, h, t.attemptId), github);
         }
         const entries = entriesOf((await h.stub.tree(t.ref)).files, path);
         if (!entries.length) throw new Error(`There is no text file or folder "${path}" on ${t.name}.`);
-        return data(entries, `${entries.length} entries in ${path || "the top folder"} on ${t.name}.`);
+        return data(entries, `${entries.length} entries in ${path || "the top folder"} on ${t.name}.`, await newsOf(ctx, h, t.attemptId));
       } catch (e) {
         return fail(e);
       }
@@ -469,7 +479,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const tree = a.recursive
           ? res.files.filter((f) => !dir || f.path === dir || f.path.startsWith(`${dir}/`)).map((f) => ({ path: f.path, type: "blob", size: f.size }))
           : entriesOf(res.files, dir).map((e) => ({ path: e.path, type: e.type === "dir" ? "tree" : "blob", size: e.size }));
-        return data({ sha: res.sha, truncated: false, tree }, `${tree.length} entries on ${t.name}.`);
+        return data({ sha: res.sha, truncated: false, tree }, `${tree.length} entries on ${t.name}.`, await newsOf(ctx, h, t.attemptId));
       } catch (e) {
         return fail(e);
       }
@@ -752,9 +762,10 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
         const state = await h.stub.state();
         const p = pullAt(state, ctx.who, a.pullNumber);
         const info = pullInfo(p, state, ctx.origin);
+        const clr = a.method.startsWith("get") ? await newsOf(ctx, h, p.attempt.id) : undefined;
         switch (a.method) {
           case "get":
-            return data(pullJson(p, state, ctx.origin), `Pull request ${p.number}: ${info.status}. ${info.message}`);
+            return data(pullJson(p, state, ctx.origin), `Pull request ${p.number}: ${info.status}. ${info.message}`, clr);
           case "get_status": {
             const runs = [
               { context: "tests of the branch", run: p.attempt.checks },
@@ -762,16 +773,16 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
             ].filter((x): x is { context: string; run: T.CheckRun } => Boolean(x.run));
             const statuses = runs.map((x) => ({ context: x.context, state: x.run.ok ? "success" : "failure", description: `${x.run.passed}/${x.run.passed + x.run.failed} tests pass.${x.run.error ? ` ${x.run.error}` : ""}` }));
             const overall = statuses.length === 0 ? "pending" : statuses.every((s) => s.state === "success") ? "success" : "failure";
-            return data({ state: overall, sha: p.attempt.headSha ?? p.attempt.baseSha, total_count: statuses.length, statuses }, `Pull request ${p.number}: tests ${overall}.`);
+            return data({ state: overall, sha: p.attempt.headSha ?? p.attempt.baseSha, total_count: statuses.length, statuses }, `Pull request ${p.number}: tests ${overall}.`, clr);
           }
           case "get_files": {
             const diff = await h.stub.attemptDiff(p.attempt.id);
             const files = diff.files.map((f) => ({ filename: f.path, status: f.status === "A" ? "added" : f.status === "D" ? "removed" : "modified", additions: f.additions, deletions: f.deletions, changes: f.additions + f.deletions, patch: f.diff }));
-            return data(page_(files, a.page, a.perPage), `${files.length} files changed in pull request ${p.number}.`);
+            return data(page_(files, a.page, a.perPage), `${files.length} files changed in pull request ${p.number}.`, clr);
           }
           case "get_diff": {
             const diff = await h.stub.attemptDiff(p.attempt.id);
-            return plain(diff.files.map((f) => f.diff).join("\n") || "No file changed.");
+            return withNews(plain(diff.files.map((f) => f.diff).join("\n") || "No file changed."), clr, github);
           }
           default:
             throw new Error(`gitring has no ${a.method.replace(/^get_/, "").replace(/_/g, " ")} on a pull request. Use get, get_status, get_files or get_diff.`);
@@ -829,6 +840,7 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
             return data(
               { number: p.number, merged: info.merged, state: info.state, status: info.status, message: info.message },
               `Pull request ${p.number}: ${info.status}. ${info.message}${info.final ? "" : " It is not done yet. Call this tool again."}`,
+              await newsOf(ctx, h, p.attempt.id),
             );
           }
           await sleep(MERGE_WAIT.stepMs);
@@ -852,8 +864,8 @@ export const GITHUB_TOOLS: readonly ToolDef[] = [
       try {
         const h = await open(ctx, a.repo, "member");
         const p = pullAt(await h.stub.state(), ctx.who, a.pullNumber);
-        const res = await h.stub.update(p.attempt.id);
-        return data(res, res.message);
+        const res = await h.stub.update(p.attempt.id, callOf(ctx, h));
+        return data(res, res.message, await newsOf(ctx, h, p.attempt.id));
       } catch (e) {
         return fail(e);
       }

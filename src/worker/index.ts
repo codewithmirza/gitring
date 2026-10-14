@@ -963,7 +963,9 @@ async function claudeHook(c: C, project: string | undefined) {
   try {
     const h = await ready(c, project, "member");
     const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
-    return c.json(await h.claudeHook(body as never));
+    // The person of the key: the hook of another person changes no work copy of this person.
+    const user = c.get("principal").user;
+    return c.json(await h.claudeHook(body as never, user ? { viewer: { id: user.id, role: h.role } } : {}));
   } catch {
     return c.json({});
   }

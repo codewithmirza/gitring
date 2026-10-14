@@ -49,6 +49,7 @@ describe("retryAfterReset", () => {
       read: fire("read", "text"),
       submit: fire("submit", "submitted"),
       declare: fire("declare", "declared"),
+      wait: fire("wait", "news"),
       name: "object",
     };
   }
@@ -89,6 +90,31 @@ describe("retryAfterReset", () => {
     await expect(stub.declare("task")).rejects.toThrow(/no longer active/);
     expect(log).toEqual(["1:declare(task)"]);
     expect(sleeps).toEqual([]);
+  });
+
+  it("tells the agent to look before it sends declare again (the first call can have made the work copy)", async () => {
+    const stub = retryAfterReset(() => fakeObject([], 1, 1), async () => undefined);
+    const err = await stub.declare("task").catch((e: unknown) => e);
+    expect(isObjectReset(err)).toBe(true);
+    const text = fail(err).content[0].text;
+    expect(text).toBe("Error: gitring restarted this project for a moment. Call gitring_status or gitring_intents to see if your call took effect before you send it again.");
+    expect(steViolations(text.replace(/^Error: /, ""))).toEqual([]);
+    // The GitHub-compatible set names its own tools.
+    const gh = retryAfterReset(() => fakeObject([], 1, 1), async () => undefined, "Call list_branches or list_issues to see if your call took effect before you send it again.");
+    expect(fail(await gh.declare("task").catch((e: unknown) => e)).content[0].text).toMatch(/Call list_branches or list_issues/);
+    // Another error of declare stays as it is.
+    const other = retryAfterReset(() => fakeObject([], 1, 1, () => new Error("Unknown task.")), async () => undefined);
+    expect(fail(await other.declare("task").catch((e: unknown) => e)).content[0].text).toBe("Error: Unknown task.");
+  });
+
+  it("does not send a wait again by itself, and tells the agent to call it again (a restart loses the waiter, not the news)", async () => {
+    const log: string[] = [];
+    const sleeps: number[] = [];
+    const stub = retryAfterReset(() => fakeObject(log, 1, 1), async (ms) => void sleeps.push(ms));
+    const err = await stub.wait("a_1").catch((e: unknown) => e);
+    expect(log).toEqual(["1:wait(a_1)"]);
+    expect(sleeps).toEqual([]);
+    expect(fail(err).content[0].text).toBe("Error: gitring restarted this project for a moment. The work you already sent is kept. Send the same call again.");
   });
 
   it("passes other errors through at once", async () => {
@@ -221,6 +247,24 @@ describe("through the Worker: a stop of the project object while an agent works"
     const again = await gr("gitring_submit", { attemptId: id, summary: "Add shout" });
     expect(again.isError, again.text).toBe(false);
     expect(again.text).toMatch(/landed|merged/i);
+  });
+
+  it("a plan that meets a stop tells the agent to look before it sends the plan again", async () => {
+    stops.method = "declare";
+    stops.left = 1;
+    const res = await gr("gitring_declare", { newIntent: { title: "Shout", goal: "A shout function exists." }, plan: ["Add shout"], files: ["src/shout.js"], symbols: [], approach: "New file." });
+    expect(res.isError).toBe(true);
+    expect(res.text).toBe("Error: gitring restarted this project for a moment. Call gitring_status or gitring_intents to see if your call took effect before you send it again.");
+    // gitring did not send it again by itself.
+    expect(stops.calls).toBe(1);
+  });
+
+  it("a branch write of the GitHub-compatible set that meets a stop names the tools of that set", async () => {
+    stops.method = "declare";
+    stops.left = 1;
+    const res = await callTool(world, key, "push_files", { repo: project, branch: "feature/x", message: "x", files: [{ path: "x.txt", content: "x" }] }, "/mcp/github");
+    expect(res.isError).toBe(true);
+    expect(res.text).toBe("Error: gitring restarted this project for a moment. Call list_branches or list_issues to see if your call took effect before you send it again.");
   });
 
   it("a read of the app (REST) meets a stop and still answers", async () => {

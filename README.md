@@ -188,7 +188,7 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
 ## Accounts and projects
 
 - People sign in with GitHub or Google. Account adds the other sign-in, connects or disconnects GitHub, lists API keys and connected apps (MCP clients), and signs out everywhere.
-- Roles per project: **owner** (settings, members), **member** (tasks, agents, merges), **viewer** (watch). Anyone can watch a public project; only members act on it.
+- Roles per project: **owner** (settings, members), **member** (tasks, agents, merges), **viewer** (watch). Anyone can watch a public project; only members act on it. A work copy belongs to the person who sent its agent. Only that person or an owner can change it, and only that person's agent gets its change requests.
 - **New project** is one search field. It lists the GitHub repositories where the gitring app is installed and you have access, a pasted URL, a folder, `git push` and an empty project. For a repository, gitring guesses the name, the branch, the install and test commands (from lockfiles and manifests: Node, Python, Go, Rust, Ruby, Java, Deno, Make; a small model reads the README only when the rules find no test command) and the GitHub sync mode. One button creates the project.
 
   | Source | How |
@@ -325,14 +325,15 @@ Prompts and skills that name GitHub tools keep working for the code-change loop:
 | `gitring_intents` | Lists your projects, or the open tasks of one project. |
 | `gitring_declare` | Starts work on a task: send the plan, get a work copy and the first conflict check. |
 | `gitring_traffic` | Shows the other active work near your plan. |
-| `gitring_read`, `gitring_list` | Read files of your work copy (api mode). |
+| `gitring_read`, `gitring_list` | Read files of your work copy (api mode). New change requests come after the file, in a second part. |
 | `gitring_write` | Writes whole files into your work copy (api mode). Runs a conflict check. |
 | `gitring_log` | Reports progress. In git mode, reports a push at once. Runs a conflict check. |
-| `gitring_ack` | Confirms that you applied a change request. |
+| `gitring_ack` | Confirms that you applied a change request. gitring checks the code. Code that still edits the lines of the request, or calls an old form of a function, keeps it open. |
 | `gitring_check` | Runs the tests of your work copy. In git mode, gitring tests your latest push. |
 | `gitring_submit` | Asks for a merge. gitring tests again. Then it merges, or a person says yes first when the project asks (see Approvals). |
 | `gitring_status` | Shows where a work copy is: with a person, sent back, in the merge queue or merged. It changes nothing. |
 | `gitring_update` | Brings the new main into your work copy. In git mode: a read-only remote and token for main. |
+| `gitring_wait` | Waits for news about your work copy. News is a change request, a move of main, the answer of a person, or a new status. It answers when the news arrives, or after 25 seconds (50 at most). Use it instead of a sleep. |
 
 Two modes:
 
