@@ -3,6 +3,7 @@
  * No runtime dependencies.
  */
 import type { ProjectSource } from "./types";
+import type { WaitlistState } from "./waitlist";
 
 export type Role = "owner" | "member" | "viewer";
 export type Provider = "github" | "google";
@@ -33,6 +34,11 @@ export interface UserInfo {
   passkeys?: number;
   /** A deployment owner (GITRING_OWNERS): may set up sign-in and act on every project. */
   admin: boolean;
+  /**
+   * The waitlist gate lets this person in (an owner, or on the allowlist). Always true when the deployment
+   * has no gate. A person with `false` can use only the waitlist pages.
+   */
+  allowed?: boolean;
 }
 
 /** A passkey of a person (a WebAuthn credential). gitring keeps its public key only. */
@@ -95,6 +101,8 @@ export interface MeInfo {
   github?: GithubConnection;
   /** Install the gitring GitHub App on more repositories. */
   githubInstallUrl?: string | null;
+  /** The waitlist gate (src/core/waitlist.ts). Absent when this deployment has no gate. */
+  waitlist?: WaitlistState;
 }
 
 /** The GitHub connection of a person: gitring holds their GitHub token, sealed, to list and import repositories. */

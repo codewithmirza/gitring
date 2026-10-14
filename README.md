@@ -227,11 +227,31 @@ Push to deploy with Workers Builds: production branch `main`, build command `npm
 | `GITRING_SECRET` | Required. Seals the GitHub App and Google credentials (AES-GCM) and signs the merge questions in chat. |
 | `GITRING_SETUP_TOKEN` | Opens `/setup` before an owner signs in. |
 | `GITRING_OWNERS` | Owners of the deployment: they open `/setup` and act on every project. `user:<id>`, `google:<email>` or `github:<login>`. |
+| `ALLOWLIST_EMAILS` | Optional. Turns on the waitlist gate. The emails (separated by commas) of the people who may use gitring. See [Waitlist gate](#waitlist-gate). |
+| `WAITLIST_ENABLED` | Optional variable. `true` turns the gate on, also with no list. `false` turns it off. |
 | `GITRING_KEY` | Optional operator key for scripts. It acts as an owner on every project. |
 | `GITRING_CONTACT` | Optional contact address on the privacy and terms pages. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Optional. Push notifications for the inbox. Make them with `npx web-push generate-vapid-keys`. Without them, the app hides the switch. |
 | `GITHUB_WEBHOOK_SECRET` | Optional. A plain repository webhook (without the app). The Connect page of a project shows its URL (`/hooks/github?project=<id>&key=…`). |
 | `SLACK_SIGNING_SECRET` | Optional. The Slack slash command. The Connect page of a project shows its command URL (`/hooks/slack?project=<id>&key=…`). |
+
+### Waitlist gate
+
+A public gitring can keep people on a waitlist while it is closed. With the gate on, a person may sign in with Google or GitHub. If the person is not on the list, they see two pages: the interest page and its confirmation. The interest page asks which pack the person would use. It takes no payment and no card. For that person, the API, the live views, the previews, the hooks and MCP answer 403. The code is `waitlist`. A key or a session that the person made before also gets 403.
+
+The gate is off by default. A self-hosted gitring and the local run have no gate. Turn it on in production:
+
+```bash
+npx wrangler secret put ALLOWLIST_EMAILS      # you@example.com,teammate@example.com
+npx wrangler secret put GITRING_OWNERS        # google:you@example.com
+npm run deploy
+```
+
+- A person gets in when a verified email of their sign-in is in `ALLOWLIST_EMAILS`. Owners (`GITRING_OWNERS`) get in too. An owner can let more people in.
+- An owner opens `/admin/waitlist`. It shows who chose which pack and the planned monthly value of all choices. It has a CSV file and a form to let a person in. The same data is at `GET /api/admin/waitlist` (add `?format=csv` for the file) and `/api/admin/allowed`.
+- With the gate on, a new account starts with Google or GitHub. A person who has an account can still sign in with a passkey.
+- `GET /api/projects/<id>/usage` shows the counters of a project for this month: merges, container test runs and built-in agent tokens. The counters charge nobody. gitring has no payment code.
+- The planned packs and the reasons for their prices are in [docs/PRICING.md](docs/PRICING.md). The cards on the interest page read `src/core/plans.ts`.
 
 ## Connect agents
 
@@ -619,7 +639,7 @@ src/directory   Directory: the account store (people, passkeys, sessions, API ke
 src/drydock     Drydock: test containers; Seawall: their outbound network filter
 src/platform    Artifacts backend, GitHub (client, repository lists, imports, sync, pulls), Workers AI calls,
                 Dynamic Worker tests and previews
-src/worker      routes, sign-in, OAuth server for MCP clients (with the device grant), MCP server (the gitring,
+src/worker      routes, the waitlist gate and its pages, sign-in, OAuth server for MCP clients (with the device grant), MCP server (the gitring,
                 read-only and GitHub-compatible sets), projects, history routes, push, rate limits, hooks
 cli             gitring, the command line for people (plain Node, no dependency)
 plugins/gitring the Claude Code plugin: the connection, the skill and the hook

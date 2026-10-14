@@ -16,6 +16,7 @@ import { getUi, openNewIntent, openPalette, openShortcuts, openSignIn, setUi, ta
 import { typing } from "./keys";
 import * as V from "./views";
 import { HomeView } from "../views/HomeView";
+import { Waitlist } from "../views/waitlist/Waitlist";
 
 // Links start loading a view's code on hover and focus.
 setPreloader(V.preloadPath);
@@ -298,7 +299,16 @@ function Booting({ route }: { route: Route }) {
   return <ViewSkeleton route={route} />;
 }
 
+/**
+ * With the waitlist gate on, a person that the gate keeps out sees the waitlist pages only. Everybody else
+ * (and every gitring without a gate) gets the app.
+ */
 export function App() {
+  const gated = useStore((s) => s.accountReady && Boolean(s.me?.waitlist) && s.me?.waitlist?.allowed === false);
+  return gated ? <Waitlist /> : <Shell />;
+}
+
+function Shell() {
   const route = useRoute();
   const ready = useStore((s) => s.state !== null);
   const project = useStore((s) => s.state?.project.name);
