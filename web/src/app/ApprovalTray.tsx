@@ -79,7 +79,8 @@ export function ApprovalTray({ route }: { route: Route }) {
   // The approve page of a work copy has its answer. Its chip would say the same twice. The other questions
   // shrink to one line there: chips would cover the answer.
   const here = route.name === "approve" ? route.id : null;
-  const list = onProject ? mine.filter((x) => x.attemptId !== here) : [];
+  // The replay has its speed buttons at the bottom right: the tray would cover them. The Decisions button stays in the top bar.
+  const list = onProject && route.name !== "replay" ? mine.filter((x) => x.attemptId !== here) : [];
   const compact = route.name === "approve";
   const shown = compact ? [] : list.slice(-max);
   const more = list.length - shown.length;
