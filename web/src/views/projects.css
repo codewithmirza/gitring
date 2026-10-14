@@ -58,6 +58,9 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 .st-sec > .page__h2 { scroll-margin-top: var(--s-6); }
 .st-row { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); }
 .st-row .b-field { flex: 1 1 260px; min-width: 0; }
+/* A number field stays narrow; a rule row puts both labels on one line. */
+.st-row .b-field:has(input[type="number"]) { flex: 0 1 260px; }
+.st-rule .st-row { align-items: start; }
 .st-members { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
 .st-members li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); min-height: 44px; }
 /* The inline confirm takes its own line under the member. */
