@@ -272,12 +272,7 @@ export abstract class HarborTrains extends HarborMerge {
       return;
     }
     if (noTestRan(run) && !p.settings.allowUntested) {
-      for (const x of merge) {
-        if (this.pickedLineage(x.a)) continue;
-        await this.askBecauseNoTestRan(x.a);
-        this.endEarly(outcomes, x.a.id);
-      }
-      merge = merge.filter((x) => !outcomes.has(x.a.id));
+      merge = await this.holdUntested(merge, outcomes);
       if (!merge.length) return;
     }
     for (const x of merge) {
@@ -286,6 +281,16 @@ export abstract class HarborTrains extends HarborMerge {
       this.putAttempt(x.a);
     }
     return { merge, run };
+  }
+
+  /** No test ran. A person decides for each piece (except the one that a person picked). Answers the pieces that go on. */
+  protected async holdUntested(merge: TrainPiece[], outcomes: Map<string, TrainOutcome>): Promise<TrainPiece[]> {
+    for (const x of merge) {
+      if (this.pickedLineage(x.a)) continue;
+      await this.askBecauseNoTestRan(x.a);
+      this.endEarly(outcomes, x.a.id);
+    }
+    return merge.filter((x) => !outcomes.has(x.a.id));
   }
 
   /** One commit for each piece, each on the one before. False: the train stopped, and the rest waits. */

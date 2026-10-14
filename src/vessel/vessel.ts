@@ -287,40 +287,10 @@ export class Vessel extends DurableObject<Env> {
       case "list_files": {
         return { text: (await h.list(c.attemptId, args.dir ? String(args.dir) : undefined)).join("\n") };
       }
-      case "write_file": {
-        const res = await h.write({ attemptId: c.attemptId, files: [{ path: String(args.path ?? ""), content: String(args.content ?? "") }], message: String(args.note ?? "") });
-        this.absorb(st, res.clearance);
-        if (res.written.length) {
-          st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
-          for (const o of st.open ?? []) for (const f of res.written) if (!o.files.includes(f)) o.files.push(f);
-        }
-        const notes = [
-          `Written: ${res.written.join(", ") || "nothing"}.`,
-          res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
-          ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
-          res.written.length || res.refused?.length ? "" : "The path is protected or not valid.",
-          res.clearance.advice,
-        ];
-        return { text: notes.filter(Boolean).join(" ") };
-      }
-      case "run_checks": {
-        if (st.checkSig && (st.writesSinceCheck ?? 0) === 0) {
-          return { text: `No file changed since the last run, so the result is the same:\n${st.checkSig}\nWrite a fix with write_file before you run the checks again.` };
-        }
-        const run = await h.check(c.attemptId);
-        const failed = run.cases.filter((x) => !x.ok).slice(0, 8);
-        const sig = failed.map((f) => `FAIL ${f.file} › ${f.name}: ${f.error ?? ""}`).join("\n");
-        st.writesSinceCheck = 0;
-        st.sameChecks = sig && sig === st.checkSig ? (st.sameChecks ?? 0) + 1 : 0;
-        st.checkSig = sig || undefined;
-        let text = `${run.passed}/${run.passed + run.failed} checks pass.${run.error ? ` Runner error: ${run.error}` : ""}\n${sig}`;
-        if ((st.sameChecks ?? 0) >= 1 && sig) {
-          text +=
-            "\nThe same checks fail again after your last change. Stop and compare: read each 'expected X to be Y'. " +
-            "Find the line of code that produces X. Check the units and the arithmetic step by step. Change that computation, then write the file.";
-        }
-        return { text };
-      }
+      case "write_file":
+        return this.writeFileTool(st, args);
+      case "run_checks":
+        return this.runChecksTool(st);
       case "log_progress": {
         const clr = await h.log({ attemptId: c.attemptId, message: String(args.message ?? "progress"), files: Array.isArray(args.files) ? (args.files as string[]) : undefined });
         this.absorb(st, clr);
@@ -337,6 +307,48 @@ export class Vessel extends DurableObject<Env> {
       default:
         return { text: `Unknown tool ${name}.` };
     }
+  }
+
+  /** The write_file tool: gitring writes the file, and the answer says what happened. */
+  private async writeFileTool(st: VesselState, args: Record<string, unknown>): Promise<{ text: string }> {
+    const c = st.config;
+    const h = this.harbor(c.projectId);
+    const res = await h.write({ attemptId: c.attemptId, files: [{ path: String(args.path ?? ""), content: String(args.content ?? "") }], message: String(args.note ?? "") });
+    this.absorb(st, res.clearance);
+    if (res.written.length) {
+      st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
+      for (const o of st.open ?? []) for (const f of res.written) if (!o.files.includes(f)) o.files.push(f);
+    }
+    const notes = [
+      `Written: ${res.written.join(", ") || "nothing"}.`,
+      res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
+      ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
+      res.written.length || res.refused?.length ? "" : "The path is protected or not valid.",
+      res.clearance.advice,
+    ];
+    return { text: notes.filter(Boolean).join(" ") };
+  }
+
+  /** The run_checks tool. The same failure twice in a row, or no new write, gets a hint instead of a new run. */
+  private async runChecksTool(st: VesselState): Promise<{ text: string }> {
+    const c = st.config;
+    const h = this.harbor(c.projectId);
+    if (st.checkSig && (st.writesSinceCheck ?? 0) === 0) {
+      return { text: `No file changed since the last run, so the result is the same:\n${st.checkSig}\nWrite a fix with write_file before you run the checks again.` };
+    }
+    const run = await h.check(c.attemptId);
+    const failed = run.cases.filter((x) => !x.ok).slice(0, 8);
+    const sig = failed.map((f) => `FAIL ${f.file} › ${f.name}: ${f.error ?? ""}`).join("\n");
+    st.writesSinceCheck = 0;
+    st.sameChecks = sig && sig === st.checkSig ? (st.sameChecks ?? 0) + 1 : 0;
+    st.checkSig = sig || undefined;
+    let text = `${run.passed}/${run.passed + run.failed} checks pass.${run.error ? ` Runner error: ${run.error}` : ""}\n${sig}`;
+    if ((st.sameChecks ?? 0) >= 1 && sig) {
+      text +=
+        "\nThe same checks fail again after your last change. Stop and compare: read each 'expected X to be Y'. " +
+        "Find the line of code that produces X. Check the units and the arithmetic step by step. Change that computation, then write the file.";
+    }
+    return { text };
   }
 
   /* ───────────────────────── shared ───────────────────────── */

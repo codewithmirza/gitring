@@ -20,6 +20,9 @@ import { seedChanges } from "../support/seed";
 import type { SeedFile } from "../support/seed";
 import { HarborTasks } from "./tasks";
 
+/** The GitHub part of a running import. */
+type GithubImport = NonNullable<NonNullable<T.Project["importing"]>["github"]>;
+
 /** What the Worker sends to start a project. */
 type InitOptions = { projectId: string; name?: string; source?: T.ProjectSource; ownerId?: string; files?: SeedFile[] };
 
@@ -186,22 +189,32 @@ export abstract class HarborImport extends HarborTasks {
       return this.snapshotRun;
     }
     const elapsed = Date.now() - p.importing.startedAt;
-    if (p.importing.push) {
-      const pushed = await this.pushedBranch();
-      if (!pushed) {
-        if (elapsed > 3 * 24 * 3600_000) {
-          p.importing = { ...p.importing, error: "No git push arrived in 3 days. Make a new project to try again." };
-          this.db.setMeta("project", p);
-          this.emit({ type: "snapshot", state: await this.state() });
-          return;
-        }
-        // Check often at first, then every 5 minutes. "Check now" in the UI does not wait.
-        await this.ctx.storage.setAlarm(Date.now() + Math.min(300_000, 15_000 + elapsed / 20));
+    if (p.importing.push) return this.continuePushImport(p, elapsed);
+    return this.continueGitImport(p, elapsed);
+  }
+
+  /** An import by git push: wait for the first push, then adopt it. */
+  protected async continuePushImport(p: T.Project, elapsed: number): Promise<void> {
+    if (!p.importing) return;
+    const pushed = await this.pushedBranch();
+    if (!pushed) {
+      if (elapsed > 3 * 24 * 3600_000) {
+        p.importing = { ...p.importing, error: "No git push arrived in 3 days. Make a new project to try again." };
+        this.db.setMeta("project", p);
+        this.emit({ type: "snapshot", state: await this.state() });
         return;
       }
-      await this.adoptMain(pushed.branch, pushed.sha);
+      // Check often at first, then every 5 minutes. "Check now" in the UI does not wait.
+      await this.ctx.storage.setAlarm(Date.now() + Math.min(300_000, 15_000 + elapsed / 20));
       return;
     }
+    await this.adoptMain(pushed.branch, pushed.sha);
+    return;
+  }
+
+  /** An import by URL: wait until Artifacts has the whole repository, then adopt the branch. */
+  protected async continueGitImport(p: T.Project, elapsed: number): Promise<void> {
+    if (!p.importing) return;
     let ready = false;
     let remoteDefault = "";
     try {
@@ -366,6 +379,11 @@ export abstract class HarborImport extends HarborTasks {
       this.addLog({ kind: "system", message: `Import of ${g.repo}: ${why} gitring tries again soon.` });
       await this.ctx.storage.setAlarm(Date.now() + 30_000 * tries);
     };
+    return this.readGithubSnapshot(p, g, fail, retryLater);
+  }
+
+  /** One try to read the snapshot and make main from it. A short network fault tries again later. A hard fault ends the import. */
+  protected async readGithubSnapshot(p: T.Project, g: GithubImport, fail: (error: string) => Promise<void>, retryLater: (why: string) => Promise<void>): Promise<void> {
     try {
       const access = await this.directory().githubRepoAccess(g.repo);
       if (!access.ok) {

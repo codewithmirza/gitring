@@ -155,36 +155,7 @@ export abstract class HarborGithub extends HarborRebase {
     this.setGithub({ ...(before?.repo === repo ? before : {}), state: "pending", message: "gitring sends main to GitHub.", ...base, at: Date.now() });
     const rights = await this.githubRights(repo, "push");
     if (!rights.ok) return this.setGithub({ state: "error", message: rights.message, ...base, at: Date.now() });
-    const run = async (fresh: boolean) => {
-      const access = await this.directory()
-        .githubRepoAccess(repo, fresh)
-        .catch((e) => ({ ok: false as const, state: "error" as const, message: `gitring could not ask GitHub: ${String((e as Error)?.message ?? e).slice(0, 160)}`, installUrl: undefined as string | undefined }));
-      if (!access.ok) return { access };
-      const st = this.gh(repo);
-      const out = await syncToGithub(
-        { repo, token: access.token },
-        {
-          backend: this.backend,
-          source: p.repo.name,
-          mainSha: p.mainSha,
-          mode,
-          branch,
-          base: baseBranch,
-          known: st.known,
-          upstreamOf: st.upstreamOf,
-          pr: {
-            title: `gitring: merged work for ${p.name}`,
-            body: [
-              "This pull request holds the work that gitring merged on main.",
-              "Each commit is one merged task. Its record (plan, conflict checks, change requests, tests) is a git note on `refs/notes/gitring` in the gitring repository.",
-              "",
-              "Merge it with **Create a merge commit**: then the next pull request shows only new work.",
-            ].join("\n"),
-          },
-        },
-      );
-      return { out };
-    };
+    const run = (fresh: boolean) => this.runGithubSync({ p, repo, mode, branch, baseBranch, fresh });
     let res = await run(false);
     if ("out" in res && res.out?.unauthorized) res = await run(true);
     if ("access" in res && res.access && !res.access.ok) {
@@ -192,6 +163,44 @@ export abstract class HarborGithub extends HarborRebase {
       return this.setGithub({ state: a.state, message: a.message, ...base, ...(a.installUrl ? { installUrl: a.installUrl } : {}), at: Date.now() });
     }
     const out = (res as { out: Awaited<ReturnType<typeof syncToGithub>> }).out;
+    return this.finishGithubSync(repo, mode, before, out);
+  }
+
+  /** One try to send main to GitHub. The caller tries once more with a fresh token when GitHub refuses the first one. */
+  protected async runGithubSync(f: { p: T.Project; repo: string; mode: "pull-request" | "main"; branch: string; baseBranch?: string; fresh: boolean }) {
+    const { p, repo, mode, branch, baseBranch, fresh } = f;
+    const access = await this.directory()
+      .githubRepoAccess(repo, fresh)
+      .catch((e) => ({ ok: false as const, state: "error" as const, message: `gitring could not ask GitHub: ${String((e as Error)?.message ?? e).slice(0, 160)}`, installUrl: undefined as string | undefined }));
+    if (!access.ok) return { access };
+    const st = this.gh(repo);
+    const out = await syncToGithub(
+      { repo, token: access.token },
+      {
+        backend: this.backend,
+        source: p.repo.name,
+        mainSha: p.mainSha,
+        mode,
+        branch,
+        base: baseBranch,
+        known: st.known,
+        upstreamOf: st.upstreamOf,
+        pr: {
+          title: `gitring: merged work for ${p.name}`,
+          body: [
+            "This pull request holds the work that gitring merged on main.",
+            "Each commit is one merged task. Its record (plan, conflict checks, change requests, tests) is a git note on `refs/notes/gitring` in the gitring repository.",
+            "",
+            "Merge it with **Create a merge commit**: then the next pull request shows only new work.",
+          ].join("\n"),
+        },
+      },
+    );
+    return { out };
+  }
+
+  /** After a run: the pairs of commits, the status, the pull that a blocked sync asks for, and the log. */
+  protected async finishGithubSync(repo: string, mode: "pull-request" | "main", before: T.GithubSyncStatus | undefined, out: Awaited<ReturnType<typeof syncToGithub>>): Promise<T.GithubSyncStatus> {
     // Pairs are kept even when the run stopped: the next run continues from them.
     this.setGh(repo, { known: out.known, ...(out.status.githubSha && (out.status.state === "ok" || out.status.state === "pending") ? { last: out.status.githubSha } : {}) });
     // The link changed during the run: the answer belongs to the old repository.
@@ -307,17 +316,8 @@ export abstract class HarborGithub extends HarborRebase {
       const hint = !access.ok && access.installUrl ? ` Install the gitring GitHub App on ${repo} for private repositories.` : "";
       return this.setPull(repo, { state: "error", message: `${res.message}${hint}`, at: Date.now() });
     }
-    // What GitHub says now counts: a repository that turned private is private from this pull on.
-    this.setGh(repo, { private: res.private });
-    if (res.private && !checkedNow) {
-      // The read that GitHub allowed at link time does not count: the person must read it now.
-      const rights = await this.githubRights(repo, "read", true);
-      if (!rights.ok) return this.setPull(repo, { state: "error", message: rights.message, at: Date.now() });
-    }
-    // Private code never flows into a public project.
-    if (res.private && (await this.directory().visibilityOf(p.id)) === "public") {
-      return this.setPull(repo, { state: "error", message: `${repo} is private on GitHub, and this project is public. Make the project private to bring the changes in.`, at: Date.now() });
-    }
+    const refusal = await this.privatePullRefusal(repo, p, res.private, checkedNow);
+    if (refusal) return this.setPull(repo, { state: "error", message: refusal, at: Date.now() });
     if (res.state === "up-to-date") {
       this.closeConflictTask(repo, "GitHub has nothing new for this task: main has every GitHub change.");
       return this.setPull(repo, { state: "up-to-date", message: res.message, headSha: res.head, at: Date.now() });
@@ -345,6 +345,22 @@ export abstract class HarborGithub extends HarborRebase {
   }
 
   // ───── The steps of a pull ─────
+
+  /** A repository that is private on GitHub: the person must read it now, and a public project never gets its code. Answers the reason to stop. */
+  protected async privatePullRefusal(repo: string, p: T.Project, isPrivate: boolean, checkedNow: boolean): Promise<string | undefined> {
+    // What GitHub says now counts: a repository that turned private is private from this pull on.
+    this.setGh(repo, { private: isPrivate });
+    if (isPrivate && !checkedNow) {
+      // The read that GitHub allowed at link time does not count: the person must read it now.
+      const rights = await this.githubRights(repo, "read", true);
+      if (!rights.ok) return rights.message;
+    }
+    // Private code never flows into a public project.
+    if (isPrivate && (await this.directory().visibilityOf(p.id)) === "public") {
+      return `${repo} is private on GitHub, and this project is public. Make the project private to bring the changes in.`;
+    }
+    return undefined;
+  }
 
   /** Asks GitHub what changed since the commit that main came from. Answers the access, main, the open conflict task and GitHub's answer. */
   protected async askUpstream(repo: string, p: T.Project, since: string) {
