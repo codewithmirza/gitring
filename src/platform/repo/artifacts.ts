@@ -5,28 +5,35 @@
  * `info`, `createToken`, `log`, `readCommit`, `readTree`, `readBlob`). `get()` returns a
  * disposable RPC stub: every use is wrapped in try/finally + `[Symbol.dispose]()`.
  *
- * Writes: `git push` is the only write path. A commit is made with isomorphic-git on an
- * in-memory filesystem, like the Artifacts docs example, with these choices:
+ * Writes: `git push` is the only write path. A commit is a changeset: its cost grows with the size
+ * of the change, not with the size of the repository, and nothing is cloned:
  *   1. optimistic check of the branch tip through the binding (`log({ ref, limit: 1 })`);
- *   2. shallow clone of the branch (`depth: 1, singleBranch: true, noCheckout: true`) with a
- *      short-lived write token; an empty branch (parent "") starts from `init` + `addRemote`;
- *   3. verify the cloned tip === `input.parent`, else RepoConflictError;
- *   4. build blobs + trees + commit with the same code as the emulator (`prepareCommit`) and write
- *      them as loose objects. No checkout and no index: memory stays ~1× the packed branch, and
- *      exec bits, symlinks and gitlinks of untouched files survive exactly;
- *   5. if `input.note`: fetch `refs/notes/gitring` (depth 1), add the note, push the notes ref
- *      (retried on a lost race). The note goes first, so a landed commit always has its note;
- *   6. push the branch without force. isomorphic-git refuses a non-fast-forward and the server
- *      compare-and-swaps the ref on the advertised old id; a rejected push whose tip moved
- *      becomes RepoConflictError. A push that fails removes the note of step 5 again (best
- *      effort, a second notes commit), so no note names a commit that never landed. When the
+ *   2. one request for the ref advertisement of the remote (`info/refs?service=git-receive-pack`,
+ *      push.ts): the tips of the branch and of `refs/notes/gitring`. Tip ≠ `input.parent` →
+ *      RepoConflictError;
+ *   3. the new objects only: the blobs of the changes and the trees on the changed paths, built
+ *      over the parent's tree through the cached `readTree` of the binding (changeset.ts). Every
+ *      other subtree keeps its id and is never read. The ids are the ones `prepareCommit` gives;
+ *   4. if `input.note`: a notes commit with one blob, one `ab/` subtree and one root tree in the
+ *      fan-out layout (a flat notes tree moves to it on the first write), pushed first, so a landed
+ *      commit always has its note. A lost race on the notes ref is tried again;
+ *   5. one pack (pack.ts: version 2, whole objects, zlib through CompressionStream) in one
+ *      receive-pack request with `<parent> <commit> <branch>`. The server compare-and-swaps the ref
+ *      on the old id; `ng` with a moved tip becomes RepoConflictError. A push that fails removes the
+ *      note of step 4 again (best effort), so no note names a commit that never landed. When the
  *      branch holds the commit after all (the answer got lost), the commit counts and keeps its note.
+ *
+ * The clone path stays: isomorphic-git on an in-memory filesystem (shallow clone of the branch,
+ * loose objects, push). `writes: "clone"` selects it, and a changeset push that fails for a reason
+ * that is not a conflict (the server could not use the pack, an answer that is not git's) falls
+ * back to it on its own.
  *
  * See ARTIFACTS_CHECKS at the end of this file for what the real service answered.
  */
 import git, { type HttpClient } from "isomorphic-git";
 import webHttp from "isomorphic-git/http/web";
-import { EMPTY_TREE_SHA, decodeCommit, decodeTree, isSha, isValidBranchName, utf8 } from "../../core/git/objects";
+import { type PathEdit, type PreparedChangeset, buildChangeset, prepareChangeset } from "../../core/git/changeset";
+import { EMPTY_TREE_SHA, decodeCommit, decodeTree, encodeCommit, hashObject, isSha, isValidBranchName, normalizeCommitMessage, utf8 } from "../../core/git/objects";
 import { MemoryTreeCache, type Snapshot, type TreeCache, prepareCommit, readSnapshot } from "../../core/git/snapshot";
 import {
   type CommitInput,
@@ -39,7 +46,10 @@ import {
   type RepoHandle,
   type TreeEntry,
 } from "./backend";
+import { type BlobCache, cacheApiBlobs } from "./blob-cache";
 import { MemoryFS } from "./memory-fs";
+import { type PackObject, writePack } from "./pack";
+import { GitProtocolError, PushRejectedError, advertisedRefs, pushPack } from "./push";
 
 /** Notes ref for logbook records. */
 export const NOTES_REF = "refs/notes/gitring";
@@ -69,6 +79,40 @@ export interface ArtifactsBackendOptions {
   /** How many times a git HTTP request is sent when the service answers 429 or 5xx, or the connection breaks. Default 3. */
   httpTries?: number;
   treeCache?: TreeCache;
+  /**
+   * How a commit reaches the remote. "changeset" (default): the new objects in one pack, nothing cloned.
+   * "clone": the isomorphic-git path (a shallow clone, loose objects, push).
+   */
+  writes?: "changeset" | "clone";
+  /** Cache of small blobs shared by every project object in a location. Default: the Cache API when the runtime has it; null: off. */
+  blobCache?: BlobCache | null;
+}
+
+/** The changeset path cannot do this here, and the clone path can. */
+class ChangesetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChangesetError";
+  }
+}
+
+/** True for a failure of the changeset path that the clone path may get past (never a conflict). */
+function fallsBack(err: unknown): boolean {
+  return err instanceof ChangesetError || err instanceof PushRejectedError || err instanceof GitProtocolError;
+}
+
+/** The objects a prepared changeset sends: its blobs, the trees on the changed paths, the commit. */
+function packObjects(p: Pick<PreparedChangeset, "blobs" | "trees" | "sha" | "commit">): PackObject[] {
+  const out: PackObject[] = [];
+  for (const [, body] of p.blobs) out.push({ type: "blob", body });
+  for (const [, body] of p.trees) out.push({ type: "tree", body });
+  out.push({ type: "commit", body: p.commit });
+  return out;
+}
+
+/** The path of a note in the fan-out layout of a notes tree (`ab/cdef…`). */
+export function fannedNotePath(commitSha: string): string {
+  return `${commitSha.slice(0, 2)}/${commitSha.slice(2)}`;
 }
 
 /** The token secret for HTTP Basic auth: the token without its `?expires=…` suffix. */
@@ -278,6 +322,8 @@ export class ArtifactsBackend implements RepoBackend {
   private readonly commits = new Lru<CommitMeta>(2000);
   private readonly remotes = new Map<string, string>();
   private readonly tokens = new Map<string, { secret: string; expiresAtMs: number }>();
+  private readonly writes: "changeset" | "clone";
+  private readonly blobs: BlobCache | null;
 
   constructor(
     private readonly binding: Artifacts,
@@ -288,6 +334,8 @@ export class ArtifactsBackend implements RepoBackend {
     this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.retryBudgetMs = opts.retryBudgetMs ?? 20_000;
     this.trees = opts.treeCache ?? new MemoryTreeCache();
+    this.writes = opts.writes ?? "changeset";
+    this.blobs = opts.blobCache === undefined ? cacheApiBlobs() : opts.blobCache;
     const base = opts.http ?? (webHttp as HttpClient);
     const timeoutMs = opts.requestTimeoutMs ?? 60_000;
     const tries = Math.max(1, Math.round(opts.httpTries ?? 3));
@@ -388,8 +436,8 @@ export class ArtifactsBackend implements RepoBackend {
     return (await repo.log({ ref: branch, limit })).map((c) => c.hash);
   }
 
-  /** Remote URL + a cached short-lived write token secret + a fresh in-memory git dir. */
-  private async session(name: string, repo: ArtifactsRepo): Promise<GitSession> {
+  /** Remote URL + a cached short-lived write token secret. */
+  private async credentials(name: string, repo: ArtifactsRepo): Promise<{ url: string; secret: string }> {
     let url = this.remotes.get(name);
     if (!url) {
       url = (await repo.info()).remote;
@@ -402,7 +450,24 @@ export class ArtifactsBackend implements RepoBackend {
       token = { secret: tokenSecret(minted.plaintext), expiresAtMs: Number.isFinite(exp) ? exp : this.now() + GIT_TOKEN_TTL_S * 1000 };
       this.tokens.set(name, token);
     }
-    return { fs: new MemoryFS(), dir: "/repo", cache: {}, url, secret: token.secret };
+    return { url, secret: token.secret };
+  }
+
+  /** Remote URL + a cached short-lived write token secret + a fresh in-memory git dir. */
+  private async session(name: string, repo: ArtifactsRepo): Promise<GitSession> {
+    const { url, secret } = await this.credentials(name, repo);
+    return { fs: new MemoryFS(), dir: "/repo", cache: {}, url, secret };
+  }
+
+  /** A commit by id through an open handle (any commit of the repository, a notes commit too), cached. */
+  private async readCommitVia(r: ArtifactsRepo, sha: string): Promise<CommitMeta | null> {
+    const hit = this.commits.get(sha);
+    if (hit) return cloneCommit(hit);
+    const c = await r.readCommit(sha);
+    if (!c) return null;
+    const meta = toCommitMeta(c);
+    this.commits.set(sha, meta);
+    return cloneCommit(meta);
   }
 
   /** Common isomorphic-git options. Credentials go out on the first request (no 401 round trip). */
@@ -585,13 +650,7 @@ export class ArtifactsBackend implements RepoBackend {
     if (!isSha(sha)) return null;
     const hit = this.commits.get(sha);
     if (hit) return cloneCommit(hit);
-    return this.withRepo(repo, async (r) => {
-      const c = await r.readCommit(sha);
-      if (!c) return null;
-      const meta = toCommitMeta(c);
-      this.commits.set(sha, meta);
-      return cloneCommit(meta);
-    });
+    return this.withRepo(repo, (r) => this.readCommitVia(r, sha));
   }
 
   async readTree(repo: string, treeSha: string): Promise<TreeEntry[] | null> {
@@ -616,12 +675,17 @@ export class ArtifactsBackend implements RepoBackend {
     return entries;
   }
 
+  /** A blob by id. A small blob read once comes from the shared cache the next time (any repository: the id names the bytes). */
   async readBlob(repo: string, sha: string): Promise<Uint8Array | null> {
     if (!isSha(sha)) return null;
-    return this.withRepo(repo, async (r) => {
+    const cached = await this.blobs?.get(sha);
+    if (cached) return cached;
+    const bytes = await this.withRepo(repo, async (r) => {
       const blob = await r.readBlob(sha);
       return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
     });
+    if (bytes && this.blobs) await this.blobs.put(sha, bytes);
+    return bytes;
   }
 
   /** First-parent history, newest first (pages through the binding's 1000-commit cap). */
@@ -689,76 +753,191 @@ export class ArtifactsBackend implements RepoBackend {
   async commit(input: CommitInput): Promise<CommitResult> {
     if (!isValidBranchName(input.branch)) throw new Error(`invalid branch name: ${String(input.branch)}`);
     if (input.parent !== "" && !isSha(input.parent)) throw new Error(`invalid parent commit id: ${String(input.parent)}`);
-    const branchRef = `refs/heads/${input.branch}`;
     const expected = input.parent || null;
 
     return this.withRepo(input.repo, async (repo) => {
       // 1. Cheap optimistic check (no git traffic when the caller is already stale).
       const tip = await this.branchTip(repo, input.branch);
       if (tip !== expected) throw branchConflict(input, tip);
-
-      // 2–3. Local repository at the parent.
-      const s = await this.session(input.repo, repo);
-      if (input.parent) {
+      if (this.writes === "changeset") {
         try {
-          await git.clone({ ...this.gitOpts(s), url: s.url, ref: input.branch, singleBranch: true, depth: 1, noCheckout: true, noTags: true });
+          return await this.commitChangeset(repo, input);
         } catch (err) {
-          if (gitErrorCode(err) === "NotFoundError") throw branchConflict(input, await this.branchTip(repo, input.branch));
-          throw err;
+          if (!fallsBack(err)) throw err;
+          console.warn(`changeset push to ${input.repo} did not work (${String((err as Error).message ?? err)}); gitring pushes with a clone instead`);
         }
-        const head = await this.resolveLocal(s, `refs/remotes/origin/${input.branch}`);
-        if (head !== input.parent) throw branchConflict(input, head);
+      }
+      return this.commitWithClone(repo, input);
+    });
+  }
+
+  /** Steps 2 to 5 of the header: the new objects over the parent's tree, in one pack, with nothing cloned. */
+  private async commitChangeset(repo: ArtifactsRepo, input: CommitInput): Promise<CommitResult> {
+    const branchRef = `refs/heads/${input.branch}`;
+    const expected = input.parent || null;
+    const { url, secret } = await this.credentials(input.repo, repo);
+
+    // 2. One request: the tips of the branch and of the notes ref, as the server will compare them.
+    const adv = await advertisedRefs(this.http, url, secret);
+    const head = adv.refs.get(branchRef) ?? null;
+    if (head !== expected) throw branchConflict(input, head);
+
+    // 3. The parent's tree, then the trees on the changed paths only (cached reads through the binding).
+    let baseTree: string | null = null;
+    if (input.parent) {
+      const parent = await this.readCommitVia(repo, input.parent);
+      if (!parent) throw new ChangesetError(`parent commit ${input.parent} cannot be read through the binding`);
+      baseTree = parent.treeHash;
+    }
+    const prepared = await prepareChangeset({
+      reader: { readTree: (sha) => this.readTreeVia(repo, sha) },
+      baseTree,
+      changes: input.changes,
+      parents: input.parent ? [input.parent] : [],
+      author: input.author,
+      message: input.message,
+      timestamp: Math.floor(this.now() / 1000),
+    });
+
+    // 4. Note first: once the branch moves, its note already exists.
+    if (input.note) await this.pushNoteChangeset(repo, url, secret, adv.refs.get(NOTES_REF) ?? null, prepared.sha, input.note);
+
+    // 5. One pack, one request. The server compares the branch with `expected` before it moves it.
+    const pack = await writePack(packObjects(prepared));
+    try {
+      await pushPack(this.http, url, secret, [{ ref: branchRef, old: expected, new: prepared.sha }], pack);
+    } catch (err) {
+      // undefined: the branch cannot be read now. Then the note stays: an extra note is better than a merge without its note.
+      const recent = await this.recentCommits(repo, input.branch).catch(() => undefined);
+      // The answer got lost, but the branch holds the commit (maybe under a newer one): it landed, with its note.
+      if (recent?.includes(prepared.sha)) return { sha: prepared.sha, tree: prepared.tree };
+      const now = recent ? (recent[0] ?? null) : undefined;
+      // The commit did not land: its note names a commit that no branch holds. Remove it again (best effort).
+      if (input.note && now !== undefined) await this.pushNoteChangeset(repo, url, secret, undefined, prepared.sha, null).catch(() => undefined);
+      if (err instanceof PushRejectedError && now !== undefined && now !== expected) throw branchConflict(input, now);
+      throw err;
+    }
+    return { sha: prepared.sha, tree: prepared.tree };
+  }
+
+  /**
+   * Add the note of `commitSha` to refs/notes/gitring in the fan-out layout and push it (3 tries on a lost
+   * race). `tip` is the notes ref as last advertised (undefined: look it up). `null` removes the note of
+   * `commitSha` (nothing to push when it has none). A flat notes tree moves to the fan-out layout on the
+   * first write: a one-time cost that reads only the root tree. Every read goes through the binding, cached.
+   */
+  private async pushNoteChangeset(repo: ArtifactsRepo, url: string, secret: string, tip: string | null | undefined, commitSha: string, note: string | null): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      if (tip === undefined) tip = (await advertisedRefs(this.http, url, secret)).refs.get(NOTES_REF) ?? null;
+      let baseTree: string | null = null;
+      const edits: PathEdit[] = [];
+      if (tip) {
+        const notesCommit = await this.readCommitVia(repo, tip);
+        if (!notesCommit) throw new ChangesetError(`notes commit ${tip} cannot be read through the binding`);
+        baseTree = notesCommit.treeHash;
+        const root = await this.readTreeVia(repo, baseTree);
+        if (!root) throw new ChangesetError(`notes tree ${baseTree} cannot be read through the binding`);
+        for (const e of root) {
+          if (e.type === "tree" || !isSha(e.name)) continue;
+          edits.push({ path: e.name, entry: null }, { path: fannedNotePath(e.name), entry: { sha: e.hash, mode: e.mode } });
+        }
+      }
+      const blobs = new Map<string, Uint8Array>();
+      if (note === null) {
+        edits.push({ path: fannedNotePath(commitSha), entry: null });
       } else {
-        await this.initLocal(s, input.branch);
+        const body = utf8.encode(note);
+        const sha = await hashObject("blob", body);
+        blobs.set(sha, body);
+        edits.push({ path: fannedNotePath(commitSha), entry: { sha, mode: "100644" } });
       }
-
-      // 4. Objects (same encoding as the emulator). Trees read from the clone are not rewritten.
-      const local = localObjects(s);
-      const cloned = new Set<string>();
-      let base: Snapshot = new Map();
-      if (input.parent) {
-        const parent = await local.readCommit(input.parent);
-        if (!parent) throw new Error(`parent commit ${input.parent} is missing from the clone`);
-        const reader = {
-          readTree: (repo: string, sha: string) => {
-            cloned.add(sha);
-            return local.readTree(repo, sha);
-          },
-        };
-        base = await readSnapshot(reader, input.repo, parent.treeHash);
-      }
-      const prepared = await prepareCommit({
-        base,
-        changes: input.changes,
-        parents: input.parent ? [input.parent] : [],
-        author: input.author,
-        message: input.message,
-        timestamp: Math.floor(this.now() / 1000),
+      const built = await buildChangeset({ readTree: (sha) => this.readTreeVia(repo, sha) }, baseTree, edits);
+      if (note === null && built.root === (baseTree ?? EMPTY_TREE_SHA)) return;
+      const ident = { name: this.author.name, email: this.author.email, timestamp: Math.floor(this.now() / 1000), tzOffset: "+0000" };
+      const commit = encodeCommit({
+        tree: built.root,
+        parents: tip ? [tip] : [],
+        author: ident,
+        committer: ident,
+        message: normalizeCommitMessage(note === null ? `Notes removed by gitring for ${commitSha}` : `Notes added by gitring for ${commitSha}`),
       });
-      await writeLocalObjects(s, preparedObjects(prepared, cloned));
-      await git.writeRef({ fs: s.fs, dir: s.dir, ref: branchRef, value: prepared.sha, force: true });
-
-      // 5. Note first: once the branch moves, its note already exists.
-      if (input.note) await this.pushNote(s.url, s.secret, prepared.sha, input.note);
-
-      // 6. Push (no force).
+      const sha = await hashObject("commit", commit);
+      const pack = await writePack(packObjects({ blobs, trees: built.trees, sha, commit }));
       try {
-        await git.push({ ...this.gitOpts(s), remote: "origin", ref: branchRef, remoteRef: branchRef });
+        await pushPack(this.http, url, secret, [{ ref: NOTES_REF, old: tip, new: sha }], pack);
+        return;
       } catch (err) {
-        const code = gitErrorCode(err);
-        const rejected = code === "PushRejectedError" || code === "GitPushError";
-        // undefined: the branch cannot be read now. Then the note stays: an extra note is better than a merge without its note.
-        const recent = await this.recentCommits(repo, input.branch).catch(() => undefined);
-        // The answer got lost, but the branch holds the commit (maybe under a newer one): it landed, with its note.
-        if (recent?.includes(prepared.sha)) return { sha: prepared.sha, tree: prepared.tree };
-        const now = recent ? (recent[0] ?? null) : undefined;
-        // The commit did not land: its note names a commit that no branch holds. Remove it again (best effort).
-        if (input.note && now !== undefined) await this.pushNote(s.url, s.secret, prepared.sha, null).catch(() => undefined);
-        if (rejected && now !== undefined && now !== expected) throw branchConflict(input, now);
+        if (!(err instanceof PushRejectedError) || attempt >= 3) throw err;
+        tip = undefined; // another writer moved the notes ref: read it again
+      }
+    }
+  }
+
+  /** The clone path: a shallow clone of the branch at the parent, loose objects, push (isomorphic-git). */
+  private async commitWithClone(repo: ArtifactsRepo, input: CommitInput): Promise<CommitResult> {
+    const branchRef = `refs/heads/${input.branch}`;
+    const expected = input.parent || null;
+    // 2–3. Local repository at the parent.
+    const s = await this.session(input.repo, repo);
+    if (input.parent) {
+      try {
+        await git.clone({ ...this.gitOpts(s), url: s.url, ref: input.branch, singleBranch: true, depth: 1, noCheckout: true, noTags: true });
+      } catch (err) {
+        if (gitErrorCode(err) === "NotFoundError") throw branchConflict(input, await this.branchTip(repo, input.branch));
         throw err;
       }
-      return { sha: prepared.sha, tree: prepared.tree };
+      const head = await this.resolveLocal(s, `refs/remotes/origin/${input.branch}`);
+      if (head !== input.parent) throw branchConflict(input, head);
+    } else {
+      await this.initLocal(s, input.branch);
+    }
+
+    // 4. Objects (same encoding as the emulator). Trees read from the clone are not rewritten.
+    const local = localObjects(s);
+    const cloned = new Set<string>();
+    let base: Snapshot = new Map();
+    if (input.parent) {
+      const parent = await local.readCommit(input.parent);
+      if (!parent) throw new Error(`parent commit ${input.parent} is missing from the clone`);
+      const reader = {
+        readTree: (repo: string, sha: string) => {
+          cloned.add(sha);
+          return local.readTree(repo, sha);
+        },
+      };
+      base = await readSnapshot(reader, input.repo, parent.treeHash);
+    }
+    const prepared = await prepareCommit({
+      base,
+      changes: input.changes,
+      parents: input.parent ? [input.parent] : [],
+      author: input.author,
+      message: input.message,
+      timestamp: Math.floor(this.now() / 1000),
     });
+    await writeLocalObjects(s, preparedObjects(prepared, cloned));
+    await git.writeRef({ fs: s.fs, dir: s.dir, ref: branchRef, value: prepared.sha, force: true });
+
+    // 5. Note first: once the branch moves, its note already exists.
+    if (input.note) await this.pushNote(s.url, s.secret, prepared.sha, input.note);
+
+    // 6. Push (no force).
+    try {
+      await git.push({ ...this.gitOpts(s), remote: "origin", ref: branchRef, remoteRef: branchRef });
+    } catch (err) {
+      const code = gitErrorCode(err);
+      const rejected = code === "PushRejectedError" || code === "GitPushError";
+      // undefined: the branch cannot be read now. Then the note stays: an extra note is better than a merge without its note.
+      const recent = await this.recentCommits(repo, input.branch).catch(() => undefined);
+      // The answer got lost, but the branch holds the commit (maybe under a newer one): it landed, with its note.
+      if (recent?.includes(prepared.sha)) return { sha: prepared.sha, tree: prepared.tree };
+      const now = recent ? (recent[0] ?? null) : undefined;
+      // The commit did not land: its note names a commit that no branch holds. Remove it again (best effort).
+      if (input.note && now !== undefined) await this.pushNote(s.url, s.secret, prepared.sha, null).catch(() => undefined);
+      if (rejected && now !== undefined && now !== expected) throw branchConflict(input, now);
+      throw err;
+    }
+    return { sha: prepared.sha, tree: prepared.tree };
   }
 
   /**
