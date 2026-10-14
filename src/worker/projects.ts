@@ -1,13 +1,7 @@
 /**
- * Project creation, shared by REST (POST /api/projects) and MCP (gitring_create_project): one code path,
- * so an agent and a person get the same checks and the same project.
+ * Project creation, shared by REST (POST /api/projects) and MCP (gitring_create_project).
  *
- *   source   template | empty | upload (files) | push | git (any https URL) | github (one import among
- *            others; GitHub sync starts off)
- *   seed     HarborMaster.init: the files in one commit, or an import that runs in the background
- *   settings the tests (when the caller gives them), the GitHub link of a GitHub import
- *   task     optional: the first task, and built-in agents that start on it (also after an import)
- *
+ * One code path: an agent and a person get the same checks and the same project.
  * People own their projects. The operator key (scripts) makes projects that no person owns.
  * Also here: the git command that clones a project with a read token (the token goes in a header).
  */
@@ -23,6 +17,19 @@ import { isTemplateId, TEMPLATES } from "../core/templates";
 import { tokenSecret } from "../platform/repo/artifacts";
 import { retryAfterReset } from "./mcp-kit";
 import type { SeedFile } from "../harbor/harbor";
+
+/*
+ * What a new project is made of:
+ *
+ *   source   template | empty | upload (files) | push | git (any https URL) | github (one import among
+ *            others; GitHub sync starts off)
+ *   seed     HarborMaster.init: the files in one commit, or an import that runs in the background
+ *   settings the tests (when the caller gives them), the GitHub link of a GitHub import
+ *   task     optional: the first task, and built-in agents that start on it (also after an import)
+ *
+ * People own their projects. The operator key (scripts) makes projects that no person owns.
+ * Also here: the git command that clones a project with a read token (the token goes in a header).
+ */
 
 /** A refusal with the HTTP status for REST (MCP shows the message). `extra` goes into the JSON answer (installUrl). */
 export class ProjectError extends Error {
@@ -185,6 +192,22 @@ export async function createProjectFor(env: Env, principal: Principal, input: Cr
     throw new ProjectError(400, String((e as Error)?.message ?? e).replace(/^Error: /, ""));
   }
   const h = harbor(env, info.id);
+  const state = await seedProject(dir, h, info, source, user, input, gh);
+  // The project exists from here on: a first task or agents that fail do not undo it (the note says why).
+  const out: CreatedProject = { project: info, state, launched: [] };
+  return openFirstTask(principal, h, input, out);
+}
+
+/** Put the files and settings into the new project. A project that cannot start is removed again. */
+async function seedProject(
+  dir: ReturnType<typeof directory>,
+  h: ReturnType<typeof harbor>,
+  info: A.ProjectInfo,
+  source: T.ProjectSource,
+  user: A.UserInfo | null,
+  input: CreateProjectInput,
+  gh: { canPush: boolean; verified: boolean } | undefined,
+): Promise<T.ProjectState> {
   let state: T.ProjectState;
   try {
     const files = source.kind === "upload" && Array.isArray(input.files) ? input.files : undefined;
@@ -208,8 +231,11 @@ export async function createProjectFor(env: Env, principal: Principal, input: Cr
     await dir.dropProject(info.id).catch(() => undefined);
     throw e instanceof ProjectError ? e : new ProjectError(400, String((e as Error)?.message ?? e).replace(/^Error: /, ""));
   }
-  // The project exists from here on: a first task or agents that fail do not undo it (the note says why).
-  const out: CreatedProject = { project: info, state, launched: [] };
+  return state;
+}
+
+/** The first task of a new project, and the built-in agents that start on it. A failure here does not undo the project. */
+async function openFirstTask(principal: Principal, h: ReturnType<typeof harbor>, input: CreateProjectInput, out: CreatedProject): Promise<CreatedProject> {
   const goal = String(input.firstTask?.goal ?? "").trim();
   const title = String(input.firstTask?.title ?? "").trim() || titleOf(goal);
   if (!title) return out;

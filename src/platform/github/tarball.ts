@@ -1,10 +1,9 @@
 /**
- * Read one commit of a GitHub repository as files, from its tarball (GET /repos/{repo}/tarball/{sha}).
- * gitring uses it to import a private repository: Artifacts imports public remotes only.
+ * Read one commit of a GitHub repository as files, from its tarball.
  *
- * The tarball has one top folder ("owner-repo-<sha>/"); gitring strips it. Executable bits and symlinks
- * stay; submodules are not in tarballs (their entries on GitHub stay as they are, because gitring sends
- * only changed paths back).
+ * gitring uses it to import a private repository: Artifacts imports public remotes only.
+ * The tarball has one top folder ("owner-repo-<sha>/"), and gitring strips it. Executable bits and symlinks stay.
+ * Submodules are not in tarballs: their entries on GitHub stay as they are, because gitring sends only changed paths back.
  */
 import type { FileChange } from "../repo/backend";
 import { readTar } from "../checks/tar";

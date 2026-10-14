@@ -1,18 +1,10 @@
 /**
- * MCP server for external agents (Claude Code, Codex, Cursor, …).
- * Stateless (MCP 2026-07-28 via createMcpHandler); all state lives in the project's HarborMaster.
- * Every call carries a personal API key or an OAuth token; each tool checks the caller's role on the project.
+ * The MCP server for external agents (Claude Code, Codex, Cursor and others): the gitring tool set.
  *
- * Every tool result starts with a one-line status. When gitring has new change requests for the agent,
- * the result starts with "GITRING CHANGE REQUEST" so the model cannot miss it. Every answer about a work copy
- * carries them, also the answers that only read: gitring_read and gitring_list keep the file text clean in the
- * first block and bring the change requests in a second block. gitring_wait waits for them.
- *
- * Only the person who sent the agent of a work copy (or an owner, or the operator key) can change it. Every
- * member can read it, but only that person gets its change requests.
- *
- * Every tool has a title and all four hints (read-only, destructive, idempotent, open-world): MCP
- * directories need them, and the Worker uses the read-only hint for the read-only path and scope.
+ * Stateless (MCP 2026-07-28, createMcpHandler). All state lives in the project coordinator (HarborMaster).
+ * Every call carries a personal API key or an OAuth token. Each tool checks the role of the caller on the project.
+ * The Worker uses the read-only hint of a tool for the read-only path and scope.
+ * Read next: src/worker/mcp-kit.ts (how a tool is defined) and the note below.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
@@ -27,6 +19,21 @@ import { GITHUB_CHECK_HOW, GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } 
 import { answerNote, answerPlace, askCodec, askInChat, isWaiting, statusReply, takeAnswer } from "./mcp-approval";
 import { PROJECT_TOOLS } from "./mcp-projects";
 import { HISTORY_TOOLS } from "./mcp-history";
+
+/*
+ * Change requests in every answer:
+ *
+ * Every tool result starts with a one-line status. When gitring has new change requests for the agent,
+ * the result starts with "GITRING CHANGE REQUEST" so the model cannot miss it. Every answer about a work copy
+ * carries them, also the answers that only read: gitring_read and gitring_list keep the file text clean in the
+ * first block and bring the change requests in a second block. gitring_wait waits for them.
+ *
+ * Only the person who sent the agent of a work copy (or an owner, or the operator key) can change it. Every
+ * member can read it, but only that person gets its change requests.
+ *
+ * Every tool has a title and all four hints (read-only, destructive, idempotent, open-world): MCP
+ * directories need them, and the Worker uses the read-only hint for the read-only path and scope.
+ */
 
 /** The version that the server tells to clients. */
 export const MCP_VERSION = "0.9.2";

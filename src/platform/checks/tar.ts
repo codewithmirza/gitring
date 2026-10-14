@@ -1,6 +1,8 @@
 /**
- * A small tar writer (POSIX ustar + PAX for long or non-ASCII paths), so that gitring can copy a tree
- * into a check container through `tar -x` on standard input. No dependencies; runs in Workers and Node.
+ * A small tar writer (POSIX ustar, PAX for long or non-ASCII paths) for check containers.
+ *
+ * gitring copies a tree into a check container through `tar -x` on standard input.
+ * No dependencies. It runs in Workers and in Node.
  */
 
 const enc = new TextEncoder();

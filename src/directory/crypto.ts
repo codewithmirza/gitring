@@ -1,6 +1,8 @@
 /**
- * Small Web Crypto helpers for accounts: random tokens, hashes, sealed config values and the
- * RS256 JSON Web Token that a GitHub App signs. No dependencies; runs in Workers and in Node.
+ * Web Crypto helpers for accounts: random tokens, hashes, sealed config values and the GitHub App token.
+ *
+ * No dependencies. It runs in Workers and in Node.
+ * Never log a token or an unsealed value.
  */
 
 const enc = new TextEncoder();

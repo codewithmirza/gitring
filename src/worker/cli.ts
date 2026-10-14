@@ -1,13 +1,10 @@
 /**
- * The gitring command line (cli/gitring.mjs) in the Worker.
+ * The part of the Worker that serves the gitring command line (cli/gitring.mjs).
  *
  * The command line signs in with the device grant (src/worker/device.ts) and gets an OAuth token for /mcp.
- * OAuth tokens of other apps work only at the MCP endpoint they were issued for (RFC 8707). The token of
- * gitring's own command line also works for the REST routes of its commands, and only for these: the
- * list below. It never works for settings, members, API keys or project deletion.
- *
- * An answer to a merge question from the command line counts as the person's answer only when the person
- * allows answers outside the gitring app (contract C3). See answerWay.
+ * That token also works for the REST routes of its commands (the list below), and for no other route.
+ * It never works for settings, members, API keys or project deletion.
+ * An answer to a merge question from the command line counts only when the person allows it (contract C3, answerWay).
  */
 import type { Principal } from "./auth";
 import { CLI_CLIENT_ID } from "../directory/device";

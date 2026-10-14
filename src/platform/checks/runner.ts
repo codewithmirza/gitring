@@ -1,5 +1,14 @@
 /**
- * Check runner: runs the executable checks of an intent inside a Dynamic Worker (Worker Loader).
+ * The check runner: it runs the tests of a task inside a Dynamic Worker (Worker Loader).
+ *
+ * The Dynamic Worker has no network (globalOutbound: null) and a CPU limit.
+ * When a load fails, the runner loads each test file alone, to show which file fails.
+ * Read next: the note below (how the module map is made).
+ */
+import type { CheckCaseResult, CheckRun } from "../../core/types";
+
+/*
+ * How the module map is made:
  *
  * The tree under test becomes the module map of the Dynamic Worker: every .js/.mjs file keeps its
  * repo path as its module name ("src/render.js", "tests/x.test.js"). gitring adds a generated main
@@ -11,7 +20,6 @@
  * fails and more than one test file was requested, the runner loads each test file alone (without
  * the other requested test files) to show which file fails.
  */
-import type { CheckCaseResult, CheckRun } from "../../core/types";
 
 export interface CheckFiles {
   /** All text files of the tree: repo-relative path → content. */
@@ -28,7 +36,7 @@ export interface CheckModules {
 export interface RunChecksOptions {
   /** Total time budget, fallback runs included. Default 10000 ms. */
   timeoutMs?: number;
-  /** "attempt" (default) = the attempt alone; "composed" = main + attempt. */
+  /** "attempt" (default) = the work copy alone; "composed" = main + the work copy. */
   scope?: CheckRun["scope"];
   /** CheckRun id. Default: a new random id. */
   id?: string;

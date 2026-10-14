@@ -1,5 +1,5 @@
 /**
- * Live preview of an attempt: the attempt's app runs in a Dynamic Worker (Worker Loader).
+ * Live preview of a work copy: the app of the work copy runs in a Dynamic Worker (Worker Loader).
  *
  * The page is served under a path prefix (basePath), for example /preview/my-project/a_123/. servePreview
  * strips the prefix, keeps the query, forwards the request to the app's default export, and marks

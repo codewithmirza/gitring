@@ -1,6 +1,13 @@
 /**
- * The device authorization grant (RFC 8628) of gitring's own OAuth server, for programs on a computer
- * where a browser sign-in is not easy: the gitring command line, or an agent on a server.
+ * The device authorization grant (RFC 8628): the names, the codes and the limits.
+ *
+ * It is for programs that cannot easily open a browser: the gitring command line, or an agent on a server.
+ * The store logic is in src/directory/oauth-store/devices.ts. The page is in src/worker/device.ts.
+ */
+import { randomToken } from "./crypto";
+
+/*
+ * The steps of a device sign-in:
  *
  *   start   POST /oauth/device_authorization gives a device code (a secret for the program) and a user
  *           code (8 letters for the person). Both work for 10 minutes.
@@ -11,7 +18,6 @@
  *
  * The store logic is in OAuthStore (src/directory/oauth.ts). This file holds the names and the codes.
  */
-import { randomToken } from "./crypto";
 
 export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 

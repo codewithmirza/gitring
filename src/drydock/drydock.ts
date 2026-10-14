@@ -1,12 +1,9 @@
 /**
- * Drydock — runs a project's own install and test commands in a Linux container (Cloudflare
- * Containers, `durable_object` scheduling policy, the managed Node.js 24 image).
+ * The test container: it runs the install and test commands of a project in a Linux container.
  *
- * One Drydock per attempt. The container stays up for a few minutes after a run, so the next run of
- * the same attempt reuses node_modules when the lockfile did not change.
- *
- * Network: the container has no direct Internet access. HTTP and HTTPS go through Seawall, a Worker
- * entrypoint that lets requests to package registries pass and refuses every other host.
+ * Cloudflare Containers, the `durable_object` scheduling policy and the managed Node.js 24 image. One Drydock for each work copy.
+ * The container stays up for a few minutes, so the next run reuses node_modules when the lockfile did not change.
+ * The container has no direct Internet access: HTTP and HTTPS go through Seawall, which passes package registries only.
  */
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import type { Env } from "../worker/env";
@@ -217,7 +214,7 @@ export class Drydock extends DurableObject<Env> {
     return { running: this.container.running, results };
   }
 
-  /** Stop the container now (the attempt is closed). */
+  /** Stop the container now (the work copy is closed). */
   async stop(): Promise<void> {
     if (this.ctx.container?.running) await this.ctx.container.destroy();
     this.ready = undefined;

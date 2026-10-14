@@ -1,3 +1,9 @@
+/**
+ * The bindings, variables and secrets that the Worker gets from Cloudflare.
+ *
+ * Every file of the Worker takes its environment from this type. Add a new binding here first.
+ * Never write a secret value in a file: set secrets with `wrangler secret put`.
+ */
 import type { HarborMaster } from "../harbor/harbor";
 import type { Vessel } from "../vessel/vessel";
 import type { Directory } from "../directory/directory";
@@ -8,7 +14,7 @@ export interface Env {
   HARBOR: DurableObjectNamespace<HarborMaster>;
   VESSEL: DurableObjectNamespace<Vessel>;
   DIRECTORY: DurableObjectNamespace<Directory>;
-  /** Check containers (Cloudflare Containers): one per attempt. */
+  /** Check containers (Cloudflare Containers): one for each work copy. */
   DRYDOCK: DurableObjectNamespace<Drydock>;
   LOADER: WorkerLoader;
   ARTIFACTS: Artifacts;

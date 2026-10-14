@@ -1,6 +1,15 @@
 /**
- * Rate limits (Workers Rate Limiting bindings): counters per Cloudflare location, keyed by a person or an
- * address. Without a binding (local development, tests) nothing is limited.
+ * Rate limits with Workers Rate Limiting bindings, for each person or address.
+ *
+ * Counters are per Cloudflare location. Without a binding (local development, tests) nothing is limited.
+ * Called by the request guard (src/worker/request-guard.ts) and by the MCP entry.
+ * Read next: the table of limits below.
+ */
+import type { Env } from "./env";
+import { sha256Hex } from "../directory/crypto";
+
+/*
+ * The limits (one binding for each kind):
  *
  *   RL_AUTH   sign-in starts, client registrations and device sign-ins, per address (20 per minute)
  *   RL_TOKEN  OAuth token and revocation calls, per address             (120 per minute)
@@ -14,8 +23,6 @@
  *             come for each tool call of each of its agents)
  *   RL_PREVIEW live previews (/preview/*), per address (600 per minute: a page loads many files)
  */
-import type { Env } from "./env";
-import { sha256Hex } from "../directory/crypto";
 
 export type LimitKind = "auth" | "token" | "mcp" | "api" | "cred" | "hook" | "preview";
 

@@ -1,6 +1,14 @@
 /**
- * Passkeys (WebAuthn Level 2): a person signs in with a key on their own device, and gitring needs no
- * outside account. Web Crypto only, no dependencies; runs in Workers and in Node.
+ * The WebAuthn checks for passkeys, with no storage: read a new passkey and check a sign-in.
+ *
+ * A person signs in with a key on their own device, and gitring needs no outside account.
+ * Web Crypto only, no dependencies. It runs in Workers and in Node.
+ * Read next: src/directory/layers/passkey-accounts.ts (where the passkeys are kept).
+ */
+import { b64url, fromB64url, sameString } from "./crypto";
+
+/*
+ * The parts of this file:
  *
  *   CBOR      a small decoder for the attestation object and COSE keys (definite lengths only)
  *   COSE      public keys → JWK: ES256 (-7), EdDSA with Ed25519 (-8), RS256 (-257)
@@ -13,7 +21,6 @@
  * certificates, or another format, counts as "none". The RP id is the host name of the request.
  * The Directory keeps the credentials (table passkeys) and the one-time challenges (table states).
  */
-import { b64url, fromB64url, sameString } from "./crypto";
 
 export const PASSKEY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS passkeys (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, public_key TEXT NOT NULL, alg INTEGER NOT NULL, sign_count INTEGER NOT NULL, transports TEXT, name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER)`,
@@ -46,122 +53,145 @@ const enc = new TextEncoder();
 const MAX_DEPTH = 16;
 
 /**
- * Decode one CBOR item at `start`. Maps become `Map` (keys: numbers or strings), byte strings become
- * Uint8Array. Indefinite lengths, duplicate map keys and integers above 2^53 are refused.
+ * A cursor over the bytes of one CBOR buffer. `pos` moves forward as items are read: the readers below
+ * share it, so a class keeps them together.
  */
-export function decodeCborItem(bytes: Uint8Array, start = 0): { value: unknown; end: number } {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let pos = start;
-  const need = (n: number) => {
-    if (n < 0 || pos + n > bytes.length) throw new PasskeyError(INCOMPLETE);
-  };
-  const length = (info: number): number => {
+class CborReader {
+  private readonly view: DataView;
+  pos: number;
+
+  constructor(
+    private readonly bytes: Uint8Array,
+    start: number,
+  ) {
+    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    this.pos = start;
+  }
+
+  private need(n: number): void {
+    if (n < 0 || this.pos + n > this.bytes.length) throw new PasskeyError(INCOMPLETE);
+  }
+
+  /** The length or the value that follows the head byte of an item (`info`: the low 5 bits of the head). */
+  private length(info: number): number {
     if (info < 24) return info;
     if (info === 24) {
-      need(1);
-      return bytes[pos++];
+      this.need(1);
+      return this.bytes[this.pos++];
     }
     if (info === 25) {
-      need(2);
-      const v = view.getUint16(pos);
-      pos += 2;
+      this.need(2);
+      const v = this.view.getUint16(this.pos);
+      this.pos += 2;
       return v;
     }
     if (info === 26) {
-      need(4);
-      const v = view.getUint32(pos);
-      pos += 4;
+      this.need(4);
+      const v = this.view.getUint32(this.pos);
+      this.pos += 4;
       return v;
     }
     if (info === 27) {
-      need(8);
-      const v = view.getBigUint64(pos);
-      pos += 8;
+      this.need(8);
+      const v = this.view.getBigUint64(this.pos);
+      this.pos += 8;
       if (v > BigInt(Number.MAX_SAFE_INTEGER)) throw new PasskeyError(INCOMPLETE);
       return Number(v);
     }
     // 28-30 are reserved; 31 is an indefinite length, which WebAuthn data does not use.
     throw new PasskeyError(INCOMPLETE);
-  };
-  const item = (depth: number): unknown => {
+  }
+
+  /** One item at the cursor, and the items inside it (`depth`: how deep the item sits). */
+  item(depth: number): unknown {
     if (depth > MAX_DEPTH) throw new PasskeyError(INCOMPLETE);
-    need(1);
-    const head = bytes[pos++];
+    this.need(1);
+    const head = this.bytes[this.pos++];
     const major = head >> 5;
     const info = head & 31;
-    if (major === 7) return simple(info);
-    const n = length(info);
+    if (major === 7) return this.simple(info);
+    const n = this.length(info);
     switch (major) {
       case 0:
         return n;
       case 1:
         return -1 - n;
       case 2: {
-        need(n);
-        const out = bytes.slice(pos, pos + n);
-        pos += n;
+        this.need(n);
+        const out = this.bytes.slice(this.pos, this.pos + n);
+        this.pos += n;
         return out;
       }
       case 3: {
-        need(n);
+        this.need(n);
         let text: string;
         try {
-          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(pos, pos + n));
+          text = new TextDecoder("utf-8", { fatal: true }).decode(this.bytes.subarray(this.pos, this.pos + n));
         } catch {
           throw new PasskeyError(INCOMPLETE);
         }
-        pos += n;
+        this.pos += n;
         return text;
       }
       case 4: {
         // Each item takes one byte at least: a longer count is a lie.
-        need(n);
+        this.need(n);
         const out: unknown[] = [];
-        for (let i = 0; i < n; i++) out.push(item(depth + 1));
+        for (let i = 0; i < n; i++) out.push(this.item(depth + 1));
         return out;
       }
       case 5: {
-        need(2 * n);
+        this.need(2 * n);
         const out = new Map<number | string, unknown>();
         for (let i = 0; i < n; i++) {
-          const k = item(depth + 1);
+          const k = this.item(depth + 1);
           if ((typeof k !== "number" && typeof k !== "string") || out.has(k)) throw new PasskeyError(INCOMPLETE);
-          out.set(k, item(depth + 1));
+          out.set(k, this.item(depth + 1));
         }
         return out;
       }
       default:
         // Major type 6: a tag. The tagged value counts.
-        return item(depth + 1);
+        return this.item(depth + 1);
     }
-  };
-  const simple = (info: number): unknown => {
+  }
+
+  /** The simple values and floats (major type 7). */
+  private simple(info: number): unknown {
     if (info === 20) return false;
     if (info === 21) return true;
     if (info === 22) return null;
     if (info === 23) return undefined;
     if (info === 25) {
-      need(2);
-      const h = view.getUint16(pos);
-      pos += 2;
+      this.need(2);
+      const h = this.view.getUint16(this.pos);
+      this.pos += 2;
       return half(h);
     }
     if (info === 26) {
-      need(4);
-      const v = view.getFloat32(pos);
-      pos += 4;
+      this.need(4);
+      const v = this.view.getFloat32(this.pos);
+      this.pos += 4;
       return v;
     }
     if (info === 27) {
-      need(8);
-      const v = view.getFloat64(pos);
-      pos += 8;
+      this.need(8);
+      const v = this.view.getFloat64(this.pos);
+      this.pos += 8;
       return v;
     }
     throw new PasskeyError(INCOMPLETE);
-  };
-  const value = item(0);
-  return { value, end: pos };
+  }
+}
+
+/**
+ * Decode one CBOR item at `start`. Maps become `Map` (keys: numbers or strings), byte strings become
+ * Uint8Array. Indefinite lengths, duplicate map keys and integers above 2^53 are refused.
+ */
+export function decodeCborItem(bytes: Uint8Array, start = 0): { value: unknown; end: number } {
+  const reader = new CborReader(bytes, start);
+  const value = reader.item(0);
+  return { value, end: reader.pos };
 }
 
 /** Decode a buffer that holds exactly one CBOR item. */

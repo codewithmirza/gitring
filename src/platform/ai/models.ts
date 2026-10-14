@@ -1,7 +1,7 @@
 /**
- * Workers AI access: the Clef decision model (course checks) and chat models (vessels, the test-command guess).
- * Every call has a timeout and never throws to the caller: a failure returns null so the
- * caller can fall back to the deterministic rules.
+ * Workers AI access: the conflict-check model, and the chat models of built-in agents and the test-command guess.
+ *
+ * Every call has a timeout and never throws. A failure returns null, so the caller can fall back to the rules.
  */
 import type { ClefRequest, ClefResponse } from "../../core/coord/clef";
 
@@ -82,7 +82,7 @@ export function isGatewayModel(model: string): boolean {
   return !model.startsWith("@cf/") && !model.startsWith("@hf/");
 }
 
-/** The last chat error (for diagnostics in vessels and logs). */
+/** The last chat error (for diagnostics in agent runners and logs). */
 export let lastChatError: string | undefined;
 
 /**

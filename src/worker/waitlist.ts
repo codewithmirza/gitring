@@ -1,5 +1,17 @@
 /**
- * Waitlist routes:
+ * The routes of the waitlist: the choice of a person, the list for the owner and the owner page.
+ *
+ * Mounted by app.ts. Only an owner reads the list or lets a person in.
+ * Read next: src/worker/gate.ts (who is kept out) and src/core/waitlist.ts.
+ */
+import type { Hono } from "hono";
+import { esc, forgetPrincipal, directory, page } from "./auth";
+import { gateOn, waitlistCsv } from "../core/waitlist";
+import { PLANS, priceLabel } from "../core/plans";
+import type { C, HonoEnv } from "./http";
+
+/*
+ * The routes:
  *
  *   GET    /api/plans               the planned packs (public)
  *   GET    /api/waitlist            the gate and the choice of the signed-in person
@@ -12,14 +24,6 @@
  *   GET    /admin/waitlist          owner: the same as a page, with forms (no script)
  *   GET    /api/projects/:p/usage   the counters of use of a project in a month
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
-import { esc, forgetPrincipal, directory, page, type Principal } from "./auth";
-import { gateOn, waitlistCsv } from "../core/waitlist";
-import { PLANS, priceLabel } from "../core/plans";
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
 
 function owner(c: C): boolean {
   const p = c.get("principal");
@@ -29,6 +33,13 @@ function owner(c: C): boolean {
 const NOT_OWNER = { error: "Only an owner of this gitring can do this." };
 
 export function waitlistRoutes(app: Hono<HonoEnv>): void {
+  personWaitlistRoutes(app);
+  adminApiRoutes(app);
+  adminPageRoutes(app);
+}
+
+/** The plans, and the waitlist choice of the person. */
+function personWaitlistRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/plans", (c) => c.json(PLANS, 200, { "cache-control": "public, max-age=300" }));
 
   app.get("/api/waitlist", async (c) => {
@@ -57,7 +68,10 @@ export function waitlistRoutes(app: Hono<HonoEnv>): void {
   });
 
   /* ───────────── owner ───────────── */
+}
 
+/** The waitlist and the allow list for an owner (API). */
+function adminApiRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/admin/waitlist", async (c) => {
     if (!owner(c)) return c.json(NOT_OWNER, 403);
     const report = await directory(c.env).waitlistAdmin();
@@ -94,7 +108,10 @@ export function waitlistRoutes(app: Hono<HonoEnv>): void {
   });
 
   /* ───────────── the owner page ───────────── */
+}
 
+/** The owner page of the waitlist. */
+function adminPageRoutes(app: Hono<HonoEnv>): void {
   app.get("/admin/waitlist", async (c) => {
     if (!owner(c)) {
       return page("Waitlist", `<h1>Only an owner can open this page</h1><p><a class="btn" href="/">Open gitring</a></p>`, 403);

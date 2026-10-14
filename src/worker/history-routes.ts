@@ -1,20 +1,22 @@
 /**
- * History questions over REST (the twins of the MCP tools in mcp-history.ts), for the web app and for
- * other apps. Viewers may ask: the answers show code that a viewer can already read.
+ * The REST routes for history questions: why a line is there, file history, search and compare.
+ *
+ * They are the twins of the MCP tools in mcp-history.ts. Viewers may ask: the answers show code that a viewer can already read.
+ * Mounted by src/worker/routes/code-and-history.ts. Read next: src/harbor/derived.ts (where the answers come from).
+ */
+import type { Hono } from "hono";
+import type { Role } from "../core/accounts";
+import type { HarborMaster } from "../harbor/harbor";
+import type { C, HonoEnv } from "./http";
+
+/*
+ * The routes:
  *
  *   GET /api/projects/:p/why?path=&line=&ref=        the change that last wrote a line (or the changes of a file)
  *   GET /api/projects/:p/history?path=&limit=         the changes of a file, a folder or main
  *   GET /api/projects/:p/search?q=&path=&limit=       a text in the files of main
  *   GET /api/projects/:p/compare?from=&to=&path=      the changes between two versions (all files, or under a path)
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
-import type { Role } from "../core/accounts";
-import type { HarborMaster } from "../harbor/harbor";
-import type { Principal } from "./auth";
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
 
 /** What the routes need from the Worker: the role check with the project object, and the error answer. */
 export interface HistoryRouteDeps {

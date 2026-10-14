@@ -1,8 +1,8 @@
 /**
- * Repositories that a person can import: the repositories of the gitring GitHub App's installations
- * that the person can see (GET /user/installations, /user/installations/{id}/repositories, with the
- * person's GitHub App user token). And the guess for a new project from one repository: the file list
- * and a reader of GitHub's tree go to the same guess as every other source (core/guess.ts guessTree).
+ * The GitHub repositories that a person can import, and the test-command guess for one of them.
+ *
+ * They are the repositories of the app installations that the person can see with the person's user token.
+ * The file list and a reader of GitHub's tree go to the same guess as every other source (core/guess.ts, guessTree).
  */
 import type * as A from "../../core/accounts";
 import { guessTree, projectNameOf, type AskModel, type ChecksGuess } from "../../core/guess";

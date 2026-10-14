@@ -1,5 +1,31 @@
 /**
- * Approvals in the chat of an agent.
+ * Approvals in the chat of an agent: ask the person a yes or no question from inside the agent.
+ *
+ * An agent must never answer the question for the person. gitring has no tool that approves.
+ * Used by gitring_submit and by create_pull_request (src/worker/github-tools/tools-pulls.ts).
+ * Read next: the note below (the two ways to reach the person), then src/harbor/harbor.ts (decide).
+ */
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  createRequestStateCodec,
+  inputRequired,
+  inputResponse,
+  type InputRequiredResult,
+  type RequestStateCodec,
+  type ServerContext,
+} from "@modelcontextprotocol/server";
+import { z } from "zod";
+import type { Env } from "./env";
+import type * as T from "../core/types";
+import type * as A from "../core/accounts";
+import { DEFAULT_PREFS } from "../core/accounts";
+import { approvalQuestion, waitingText } from "../core/approvals";
+import { hmacSha256Hex } from "../directory/crypto";
+import { directory, type Principal } from "./auth";
+import { text, type AskState, type HarborApi, type ToolContext, type ToolResult } from "./mcp-kit";
+
+/*
+ * How an approval reaches the person:
  *
  * An agent asks for a merge (gitring_submit, or create_pull_request in the GitHub-compatible set) and a
  * person must say yes. The agent never answers that question. gitring reaches the person in one of two ways:
@@ -25,24 +51,6 @@
  * not protect: a program that holds the credentials of the person and sends the answer itself. gitring
  * has no tool that approves.
  */
-import {
-  CLIENT_CAPABILITIES_META_KEY,
-  createRequestStateCodec,
-  inputRequired,
-  inputResponse,
-  type InputRequiredResult,
-  type RequestStateCodec,
-  type ServerContext,
-} from "@modelcontextprotocol/server";
-import { z } from "zod";
-import type { Env } from "./env";
-import type * as T from "../core/types";
-import type * as A from "../core/accounts";
-import { DEFAULT_PREFS } from "../core/accounts";
-import { approvalQuestion, waitingText } from "../core/approvals";
-import { hmacSha256Hex } from "../directory/crypto";
-import { directory, type Principal } from "./auth";
-import { text, type AskState, type HarborApi, type ToolContext, type ToolResult } from "./mcp-kit";
 
 /** The key of the question in the answer of the client. */
 export const QUESTION_KEY = "approval";

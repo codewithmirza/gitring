@@ -1,5 +1,11 @@
 /**
- * In-memory filesystem for isomorphic-git inside a Worker (no disk).
+ * An in-memory filesystem for isomorphic-git inside a Worker (no disk).
+ *
+ * Ported from the Cloudflare Artifacts docs example, with fixes that isomorphic-git 1.43.2 needs (see the note below).
+ */
+
+/*
+ * The fixes that isomorphic-git 1.43.2 needs:
  *
  * Ported from the Cloudflare Artifacts docs example (docs: "isomorphic-git inside a Worker"),
  * with fixes isomorphic-git 1.43.2 needs:
