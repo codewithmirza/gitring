@@ -199,9 +199,11 @@ function guessFor(repo) {
       reasons: [
         `The default branch is ${r.defaultBranch}.`,
         ...(worker ? ["tests/*.test.js files use the gitring test runner."] : python ? ["requirements.txt is in the repository, so the install command is pip install -r requirements.txt.", "pytest.ini is in the repository: the tests run with pytest."] : ["package-lock.json is in the repository, so the install command is npm ci.", "package.json has a test script: npm test."]),
-        r.canPush ? "You can push to this repository, so merged code goes to a pull request." : "You cannot push to this repository, so merged code stays in gitring.",
+        r.canPush ? "GitHub sync is off: merged code stays in gitring. You can turn it on now, or later in Settings → GitHub." : "You cannot push to this repository, so merged code stays in gitring.",
       ],
-      sync: r.canPush ? "pull-request" : "off",
+      // Like the Worker: GitHub sync starts off; canSync says that the person may turn it on.
+      sync: "off",
+      ...(r.canPush ? { canSync: true } : {}),
     },
   };
 }
@@ -269,10 +271,13 @@ async function api(req, res, url) {
     if (!String(b.name ?? "").trim()) return json(res, 400, { error: "Give the project a name." });
     const src = b.source ?? {};
     if (src.kind === "github" && src.repo === "acme/payments") return json(res, 403, { error: "An owner of acme must approve the GitHub app.", installUrl: INSTALL_URL });
-    if (!["github", "git", "upload", "push", "empty"].includes(src.kind)) return json(res, 400, { error: "Choose a source: github (a repository), git (an https URL), upload, push or empty." });
+    if (!["template", "github", "git", "upload", "push", "empty"].includes(src.kind)) return json(res, 400, { error: "Choose a source: template, empty, upload, push, git (an https URL) or github." });
+    // Like the Worker: the starter templates of src/core/templates.ts, with their file counts.
+    const TEMPLATE_FILES = { empty: 3, "js-library": 6, "worker-api": 7, "static-site": 7 };
+    if (src.kind === "template" && !(src.template in TEMPLATE_FILES)) return json(res, 400, { error: "Choose a template: empty, js-library, worker-api, static-site." });
     const id = `${String(b.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "project"}-${Math.random().toString(36).slice(2, 6)}`;
     const importing = src.kind === "github" ? { url: `https://github.com/${src.repo}`, startedAt: now() } : src.kind === "git" ? { url: src.url, startedAt: now() } : src.kind === "push" ? { url: "", startedAt: now(), push: true } : undefined;
-    addProject({ id, name: b.name, visibility: b.visibility ?? "private", source: src, ownerName: user.name, owner: user.id, files: src.kind === "upload" ? (b.files?.length ?? 0) : 0, importing, settings: settingsDefaults(b.settings ?? {}), createdAt: now(), created: true, body: b });
+    addProject({ id, name: b.name, visibility: b.visibility ?? "private", source: src, ownerName: user.name, owner: user.id, files: src.kind === "upload" ? (b.files?.length ?? 0) : src.kind === "template" ? TEMPLATE_FILES[src.template] : 0, importing, settings: settingsDefaults(b.settings ?? {}), createdAt: now(), created: true, body: b });
     const created = db.projects.get(id);
     return json(res, 201, { project: info(created, s), state: stateOf(created, s) });
   }
@@ -368,6 +373,11 @@ async function api(req, res, url) {
     }
     if (rest === "/import/check" && req.method === "POST") return json(res, 200, { importing: proj.importing ?? null, mainSha: "" });
     if (rest === "/push-token" && req.method === "POST") return json(res, 200, { remote: `https://artifacts.example/${id}.git`, token: "tok_123", expiresAt: new Date(now() + DAY).toISOString() });
+    if (rest === "/clone-token" && req.method === "POST") {
+      const remote = `https://artifacts.example/${id}.git`;
+      const header = `Authorization: Basic ${Buffer.from("x:tok_read").toString("base64")}`;
+      return json(res, 200, { remote, branch: "main", token: "tok_read?expires=1", expiresAt: new Date(now() + 6 * 3600_000).toISOString(), header, clone: `git -c http.extraHeader="${header}" clone --branch main ${remote} ${id}`, pull: `git -c http.extraHeader="${header}" pull` });
+    }
   }
   return json(res, 404, { error: `No mock for ${req.method} ${p}.` });
 }

@@ -1,15 +1,18 @@
 /**
  * gitring — core domain types.
  *
- * Vocabulary:
- *   Intent      the source: a goal plus executable checks. Replaces issue + pull request.
- *   Attempt     one agent's work on one intent, in its own Artifacts fork. Replaces branch / worktree.
- *   Course      what an agent declares BEFORE it writes code: plan, files, symbols.
+ * gitring is a home for code that many agents change at the same time. Each project has its git
+ * repository in Cloudflare Artifacts; GitHub is one optional import source and sync target.
+ *
+ * Vocabulary (code name → the word that people see):
+ *   Intent      a task: a goal plus executable checks. Agents take tasks; a task merges when its work passes.
+ *   Attempt     a work copy: one agent's work on one task, in its own Artifacts fork.
+ *   Course      the plan that an agent sends BEFORE it writes code: steps, files, symbols.
  *   Footprint   what an agent actually touched (from real diffs).
- *   Course check  gitring's collision assessment of a course against all traffic.
- *   Correction  an amendment to an agent's brief. The agent keeps working. Replaces "rejected / conflict".
- *   Landing     integration into main via the landing ladder (fast-forward → merge → re-derive).
- *   Logbook     the "why" record: intent, course, corrections, checks, decision (git notes).
+ *   Course check  the conflict check of a plan against the active plans and main.
+ *   Correction  a change request: an amendment to an agent's plan. The agent keeps its work and continues.
+ *   Landing     a merge into main, one at a time (fast-forward → 3-way merge → redo on the new main).
+ *   Logbook     the history of why: task, plan, change requests, tests, decision (git notes).
  *
  * This file has no runtime dependencies. It is shared by the Worker, the Durable Objects and the web UI.
  */
@@ -249,7 +252,9 @@ export type ProjectSource =
   | { kind: "github"; repo: string; branch?: string; sha?: string; private?: boolean }
   | { kind: "git"; url: string; branch?: string; host?: "github" | "gitlab" | "bitbucket" | "other"; private?: boolean }
   | { kind: "upload"; files: number }
-  | { kind: "push" };
+  | { kind: "push" }
+  /** A starter template of src/core/templates.ts, in one commit. Its tests run in the gitring test runner. */
+  | { kind: "template"; template: string };
 
 export interface Project {
   id: string;
@@ -440,8 +445,8 @@ export interface CheckRun {
   id: string;
   /** Tree hash or overlay hash that was tested. */
   subject: string;
-  /** "attempt" = the attempt alone. "composed" = main + attempt (the landing candidate). */
-  scope: "attempt" | "composed";
+  /** "attempt" = the attempt alone. "composed" = main + attempt (the landing candidate). "main" = main alone (after GitHub changes came in). */
+  scope: "attempt" | "composed" | "main";
   ok: boolean;
   passed: number;
   failed: number;

@@ -25,6 +25,7 @@ import { MCP_PATH, SCOPE_READ, type McpSet } from "../directory/oauth";
 import { ADDS, CHANGES, READS, callOf, defineTool, fail, makeContext, newsFor, plain, readOnlyTools, registerTools, text, VERDICT_WORD, withClearance, withNews, writeAnswer, type ToolDef } from "./mcp-kit";
 import { GITHUB_CHECK_HOW, GITHUB_INSTRUCTIONS, GITHUB_LIST_HOW, GITHUB_TOOLS } from "./mcp-github";
 import { answerNote, answerPlace, askCodec, askInChat, isWaiting, statusReply, takeAnswer } from "./mcp-approval";
+import { PROJECT_TOOLS } from "./mcp-projects";
 
 /** The version that the server tells to clients. */
 export const MCP_VERSION = "0.9.2";
@@ -48,7 +49,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
           const list = (await directory(ctx.env).listProjects(ctx.who.user?.id ?? null)).filter((x) => atLeast(x.role, "member"));
           return text(
             list.map((x) => ({ project: x.id, name: x.name, role: x.role })),
-            list.length ? `${list.length} projects. Call gitring_intents with one project id.` : "Your key has no project where it can act. Create one in gitring, or ask an owner to add you.",
+            list.length ? `${list.length} projects. Call gitring_intents with one project id.` : "Your key has no project where it can act. Create one with gitring_create_project, or ask an owner to add you.",
           );
         }
         const h = await ctx.access(p, "viewer");
@@ -358,10 +359,12 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       }
     },
   }),
+  ...PROJECT_TOOLS,
 ];
 
 const INSTRUCTIONS =
-  "gitring lets many agents change one repository at the same time. " +
+  "gitring lets many agents change one repository at the same time. gitring holds the code: no GitHub account is necessary. " +
+  "To start a new project, call gitring_create_project. " +
   "Call gitring_intents first. Then call gitring_declare with a real plan. " +
   "Write your work. Apply each change request and call gitring_ack. " +
   "Then call gitring_check and gitring_submit. " +

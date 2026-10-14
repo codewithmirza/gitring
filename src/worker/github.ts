@@ -14,9 +14,9 @@ import type * as A from "../core/accounts";
 import { directory, type Principal } from "./auth";
 import { GithubClient, GithubError } from "../platform/github/api";
 import { guessFromGithub, listUserRepos, type InstallationInfo } from "../platform/github/repos";
-import { cleanCommand, projectSlug } from "../core/guess";
+import { projectSlug } from "../core/guess";
 import { githubRepoName } from "../core/repo-rules";
-import { chat } from "../platform/ai/models";
+import { guessModel } from "../platform/ai/guess";
 import { rand } from "../harbor/ids";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
@@ -150,28 +150,19 @@ export async function readAsPerson<T>(env: Env, userId: string, fn: (gh: GithubC
 }
 
 async function guessProject(env: Env, userId: string, repo: string, branch?: string): Promise<A.ProjectGuess> {
-  const found = await readAsPerson(env, userId, (gh) => guessFromGithub(gh, repo, branch));
+  // The same guess as every other source: the rules, then a model for the cases that they do not know.
+  const found = await readAsPerson(env, userId, (gh) => guessFromGithub(gh, repo, branch, guessModel(env.AI)));
   const access = await directory(env)
     .githubRepoAccess(found.meta.fullName)
     .catch(() => ({ ok: false as const }));
   const installed = access.ok;
   const reasons = [...found.guess.reasons];
-  let { install, test } = found.guess;
-  let guessed = false;
-  if (!found.guess.confident && env.AI) {
-    const ai = await askModel(env, found.meta.fullName, found.meta.defaultBranch, userId).catch(() => null);
-    if (ai?.test) {
-      install = ai.install ?? install;
-      test = ai.test;
-      guessed = true;
-      reasons.push(`Guess: a model read the README and the file list${ai.why ? ` (${ai.why})` : ""}. Check the commands.`);
-    }
-  }
+  const { install, test } = found.guess;
   if (found.truncated) reasons.push("The repository is very large: gitring looked at part of its files.");
-  const canSync = installed && found.meta.canPush;
+  // GitHub sync is optional: it starts off. The person turns it on here, or later in Settings → GitHub.
   if (!installed) reasons.push(`The gitring GitHub app is not on ${found.meta.fullName}: GitHub sync stays off until you install it.`);
   else if (!found.meta.canPush) reasons.push("You cannot push to this repository: GitHub sync stays off.");
-  else reasons.push("You can push to this repository: gitring opens one pull request for merged work.");
+  else reasons.push("GitHub sync is off: merged code stays in gitring. You can turn it on now, or later in Settings → GitHub.");
   return {
     repo: found.meta.fullName,
     name: found.name,
@@ -179,45 +170,9 @@ async function guessProject(env: Env, userId: string, repo: string, branch?: str
     branch: found.meta.defaultBranch,
     private: found.meta.private,
     ...(found.meta.language || found.guess.stack ? { language: found.guess.stack ?? found.meta.language } : {}),
-    checks: { runner: "container", ...(install ? { install } : {}), ...(test ? { test } : {}) },
+    checks: found.guess.runner === "worker" ? { runner: "worker" } : { runner: "container", ...(install ? { install } : {}), ...(test ? { test } : {}) },
     reasons,
-    sync: canSync ? "pull-request" : "off",
+    sync: "off",
+    ...(installed && found.meta.canPush ? { canSync: true } : {}),
   };
-}
-
-/** Ask a small model for the install and test commands when the rules found none. */
-async function askModel(env: Env, repo: string, branch: string, userId: string): Promise<{ install?: string; test?: string; why?: string } | null> {
-  const files = await readAsPerson(env, userId, async (gh) => {
-    const tree = await gh.json<{ tree: { path: string; type: string; size?: number }[] }>(`/repos/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
-    const blobs = (tree?.tree ?? []).filter((e) => e.type === "blob");
-    const paths = blobs.map((e) => e.path);
-    // A README of reasonable size only: the API sends a file whole.
-    const readme = blobs.find((e) => /^readme(\.md|\.rst|\.txt)?$/i.test(e.path) && (e.size ?? 0) <= 200_000)?.path;
-    const text = readme ? await gh.text(repo, readme, branch, 200_000) : null;
-    return { paths: paths.slice(0, 300), readme: text?.slice(0, 6000) ?? "" };
-  });
-  const res = await chat(
-    env.AI as never,
-    "@cf/zai-org/glm-4.7-flash",
-    [
-      {
-        role: "system",
-        content:
-          'You read a repository and answer how a CI machine installs its dependencies and runs its tests. The machine runs Debian with Node.js 24; other tools come from apt-get. Answer JSON only: {"install": "<one shell line or empty>", "test": "<one shell line>", "why": "<at most 12 words>"}. If you cannot tell, answer {"test": ""}.',
-      },
-      { role: "user", content: `Repository ${repo}.\nFiles:\n${files.paths.join("\n")}\n\nREADME:\n${files.readme}` },
-    ],
-    { maxTokens: 300, timeoutMs: 8000, json: true, temperature: 0 },
-  );
-  const text = res?.message.content ?? "";
-  const m = /\{[\s\S]*\}/.exec(text);
-  if (!m) return null;
-  try {
-    const o = JSON.parse(m[0]) as Record<string, unknown>;
-    const test = cleanCommand(o.test);
-    if (!test) return null;
-    return { test, install: cleanCommand(o.install), why: typeof o.why === "string" ? o.why.slice(0, 80) : undefined };
-  } catch {
-    return null;
-  }
 }

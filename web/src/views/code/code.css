@@ -643,3 +643,10 @@
 .cv-drow.is-picked { box-shadow: inset 3px 0 0 var(--accent); }
 .cv-drow.is-picked .cv-drow__nbtn { color: var(--accent); font-weight: 600; }
 .cv-drow--request { grid-template-columns: minmax(0, 1fr); padding: var(--s-3); background: var(--surface-1); white-space: normal; width: auto; }
+
+/* Clone (members): the git command with a read token. */
+.cv-clone { display: grid; gap: var(--s-3); padding: var(--s-1); min-width: 0; }
+.cv-clone__title { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--ink-1); }
+.cv-clone__text { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+.cv-clone__error { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--danger); }
+.cv-clone .b-btn { justify-self: start; }

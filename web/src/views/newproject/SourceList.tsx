@@ -1,14 +1,14 @@
 /**
- * One combobox for every source of a new project (WAI-ARIA combobox with a list that is always shown):
- * focus stays in the text field, ↑/↓ move through the rows, Enter picks, Escape closes the panel.
+ * The person's GitHub repositories, the last group of the new-project picker (GitHub is one import
+ * among others). A WAI-ARIA combobox with a list that is always shown: focus stays in the text field,
+ * ↑/↓ move through the rows, Enter picks, Escape closes the panel.
  *
- * Rows: an import row for pasted text (on top), the person's GitHub repositories (filtered in memory; a
- * server search only when GitHub had more than the list), and always "Upload a folder", "Push with git"
- * and "Empty project" (docked at the foot of the list).
+ * Rows: an import row for pasted text (on top: a GitHub repository, or any https git URL), then the
+ * repositories (filtered in memory; a server search only when GitHub had more than the list).
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { GithubRepo } from "../../../../src/core/accounts";
-import { Icon, type IconName } from "../../design/icons";
+import { Icon } from "../../design/icons";
 import { githubConnectUrl, mergeRepos, useDelayedFlag, useRepoSearch } from "../../state/github";
 import type { MeWithInstall } from "../../state/account";
 import { GithubMark, SearchIcon } from "./marks";
@@ -20,10 +20,7 @@ export type SourceOption =
   | { key: string; kind: "import-git"; url: string }
   | { key: string; kind: "repo"; repo: GithubRepo }
   | { key: string; kind: "connect" }
-  | { key: string; kind: "install"; url: string }
-  | { key: string; kind: "upload" }
-  | { key: string; kind: "push" }
-  | { key: string; kind: "empty" };
+  | { key: string; kind: "install"; url: string };
 
 /** At most this many repositories show at once (type to find others). */
 const SHOW = 40;
@@ -37,12 +34,6 @@ interface SourceListProps {
   returnTo: string;
   autoFocus?: boolean;
 }
-
-const OTHER: { kind: "upload" | "push" | "empty"; icon: IconName; title: string; text: string }[] = [
-  { kind: "upload", icon: "launch", title: "Upload a folder", text: "Files from your computer, without the git history. At most 20 MB." },
-  { kind: "push", icon: "fork", title: "Push with git", text: "Private repositories from any host. The history comes with it." },
-  { kind: "empty", icon: "plus", title: "Empty project", text: "A new repository with a README. Agents write the first files." },
-];
 
 export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: SourceListProps) {
   const base = useId().replace(/:/g, "");
@@ -95,7 +86,6 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
     for (const r of shown) out.push({ key: `repo:${r.fullName}`, kind: "repo", repo: r });
     // "Add repositories on GitHub" ends the list once it has loaded.
     if (search.base?.connected && installUrl && pasted?.kind !== "git" && pasted?.kind !== "bad") out.push({ key: "install", kind: "install", url: installUrl });
-    for (const o of OTHER) out.push({ key: o.kind, kind: o.kind });
     return out;
     // `pasted` is rebuilt on each render; its JSON stands for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,8 +93,7 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
 
   const loadingRepos = signedIn && connected !== false && !search.base && !search.error;
   // The active row: null follows the list (the first repository or import row); keys and the mouse pick one.
-  // While the repositories load, no row is active, so an early Enter waits for them instead of picking
-  // "Upload a folder".
+  // While the repositories load, no row is active, so an early Enter waits for them.
   const lead = options.findIndex((o) => o.kind === "repo" || o.kind === "import-github" || o.kind === "import-git" || o.kind === "connect");
   const auto = lead >= 0 ? lead : loadingRepos ? -1 : 0;
   const idx = active === null ? auto : Math.max(0, Math.min(active, options.length - 1));
@@ -135,7 +124,8 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const n = options.length;
-    if (!n) return;
+    // No rows yet: Enter still waits for the repositories (the list has no other rows now).
+    if (!n && !(e.key === "Enter" && loadingRepos)) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       move(idx < 0 ? 0 : (idx + 1) % n);
@@ -255,7 +245,6 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
 
   const importRows = options.filter((o) => o.kind === "import-github" || o.kind === "import-git");
   const repoRows = options.filter((o) => o.kind === "repo" || o.kind === "connect" || o.kind === "install");
-  const otherRows = options.filter((o) => o.kind === "upload" || o.kind === "push" || o.kind === "empty");
   const showGithubGroup = signedIn && pasted?.kind !== "git" && pasted?.kind !== "bad";
 
   return (
@@ -273,8 +262,8 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
           aria-autocomplete="list"
           aria-activedescendant={activeKey ? optId(activeKey) : undefined}
           aria-describedby={statusId}
-          aria-label="Search your repositories or paste a git URL"
-          placeholder={signedIn && connected !== false ? "Search your repositories or paste a git URL" : "Paste a git URL, or choose a source"}
+          aria-label="Search your GitHub repositories or paste a git URL"
+          placeholder={signedIn && connected !== false ? "Search your GitHub repositories or paste a git URL" : "Paste a git URL"}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           onKeyDown={onKeyDown}
@@ -407,31 +396,6 @@ export function SourceList({ me, query, onQuery, onPick, returnTo, autoFocus }: 
             )}
           </div>
         )}
-
-        {/* Always in view at the foot of the list: the sources without GitHub. */}
-        <div role="group" aria-labelledby={`${base}-g-other`} className="np-group np-group--dock">
-          <div id={`${base}-g-other`} role="presentation" className="np-group__head">
-            Other sources
-          </div>
-          <div className="np-dock" role="presentation">
-            {otherRows.map((o) => {
-              const d = OTHER.find((x) => x.kind === o.kind)!;
-              return row(
-                o,
-                <>
-                  <Icon name={d.icon} className="np-opt__icon" />
-                  <span className="np-opt__title">{d.title}</span>
-                  <span className="vh">. {d.text}</span>
-                </>,
-                "np-opt--tile",
-                false,
-              );
-            })}
-          </div>
-          <p className="np-dock__hint" aria-hidden="true">
-            {OTHER.find((x) => x.kind === options[idx]?.kind)?.text ?? "Or start from a folder, a git push, or an empty repository."}
-          </p>
-        </div>
       </div>
     </div>
   );

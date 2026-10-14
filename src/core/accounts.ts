@@ -113,8 +113,10 @@ export interface ProjectGuess {
   checks: { runner: "container" | "worker"; install?: string; test?: string };
   /** One plain sentence for each guess. */
   reasons: string[];
-  /** pull-request when the person can push, else off. */
+  /** The sync mode to start with: "off". GitHub sync is optional; the person turns it on. */
   sync: "off" | "pull-request" | "main";
+  /** The person can turn GitHub sync on (the app is on the repository and the person can push). */
+  canSync?: boolean;
 }
 
 /** An app that a person allowed to use gitring as them (OAuth, for MCP clients such as Claude). */

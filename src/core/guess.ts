@@ -1,7 +1,8 @@
 /**
  * Guess how a repository installs and tests itself, from its files: lockfiles, manifests and scripts.
- * Pure: the caller gives the file list and a reader. Rules only; the caller may ask a model when the rules
- * find no test command (`confident: false`).
+ * Pure: the caller gives the file list and a reader, so any tree works (a GitHub repository, or main in
+ * Cloudflare Artifacts after an import, an upload or a push). guessChecks uses rules only; guessTree also
+ * asks a model (through a function that the caller gives) when the rules find no test command.
  *
  * Check containers run the Cloudflare Node.js 24 image (Debian). Other toolchains come from Debian
  * packages; the container reaches package registries only.
@@ -23,6 +24,13 @@ export interface ChecksGuess {
   reasons: string[];
   /** The rules found a test command. */
   confident: boolean;
+  /**
+   * "worker": the gitring test runner fits (tests/*.test.js that import the gitring harness), with no
+   * container and no install. Absent: a container runs the install and test commands.
+   */
+  runner?: "worker";
+  /** A model gave the commands (guessTree): people check them. */
+  guessed?: boolean;
 }
 
 /** npm writes this test script into a new package.json. It is not a test. */
@@ -34,11 +42,17 @@ export async function guessChecks(input: GuessInput): Promise<ChecksGuess> {
   const set = new Set(input.paths);
   const has = (p: string) => set.has(p);
   const reasons: string[] = [];
+  const pkg = has("package.json") ? parseJson(await input.read("package.json")) : null;
+  const scripts = (pkg?.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {}) as Record<string, string>;
+
+  /* ───── the gitring test runner (gitring templates, and repositories that use its harness) ───── */
+  if ((!scripts.test || NPM_PLACEHOLDER.test(scripts.test)) && (await usesHarness(input))) {
+    reasons.push("tests/*.test.js import the gitring harness: the gitring test runner runs them, with no container and no install.");
+    return { runner: "worker", stack: "JavaScript (gitring test runner)", reasons, confident: true };
+  }
 
   /* ───── JavaScript / TypeScript ───── */
   if (has("package.json")) {
-    const pkg = parseJson(await input.read("package.json"));
-    const scripts = (pkg?.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {}) as Record<string, string>;
     const deps = { ...(pkg?.dependencies as object), ...(pkg?.devDependencies as object) } as Record<string, string>;
     const pmField = typeof pkg?.packageManager === "string" ? pkg.packageManager : "";
     const pm = packageManager(pmField, has);
@@ -171,6 +185,15 @@ export async function guessChecks(input: GuessInput): Promise<ChecksGuess> {
   return { reasons, confident: false };
 }
 
+/** Test files of the gitring test runner: tests/*.test.js that import "../harness/test.js" (gitring adds the file). */
+async function usesHarness(input: GuessInput): Promise<boolean> {
+  const tests = input.paths.filter((p) => /^tests\/.+\.test\.m?js$/.test(p)).sort().slice(0, 5);
+  for (const path of tests) {
+    if (/from\s+["'](\.\.\/)+harness\/test\.js["']/.test((await input.read(path)) ?? "")) return true;
+  }
+  return false;
+}
+
 function packageManager(field: string, has: (p: string) => boolean): { name: "npm" | "pnpm" | "yarn" | "bun"; berry?: boolean; reason: string } {
   const m = /^(npm|pnpm|yarn|bun)@(\d+)/.exec(field);
   if (m) {
@@ -215,4 +238,69 @@ export function cleanCommand(raw: unknown): string | undefined {
   const s = raw.trim();
   if (!s || s.length > 300 || /[\r\n\0]/.test(s)) return undefined;
   return s;
+}
+
+/* ───────────── a model for the cases that the rules do not know ───────────── */
+
+/** The model that guesses the commands when the rules find none (small, fast, a large context). */
+export const GUESS_MODEL = "@cf/zai-org/glm-5.3-flash";
+
+export interface GuessMessage {
+  role: "system" | "user";
+  content: string;
+}
+
+/** Ask the model; the answer is its text, or null when it did not answer. */
+export type AskModel = (messages: GuessMessage[]) => Promise<string | null>;
+
+/** The README of a tree (root only), if it has one. */
+export function readmeOf(paths: string[]): string | undefined {
+  return paths.find((p) => /^readme(\.md|\.rst|\.txt)?$/i.test(p));
+}
+
+/** What the model reads: the name, the file list (at most 300 paths) and the start of the README. */
+export function guessMessages(label: string, paths: string[], readme: string): GuessMessage[] {
+  return [
+    {
+      role: "system",
+      content:
+        'You read a repository and answer how a CI machine installs its dependencies and runs its tests. The machine runs Debian with Node.js 24; other tools come from apt-get. Answer JSON only: {"install": "<one shell line or empty>", "test": "<one shell line>", "why": "<at most 12 words>"}. If you cannot tell, answer {"test": ""}.',
+    },
+    { role: "user", content: `Repository ${label}.\nFiles:\n${paths.slice(0, 300).join("\n")}\n\nREADME:\n${readme.slice(0, 6000)}` },
+  ];
+}
+
+/** The commands in a model answer, checked (cleanCommand). Null when the answer has no test command. */
+export function parseModelGuess(text: string | null | undefined): { install?: string; test: string; why?: string } | null {
+  const m = /\{[\s\S]*\}/.exec(text ?? "");
+  if (!m) return null;
+  try {
+    const o = JSON.parse(m[0]) as Record<string, unknown>;
+    const test = cleanCommand(o.test);
+    if (!test) return null;
+    const install = cleanCommand(o.install);
+    return { test, ...(install ? { install } : {}), ...(typeof o.why === "string" && o.why.trim() ? { why: o.why.trim().slice(0, 80) } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The guess for any tree: the rules first; when they find no test command and `ask` is given, a model
+ * reads the README and the file list. A failed model call keeps the guess of the rules.
+ */
+export async function guessTree(input: GuessInput & { label: string; ask?: AskModel }): Promise<ChecksGuess> {
+  const rules = await guessChecks(input);
+  if (rules.confident || !input.ask) return rules;
+  const readme = readmeOf(input.paths);
+  const text = readme ? ((await input.read(readme).catch(() => null)) ?? "") : "";
+  const answer = parseModelGuess(await input.ask(guessMessages(input.label, input.paths, text)).catch(() => null));
+  if (!answer) return rules;
+  return {
+    ...rules,
+    install: answer.install ?? rules.install,
+    test: answer.test,
+    guessed: true,
+    reasons: [...rules.reasons, `Guess: a model read the README and the file list${answer.why ? ` (${answer.why})` : ""}. Check the commands.`],
+  };
 }

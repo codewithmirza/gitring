@@ -67,21 +67,25 @@ describe("a repository that turns private", () => {
 
   it("does not let a stranger's project keep pulling a repository that its owner made private", async () => {
     world.person("sam", 7); // no entry for robin/shop: he can read it only while it is public
-    const { id, h, mainSha } = await world.linkedProject("sam", { repo: "robin/shop" });
+    const { id, key, h, mainSha } = await world.linkedProject("sam", { repo: "robin/shop" });
     // As after Sam's public import of robin/shop: main is GitHub's commit, the repository was public.
     world.setGhState(id, { last: mainSha, private: false });
     // Robin makes the repository private and pushes.
     world.gh.private_ = true;
     world.gh.push({ "embargo/fix.c": "/* CVE fix, private until disclosure */\n" }, "Security fix");
+    // GitHub sync is off (Sam cannot push): the push webhook brings nothing in. Sam pulls by hand.
     expect((await pushEvent(1)).status).toBe(202);
+    await world.settle();
+    expect(world.ghState(id).pull).toBeUndefined();
+    await world.call("POST", `/api/projects/${id}/github/pull`, { key });
     await world.settle();
     expect(await h.file("main", "embargo/fix.c")).toBeNull();
     expect(world.ghState(id).pull?.state).toBe("error");
     expect(world.ghState(id).pull?.message).toMatch(/can no longer read/);
     expect(world.ghState(id).private).toBe(true);
-    // The next push: the same.
+    // The next pull: the same.
     world.gh.push({ "embargo/more.c": "/* more */\n" }, "More");
-    await pushEvent(2);
+    await world.call("POST", `/api/projects/${id}/github/pull`, { key });
     await world.settle();
     expect(await h.file("main", "embargo/more.c")).toBeNull();
   });

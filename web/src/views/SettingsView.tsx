@@ -559,7 +559,8 @@ const SYNC_STATE: Record<GithubSyncState, { tone: BadgeTone; icon: IconName; tex
 };
 
 const MODE_HELP: Record<GithubSyncMode, string> = {
-  off: "Merged code stays in Cloudflare Artifacts.",
+  // GitHub sync is optional: with it off, gitring follows GitHub only when a person asks.
+  off: 'Merged code stays in Cloudflare Artifacts. A push on GitHub does not change main. Use "Bring GitHub changes in now" for that.',
   "pull-request": "gitring pushes each merge to a branch and keeps one pull request open to your main branch. You merge on GitHub.",
   main: "gitring pushes each merge to your main branch. A person's push to main stops the sync.",
 };

@@ -1,17 +1,22 @@
 /**
  * The second step of a new project: gitring's guesses for the chosen source, each one on one line and
- * editable in place, and ONE button: "Create project" (Enter).
+ * editable in place, and ONE button: "Create project" (Enter). The sources: a description (a template,
+ * the first task and built-in agents), a template, an upload, a push, any git URL, a GitHub repository.
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { ProjectGuess, Visibility } from "../../../../src/core/accounts";
 import type { GithubSyncMode, ProjectSource } from "../../../../src/core/types";
+import { pickTemplate, TEMPLATES, type TemplateId } from "../../../../src/core/templates";
 import { Button, Segmented } from "../../design/components";
 import { Icon } from "../../design/icons";
 import { openProject, readUpload, uploadable } from "../../state/account";
-import { cachedGuess, createProjectFrom, githubConnectUrl, guessProject, isAbort, RequestError, useDelayedFlag, OFFLINE_TEXT } from "../../state/github";
+import { openSignIn } from "../../app/ui";
+import { cachedGuess, guessProject, isAbort, RequestError, useDelayedFlag, OFFLINE_TEXT } from "../../state/github";
+import { createProjectFrom } from "../../state/projects";
 import type { FormValues, SourceStep } from "./draft";
 import { GithubMark, LockIcon } from "./marks";
-import { nameOfRepo, nameOfUrl, readPasted, reasonFor, sizeText, validBranch } from "./match";
+import { nameFromDescription, nameOfRepo, nameOfUrl, readPasted, reasonFor, sizeText, validBranch } from "./match";
+import { agentsHint } from "./start-text";
 
 const MAX_UPLOAD = 20_000_000;
 
@@ -30,7 +35,7 @@ const VIS_HELP: Record<Visibility, string> = {
 };
 
 const SYNC_TEXT: Record<GithubSyncMode, string> = {
-  off: "Merged code stays in gitring. You can turn this on later.",
+  off: "Merged code stays in gitring. You can turn GitHub sync on later in Settings → GitHub.",
   "pull-request": "gitring keeps one pull request open on GitHub. You merge it there.",
   main: "gitring pushes each merge straight to the main branch on GitHub.",
 };
@@ -174,12 +179,14 @@ function useFirstField(when = true) {
 function createProblem(e: RequestError, returnTo: string, onStep: (s: SourceStep) => void): { text: string; actions?: ReactNode } {
   const install = typeof e.data.installUrl === "string" ? e.data.installUrl : null;
   if (e.status === 401) {
+    // The gitring sign-in ended (not the GitHub connection): any sign-in choice works, and the link of
+    // the step brings the person back to it.
     return {
       text: "Your sign-in ended. Sign in again. gitring keeps your choices.",
       actions: (
-        <a className="b-btn b-btn--secondary b-btn--sm" href={githubConnectUrl(returnTo)}>
-          <GithubMark size={14} /> Sign in with GitHub
-        </a>
+        <Button size="sm" onClick={(ev) => openSignIn({ anchor: ev.currentTarget, reason: "Sign in again to make the project.", then: { kind: "go", to: returnTo } })}>
+          Sign in again
+        </Button>
       ),
     };
   }
@@ -195,6 +202,139 @@ function createProblem(e: RequestError, returnTo: string, onStep: (s: SourceStep
       </Button>
     ) : undefined,
   };
+}
+
+/* ───────────── a description: template, first task, agents ───────────── */
+
+const TEMPLATE_OPTIONS = TEMPLATES.map((t) => ({ value: t.id, label: t.title }));
+const AGENT_OPTIONS = ["0", "1", "2", "3", "4"].map((n) => ({ value: n, label: n === "0" ? "None" : n }));
+
+export function DescribeStep({ step, form, setForm, onBack, onStep, returnTo }: StepProps & { step: Extract<SourceStep, { kind: "describe" }> }) {
+  const uid = useId().replace(/:/g, "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<RequestError | null>(null);
+  const first = useFirstField();
+  const description = form.description ?? step.text;
+  const picked = pickTemplate(description);
+  const v = {
+    name: form.name ?? (nameFromDescription(description) || "New project"),
+    template: (form.template as TemplateId | undefined) ?? picked,
+    agents: form.agents ?? 1,
+    visibility: form.visibility ?? ("private" as Visibility),
+  };
+  const empty = !description.trim();
+  const summary = TEMPLATES.find((t) => t.id === v.template)?.summary ?? "";
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy || empty) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const project = await createProjectFrom({
+        name: v.name.trim() || "New project",
+        visibility: v.visibility,
+        source: { kind: "template", template: v.template },
+        firstTask: { goal: description.trim() },
+        launch: v.agents,
+      });
+      openProject(project.id);
+    } catch (err) {
+      setError(toError(err));
+      setBusy(false);
+    }
+  };
+
+  const problem = error ? createProblem(error, returnTo, onStep) : null;
+  return (
+    <form className="np-step" onSubmit={submit} noValidate>
+      <StepHead title="Describe it" onBack={onBack} />
+      <div className="np-rows">
+        <Row id={`${uid}-what`} label="What to build" hint="This text is the goal of the first task.">
+          <textarea
+            id={`${uid}-what`}
+            className="np-in np-in--area"
+            value={description}
+            onChange={(e) => setForm({ description: e.target.value })}
+            aria-describedby={`${uid}-what-hint`}
+            rows={3}
+            maxLength={4000}
+          />
+        </Row>
+        <Row id={`${uid}-name`} label="Name">
+          <Quiet id={`${uid}-name`} value={v.name} onChange={(name) => setForm({ name })} maxLength={80} inputRef={first} />
+        </Row>
+        <div className="np-row">
+          <span className="np-row__label">
+            Template
+            {form.template === undefined && <span className="np-tag np-tag--guess">guess</span>}
+          </span>
+          <div className="np-row__value">
+            <Segmented<TemplateId> label="Template" value={v.template} onChange={(template) => setForm({ template })} options={TEMPLATE_OPTIONS} />
+            <span className="np-row__hint">{summary}</span>
+          </div>
+        </div>
+        <div className="np-row">
+          <span className="np-row__label">Agents</span>
+          <div className="np-row__value">
+            <Segmented<string> label="Built-in agents" value={String(v.agents)} onChange={(n) => setForm({ agents: Number(n) })} options={AGENT_OPTIONS} />
+            <span className="np-row__hint">{agentsHint(v.agents)}</span>
+          </div>
+        </div>
+        <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} />
+      </div>
+      {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
+      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} disabled={empty} why={empty ? "Describe the project first." : undefined} />
+    </form>
+  );
+}
+
+/* ───────────── a template ───────────── */
+
+export function TemplateStep({ form, setForm, onBack, onStep, returnTo }: StepProps) {
+  const uid = useId().replace(/:/g, "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<RequestError | null>(null);
+  const first = useFirstField();
+  const template = (form.template as TemplateId | undefined) ?? "js-library";
+  const v = { name: form.name ?? "New project", visibility: form.visibility ?? ("private" as Visibility) };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const project = await createProjectFrom({ name: v.name.trim() || "New project", visibility: v.visibility, source: { kind: "template", template } });
+      openProject(project.id);
+    } catch (err) {
+      setError(toError(err));
+      setBusy(false);
+    }
+  };
+
+  const problem = error ? createProblem(error, returnTo, onStep) : null;
+  return (
+    <form className="np-step" onSubmit={submit} noValidate>
+      <StepHead title="Start from a template" onBack={onBack} />
+      <p className="np-step__note">The template is the first commit. Its tests run in the gitring test runner, so the first merge already runs tests.</p>
+      <div className="np-rows">
+        <Row id={`${uid}-name`} label="Name">
+          <Quiet id={`${uid}-name`} value={v.name} onChange={(name) => setForm({ name })} maxLength={80} inputRef={first} placeholder="New project" />
+        </Row>
+        <div className="np-row">
+          <span className="np-row__label">Template</span>
+          <div className="np-row__value">
+            <Segmented<TemplateId> label="Template" value={template} onChange={(t) => setForm({ template: t })} options={TEMPLATE_OPTIONS} />
+            <span className="np-row__hint">{TEMPLATES.find((t) => t.id === template)?.summary}</span>
+          </div>
+        </div>
+        <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} />
+      </div>
+      {problem && <Problem actions={problem.actions}>{problem.text}</Problem>}
+      <Submit busy={busy} label={busy ? "Creating the project…" : "Create project"} />
+    </form>
+  );
 }
 
 /* ───────────── GitHub repository ───────────── */
@@ -229,14 +369,15 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
   const skeleton = useDelayedFlag(loading);
   const runner = guess?.checks.runner ?? "container";
   // The guess knows best: GitHub sync needs the app on the repository and a person who can push.
-  const canSync = guess ? guess.sync !== "off" : (known?.canPush ?? false);
+  const canSync = guess ? Boolean(guess.canSync ?? guess.sync !== "off") : (known?.canPush ?? false);
   const isPrivate = guess?.private ?? known?.private ?? false;
   const v = {
     name: form.name ?? guess?.name ?? nameOfRepo(repo),
     branch: form.branch ?? guess?.branch ?? known?.defaultBranch ?? "",
     install: form.install ?? guess?.checks.install ?? "",
     test: form.test ?? guess?.checks.test ?? "",
-    sync: form.sync ?? (canSync ? (guess?.sync ?? "pull-request") : "off"),
+    // GitHub is optional: sync starts off, and the person turns it on here or later in Settings.
+    sync: form.sync ?? (canSync ? (guess?.sync ?? "off") : "off"),
     visibility: form.visibility ?? (isPrivate ? "private" : "public"),
   };
   const reasons = guess?.reasons ?? [];
@@ -314,9 +455,10 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
           actions={
             <>
               {s === 401 ? (
-                <a className="b-btn b-btn--secondary b-btn--sm" href={githubConnectUrl(returnTo)}>
-                  <GithubMark size={14} /> Sign in with GitHub
-                </a>
+                // The gitring sign-in ended: any sign-in choice works, and the link of the step comes back here.
+                <Button size="sm" onClick={(ev) => openSignIn({ anchor: ev.currentTarget, reason: "Sign in again to import the repository.", then: { kind: "go", to: returnTo } })}>
+                  Sign in again
+                </Button>
               ) : (
                 <Button size="sm" icon="reload" onClick={() => setNonce((n) => n + 1)}>
                   Try again
@@ -412,7 +554,8 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
                 ) : (
                   <span className="np-row__text">Stays in gitring.</span>
                 )}
-                <span className="np-row__hint">{hints.sync ?? (canSync ? SYNC_TEXT[v.sync] : "You cannot push to this repository, so gitring does not send code to GitHub.")}</span>
+                {/* With a choice, the hint follows the choice; without one, the guess says why. */}
+                <span className="np-row__hint">{canSync ? SYNC_TEXT[v.sync] : (hints.sync ?? "You cannot push to this repository, so gitring does not send code to GitHub.")}</span>
               </div>
             </div>
             <VisibilityRow value={v.visibility} onChange={(visibility) => setForm({ visibility })} hint={form.visibility === undefined ? "Same as the repository." : undefined} />
@@ -442,6 +585,7 @@ export function UrlStep({ step, form, setForm, onBack, onStep, returnTo }: StepP
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const [error, setError] = useState<RequestError | null>(null);
+  // A pasted URL: the name takes the focus. "Import from a git URL" opens with no URL: the URL field does.
   const first = useFirstField();
   const v = {
     name: form.name ?? nameOfUrl(okUrl ?? url),
@@ -479,10 +623,20 @@ export function UrlStep({ step, form, setForm, onBack, onStep, returnTo }: StepP
       {step.note && <p className="np-step__note">{step.note}</p>}
       <div className="np-rows">
         <Row id={`${uid}-url`} label="URL" hint={badUrl ? "Give an https URL of a git repository, for example https://gitlab.com/owner/repo." : "Public repositories only. For a private one, push with git."}>
-          <Quiet id={`${uid}-url`} value={url} onChange={(u) => setForm({ url: u })} mono hint invalid={badUrl} inputMode="url" placeholder="https://github.com/owner/repo" />
+          <Quiet
+            id={`${uid}-url`}
+            value={url}
+            onChange={(u) => setForm({ url: u })}
+            mono
+            hint
+            invalid={badUrl}
+            inputMode="url"
+            placeholder="https://codeberg.org/owner/repo"
+            inputRef={step.url ? undefined : first}
+          />
         </Row>
         <Row id={`${uid}-name`} label="Name">
-          <Quiet id={`${uid}-name`} value={v.name} onChange={(name) => setForm({ name })} maxLength={80} inputRef={first} />
+          <Quiet id={`${uid}-name`} value={v.name} onChange={(name) => setForm({ name })} maxLength={80} inputRef={step.url ? first : undefined} />
         </Row>
         <Row id={`${uid}-branch`} label="Branch" hint={badBranch ? "Use letters, digits, dots, dashes and slashes." : "Empty: the default branch."}>
           <Quiet id={`${uid}-branch`} value={v.branch} onChange={(branch) => setForm({ branch })} mono hint invalid={badBranch} placeholder="default branch" />
@@ -589,13 +743,13 @@ export function UploadStep({ upload, form, setForm, onBack, onStep, onChooseFold
 const PLAIN: Record<"push" | "empty", { title: string; text: string; source: ProjectSource }> = {
   push: {
     title: "Push with git",
-    text: "gitring makes an empty repository. Then you push your repository to it with git: private repositories from any host, with their history. The overview shows the command.",
+    text: "gitring makes an empty repository. Then you push your repository to it with git: any repository from any host, with its history. The overview shows the command.",
     source: { kind: "push" },
   },
   empty: {
     title: "Empty project",
-    text: "gitring makes a repository with a README. Write a task, and agents write the first files.",
-    source: { kind: "empty" },
+    text: "gitring makes a repository with a README, an AGENTS.md and a .gitignore. Write a task, and agents write the first files and tests.",
+    source: { kind: "template", template: "empty" },
   },
 };
 

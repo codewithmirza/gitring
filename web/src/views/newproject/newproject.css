@@ -222,6 +222,23 @@
 .np-opt--tile.is-active::before { display: none; }
 .np-dock__hint { min-height: 16px; margin: var(--s-2) 0 0; padding: 0 var(--s-1); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 .np-repo__owner { color: var(--ink-3); }
+
+/* ───────────── the first view: describe, then the sources ───────────── */
+.np-start { display: grid; gap: var(--s-3); min-width: 0; }
+.np-describe { display: grid; gap: var(--s-1); }
+.np-describe__label { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
+.np-describe__field { display: flex; gap: var(--s-2); min-width: 0; }
+.np-describe__input { flex: 1; min-width: 0; padding-left: var(--s-3); }
+.np-describe__hint { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.np-starts { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.np-start__opt { width: 100%; border: 0; background: none; font: inherit; text-align: left; }
+.np-start__opt:hover, .np-start__opt:focus-visible { background: var(--surface-2); }
+.np-start__opt .np-opt__text { white-space: normal; }
+.np-start__github { gap: var(--s-2); border-top: 1px solid var(--line); padding-top: var(--s-1); }
+.np-start__github .np-group__head { margin: 0; }
+/* Enter picks a repository only while the search field has the focus. */
+.np-start__github:not(:focus-within) .np-opt__enter { visibility: hidden; }
+.np-in--area { min-height: 72px; padding-top: 6px; resize: vertical; font: inherit; line-height: var(--lh-sm); }
 .np-tag {
   display: inline-flex;
   align-items: center;
@@ -403,6 +420,8 @@
   /* 16 px text keeps iOS from zooming into a focused field. */
   .np-search__input, .np-in, .np-select__input { font-size: 16px; }
   .np-search__input { height: 48px; }
+  .np-describe__field { flex-direction: column; }
+  .np-describe__input { flex: none; }
   .np .b-btn { min-height: 44px; }
   .np-pop__body { padding: var(--s-4) var(--s-4) var(--s-5); }
 }
