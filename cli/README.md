@@ -35,13 +35,13 @@ Exit codes: 0 done, 1 the command did not finish, 2 the command line is wrong.
 
 The sign-in gives an OAuth token for the MCP endpoint of the server. The token works for the REST routes of these commands too (`src/worker/cli.ts`). It is stored in the config folder of the person (`credentials.json`, mode 0600) and never printed. Scripts can set `GITRING_URL` and `GITRING_TOKEN` (a personal API key) and need no sign-in. `lib/credentials.mjs` reads and writes the file. `lib/config.mjs` finds the folder on each system.
 
-An answer from the command line counts as the answer of the person only when the person allows answers outside the gitring app (Account, "Where do you answer merge questions?").
+An answer from the command line counts only when the person allows answers outside the gitring app. The person sets this in Account, "Where do you answer merge questions?".
 
 ## The files
 
-- `gitring.mjs`: the front door. It re-exports every public name (tests and `gitring.d.mts` use them), runs `main`, and starts it when the file is the program.
+- `gitring.mjs`: the front door. It re-exports every public name (tests and `gitring.d.mts` use them). It defines `main` and starts it when the file is the program.
 - `gitring.d.mts`: the types of the front door.
 - `commands/`: one file for each command or small family. See `commands/README.md`.
 - `lib/`: the parts that commands share. See `lib/README.md`.
 
-The tests are in `test/cli/` (`cli.test.ts` against a fake server, `login.test.ts` against a whole gitring in one process, `answer.test.ts` for `yes` and `back`).
+The tests are in `test/cli/`. `cli.test.ts` uses a fake server. `login.test.ts` uses a whole gitring in one process. `answer.test.ts` covers `yes` and `back`.

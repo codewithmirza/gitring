@@ -1,3 +1,10 @@
+"""Prints the colors of the three themes (day, dusk, night) as hex values, and checks their contrast.
+
+Run: python scripts/palette.py
+Each color is given in OKLCH and converted to sRGB. The output says if a color is inside the sRGB range.
+It also gives the contrast ratio of each text color on each surface (WCAG: at least 4.5 for text, at least 3 for lines).
+It only prints. It never writes a file. The values of the themes are in web/src/design/tokens.css.
+"""
 import math, itertools
 def oklch_to_srgb(L, C, h):
     L = L/100 if L>1 else L

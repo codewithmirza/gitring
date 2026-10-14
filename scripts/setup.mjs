@@ -1,15 +1,9 @@
 #!/usr/bin/env node
 /**
- * Makes the secrets of your own gitring. It writes `.dev.vars` (ignored by git) with new random values.
- * It does not touch wrangler.jsonc and it does not call Cloudflare.
- *
- *   npm run setup -- --owner google:you@example.com
- *   npm run setup -- --owner github:your-login --force
- *
- * Then:  npx wrangler login
- *        npx wrangler secret bulk .dev.vars     (sends the secrets to your Worker)
- *        npm run deploy
- * See docs/SELF-HOST.md for every step.
+ * Makes the secrets of your own gitring: it writes `.dev.vars` (ignored by git) with new random values.
+ * Run: npm run setup -- --owner google:you@example.com   (add --force to replace an old file)
+ * It does not touch wrangler.jsonc and it does not call Cloudflare. docs/SELF-HOST.md has every next step.
+ * Never print a secret. Never commit `.dev.vars`.
  */
 import { existsSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";

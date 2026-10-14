@@ -1,6 +1,8 @@
 /**
- * Pure helpers for scripts/load.mjs: options, the cost warning, seeded scheduling, percentiles and the
- * report. No network and no clock here, so the tests can run them anywhere.
+ * Pure helpers for the load test: options, the cost warning, seeded scheduling, percentiles and the report.
+ * Called by scripts/load.mjs, scripts/load-agent.mjs, scripts/meet.mjs and scripts/smoke.mjs. Tests: test/load/load-lib.test.ts.
+ * Never use the network or the clock here, so that the tests can run these functions anywhere.
+ * Never print the key. Read next: load.mjs (the run).
  */
 
 export const LIMITS = { agents: 500, tasks: 100, rounds: 20, wait: 3600 };

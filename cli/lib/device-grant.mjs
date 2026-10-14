@@ -1,5 +1,5 @@
 /**
- * Signs in with the OAuth device grant (RFC 8628): ask for a code, show it, and wait until the person allows it.
+ * Signs in with the OAuth device grant (RFC 8628): ask for a code, show it, and wait for the person.
  * Called by commands/login.mjs. Read next: src/directory/device.ts for the server side.
  * Never print a token here. Never open a page that is not a page of the server (see safePage).
  */
