@@ -194,7 +194,7 @@ export function Lane({ attempt: a, all, agent, intent, corrections, checks, name
       {preview && (
         <section className="lane__sec lane__preview" aria-label="Live preview">
           <h3 className="lane__h">
-            Live preview <span className="ink-3">the real code of this work copy</span>
+            Live preview <span className="ink-3">of the real code in this work copy</span>
           </h3>
           {doc.src ? <PreviewFrame title={callsign} src={doc.src} height={300} /> : <div className="lane__nopreview">The preview starts when the work copy exists.</div>}
         </section>
