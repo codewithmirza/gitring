@@ -113,14 +113,18 @@ export interface CompareFile {
   status: "A" | "M" | "D";
   additions: number;
   deletions: number;
-  /** Unified diff. Empty for a file that gitring keeps without text (binary or very large). */
+  /** Unified diff. Empty for a file that gitring keeps without text (binary or very large), or when `cut`. */
   diff: string;
   binary?: boolean;
+  /** The answer has no diff for this file: the answer has a size limit. Ask again with its path. */
+  cut?: boolean;
 }
 
 export interface CompareAnswer {
   from: string;
   to: string;
+  /** The folder or file as asked. Absent: all files. */
+  path?: string;
   files: CompareFile[];
   additions: number;
   deletions: number;
@@ -340,7 +344,14 @@ export function searchWords(query: string, total: number, files: number, more: b
   return `${total} ${total === 1 ? "line" : "lines"} in ${files}${more ? " or more" : ""} ${files === 1 && !more ? "file" : "files"} of ${where} ${total === 1 ? "has" : "have"} "${query}".`;
 }
 
-export function compareWords(from: string, to: string, files: number, additions: number, deletions: number, more: boolean): string {
-  if (!files) return `${from} and ${to} have the same files.`;
-  return `${from} and ${to} differ in ${files}${more ? " or more" : ""} ${files === 1 && !more ? "file" : "files"} (+${additions} -${deletions}).`;
+/** The summary of a compare. `cut`: files without a diff in the answer. `path`: the folder or file as asked. */
+export function compareWords(from: string, to: string, files: number, additions: number, deletions: number, more: boolean, cut = 0, path?: string): string {
+  const where = path ? ` under ${path}` : "";
+  if (!files) return `${from} and ${to} have the same files${where}.`;
+  const head = `${from} and ${to} differ in ${files}${more ? " or more" : ""} ${files === 1 && !more ? "file" : "files"}${where} (+${additions} -${deletions}).`;
+  const tail: string[] = [];
+  if (cut) tail.push(`The answer has no diff for ${cut} of them because of its size.`);
+  if (more) tail.push("The answer shows the first files only.");
+  if (tail.length) tail.push("Give a path to see one folder or file.");
+  return [head, ...tail].join(" ");
 }

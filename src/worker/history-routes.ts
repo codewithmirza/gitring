@@ -5,7 +5,7 @@
  *   GET /api/projects/:p/why?path=&line=&ref=        the change that last wrote a line (or the changes of a file)
  *   GET /api/projects/:p/history?path=&limit=         the changes of a file, a folder or main
  *   GET /api/projects/:p/search?q=&path=&limit=       a text in the files of main
- *   GET /api/projects/:p/compare?from=&to=            the changes between two versions
+ *   GET /api/projects/:p/compare?from=&to=&path=      the changes between two versions (all files, or under a path)
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
@@ -64,7 +64,7 @@ export function historyRoutes(app: Hono<HonoEnv>, deps: HistoryRouteDeps): void 
   app.get("/api/projects/:p/compare", async (c) => {
     try {
       const h = await deps.ready(c, c.req.param("p"), "viewer");
-      return c.json(await h.compareRefs(c.req.query("from") ?? "", c.req.query("to") ?? ""));
+      return c.json(await h.compareRefs(c.req.query("from") ?? "", c.req.query("to") ?? "", c.req.query("path") || undefined));
     } catch (e) {
       return deps.err(c, e);
     }

@@ -93,16 +93,18 @@ export const HISTORY_TOOLS: readonly ToolDef[] = [
     title: "Compare two versions",
     description:
       "Compare two versions of the code. Each version is main, a commit id or a work copy id. " +
-      "The answer has a unified diff for each changed file, from the first version to the second.",
+      "The answer has a unified diff for each changed file, from the first version to the second. " +
+      "Give path to compare one folder or one file.",
     inputSchema: {
       project,
       from: z.string().describe("The old version: main, a commit id or a work copy id."),
       to: z.string().describe("The new version: main, a commit id or a work copy id."),
+      path: z.string().optional().describe("Repo-relative folder or file. Leave it out for all files."),
     },
     annotations: READS,
     async run(ctx, args) {
       try {
-        const res = await (await historyOf(ctx, args.project)).compareRefs(args.from, args.to);
+        const res = await (await historyOf(ctx, args.project)).compareRefs(args.from, args.to, args.path);
         return text(res, res.summary);
       } catch (e) {
         return fail(e);

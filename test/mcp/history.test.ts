@@ -116,6 +116,9 @@ describe("history tools", () => {
     expect(headline(diff.text)).toMatch(/^main and the work copy of \S+ differ in 1 file \(\+4 -0\)\.$/);
     expect(jsonOf(diff.text).files[0]).toMatchObject({ path: "src/shout.js", status: "A", additions: 4 });
 
+    const inTests = await gr("gitring_diff", { from: "main", to: id, path: "tests" });
+    expect(headline(inTests.text)).toMatch(/^main and the work copy of \S+ have the same files under tests\.$/);
+
     const back = await gr("gitring_diff", { from: seeded.slice(0, 10), to: "main" });
     expect(headline(back.text)).toBe(`commit ${seeded.slice(0, 7)} and main have the same files.`);
 
@@ -157,6 +160,8 @@ describe("REST twins", () => {
     const cmp = await world.call("GET", `${base}/compare?from=main&to=main`, { key });
     expect(cmp.status).toBe(200);
     expect(cmp.json.files).toEqual([]);
+    const cmpPath = await world.call("GET", `${base}/compare?from=main&to=main&path=src`, { key });
+    expect(cmpPath.json).toMatchObject({ path: "src", files: [] });
     const badLine = await world.call("GET", `${base}/why?path=src/greet.js&line=two`, { key });
     expect(badLine.status).toBe(400);
     expect(badLine.json.error).toBe("Give the line as a number.");

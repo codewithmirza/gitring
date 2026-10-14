@@ -201,6 +201,8 @@ describe("words", () => {
       searchWords("priceOf", 0, 0, false),
       compareWords("main", "commit abcdef1", 2, 10, 4, false),
       compareWords("main", "main", 0, 0, 0, false),
+      compareWords("main", "the work copy of Robin-4", 40, 900, 12, true, 3, "src"),
+      compareWords("main", "main", 0, 0, 0, false, 0, "src/a.js"),
       stepWords(merge),
     ];
     expect(texts[0]).toBe('Line 4 of src/price.js on main. It came from the task "Add a discount". Robin-4 merged it on 2026-10-13 (commit aaaaaaa).');
@@ -208,6 +210,10 @@ describe("words", () => {
     expect(texts[4]).toContain("It is not merged yet.");
     expect(texts[5]).toBe('2 changes of main touched src/price.js. The last is the task "Add a discount". Give a line to see the change that wrote it.');
     expect(texts[6]).toBe("No change of main touched src/price.js after the start of the history. Give a line to see where it came from.");
+    expect(texts[15]).toBe(
+      "main and the work copy of Robin-4 differ in 40 or more files under src (+900 -12). The answer has no diff for 3 of them because of its size. The answer shows the first files only. Give a path to see one folder or file.",
+    );
+    expect(texts[16]).toBe("main and main have the same files under src/a.js.");
     for (const t of texts) expect(steViolations(t), t).toEqual([]);
   });
 });

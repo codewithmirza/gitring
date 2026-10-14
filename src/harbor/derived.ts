@@ -78,7 +78,8 @@ const MAX_LIMIT = 100;
 const SEARCH_FILES = 20;
 const SEARCH_LINES = 5;
 const COMPARE_FILES = 300;
-const COMPARE_CHARS = 400_000;
+/** The diff text of one compare answer: it must fit the answer limits of MCP clients. */
+const COMPARE_CHARS = 60_000;
 
 /** A work copy: its files (base plus the work, text files only) and who works on it. */
 export interface WorkCopyFiles {
@@ -189,9 +190,10 @@ async function mapLimit<X, Y>(items: readonly X[], limit: number, fn: (x: X) => 
 
 /**
  * The file changes between two trees. A subtree with the same id on both sides is never read: the cost
- * grows with the change, not with the tree. At most `cap` changes ("cut": there are more).
+ * grows with the change, not with the tree. At most `cap` changes ("cut": there are more). `prefix`: the
+ * path of the two trees in the repository (the paths of the changes start with it).
  */
-export async function diffTrees(read: (tree: string) => Promise<TreeEntry[]>, a: string, b: string, cap = MAX_STEP_FILES): Promise<{ changes: TreeChange[]; cut: boolean }> {
+export async function diffTrees(read: (tree: string) => Promise<TreeEntry[]>, a: string, b: string, cap = MAX_STEP_FILES, prefix = ""): Promise<{ changes: TreeChange[]; cut: boolean }> {
   const changes: TreeChange[] = [];
   let cut = false;
   const add = (c: TreeChange) => {
@@ -232,7 +234,7 @@ export async function diffTrees(read: (tree: string) => Promise<TreeEntry[]>, a:
       if (nTree) await all(nTree.hash, path, "A");
     }
   };
-  await walk(a || EMPTY_TREE_SHA, b || EMPTY_TREE_SHA, "");
+  await walk(a || EMPTY_TREE_SHA, b || EMPTY_TREE_SHA, prefix);
   return { changes, cut };
 }
 
@@ -781,15 +783,33 @@ export class DerivedHistory {
     return { id: `${e.hash}:${e.mode}`, text: isBlob(e) && textEligible(path) ? await this.src.text(e.hash) : null };
   }
 
+  /** The changes between two trees under `path` (a folder or a file; "" for all). */
+  private async treeChanges(a: string, b: string, path: string): Promise<{ changes: TreeChange[]; cut: boolean }> {
+    if (!path) return diffTrees(this.readTree, a, b, COMPARE_FILES + 1);
+    const [ea, eb] = await Promise.all([this.entryAt(a, path), this.entryAt(b, path)]);
+    const sub = (e: TreeEntry | null) => (e?.type === "tree" ? e.hash : EMPTY_TREE_SHA);
+    const out = await diffTrees(this.readTree, sub(ea), sub(eb), COMPARE_FILES + 1, path);
+    // A file at the path itself.
+    const fa = ea && ea.type !== "tree" ? ea : undefined;
+    const fb = eb && eb.type !== "tree" ? eb : undefined;
+    if ((fa || fb) && !(fa && fb && fa.hash === fb.hash && fa.mode === fb.mode)) out.changes.unshift({ path, status: fa && fb ? "M" : fa ? "D" : "A", old: fa, now: fb });
+    return out;
+  }
+
   /**
-   * The changes from one version to another: each side is main, a commit id or a work copy id. The tree
-   * diff never opens a subtree that did not change, and only the changed files are read.
+   * The changes from one version to another: each side is main, a commit id or a work copy id. With
+   * `path`: only the files of that folder, or that file. The tree diff never opens a subtree that did not
+   * change, and only the changed files are read. When the diff text is too long for one answer, the
+   * last files come without their diff.
    */
-  async compare(from: string, to: string): Promise<CompareAnswer> {
+  async compare(from: string, to: string, rawPath?: string): Promise<CompareAnswer> {
+    const path = rawPath ? normPath(rawPath) : "";
+    const under = (p: string) => !path || p === path || p.startsWith(`${path}/`);
     const [a, b] = await Promise.all([this.side(from), this.side(to)]);
-    const { changes, cut } = await diffTrees(this.readTree, a.tree, b.tree, COMPARE_FILES + 1);
+    const { changes, cut } = await this.treeChanges(a.tree, b.tree, path);
     const inTrees = new Map(changes.map((c) => [c.path, c]));
-    const paths = [...new Set([...inTrees.keys(), ...(a.work?.changed ?? []), ...(b.work?.changed ?? [])])].sort();
+    const worked = [...(a.work?.changed ?? []), ...(b.work?.changed ?? [])].filter(under);
+    const paths = [...new Set([...inTrees.keys(), ...worked])].sort();
     const pairs = await mapLimit(paths, TEXT_READS, async (path) => {
       const c = inTrees.get(path);
       const [fa, fb] = await Promise.all([this.fileOf(a, path, c ? (c.old ?? null) : undefined), this.fileOf(b, path, c ? (c.now ?? null) : undefined)]);
@@ -799,29 +819,45 @@ export class DerivedHistory {
     let additions = 0;
     let deletions = 0;
     let chars = 0;
+    let left = 0;
     let more = cut;
-    for (const { path, fa, fb } of pairs) {
+    for (const { path: p, fa, fb } of pairs) {
       if (!fa && !fb) continue;
       if (fa && fb && (fa.id === fb.id || (fa.text !== null && fa.text === fb.text))) continue;
-      if (files.length >= COMPARE_FILES || chars >= COMPARE_CHARS) {
+      if (files.length >= COMPARE_FILES) {
         more = true;
         break;
       }
       const status = !fa ? "A" : !fb ? "D" : "M";
       // A side that has the file without text: gitring compares only the ids.
       if ((fa && fa.text === null) || (fb && fb.text === null)) {
-        files.push({ path, status, additions: 0, deletions: 0, diff: "", binary: true });
+        files.push({ path: p, status, additions: 0, deletions: 0, diff: "", binary: true });
         continue;
       }
       const ta = fa?.text ?? null;
       const tb = fb?.text ?? null;
       const d = lineDiff(ta ?? "", tb ?? "");
-      const diff = unifiedDiff(path, ta, tb);
-      chars += diff.length;
       additions += d.additions;
       deletions += d.deletions;
-      files.push({ path, status, additions: d.additions, deletions: d.deletions, diff });
+      const diff = unifiedDiff(p, ta, tb);
+      // The diff text has a limit per answer. A file over it keeps its counts, without the diff.
+      if (chars + diff.length > COMPARE_CHARS) {
+        left++;
+        files.push({ path: p, status, additions: d.additions, deletions: d.deletions, diff: "", cut: true });
+        continue;
+      }
+      chars += diff.length;
+      files.push({ path: p, status, additions: d.additions, deletions: d.deletions, diff });
     }
-    return { from: a.label, to: b.label, files, additions, deletions, more, summary: compareWords(a.label, b.label, files.length, additions, deletions, more) };
+    return {
+      from: a.label,
+      to: b.label,
+      ...(path ? { path } : {}),
+      files,
+      additions,
+      deletions,
+      more,
+      summary: compareWords(a.label, b.label, files.length, additions, deletions, more, left, path || undefined),
+    };
   }
 }

@@ -509,6 +509,53 @@ describe("compare cost and files", () => {
   });
 });
 
+describe("compare under a path, and long diffs", () => {
+  it("compares one folder or one file", async () => {
+    p = new Project();
+    const start = await p.start({ "src/a.js": lines("a"), "src/lib/b.js": lines("b"), "docs/c.md": lines("c") });
+    await p.commit({ "src/a.js": lines("a", "A"), "src/lib/b.js": null, "docs/c.md": lines("C") });
+    const h = new DerivedHistory(p.source());
+    const src = await h.compare(start, "main", "src/");
+    expect(src.path).toBe("src");
+    expect(src.files.map((f) => [f.path, f.status])).toEqual([
+      ["src/a.js", "M"],
+      ["src/lib/b.js", "D"],
+    ]);
+    expect(src.summary).toBe(`commit ${start.slice(0, 7)} and main differ in 2 files under src (+1 -1).`);
+    const one = await h.compare(start, "main", "./docs/c.md");
+    expect(one.files.map((f) => [f.path, f.status, f.additions, f.deletions])).toEqual([["docs/c.md", "M", 1, 1]]);
+    const gone = await h.compare(start, "main", "src/lib/b.js");
+    expect(gone.files.map((f) => [f.path, f.status])).toEqual([["src/lib/b.js", "D"]]);
+    const none = await h.compare(start, "main", "nope");
+    expect(none.files).toEqual([]);
+    expect(none.summary).toBe(`commit ${start.slice(0, 7)} and main have the same files under nope.`);
+    // A work copy: only its changes under the path.
+    p.work.set("a_p", { attempt: { id: "a_p", baseSha: p.main.sha, baseTree: p.main.tree } as T.Attempt, files: new Map([["src/a.js", lines("a", "A", "x")], ["docs/c.md", lines("C", "y")]]), deleted: [], callsign: "Robin-5", title: "P" });
+    const wc = await h.compare("main", "a_p", "docs");
+    expect(wc.files.map((f) => f.path)).toEqual(["docs/c.md"]);
+  });
+
+  it("keeps the counts but leaves out the diff of the files after the size limit", async () => {
+    p = new Project();
+    const long = (tag: string) => lines(...Array.from({ length: 1500 }, (_, i) => `${tag} line ${i} of a long file with some text`));
+    const start = await p.start({ "a.txt": lines("a"), "big.txt": long("old"), "z.txt": lines("z") });
+    await p.commit({ "a.txt": lines("A"), "big.txt": long("new"), "z.txt": lines("Z") });
+    const h = new DerivedHistory(p.source());
+    const res = await h.compare(start, "main");
+    expect(res.files.map((f) => [f.path, f.additions, f.deletions, f.cut ?? false])).toEqual([
+      ["a.txt", 1, 1, false],
+      ["big.txt", 1500, 1500, true],
+      ["z.txt", 1, 1, false],
+    ]);
+    expect(res.files[1].diff).toBe("");
+    expect(res.files[2].diff).toContain("+Z");
+    expect(res.summary).toBe(`commit ${start.slice(0, 7)} and main differ in 3 files (+1502 -1502). The answer has no diff for 1 of them because of its size. Give a path to see one folder or file.`);
+    expect(steViolations(res.summary)).toEqual([]);
+    // Asked alone, the long diff is still over the limit: the answer says so again.
+    expect((await h.compare(start, "main", "big.txt")).files[0].cut).toBe(true);
+  });
+});
+
 describe("errors", () => {
   it("answers each refusal in plain words", async () => {
     p = new Project();

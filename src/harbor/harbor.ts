@@ -3372,9 +3372,9 @@ export class HarborMaster extends DurableObject<Env> {
     return this.derived.search(input);
   }
 
-  /** The changes between two versions: main, a commit id or a work copy id. */
-  async compareRefs(from: string, to: string): Promise<CompareAnswer> {
-    return this.derived.compare(from, to);
+  /** The changes between two versions (main, a commit id or a work copy id), for all files or under a path. */
+  async compareRefs(from: string, to: string, path?: string): Promise<CompareAnswer> {
+    return this.derived.compare(from, to, path);
   }
 
   /** Files for a live preview: "main" or an attempt id. */
