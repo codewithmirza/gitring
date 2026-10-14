@@ -120,6 +120,7 @@ export class RefCollector {
   /** The class or object that `this` means here, if known. */
   thisName?: string;
 
+  /** Walks one node and records the free names that it uses. Each kind of node has its own rule for scope. */
   walk(node: AnyNode, scope: Scope): void {
     if (!node) return;
     switch (node.type) {
@@ -156,40 +157,20 @@ export class RefCollector {
         }
         return;
       case "BlockStatement":
-      case "StaticBlock": {
-        const s = new Scope(scope);
-        declareStatements(node.body, s.names);
-        for (const st of node.body) this.walk(st, s);
+      case "StaticBlock":
+        this.block(node, scope);
         return;
-      }
-      case "SwitchStatement": {
-        this.walk(node.discriminant, scope);
-        const s = new Scope(scope);
-        for (const c of node.cases) declareStatements(c.consequent, s.names);
-        for (const c of node.cases) {
-          if (c.test) this.walk(c.test, s);
-          for (const st of c.consequent) this.walk(st, s);
-        }
+      case "SwitchStatement":
+        this.switchStatement(node, scope);
         return;
-      }
       case "ForStatement":
       case "ForInStatement":
-      case "ForOfStatement": {
-        const s = new Scope(scope);
-        const head = node.type === "ForStatement" ? node.init : node.left;
-        if (head && head.type === "VariableDeclaration") for (const d of head.declarations) boundNames(d.id, s.names);
-        this.children(node, s);
+      case "ForOfStatement":
+        this.loop(node, scope);
         return;
-      }
-      case "CatchClause": {
-        const s = new Scope(scope);
-        if (node.param) {
-          boundNames(node.param, s.names);
-          this.pattern(node.param, s);
-        }
-        this.walk(node.body, s);
+      case "CatchClause":
+        this.catchClause(node, scope);
         return;
-      }
       case "Property":
         if (node.computed) this.walk(node.key, scope);
         this.walk(node.value, scope);
@@ -221,6 +202,42 @@ export class RefCollector {
       default:
         this.children(node, scope);
     }
+  }
+
+  /** A block: its own scope, with the names that it declares. */
+  private block(node: AnyNode, scope: Scope): void {
+    const s = new Scope(scope);
+    declareStatements(node.body, s.names);
+    for (const st of node.body) this.walk(st, s);
+  }
+
+  /** A switch: the cases share one scope. */
+  private switchStatement(node: AnyNode, scope: Scope): void {
+    this.walk(node.discriminant, scope);
+    const s = new Scope(scope);
+    for (const c of node.cases) declareStatements(c.consequent, s.names);
+    for (const c of node.cases) {
+      if (c.test) this.walk(c.test, s);
+      for (const st of c.consequent) this.walk(st, s);
+    }
+  }
+
+  /** A for loop: the names of its head belong to the loop. */
+  private loop(node: AnyNode, scope: Scope): void {
+    const s = new Scope(scope);
+    const head = node.type === "ForStatement" ? node.init : node.left;
+    if (head && head.type === "VariableDeclaration") for (const d of head.declarations) boundNames(d.id, s.names);
+    this.children(node, s);
+  }
+
+  /** A catch clause: its parameter belongs to the clause. */
+  private catchClause(node: AnyNode, scope: Scope): void {
+    const s = new Scope(scope);
+    if (node.param) {
+      boundNames(node.param, s.names);
+      this.pattern(node.param, s);
+    }
+    this.walk(node.body, s);
   }
 
   children(node: AnyNode, scope: Scope): void {

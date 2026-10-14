@@ -79,6 +79,7 @@ export class TsTypeSkipper extends TsCursor {
     return j;
   }
 
+  /** Index after one primary type: a group, an object or tuple type, a literal, a function type or a name. Or -1. */
   private skipPrimary(i: number, depth: number): number {
     const t = this.t(i);
     switch (t) {
@@ -108,33 +109,10 @@ export class TsTypeSkipper extends TsCursor {
         if (c < 0 || this.t(c + 1) !== "=>") return -1;
         return this.skipType(c + 2, depth + 1);
       }
-      case "typeof": {
-        let j: number;
-        if (this.t(i + 1) === "import") {
-          j = this.skipPrimary(i + 1, depth + 1);
-          if (j < 0) return -1;
-        } else {
-          if (!this.isKey(i + 1)) return -1;
-          j = this.skipEntity(i + 1);
-        }
-        if (this.t(j) === "<" && !this.nl(j)) {
-          const k = this.skipAngle(j);
-          if (k > 0) j = k;
-        }
-        return j;
-      }
-      case "import": {
-        if (this.t(i + 1) !== "(") return -1;
-        const c = this.closeOf(i + 1);
-        if (c < 0) return -1;
-        let j = c + 1;
-        while (this.t(j) === "." && this.isKey(j + 1)) j += 2;
-        if (this.t(j) === "<") {
-          const k = this.skipAngle(j);
-          if (k > 0) j = k;
-        }
-        return j;
-      }
+      case "typeof":
+        return this.skipTypeof(i, depth);
+      case "import":
+        return this.skipImportType(i);
       case "string":
       case "num":
       case "void":
@@ -148,29 +126,64 @@ export class TsTypeSkipper extends TsCursor {
         return i + 1;
       case "-":
         return this.t(i + 1) === "num" ? i + 2 : -1;
-      case "name": {
-        const w = this.word(i);
-        const next = this.t(i + 1);
-        const nextStartsType = next !== "eof" && !this.nl(i + 1) && next !== "," && next !== ")" && next !== "]" && next !== ">" && next !== ";" && next !== "=" && next !== "|" && next !== "&" && next !== "}" && next !== "?" && next !== ":" && next !== "." && next !== "<" && next !== "[";
-        if ((w === "keyof" || w === "unique" || w === "readonly") && nextStartsType) return this.skipPostfix(i + 1, depth + 1);
-        if (w === "infer" && this.t(i + 1) === "name") return i + 2;
-        if (w === "asserts" && (this.t(i + 1) === "name" || this.t(i + 1) === "this") && !this.nl(i + 1)) {
-          const j = i + 2;
-          return this.word(j) === "is" && !this.nl(j) ? this.skipType(j + 1, depth + 1) : j;
-        }
-        if (w === "abstract" && next === "new") return this.skipPrimary(i + 1, depth);
-        let j = this.skipEntity(i);
-        if (this.t(j) === "<" && !this.nl(j)) {
-          const k = this.skipAngle(j);
-          if (k < 0) return -1;
-          j = k;
-        }
-        if (this.word(j) === "is" && !this.nl(j)) return this.skipType(j + 1, depth + 1);
-        return j;
-      }
+      case "name":
+        return this.skipTypeName(i, depth);
       default:
         return -1;
     }
+  }
+
+  /** `typeof x` and `typeof import("x")`, with optional type arguments. */
+  private skipTypeof(i: number, depth: number): number {
+    let j: number;
+    if (this.t(i + 1) === "import") {
+      j = this.skipPrimary(i + 1, depth + 1);
+      if (j < 0) return -1;
+    } else {
+      if (!this.isKey(i + 1)) return -1;
+      j = this.skipEntity(i + 1);
+    }
+    if (this.t(j) === "<" && !this.nl(j)) {
+      const k = this.skipAngle(j);
+      if (k > 0) j = k;
+    }
+    return j;
+  }
+
+  /** `import("x").Name<T>`: a type that comes from another module. */
+  private skipImportType(i: number): number {
+    if (this.t(i + 1) !== "(") return -1;
+    const c = this.closeOf(i + 1);
+    if (c < 0) return -1;
+    let j = c + 1;
+    while (this.t(j) === "." && this.isKey(j + 1)) j += 2;
+    if (this.t(j) === "<") {
+      const k = this.skipAngle(j);
+      if (k > 0) j = k;
+    }
+    return j;
+  }
+
+  /** A name: `keyof`, `unique`, `readonly`, `infer`, `asserts`, `abstract new`, or a plain (qualified, generic) type name. */
+  private skipTypeName(i: number, depth: number): number {
+    const w = this.word(i);
+    const next = this.t(i + 1);
+    const nextStartsType = next !== "eof" && !this.nl(i + 1) && next !== "," && next !== ")" && next !== "]" && next !== ">" && next !== ";" && next !== "=" && next !== "|" && next !== "&" && next !== "}" && next !== "?" && next !== ":" && next !== "." && next !== "<" && next !== "[";
+    if ((w === "keyof" || w === "unique" || w === "readonly") && nextStartsType) return this.skipPostfix(i + 1, depth + 1);
+    if (w === "infer" && this.t(i + 1) === "name") return i + 2;
+    if (w === "asserts" && (this.t(i + 1) === "name" || this.t(i + 1) === "this") && !this.nl(i + 1)) {
+      const j = i + 2;
+      return this.word(j) === "is" && !this.nl(j) ? this.skipType(j + 1, depth + 1) : j;
+    }
+    if (w === "abstract" && next === "new") return this.skipPrimary(i + 1, depth);
+    let j = this.skipEntity(i);
+    if (this.t(j) === "<" && !this.nl(j)) {
+      const k = this.skipAngle(j);
+      if (k < 0) return -1;
+      j = k;
+    }
+    if (this.word(j) === "is" && !this.nl(j)) return this.skipType(j + 1, depth + 1);
+    return j;
   }
 
   /** Index after a return type (type predicates and `asserts` included), or -1. */
