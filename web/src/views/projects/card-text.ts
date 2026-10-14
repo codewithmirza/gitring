@@ -1,5 +1,5 @@
 /**
- * The words of a project card: the live fact that leads it, the facts under it and the source line at its end.
+ * The words of a project card and the order of the cards: the live fact first, the source line last.
  * ProjectCard.tsx calls this module. It is pure, so a unit test keeps the words plain (ASD-STE100).
  * It never invents a fact: the live fact comes from the inbox that the browser already holds.
  */
@@ -14,6 +14,13 @@ export function waitingByProject(items: InboxItem[] | null): Map<string, InboxIt
   const byProject = new Map<string, InboxItem[]>();
   for (const item of items) byProject.set(item.project, [...(byProject.get(item.project) ?? []), item]);
   return byProject;
+}
+
+/** The projects with a waiting question come first. Each part keeps its order, so a list that has no question does not move. */
+export function waitingFirst(list: ProjectInfo[], waiting: Map<string, InboxItem[]> | null): ProjectInfo[] {
+  if (!waiting?.size) return list;
+  const rank = (p: ProjectInfo) => (waiting.get(p.id)?.length ? 0 : 1);
+  return [...list].sort((a, b) => rank(a) - rank(b));
 }
 
 /** The live fact of a project with a waiting question: "1 question waits", "2 questions wait". */

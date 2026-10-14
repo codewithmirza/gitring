@@ -9,7 +9,7 @@ import { Icon } from "../../design/icons";
 import { openProject } from "../../state/account";
 import { useInbox } from "../../state/inbox";
 import { GithubMark, LockIcon, RepoIcon } from "../newproject/marks";
-import { canAnswerHere, cardFacts, NOTHING_WAITS, sourceLine, waitingByProject, waitsText } from "./card-text";
+import { canAnswerHere, cardFacts, NOTHING_WAITS, sourceLine, waitingByProject, waitingFirst, waitsText } from "./card-text";
 import { WaitingQuestion } from "./WaitingQuestion";
 
 function SourceIcon({ p }: { p: ProjectInfo }) {
@@ -23,6 +23,7 @@ function SourceIcon({ p }: { p: ProjectInfo }) {
 export function ProjectGrid({ list, current }: { list: ProjectInfo[]; current: string }) {
   const inbox = useInbox();
   const waiting = useMemo(() => waitingByProject(inbox.items), [inbox.items]);
+  const shown = useMemo(() => waitingFirst(list, waiting), [list, waiting]);
   const open = (e: MouseEvent<HTMLAnchorElement>, id: string) => {
     // A plain click opens the project here; a modified click opens a new tab as usual.
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -31,7 +32,7 @@ export function ProjectGrid({ list, current }: { list: ProjectInfo[]; current: s
   };
   return (
     <ul className="pj-grid">
-      {list.map((p) => {
+      {shown.map((p) => {
         const isOpen = p.id === current;
         const questions = waiting?.get(p.id) ?? [];
         return (

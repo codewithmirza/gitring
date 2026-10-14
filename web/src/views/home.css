@@ -10,7 +10,7 @@
 }
 .home--wait { padding-top: var(--s-10); }
 
-/* The headline at the left and the drawing of the map at the right; one column below 760 px. */
+/* The headline at the left and the drawing of the map at the right; one column when the page is narrower than 880 px (the headline needs 400 px). */
 .home__hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px); gap: var(--s-8); align-items: center; }
 .home__intro { display: grid; gap: var(--s-5); justify-items: start; min-width: 0; }
 .home__brand {
@@ -37,7 +37,6 @@
   color: var(--ink-2);
 }
 .home__actions { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-2); }
-
 
 .home__sec {
   display: grid;
@@ -111,9 +110,11 @@
 .home__built { max-width: 60ch; }
 .home__links { display: flex; gap: var(--s-5); }
 
+@media (max-width: 880px) {
+  .home__hero { grid-template-columns: minmax(0, 1fr); gap: var(--s-7); }
+}
 @media (max-width: 760px) {
   .home { padding: var(--s-8) var(--s-5) var(--s-10); }
-  .home__hero { grid-template-columns: minmax(0, 1fr); gap: var(--s-7); }
   .home__title { font-size: var(--t-xl); line-height: var(--lh-xl); }
   .home__lede { font-size: var(--t-md); line-height: var(--lh-md); }
   .home__steps { grid-template-columns: minmax(0, 1fr); }

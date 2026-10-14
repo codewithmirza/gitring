@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { copyProblems, proseOfFile } from "../coord/copy-scan";
 import { steViolations } from "../coord/ste";
-import { NOTHING_WAITS, canAnswerHere, cardFacts, sourceLine, waitingByProject, waitsText } from "../../web/src/views/projects/card-text";
+import { NOTHING_WAITS, canAnswerHere, cardFacts, sourceLine, waitingByProject, waitingFirst, waitsText } from "../../web/src/views/projects/card-text";
 import type { InboxItem } from "../../web/src/state/inbox";
 import type { ProjectInfo } from "../../src/core/accounts";
 
@@ -60,6 +60,16 @@ describe("the words of the first minute", () => {
       expect(facts.join(" ")).not.toContain("·");
     }
     expect(cardFacts(project(), false)).toEqual(["Created 7 min ago"]);
+  });
+
+  it("puts the projects with a waiting question first and keeps every other order", () => {
+    const [a, b, c, d] = ["a", "b", "c", "d"].map((id) => project({ id }));
+    const item = (key: string, projectId: string) => ({ key, project: projectId }) as InboxItem;
+    const waiting = waitingByProject([item("1", "c"), item("2", "b"), item("3", "c")]);
+    expect(waitingFirst([a, b, c, d], waiting).map((p) => p.id)).toEqual(["b", "c", "a", "d"]);
+    // Nothing waits, or the inbox has not answered yet: the list stays as it is.
+    expect(waitingFirst([a, b, c, d], waitingByProject([]))).toEqual([a, b, c, d]);
+    expect(waitingFirst([a, b, c, d], null)).toEqual([a, b, c, d]);
   });
 
   it("says nothing about a quiet project to a person who cannot answer in it", () => {

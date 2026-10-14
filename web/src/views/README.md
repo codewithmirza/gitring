@@ -4,8 +4,8 @@ One file for each page of the app, with the folders that hold the parts of the b
 
 Pages:
 
-- `HomeView.tsx`: the start page ("/").
-- `ProjectsView.tsx`: the projects of the person, and the new-project panel.
+- `HomeView.tsx`: the start page ("/"); its drawing of the map is in `home/`.
+- `ProjectsView.tsx`: the projects of the person, and the new-project panel; the cards are in `projects/`.
 - `ChartView.tsx`: the overview (the map, the rails and the activity log).
 - `IntentsView.tsx`: the tasks page; its parts are in `intents/`.
 - `LogbookView.tsx`: the history of merges; its parts are in `logbook/`.

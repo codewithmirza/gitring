@@ -39,7 +39,7 @@ export function WaitingQuestion({ item, more }: { item: InboxItem; more: number 
       <div className="pj-ask__acts">
         {isMerge ? (
           <>
-            <Button size="sm" variant="primary" icon="merge" busy={sending === "approve"} aria-describedby={titleId} onClick={() => void answer()}>
+            <Button variant="primary" icon="merge" busy={sending === "approve"} aria-describedby={titleId} onClick={() => void answer()}>
               {yes?.label}
             </Button>
             <Link to={item.link} className="pj-ask__link">
@@ -47,7 +47,7 @@ export function WaitingQuestion({ item, more }: { item: InboxItem; more: number 
             </Link>
           </>
         ) : (
-          <Link to={item.link} className="b-btn b-btn--primary b-btn--sm">
+          <Link to={item.link} className="b-btn b-btn--primary">
             {item.kind === "task" ? "Open the task" : "Answer the question"}
           </Link>
         )}

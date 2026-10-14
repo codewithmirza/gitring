@@ -4,9 +4,9 @@
  */
 
 .hm { margin: 0; display: grid; gap: var(--s-3); min-width: 0; }
-.hm__svg { display: block; width: 100%; height: auto; max-width: 420px; margin: 0 auto; }
+.hm__svg { display: block; width: 100%; height: auto; max-width: 420px; }
 .hm__svg * { vector-effect: non-scaling-stroke; }
-.hm__caption { max-width: 44ch; margin: 0 auto; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); text-align: center; }
+.hm__caption { max-width: 44ch; margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 
 .hm-water { fill: var(--bg); }
 .hm-grat line { stroke: var(--graticule); stroke-width: 1; }
