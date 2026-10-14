@@ -1,0 +1,36 @@
+/*
+ * The styles of the task rail that app/styles/rails.css does not hold: the filter, the day labels and the row action.
+ * Imported by app/IntentsRail.tsx, so they load with the rail on every page that shows it.
+ * Type sizes here: 11.
+ */
+
+/* ───────────── the filter ───────────── */
+.rail__filter { display: grid; gap: var(--s-1); padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--line); }
+.rail__filter .b-input { height: 32px; }
+.rail__count { padding-left: var(--s-1); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rail__clear { min-height: 24px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ───────────── a long group, split by day ───────────── */
+.iday + .iday { margin-top: var(--s-1); }
+.iday__label { padding: var(--s-2) var(--s-5) 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+
+/* ───────────── "Start agents" shows on hover and focus only ───────────── */
+/* A list of 80 tasks must not hold 80 buttons. The task page has the same button, always in view. */
+/* The button sits on the line of the facts (24 px high, centered on it) and never over the title. */
+.rail--intents .irow:not(.irow--pending):has(.irow__action) .irow__main { padding-right: var(--s-4); }
+.rail--intents .irow__action:not(.irow__action--pending) {
+  bottom: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.rail--intents .irow:hover .irow__action,
+.rail--intents .irow:focus-within .irow__action,
+.rail--intents .irow__action:has([aria-expanded="true"]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* A touch screen has no hover: the person opens the task and starts the agents there. */
+@media (hover: none) {
+  .rail--intents .irow__action:not(.irow__action--pending) { display: none; }
+}

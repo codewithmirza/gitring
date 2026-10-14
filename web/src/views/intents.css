@@ -62,15 +62,27 @@
   color: var(--ink-1);
 }
 
+/* The constraints, the test files and the versions come after the work copies. */
 .intent__spec {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
   gap: var(--s-8);
-  margin-top: var(--s-7);
+  margin-top: var(--s-9);
   padding-top: var(--s-6);
   border-top: 1px solid var(--line);
 }
-.intent__specmain { display: grid; gap: var(--s-6); align-content: start; }
+.intent__specmain { display: grid; gap: var(--s-5); align-content: start; }
+/* An empty list is one quiet line, with no heading and no zero. */
+.intent__quiet { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.intent__quietact {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .constraints,
 .checklist { display: grid; gap: var(--s-2); margin: var(--s-3) 0 0; padding: 0; list-style: none; }
 .constraints li {
@@ -135,7 +147,7 @@
 .timeline__text.voice-human { font-size: var(--t-sm); line-height: var(--lh-sm); }
 
 /* ───────────── compare lanes ───────────── */
-.compare { margin-top: var(--s-9); }
+.compare { margin-top: var(--s-7); padding-top: var(--s-6); border-top: 1px solid var(--line); }
 .compare__head { display: grid; gap: var(--s-1); margin-bottom: var(--s-4); }
 .compare__help { max-width: 80ch; font-size: var(--t-sm); color: var(--ink-2); }
 .lanes-scroll { overflow-x: auto; padding-bottom: var(--s-2); }

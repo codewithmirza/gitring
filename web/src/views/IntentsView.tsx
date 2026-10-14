@@ -12,13 +12,12 @@ import { IntentsRail } from "../app/IntentsRail";
 import { LaunchButton } from "../app/LaunchControl";
 import { Link, navigate } from "../app/router";
 import { useNow } from "../app/useNow";
-import { ago, plural } from "../state/format";
 import { useStore } from "../state/store";
 import { useCanAct } from "../state/account";
 import { byId, indexes, selectIntentGroups } from "../state/selectors";
 import { Lane } from "./intents/Lane";
 import { AmendPanel, LivingSpec, PausePanel } from "./intents/TaskPanels";
-import { sourceText } from "./intents/helpers";
+import { Constraints, TestFiles } from "./intents/Spec";
 import "./intents.css";
 
 /* ───────────── the detail of a task ───────────── */
@@ -28,6 +27,7 @@ function IntentDetail({ intent }: { intent: Intent }) {
   const st = useStore((s) => s.state);
   const idx = st ? indexes(st) : null;
   const [panel, setPanel] = useState<"amend" | "pause" | null>(null);
+  const [amendFocus, setAmendFocus] = useState<"goal" | "constraint">("goal");
   const amendBtn = useRef<HTMLButtonElement | null>(null);
   const pauseBtn = useRef<HTMLButtonElement | null>(null);
   const canAct = useCanAct();
@@ -70,94 +70,46 @@ function IntentDetail({ intent }: { intent: Intent }) {
               High priority
             </Badge>
           )}
-          <span className="ink-3">
-            <span className="voice-agent">v{intent.version}</span> · from {sourceText(intent)} · {intent.createdBy.name} · {ago(intent.createdAt, now)}
-          </span>
         </div>
         <h1 className="intent__title voice-human" id="intent-title" tabIndex={-1}>
           {intent.title}
         </h1>
         {panel === "amend" ? (
-          <AmendPanel intent={intent} onClose={() => setPanel(null)} returnFocus={amendBtn} />
+          <AmendPanel intent={intent} onClose={() => setPanel(null)} returnFocus={amendBtn} focus={amendFocus} />
         ) : (
           <p className="intent__goal voice-human">{intent.goal.replace(/`/g, "")}</p>
         )}
         {canAct && (
           <div className="intent__actions">
-            <LaunchButton intent={intent} size="md" variant={n === 0 ? "primary" : "secondary"} />
-            <Button ref={amendBtn} icon="amend" onClick={() => setPanel(panel === "amend" ? null : "amend")} disabled={done} aria-expanded={panel === "amend"}>
+            {/* Without work copies, starting agents is the next step and comes first. With work, it comes last. */}
+            {n === 0 && <LaunchButton intent={intent} size="md" variant="primary" />}
+            <Button
+              ref={amendBtn}
+              icon="amend"
+              onClick={() => {
+                setAmendFocus("goal");
+                setPanel(panel === "amend" ? null : "amend");
+              }}
+              disabled={done}
+              aria-expanded={panel === "amend"}
+            >
               Change the goal
             </Button>
             <Button ref={pauseBtn} variant="ghost" icon="park" onClick={() => setPanel(panel === "pause" ? null : "pause")} disabled={done} aria-expanded={panel === "pause"}>
               Pause the task
             </Button>
+            {n > 0 && <LaunchButton intent={intent} size="md" variant="secondary" />}
           </div>
         )}
         {panel === "pause" && <PausePanel intent={intent} onClose={() => setPanel(null)} returnFocus={pauseBtn} />}
       </header>
-
-      <div className="intent__spec">
-        <div className="intent__specmain">
-          <section aria-labelledby="constraints-title">
-            <h2 className="intent__h2" id="constraints-title">
-              Constraints <span className="voice-agent ink-3">{intent.constraints.length}</span>
-            </h2>
-            {intent.constraints.length === 0 ? (
-              <p className="ink-3">No constraints yet. People and change requests add them.</p>
-            ) : (
-              <ul className="constraints">
-                {intent.constraints.map((c) => {
-                  const human = intent.amendments.find((a) => a.text.includes(c))?.by.kind === "human";
-                  return (
-                    <li key={c} className={human ? "voice-human" : "voice-agent"}>
-                      <Icon name={human ? "human" : "buoy"} size={12} />
-                      <span>{c.replace(/`/g, "")}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-          <section aria-labelledby="checks-title">
-            <h2 className="intent__h2" id="checks-title">
-              Tests <span className="voice-agent ink-3">{intent.checks.length}</span>
-            </h2>
-            {intent.checks.length === 0 ? (
-              <p className="ink-3">No test files for this task. gitring runs the tests of the repository.</p>
-            ) : (
-              <ul className="checklist">
-                {intent.checks.map((c) => {
-                  const cases = [...c.content.matchAll(/\btest\(\s*"((?:[^"\\]|\\.)+)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1"));
-                  return (
-                    <li key={c.id}>
-                      <div className="checklist__head">
-                        <Icon name="check" size={14} />
-                        <span className="voice-agent">{c.path}</span>
-                        <span className="ink-3">{plural(cases.length, "test")}</span>
-                      </div>
-                      <p className="checklist__desc">{c.description}</p>
-                      {cases.length > 0 && (
-                        <ul className="checklist__cases voice-agent">
-                          {cases.map((x) => (
-                            <li key={x}>{x}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
-        <LivingSpec intent={intent} now={now} />
-      </div>
 
       <section className="compare" aria-labelledby="compare-title">
         <div className="compare__head">
           <h2 className="intent__h2" id="compare-title">
             {n === 0 ? "Work copies" : n === 1 ? "1 work copy" : `Compare ${n} work copies`}
           </h2>
+          {(n > 0 || intent.status === "landed") && (
           <p className="compare__help">
             {intent.status === "judging"
               ? ready.length > 1
@@ -169,10 +121,9 @@ function IntentDetail({ intent }: { intent: Intent }) {
                 ? pick
                   ? `${pick.by.name} chose ${names(pick.attemptIds[0])}: “${pick.rationale}”`
                   : "gitring merged the work copy that passed its tests. Alternatives stay below."
-                : n === 0
-                  ? "No work copies yet. Start 1 to 4 agents, or let your own agent take the task through MCP."
-                  : "Each agent works in its own work copy. gitring checks each plan against the 20 nearest active plans."}
+                : "Each agent works in its own work copy. gitring checks each plan against the 20 nearest active plans."}
           </p>
+          )}
           {n > 0 && !preview && <p className="compare__note">Preview works for Cloudflare Workers apps (src/index.js).</p>}
         </div>
         {n === 0 ? (
@@ -218,6 +169,24 @@ function IntentDetail({ intent }: { intent: Intent }) {
           </div>
         )}
       </section>
+
+      <div className="intent__spec">
+        <div className="intent__specmain">
+          <Constraints
+            intent={intent}
+            onAdd={
+              canAct && !done
+                ? () => {
+                    setAmendFocus("constraint");
+                    setPanel("amend");
+                  }
+                : undefined
+            }
+          />
+          <TestFiles intent={intent} />
+        </div>
+        <LivingSpec intent={intent} now={now} />
+      </div>
     </article>
   );
 }

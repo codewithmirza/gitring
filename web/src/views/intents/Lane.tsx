@@ -142,13 +142,15 @@ export function Lane({ attempt: a, all, agent, intent, corrections, checks, name
         </div>
         <div className="lane__meta">
           <span className="voice-agent">{modelShort(agent?.model)}</span>
-          {agent?.kind === "mcp" && <span className="ink-3">via MCP · {agent.client}</span>}
+          {agent?.kind === "mcp" && <span className="ink-3">via {agent.client || "MCP"}</span>}
           {agent && <span className="ink-3">seen {ago(agent.lastSeen, now)}</span>}
           {a.lineage.generation > 1 && (
-            <span className="lane__gen">
-              <Icon name="rederive" size={12} /> try {a.lineage.generation}
-              {rederivedFromName ? ` · redo of ${rederivedFromName}` : ""}
-            </span>
+            <>
+              <span className="lane__gen">
+                <Icon name="rederive" size={12} /> try {a.lineage.generation}
+              </span>
+              {rederivedFromName && <span className="ink-3">redo of {rederivedFromName}</span>}
+            </>
           )}
           <span className="ink-3">base {shortSha(a.baseSha)}</span>
         </div>
@@ -179,7 +181,7 @@ export function Lane({ attempt: a, all, agent, intent, corrections, checks, name
 
       <section className="lane__sec lane__evidence" aria-label="Tests">
         <h3 className="lane__h">Tests</h3>
-        <EvidenceBar run={a.checks} checking={a.status === "checking" || a.status === "submitted"} pending={intent.checks.length * 4} label="Alone" />
+        <EvidenceBar run={a.checks} checking={a.status === "checking" || a.status === "submitted"} pending={intent.checks.length * 4} label="Tests in the work copy" />
         {a.composedChecks && <EvidenceBar run={a.composedChecks} label="Combined with main" showFailures />}
         {(a.composedChecks?.log ?? a.checks?.log) && (
           <details className="lane__log">
@@ -192,7 +194,7 @@ export function Lane({ attempt: a, all, agent, intent, corrections, checks, name
       {preview && (
         <section className="lane__sec lane__preview" aria-label="Live preview">
           <h3 className="lane__h">
-            Live preview <span className="ink-3">· the real code of this work copy</span>
+            Live preview <span className="ink-3">the real code of this work copy</span>
           </h3>
           {doc.src ? <PreviewFrame title={callsign} src={doc.src} height={300} /> : <div className="lane__nopreview">The preview starts when the work copy exists.</div>}
         </section>
@@ -222,7 +224,7 @@ export function Lane({ attempt: a, all, agent, intent, corrections, checks, name
         </ol>
         {a.summary && (
           <p className="lane__summary">
-            <span className="ink-3">Summary · </span>
+            <span className="ink-3">Summary: </span>
             <span className="voice-agent">{a.summary}</span>
           </p>
         )}

@@ -9,7 +9,7 @@ interface EvidenceBarProps {
   run?: CheckRun | null;
   /** Show this many pending segments while tests run. */
   pending?: number;
-  /** "Alone" or "Combined with main". */
+  /** The words next to the count: "Tests in the work copy" or "Combined with main". */
   label?: string;
   showFailures?: boolean;
   checking?: boolean;

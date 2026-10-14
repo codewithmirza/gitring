@@ -14,7 +14,7 @@
 .approve__title { font-size: var(--t-xl); line-height: var(--lh-xl); letter-spacing: -.005em; color: var(--ink-1); overflow-wrap: anywhere; }
 .approve__title:focus { outline: none; }
 .approve__ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-1); }
-.approve__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.approve__meta { display: flex; flex-wrap: wrap; gap: 0 var(--s-4); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 /* The skip control shows when it has focus: the answer is the last block in the page order. */
 .approve__skip:not(:focus) {
   position: absolute;
@@ -45,7 +45,7 @@
 .approve__main > .approve__sec:first-child { padding-top: 0; border-top: 0; }
 .approve__h { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); font-size: var(--t-md); line-height: var(--lh-md); font-weight: 500; color: var(--ink-1); }
 .approve__h3 { margin-top: var(--s-2); font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-2); }
-.approve__count { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 400; color: var(--ink-3); }
+.approve__count { display: inline-flex; flex-wrap: wrap; gap: 0 var(--s-3); font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 400; color: var(--ink-3); }
 .approve__opt { font-weight: 400; color: var(--ink-3); }
 .approve__why { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
 .approve__why li { position: relative; padding-left: var(--s-5); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
