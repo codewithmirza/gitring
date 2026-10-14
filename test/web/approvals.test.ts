@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Approval, Attempt, CheckRun, Intent, Landing, Person, ProjectState } from "../../src/core/types";
 import { INTENT_GROUPS, selectIntentGroups, selectJudgmentQueue, type ApprovalItem, type Who } from "../../web/src/state/selectors";
 import { INTENT_STATUS_TEXT } from "../../web/src/state/format";
-import { announceText, answerKind, cannotAnswerText, describeOutcome, phaseOf, tabTitle, waitsFor } from "../../web/src/state/approvals";
+import { announceText, answerKind, cannotAnswerText, describeOutcome, factsLine, phaseOf, tabTitle, waitsFor } from "../../web/src/state/approvals";
 
 const run = (over: Partial<CheckRun> = {}): CheckRun => ({ id: "c1", subject: "s", scope: "attempt", ok: true, passed: 12, failed: 0, cases: [], ms: 1, at: 1, ran: 12, ...over });
 const person = (id: string, name = id): Person => ({ id, name });
@@ -196,6 +196,14 @@ describe("words for a question", () => {
     expect(announceText(1, ["Add a search box"])).toBe("1 merge waits for you: Add a search box");
     expect(announceText(3, ["Add a search box", "Dark mode"])).toBe("3 merges wait for you: Add a search box and 1 more");
     expect(announceText(2, [])).toBe("");
+  });
+
+  it("leaves out the sentence without a source when a reason on the card names the cause", () => {
+    const line = "3 files, +7 -4. 5 of 5 tests pass. The code logic changes.";
+    expect(factsLine(line, ["The parameters of cartTotal, formatPrice change. Other code can call them."])).toBe("3 files, +7 -4. 5 of 5 tests pass.");
+    expect(factsLine(line, ["Files are deleted: src/old.js."])).toBe("3 files, +7 -4. 5 of 5 tests pass.");
+    expect(factsLine(line, ["This project asks a person before every merge."])).toBe(line);
+    expect(factsLine(line, [])).toBe(line);
   });
 
   it("puts the count in front of the tab title", () => {

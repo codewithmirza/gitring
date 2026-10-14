@@ -29,6 +29,8 @@ export function useMaxChips(): number {
  * --tray-h is the height of the tray: the toasts sit above it.
  * --tray-room is the part of the page that the tray covers: the panes that scroll keep that much free at their end,
  * so that the tray never hides the last rows or a control. It is 0 where the tray is a row of the page (narrow screens).
+ * --tray-edge is the width that the tray takes at the right edge. The activity log of the map keeps that much free
+ * where the right rail is closed and the tray floats over the log (761 to 1180 px).
  */
 function useTrayHeight(el: HTMLElement | null) {
   useEffect(() => {
@@ -36,6 +38,7 @@ function useTrayHeight(el: HTMLElement | null) {
     const clear = () => {
       root.style.removeProperty("--tray-h");
       root.style.removeProperty("--tray-room");
+      root.style.removeProperty("--tray-edge");
     };
     if (!el) {
       clear();
@@ -50,6 +53,8 @@ function useTrayHeight(el: HTMLElement | null) {
       const covered = page ? Math.ceil(page.getBoundingClientRect().bottom - box.top) : 0;
       if (covered > 0) root.style.setProperty("--tray-room", `${covered + 8}px`);
       else root.style.removeProperty("--tray-room");
+      if (getComputedStyle(el).position === "fixed") root.style.setProperty("--tray-edge", `${Math.ceil(window.innerWidth - box.left) + 8}px`);
+      else root.style.removeProperty("--tray-edge");
     };
     set();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(set) : null;
