@@ -1,0 +1,47 @@
+/* CodeBlock and EmptyState. */
+
+/* ───────────── CodeBlock ───────────── */
+.b-code {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.b-code__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 36px;
+  padding: 0 var(--s-2) 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+.b-code__label { font-family: var(--font-agent); color: var(--ink-2); }
+.b-code__head .b-btn { margin-left: auto; }
+.b-code pre {
+  margin: 0;
+  padding: var(--s-4);
+  overflow-x: auto;
+  font-family: var(--font-agent);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  color: var(--ink-1);
+  tab-size: 2;
+}
+.b-code .tok-c { color: var(--ink-3); }
+.b-code .tok-p { color: var(--ink-3); user-select: none; }
+.b-code .tok-s { color: var(--ink-2); }
+
+/* ───────────── EmptyState ───────────── */
+.b-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-3);
+  padding: var(--s-8) var(--s-5);
+  text-align: center;
+  color: var(--ink-2);
+}
+.b-empty__art { color: var(--line-strong); }
+.b-empty__text { max-width: 36ch; font-size: var(--t-sm); }

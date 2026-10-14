@@ -1,0 +1,164 @@
+/* Badge, Callsign (pennant), Panel and Row. */
+
+/* ───────────── Badge ───────────── */
+.b-badge {
+  --tone: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-1);
+  border: 1px solid color-mix(in oklch, var(--tone) 45%, transparent);
+  background: color-mix(in oklch, var(--tone) 8%, transparent);
+  color: var(--tone);
+  font-family: var(--font-system);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.b-badge .b-icon { width: 12px; height: 12px; }
+.b-badge--clear { --tone: var(--clear); }
+.b-badge--correction { --tone: var(--magenta); }
+.b-badge--danger { --tone: var(--danger); }
+.b-badge--caution { --tone: var(--caution); }
+.b-badge--accent { --tone: var(--accent); }
+.b-badge--neutral { --tone: var(--ink-2); background: transparent; border-color: var(--line-strong); }
+.b-badge--method { --tone: var(--ink-1); background: var(--surface-1); border-color: var(--line-strong); }
+.b-badge--quiet { border-color: transparent; background: transparent; padding: 0; }
+
+/* ───────────── Callsign (pennant) ───────────── */
+.b-callsign {
+  --vc: var(--v0);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 11px 0 6px;
+  border-radius: 10px 0 0 10px;
+  background: color-mix(in oklch, var(--vc) 17%, transparent);
+  color: var(--ink-1);
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 5px) 50%, 100% 100%, 0 100%);
+  vertical-align: middle;
+}
+.b-callsign .b-hull { width: 12px; height: 12px; color: var(--vc); }
+.b-callsign--md {
+  height: 24px;
+  gap: 6px;
+  padding: 0 13px 0 7px;
+  border-radius: 12px 0 0 12px;
+  font-size: var(--t-sm);
+}
+.b-callsign--md .b-hull { width: 14px; height: 14px; }
+.b-callsign--dim { background: color-mix(in oklch, var(--vc) 8%, transparent); color: var(--ink-2); }
+.b-callsign__model {
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.b-callsign-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+/* ───────────── Panel ───────────── */
+.b-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.b-panel__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-3) 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+.b-panel__title {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  color: var(--ink-1);
+  white-space: nowrap;
+}
+.b-panel__count {
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+.b-panel__action {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.b-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.b-panel--inset {
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--bg);
+}
+.b-panel--inset > .b-panel__head { min-height: 40px; }
+
+/* Section label inside a panel: sentence case, quiet. */
+.b-section-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4) var(--s-4) var(--s-2);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.b-section-label .b-panel__count { margin-left: auto; }
+
+/* ───────────── Row ───────────── */
+.b-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--row-min);
+  padding: var(--s-2) var(--s-4);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  background: transparent;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+a.b-row:hover, button.b-row:hover, .b-row.is-hover { background: var(--surface-2); }
+.b-row.is-selected,
+.b-row[aria-current="page"],
+.b-row[aria-current="true"] {
+  background: var(--surface-2);
+}
+.b-row.is-selected::before,
+.b-row[aria-current="page"]::before,
+.b-row[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+.b-row:focus-visible { outline-offset: -2px; }

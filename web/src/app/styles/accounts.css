@@ -1,0 +1,63 @@
+/* Accounts: the project switcher, the person menu, the watch banner and the inbox button. */
+
+/* ───────────── accounts: project switcher, person menu, watch banner ───────────── */
+.acct-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  min-width: 0;
+  padding: 2px var(--s-2);
+  margin-left: calc(-1 * var(--s-2));
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  cursor: pointer;
+}
+.acct-switch:hover, .acct-switch[aria-expanded="true"] { background: var(--surface-2); }
+.acct-switch .b-icon { color: var(--ink-3); flex: none; }
+.acct-me { display: inline-grid; place-items: center; width: var(--control-md); height: var(--control-md); border: 1px solid var(--line); border-radius: 50%; background: var(--surface-1); color: var(--ink-2); padding: 0; cursor: pointer; overflow: hidden; flex: none; }
+.acct-me:hover, .acct-me[aria-expanded="true"] { border-color: var(--line-strong); }
+.acct-me--wait { cursor: default; }
+.acct-me__avatar { width: 100%; height: 100%; object-fit: cover; }
+.acct-menu__who { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); }
+.acct-menu__name { font-weight: 600; overflow-wrap: anywhere; }
+.acct-menu__meta { font-size: var(--t-xs); color: var(--ink-3); overflow-wrap: anywhere; }
+.acct-watch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-tint);
+  font-size: var(--t-sm);
+  color: var(--ink-1);
+}
+.acct-watch > span { flex: 1 1 320px; }
+.acct-watch > .b-icon { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .composer { animation: b-fade-in 100ms linear; }
+  .irow__spin { animation: none; border-top-color: var(--line-strong); }
+}
+
+/* The inbox button of the top bar (every page, signed in): the count shows on every screen size. */
+.topbar__inbox { text-decoration: none; }
+.topbar__inbox.has-items .topbar__queuecount {
+  display: inline;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--caution);
+  color: var(--bg);
+  font-size: var(--t-2xs);
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.topbar__inbox[aria-current="page"] { background: var(--surface-2); }
+@media (max-width: 600px) {
+  .topbar .topbar__inbox { min-width: 40px; height: 40px; justify-content: center; }
+}

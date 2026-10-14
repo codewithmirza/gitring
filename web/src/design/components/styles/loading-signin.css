@@ -1,0 +1,168 @@
+/* Skeleton, the sign-in provider buttons, ProgressRule, the keyframes and the line request form. */
+
+/* ───────────── Skeleton ───────────── */
+.b-skel {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--r-1);
+  background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in oklch, var(--surface-2) 45%, var(--bg)) 50%, var(--surface-2) 75%);
+  background-size: 300% 100%;
+  animation: b-shimmer 1.6s linear infinite;
+}
+.b-skel-rows,
+.b-skel-page,
+.b-skel-split { animation: b-skel-show 160ms var(--ease-out) 200ms both; }
+.b-skel-rows { display: grid; gap: 2px; padding: var(--s-2) 0; }
+.b-skel-row { display: grid; gap: 8px; padding: var(--s-3) var(--s-4) var(--s-3) var(--s-5); }
+.b-skel-page { display: grid; gap: var(--s-4); max-width: 1100px; margin: 0 auto; padding: var(--s-8); }
+.b-skel-page__blocks { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-5); margin-top: var(--s-5); }
+.b-skel-split { display: grid; grid-template-columns: var(--rail-left) minmax(0, 1fr); height: 100%; min-height: 0; }
+.b-skel-split__rail { border-right: 1px solid var(--line); background: var(--surface-1); }
+.b-skel-split__main { display: grid; align-content: start; gap: var(--s-4); padding: var(--s-7) var(--s-8); }
+@keyframes b-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@keyframes b-skel-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (max-width: 760px) {
+  .b-skel-split { grid-template-columns: minmax(0, 1fr); }
+  .b-skel-split__rail { display: none; }
+  .b-skel-split__main { padding: var(--s-6) var(--s-5); }
+  .b-skel-page { padding: var(--s-6) var(--s-5); }
+  .b-skel-page__blocks { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ───────────── Sign-in provider buttons ─────────────
+ * Google custom button rules (developers.google.com/identity/branding-guidelines): light theme fill #FFFFFF,
+ * 1px inside stroke #747775, text #1F1F1F; dark theme fill #131314, stroke #8E918F, text #E3E3E3;
+ * 14/20 medium text; 12px before the logo, 10px after it, 12px after the text. Both providers use the same
+ * shape and weight. The GitHub mark is black on light and white on dark (github.com/logos).
+ */
+/* The GitHub mark: black on light themes, white on dark themes (GitHub logo rules: no other colors). */
+.brand-mark--github { fill: #000000; }
+:root[data-theme="dusk"] .brand-mark--github,
+:root[data-theme="night"] .brand-mark--github { fill: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .brand-mark--github { fill: #ffffff; }
+}
+
+.b-provider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-family: "Google Sans", Roboto, var(--font-system);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: .1px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.b-provider:hover { background: #f2f2f2; }
+.b-provider[aria-busy="true"] { cursor: progress; }
+.b-provider .brand-mark { flex: none; }
+.b-provider .brand-mark--github { fill: #000000; }
+.b-provider__text { flex: 1; min-width: 0; }
+.b-provider__tag { flex: none; font-size: 11px; line-height: 16px; font-weight: 500; color: #474747; }
+:root[data-theme="dusk"] .b-provider,
+:root[data-theme="night"] .b-provider { border-color: #8e918f; background: #131314; color: #e3e3e3; }
+:root[data-theme="dusk"] .b-provider:hover,
+:root[data-theme="night"] .b-provider:hover { background: #26272a; }
+:root[data-theme="dusk"] .b-provider .brand-mark--github,
+:root[data-theme="night"] .b-provider .brand-mark--github { fill: #ffffff; }
+:root[data-theme="dusk"] .b-provider__tag,
+:root[data-theme="night"] .b-provider__tag { color: #c4c7c5; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .b-provider { border-color: #8e918f; background: #131314; color: #e3e3e3; }
+  :root:not([data-theme]) .b-provider:hover { background: #26272a; }
+  :root:not([data-theme]) .b-provider .brand-mark--github { fill: #ffffff; }
+  :root:not([data-theme]) .b-provider__tag { color: #c4c7c5; }
+}
+
+/* ───────────── ProgressRule ───────────── */
+.b-progress {
+  position: relative;
+  height: 1px;
+  overflow: hidden;
+  background: var(--line);
+}
+.b-progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32%;
+  background: var(--accent);
+  animation: b-slide 1.4s var(--ease-in-out) infinite;
+}
+
+/* ───────────── keyframes ───────────── */
+@keyframes b-slide {
+  from { left: -40%; }
+  to { left: 100%; }
+}
+@keyframes b-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes b-toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes b-drawer-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .b-progress::after,
+  .b-btn__busy::after {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: .5;
+  }
+  .b-toast, dialog.b-dialog[open], dialog.b-drawer[open], .b-pop[data-placed], .b-pop[data-placed][data-side="top"] {
+    animation-name: b-fade-in;
+    animation-duration: 100ms;
+  }
+  .b-skel { animation: none; }
+  .b-confirm__timer { display: none; }
+  .b-inline { animation: b-fade-in 100ms linear; }
+}
+
+/* Line requests: a person selects lines of a diff and asks the agent to change them (LineRequest.tsx). */
+.b-diff__hint { padding: var(--s-2) var(--s-3); font-size: var(--t-xs); color: var(--ink-3); }
+.b-diff__lnbtn {
+  min-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+}
+.b-diff__lnbtn:hover, .b-diff__lnbtn:focus-visible { color: var(--accent); text-decoration: underline; }
+.b-diff__table tr.is-picked { box-shadow: inset 3px 0 0 var(--accent); }
+.b-diff__table tr.is-picked .b-diff__lnbtn { color: var(--accent); font-weight: 600; }
+.b-diff__table tr.is-request td { padding: var(--s-3) !important; background: var(--surface-1); white-space: normal; }
+.b-linereq { display: grid; gap: var(--s-2); max-width: 560px; font-family: var(--font-human, inherit); white-space: normal; }
+.b-linereq__title { font-size: var(--t-sm); font-weight: 600; color: var(--ink-1); }
+.b-linereq__where { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-2); }
+.b-linereq__num { width: 8ch; }
+.b-linereq__acts { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.b-linereq__error { display: flex; align-items: center; gap: var(--s-1); font-size: var(--t-xs); color: var(--danger); }

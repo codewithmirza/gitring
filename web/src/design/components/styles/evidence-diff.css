@@ -1,0 +1,184 @@
+/* EvidenceBar, DiffView and PreviewFrame. */
+
+/* ───────────── EvidenceBar ───────────── */
+.b-evidence {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.b-evidence__bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+}
+.b-evidence__seg {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 1px;
+  background: var(--clear);
+}
+.b-evidence__seg.is-fail {
+  background: repeating-linear-gradient(135deg, var(--danger) 0 1.5px, transparent 1.5px 4px);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+.b-evidence__seg.is-pending {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.b-evidence__label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--ink-2);
+}
+.b-evidence__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-agent);
+  font-weight: 500;
+  color: var(--ink-1);
+}
+.b-evidence__count.is-ok { color: var(--clear); }
+.b-evidence__count.is-fail { color: var(--danger); }
+.b-evidence__fails {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--danger);
+}
+.b-evidence__fails li { display: flex; gap: 4px; align-items: baseline; }
+.b-evidence__fails .b-icon { width: 12px; height: 12px; transform: translateY(2px); }
+
+/* ───────────── DiffView ───────────── */
+.b-diff {
+  display: grid;
+  gap: var(--s-4);
+  min-width: 0;
+}
+.b-diff__file {
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  overflow: hidden;
+  background: var(--bg);
+}
+.b-diff__filehead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 36px;
+  padding: 0 var(--s-3);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-xs);
+}
+.b-diff__path { font-family: var(--font-agent); color: var(--ink-1); }
+.b-diff__stat { margin-left: auto; font-family: var(--font-agent); color: var(--ink-3); white-space: nowrap; }
+.b-diff__stat .add { color: var(--clear); }
+.b-diff__stat .del { color: var(--danger); }
+.b-diff__scroll { overflow-x: auto; }
+.b-diff__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  line-height: 18px;
+}
+.b-diff__table td { padding: 0; vertical-align: top; }
+.b-diff__ln {
+  width: 1%;
+  min-width: 36px;
+  padding: 0 8px !important;
+  text-align: right;
+  color: var(--ink-3);
+  user-select: none;
+  white-space: nowrap;
+}
+.b-diff__sign {
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  color: var(--ink-3);
+}
+.b-diff__code {
+  white-space: pre;
+  padding-right: var(--s-5) !important;
+  color: var(--ink-1);
+}
+.b-diff__table tr.is-add { background: var(--diff-add); }
+.b-diff__table tr.is-del { background: var(--diff-del); }
+.b-diff__table tr.is-add .b-diff__sign { color: var(--clear); font-weight: 500; }
+.b-diff__table tr.is-del .b-diff__sign { color: var(--danger); font-weight: 500; }
+.b-diff__table tr.is-hunk td {
+  padding: 4px var(--s-3) !important;
+  background: var(--accent-tint);
+  color: var(--ink-2);
+  white-space: pre;
+}
+.b-diff__table tr.is-gap td {
+  padding: 2px var(--s-3) !important;
+  color: var(--ink-3);
+  background: var(--surface-1);
+  font-family: var(--font-system);
+  text-align: left;
+}
+.b-diff--lg .b-diff__table { font-size: var(--t-sm); line-height: var(--lh-sm); }
+.b-diff__empty { padding: var(--s-4); color: var(--ink-3); }
+
+/* ───────────── PreviewFrame ───────────── */
+.b-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-4);
+  overflow: hidden;
+  background: var(--surface-1);
+}
+.b-preview__bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 4px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.b-preview__url {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+}
+.b-preview__url:hover { border-color: var(--line-strong); }
+.b-preview__frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fbfaf7;
+}
+.b-preview__frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fbfaf7;
+}
+.b-preview__status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}

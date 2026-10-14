@@ -1,0 +1,150 @@
+/* The pickers, the mark popover, a ref without a file, loading shapes, touch and phone rules, line requests and Clone. */
+
+/* ───────────── pickers ───────────── */
+.cv-pick { display: grid; gap: var(--s-2); width: min(340px, calc(100vw - 40px)); padding: var(--s-1); }
+.cv-pick__input { width: 100%; height: 32px; font-size: var(--t-sm); }
+.cv-pick__list { display: grid; gap: 1px; max-height: min(52vh, 380px); overflow: auto; overscroll-behavior: contain; }
+.cv-pick__group { padding: var(--s-2) var(--s-2) 2px; font-size: var(--t-xs); font-weight: 500; color: var(--ink-3); }
+.cv-pick__empty { padding: var(--s-2); font-size: var(--t-sm); color: var(--ink-3); }
+.cv-pick__foot { padding: var(--s-1) var(--s-2) 0; border-top: 1px solid var(--line); font-size: var(--t-2xs); color: var(--ink-3); }
+.cv-opt {
+  display: grid;
+  gap: 1px;
+  min-height: 32px;
+  padding: 5px var(--s-2);
+  border-radius: var(--r-2);
+  cursor: pointer;
+}
+.cv-opt.is-active { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+.cv-opt__label { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--t-sm); }
+.cv-opt__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-opt__tag { flex: none; margin-left: auto; padding: 0 6px; border-radius: var(--r-1); background: var(--accent-tint); color: var(--accent); font-size: var(--t-2xs); line-height: 16px; font-weight: 600; }
+.cv-opt__hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 14px; font-size: var(--t-xs); color: var(--ink-3); }
+.cv-opt__dots { display: inline-flex; gap: 3px; margin-left: auto; }
+
+.cv-goline { display: grid; gap: var(--s-2); width: min(260px, calc(100vw - 40px)); padding: var(--s-2); }
+.cv-goline__label { font-size: var(--t-xs); font-weight: 500; color: var(--ink-2); }
+.cv-goline__row { display: flex; gap: var(--s-2); }
+.cv-goline__row .b-input { flex: 1; min-width: 0; height: 30px; }
+.cv-goline__err { font-size: var(--t-xs); color: var(--danger); }
+
+/* marks popover */
+.cv-markcard { display: grid; gap: var(--s-3); width: min(340px, calc(100vw - 40px)); padding: var(--s-2); font-size: var(--t-sm); }
+.cv-markcard__item { display: grid; gap: 4px; }
+.cv-markcard__item + .cv-markcard__item { padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.cv-markcard__title { display: flex; align-items: center; gap: 6px; }
+.cv-markcard__task { font-size: var(--t-md); line-height: var(--lh-md); }
+.cv-markcard__msg { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.cv-markcard__note { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--caution); }
+.cv-markcard__meta { font-size: var(--t-xs); color: var(--ink-3); }
+.cv-markcard__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: 2px; }
+.cv-markcard__none { padding: var(--s-2); color: var(--ink-3); }
+
+/* ───────────── a ref without a file ───────────── */
+.cv-over { display: grid; gap: var(--s-3); max-width: 860px; padding: var(--s-6) var(--s-6) var(--s-10); }
+.cv-over__eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--ink-3); }
+.cv-over__eyebrow strong { color: var(--ink-1); }
+.cv-over__title { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 500; }
+.cv-over__h { margin-top: var(--s-3); font-size: var(--t-sm); font-weight: 600; }
+.cv-over__approach { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-1); max-width: 80ch; }
+.cv-over__plan { margin: 0; padding-left: 20px; display: grid; gap: 2px; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); }
+.cv-over__files { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-3); }
+.cv-over__files > li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-3); min-height: 36px; padding: var(--s-1) var(--s-3); font-size: var(--t-sm); }
+.cv-over__files > li + li { border-top: 1px solid var(--line); }
+.cv-over__files a { min-width: 0; overflow-wrap: anywhere; }
+.cv-over__dots { display: inline-flex; gap: 3px; min-width: 30px; }
+.cv-over__who,
+.cv-over__stat { margin-left: auto; font-size: var(--t-xs); color: var(--ink-3); }
+.cv-over__acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
+.cv-readme { display: grid; gap: var(--s-2); margin-top: var(--s-4); }
+.cv-static {
+  margin: 0;
+  padding: var(--s-4);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--bg);
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cv-static__more { color: var(--ink-3); }
+
+/* ───────────── loading ───────────── */
+.cv-skel { display: grid; gap: 10px; padding: var(--s-4); animation: cv-show 160ms var(--ease-out) both; }
+.cv-skel--tree { padding: var(--s-3); }
+.cv-skel__line {
+  display: block;
+  height: 10px;
+  border-radius: var(--r-1);
+  background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in oklch, var(--surface-2) 45%, var(--bg)) 50%, var(--surface-2) 75%);
+  background-size: 300% 100%;
+  animation: cv-shimmer 1.6s linear infinite;
+}
+@keyframes cv-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@keyframes cv-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ───────────── touch, phones, motion ───────────── */
+@media (pointer: coarse) {
+  .cv-iconbtn, .cv-refbtn, .cv-findbtn, .cv-tool, .cv-seg__opt { min-height: 44px; }
+  .cv-opt, .cv-menu__item { min-height: 44px; }
+  .cv-metabtn { min-height: 44px; }
+  .cv-linkbtn, .cv-crumbs__dir { min-height: 44px; }
+}
+@media (max-width: 760px) {
+  .cv-bar { padding: var(--s-2) var(--s-3); }
+  .cv-bar__meta { display: none; }
+  .cv-findbtn .b-kbd { display: none; }
+  .cv-refbtn { flex: 1 1 160px; }
+  .cv.is-narrow .cv-body { grid-template-columns: minmax(0, 1fr); }
+  .cv.is-narrow[data-panel="tree"] .cv-main { display: none; }
+  .cv-tree { border-right: 0; }
+  .cv-filehead { padding: var(--s-2) var(--s-3); }
+  .cv-filehead__acts { margin-left: 0; }
+  .cv-ctx { padding: var(--s-2) var(--s-3); }
+  .cv-ctx__item { grid-template-columns: 12px minmax(0, 1fr); }
+  .cv-ctx__acts { grid-column: 2; justify-self: start; }
+  .cv-lines { font-size: 12px; }
+  .cv-over { padding: var(--s-5) var(--s-4) var(--s-10); }
+  .cv-alldiffs { padding: var(--s-3) var(--s-3) var(--s-10); }
+  .cv-scroll > .cv-diff { margin: var(--s-3); }
+  .cv-keys { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv-skel__line { animation: none; }
+  .cv-skel { animation: none; }
+  .cv-line.is-flash .cv-code { animation: none; background: color-mix(in oklch, var(--caution) 18%, transparent); }
+}
+
+/* Line requests on the diff of a work copy: the new line number is a button; the form opens under the lines. */
+.cv-drow__n--btn { padding-right: 0; }
+.cv-drow__nbtn {
+  width: 100%;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+}
+.cv-drow__nbtn::before { content: attr(data-n); }
+.cv-drow__nbtn:hover, .cv-drow__nbtn:focus-visible { color: var(--accent); text-decoration: underline; }
+.cv-drow.is-picked { box-shadow: inset 3px 0 0 var(--accent); }
+.cv-drow.is-picked .cv-drow__nbtn { color: var(--accent); font-weight: 600; }
+.cv-drow--request { grid-template-columns: minmax(0, 1fr); padding: var(--s-3); background: var(--surface-1); white-space: normal; width: auto; }
+
+/* Clone (members): the git command with a read token. */
+.cv-clone { display: grid; gap: var(--s-3); padding: var(--s-1); min-width: 0; }
+.cv-clone__title { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--ink-1); }
+.cv-clone__text { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
+.cv-clone__error { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--danger); }
+.cv-clone .b-btn { justify-self: start; }
