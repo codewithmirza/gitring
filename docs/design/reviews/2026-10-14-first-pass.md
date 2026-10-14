@@ -235,10 +235,10 @@ Notes on the scores:
 - **File:** `web/src/views/SettingsView.tsx`, `web/src/views/trains-copy.ts`, `web/src/views/steward-copy.ts`, `web/src/views/webhook-copy.ts`, `web/src/views/approval-copy.ts` (the help of the three choices).
 - **Evidence:** `settings-day-desktop-full.png`.
 
-### 24. S3. Seven pages, seven left edges
+### 24. S3. Seven pages, five left edges
 
 - **What is wrong:** at 1440 px the title of a page starts at x = 132 (History, Not found), 152 (Connect), 202 (Projects, Settings), 292 (Account) and 432 (Inbox). The Overview, Tasks and Code views use the whole width.
-- **Why a person cares:** the title jumps when the person moves between pages. It feels like seven small apps.
+- **Why a person cares:** the title jumps when the person moves between pages. It feels like several small apps.
 - **Fix:** one column width and one left edge for the pages that are documents, and the full width only for the map, the task list and the code.
 - **File:** `web/src/app/app.css` (`.page`, line 694), `web/src/views/projects.css`, `web/src/views/account.css`, `web/src/views/inbox.css`, `web/src/views/connect.css`, `web/src/views/logbook.css`.
 - **Evidence:** `projects-day-desktop.png`, `account-day-desktop.png`, `inbox-day-desktop.png`, `history-day-desktop.png`, `connect-day-desktop.png`, `settings-day-desktop.png`, `notfound-day-desktop.png`.

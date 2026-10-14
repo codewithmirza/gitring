@@ -91,4 +91,4 @@ All words in the product follow ASD-STE100 Simplified Technical English (see `do
 - **Space and shape:** the spacing tokens `--s-*`, the radii `--r-*`. Hairlines, not shadows. Only overlays have a shadow.
 - **Motion:** 120, 200, 320 ms. One pulse when two plans get close. No loops. With reduced motion: fades only.
 - **Accessibility floor:** text contrast 4.5 to 1, controls 3 to 1, a visible focus ring, every control on the keyboard, hit areas of at least 32 px (24 px at the least, also for a link in a line of text on a phone), the layout works at 320 px width.
-- **One page column.** The title of a page starts at the same left edge on every page. The first review found seven different edges on seven pages.
+- **One page column.** The title of a page starts at the same left edge on every page. The first review found five different edges on seven pages.
