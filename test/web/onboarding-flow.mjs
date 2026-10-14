@@ -712,7 +712,7 @@ for (const theme of ["day", "dusk", "night"]) {
     [".np-describe__hint", 4.5],
     [".np-start__opt .np-opt__text", 4.5],
     [".np-search__input", 4.5],
-    [".pj-card__meta", 4.5],
+    [".pj-card__facts", 4.5],
   ]) {
     const c = await contrastOf(page, sel);
     check(c !== null && c >= min, `[${theme}] ${sel} ≥ ${min}:1`, c);

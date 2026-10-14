@@ -1,5 +1,5 @@
 /*
- * The styles of the projects page, the start picker and the project settings.
+ * The styles of the projects page, the project cards, the start picker and the project settings.
  * Type sizes: 11, 13, 15.
  */
 
@@ -23,33 +23,45 @@
 .np__lede { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); max-width: 60ch; }
 
 .pj-grid { list-style: none; margin: var(--s-4) 0 0; padding: 0; display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+/* The card is one box. Its link stretches over it, and the answer buttons sit above the link. */
 .pj-card {
+  position: relative;
   display: grid;
   gap: var(--s-2);
   width: 100%;
   height: 100%;
-  min-height: 108px;
   align-content: start;
   padding: var(--s-4) var(--s-5);
   border: 1px solid var(--line);
   border-radius: var(--r-3);
   background: var(--surface-1);
   color: var(--ink-1);
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
   transition: border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
 }
-a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2); }
-.pj-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pj-card:has(.pj-card__link:hover) { border-color: var(--line-strong); background: var(--surface-2); }
+.pj-card:has(.pj-card__link:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .pj-card.is-current { border-color: var(--accent); }
+.pj-card.has-question { border-color: var(--caution); }
+.pj-card__link { min-width: 0; color: inherit; text-decoration: none; }
+.pj-card__link:focus-visible { outline: none; }
+.pj-card__link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 .pj-card__top { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
 .pj-card__icon { flex: none; color: var(--ink-2); }
 .pj-card__name { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pj-card__lock { display: inline-flex; color: var(--ink-3); }
-.pj-card__source { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
-.pj-card__meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.pj-card__live { display: flex; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.pj-card__live--waits { font-weight: 500; color: var(--caution); }
+.pj-card__facts { display: flex; flex-wrap: wrap; gap: 0 var(--s-4); margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.pj-card__source { margin: 0; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-2); overflow-wrap: anywhere; }
 .pj-grid--skeleton .pj-card { gap: var(--s-3); }
+
+/* The question that waits, with its answer, on the card. */
+.pj-ask { position: relative; z-index: 1; display: grid; gap: var(--s-2); padding: var(--s-3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.pj-ask__title { margin: 0; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-1); overflow-wrap: anywhere; }
+.pj-ask__line { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pj-ask__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+.pj-ask__link, .pj-ask__more { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 32px; font-size: var(--t-sm); font-weight: 500; }
+.pj-ask__more { font-weight: 400; }
 
 /* ───────────── settings ───────────── */
 .np-help, .np__help { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); margin: 0; max-width: 64ch; }
@@ -145,5 +157,4 @@ a.pj-card:hover { border-color: var(--line-strong); background: var(--surface-2)
 @media (max-width: 600px) {
   .pj-start { padding: var(--s-4); margin: 0 calc(-1 * var(--s-1)); }
   .projects .b-btn, .settings .b-btn { min-height: 44px; }
-  .pj-card { min-height: 0; }
 }
