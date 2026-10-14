@@ -2,7 +2,7 @@
 
 This file is for a person or an agent who continues the build. It says what is done, what is open, and how to go on. The full specification (every workstream, every contract, the rules for builders) is in `private/build/PLAN.md` on Mirza's computer; that folder is not in git. This file carries enough to continue without it.
 
-Last update: 14 Oct 2026. All workstreams are merged into `agentic` and `main`.
+Last update: 14 Oct 2026, evening. All workstreams of the agentic-first build are merged into `agentic` and `main`. Wave 3 (readable code, the design agent) is in progress: see the next section.
 
 ## Branches
 
@@ -32,6 +32,22 @@ Last update: 14 Oct 2026. All workstreams are merged into `agentic` and `main`.
 | docs | README, plugin skill and a README test. |
 
 Also: the plugin test runs on Windows.
+
+## Wave 3: readable code and the design agent (in progress)
+
+Mirza asked for two things: every file easy to read, and better UX and UI through a design knowledge agent (idea from the talk "How to scale intent, quality, and artistry with AI" by Katie Dill, Stripe).
+
+Already on `main`:
+- `docs/CODE-STYLE.md`: the rules of a readable file, the glossary of code names and plain names, how to split a file.
+- `docs/design/INTENT.md` and `docs/design/CRITIQUE.md`: what gitring looks like and why, the review checks, the loop "review, fix, look again".
+- `.claude/agents/gitring-design.md`: the design agent. Ask Claude Code: "use the gitring-design agent to review the Tasks screen".
+- `test/structure.test.ts`: the size, header and README rules. Its three lists are debts. Fix a debt, then delete its line.
+
+In progress (branches, each in a worktree `.claude/worktrees/ws-<name>`): `ws/s-harbor` (split of `src/harbor/harbor.ts` into a chain of layers under `src/harbor/master/`), `ws/s-core` (`symbols.ts`, `types.ts`), `ws/s-server` (`directory.ts`, `worker/index.ts`, `oauth.ts`, `artifacts.ts`), `ws/s-web` (the big views and CSS), `ws/s-cli` (`cli/gitring.mjs`, scripts), `ws/design` (`scripts/shots.mjs`, `docs/design/SCREENS.md`, the first review in `docs/design/reviews/`).
+
+Rules of this wave: code moves, behavior does not change; a split file stays as the front door with the same exports; each branch stays green (typecheck and its focused tests) at every commit.
+
+Next: merge each branch into `agentic`, delete the stale lines of `test/structure.test.ts`, run the full suite, fast-forward `main`, push. Then fix the S1 and S2 findings of the first design review on the split web code and look at the screenshots again (`node scripts/shots.mjs`). Then write `docs/CODE-MAP.md`.
 
 ## Open items
 
