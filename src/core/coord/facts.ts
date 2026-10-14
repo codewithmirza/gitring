@@ -14,10 +14,12 @@ import {
   isCodePath,
   shapeFromCourse,
   shapeFromFootprint,
+  sharedChanges,
   sharedFiles as shapeSharedFiles,
   symbolName,
   symbolPath,
   unionShapes,
+  type NameIndex,
   type SignatureInfo,
   type WorkShape,
 } from "../analysis/range";
@@ -36,14 +38,17 @@ export const MAX_CANDIDATES = 20;
 /** Default prefilter: range ≤ 3 (direct import). */
 export const DEFAULT_MAX_RANGE: Range = 3;
 
-/** Attempt states that are not traffic any more (unless passed in explicitly as landed traffic). */
+/**
+ * Attempt states that are not traffic any more (unless passed in explicitly as landed traffic).
+ * A redo ("rederiving") is traffic: it writes code like any work copy. The stale work copy that it
+ * redoes is not, and the two share one task, so they are never a pair.
+ */
 const OUT_OF_TRAFFIC: ReadonlySet<AttemptStatus> = new Set<AttemptStatus>([
   "landed",
   "abandoned",
   "alternate",
   "failed",
   "stale",
-  "rederiving",
 ]);
 
 const WAITING: ReadonlySet<AttemptStatus> = new Set<AttemptStatus>(["submitted", "checking", "ready", "landing"]);
@@ -79,9 +84,11 @@ export function buildVesselView(args: {
   signatures?: Record<SymbolKey, SignatureInfo>;
   /** Signatures on main, to detect declared signature changes in the course. */
   baseSignatures?: Record<SymbolKey, string>;
+  /** The names that main defines, to place course symbols without a path (see qualifyBareName). */
+  definedIn?: NameIndex;
 }): VesselView {
   const { attempt, intent, agent } = args;
-  const shape = unionShapes(shapeFromCourse(attempt.course, args.baseSignatures), shapeFromFootprint(attempt.footprint, args.signatures));
+  const shape = unionShapes(shapeFromCourse(attempt.course, args.baseSignatures, args.definedIn), shapeFromFootprint(attempt.footprint, args.signatures));
   return {
     attempt,
     intent,
@@ -109,12 +116,44 @@ function lookupRange(prev: ReadonlyMap<string, Range> | Readonly<Record<string, 
   return (prev as Readonly<Record<string, Range>>)[id];
 }
 
+/** One traffic vessel, measured against the incoming vessel. */
+export interface MeasuredPair {
+  view: VesselView;
+  range: Range;
+  /** The range went down since the last check. */
+  closing: boolean;
+}
+
+/**
+ * The radar: the range of every traffic vessel to the incoming vessel, near or far. The caller stores
+ * each range, so that the next check can see a pair come closer (closing), also from range 5.
+ * Skips: itself, attempts of the same agent (unless landed), sibling attempts of the same intent, and
+ * attempts that left the traffic (landed/abandoned/alternate/failed/stale) unless the view says state
+ * "landed". In the order of `traffic`.
+ */
+export function measureTraffic(
+  incoming: VesselView,
+  traffic: VesselView[],
+  graph: ImportGraph,
+  previousRanges?: ReadonlyMap<string, Range> | Readonly<Record<string, Range>>,
+): MeasuredPair[] {
+  const out: MeasuredPair[] = [];
+  const seen = new Set<string>();
+  for (const v of traffic) {
+    if (!v || seen.has(v.attempt.id) || !isTrafficFor(incoming, v)) continue;
+    seen.add(v.attempt.id);
+    const range = computeRange(incoming.shape, v.shape, graph);
+    const prev = lookupRange(previousRanges, v.attempt.id);
+    out.push({ view: v, range, closing: prev !== undefined && range < prev });
+  }
+  return out;
+}
+
 /**
  * Traffic near the incoming vessel: range ≤ maxRange, or closing (range went down since the
- * last check; pass `previousRanges` keyed by other attempt id — an optional extension).
- * Skips: itself, attempts of the same agent (unless landed), sibling attempts of the same
- * intent, and attempts that left the traffic (landed/abandoned/alternate/failed/stale/rederiving)
- * unless the view says state "landed". Sorted by range, then most recent update. Max 20.
+ * last check; pass `previousRanges` keyed by other attempt id — an optional extension). A closing
+ * pair is a candidate at any range (5 → 4 included). See measureTraffic for the vessels it skips.
+ * Sorted by range, then most recent update. Max 20.
  */
 export function selectCandidates(
   incoming: VesselView,
@@ -123,16 +162,13 @@ export function selectCandidates(
   maxRange: Range = DEFAULT_MAX_RANGE,
   previousRanges?: ReadonlyMap<string, Range> | Readonly<Record<string, Range>>,
 ): { view: VesselView; range: Range }[] {
+  return pickCandidates(measureTraffic(incoming, traffic, graph, previousRanges), maxRange);
+}
+
+/** The candidates among measured pairs (see selectCandidates). */
+export function pickCandidates(measured: readonly MeasuredPair[], maxRange: Range = DEFAULT_MAX_RANGE): { view: VesselView; range: Range }[] {
   const out: { view: VesselView; range: Range }[] = [];
-  const seen = new Set<string>();
-  for (const v of traffic) {
-    if (!v || seen.has(v.attempt.id) || !isTrafficFor(incoming, v)) continue;
-    seen.add(v.attempt.id);
-    const range = computeRange(incoming.shape, v.shape, graph);
-    const prev = lookupRange(previousRanges, v.attempt.id);
-    const closing = prev !== undefined && range < prev;
-    if (range <= maxRange || closing) out.push({ view: v, range });
-  }
+  for (const m of measured) if (m.range <= maxRange || m.closing) out.push({ view: m.view, range: m.range });
   out.sort(
     (x, y) =>
       x.range - y.range ||
@@ -215,7 +251,7 @@ export function buildPairFacts(incoming: VesselView, other: VesselView, graph: I
     otherIntentId: other.intent.id,
     otherState: other.state,
     sharedFiles: shared,
-    sharedSymbols: intersectSymbols(a.changed, b.changed),
+    sharedSymbols: sharedChanges(a, b),
     interfaceHits,
     hunkOverlaps,
     range,

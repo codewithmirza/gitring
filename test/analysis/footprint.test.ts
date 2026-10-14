@@ -150,7 +150,8 @@ describe("computeFootprint: references", () => {
       `    if (url.pathname.startsWith("/api/products/")) {\n      return Response.json(findProduct(url.pathname.slice(14)));\n    }\n    const query =`,
     );
     const f = fp([{ path: "src/index.js", base: INDEX_JS, head }]);
-    expect(f.symbols.modified).toEqual(["src/index.js#default"]);
+    // The handler `fetch` is a member of the default-exported object: the object itself does not change.
+    expect(f.symbols.modified).toEqual(["src/index.js#default.fetch"]);
     expect(f.symbols.referenced).toEqual(["src/products.js#PRODUCTS", "src/products.js#findProduct", "src/render.js#renderPage"]);
   });
 
@@ -246,5 +247,108 @@ describe("computeFootprint: files", () => {
     const a: FileVersions = { path: "src/products.js", base: PRODUCTS_JS, head: PRODUCTS_CURRENCY };
     const b: FileVersions = { path: "src/render.js", base: RENDER_JS, head: RENDER_JS.replace("All products", "Every product") };
     expect(JSON.stringify(fp([a, b]))).toBe(JSON.stringify(fp([b, a])));
+  });
+});
+
+describe("computeFootprint: members of classes and objects", () => {
+  // 1 import · 3 class Cart · 4 #items · 6 constructor 6–8 · 10–14 add (JSDoc on 10) · 16–18 total · 19 }
+  const CART = `import { formatPrice } from "./products.js";
+
+export class Cart extends Base {
+  #items = [];
+
+  constructor(owner) {
+    this.owner = owner;
+  }
+
+  /** Add one item. */
+  add(item) {
+    this.#items.push(item);
+    return this.total();
+  }
+
+  total() {
+    return formatPrice(this.#items.reduce((s, x) => s + x.cents, 0));
+  }
+}
+`;
+  const ALL = new Set([...ALL_FILES, "src/cart.js", "src/shop.js"]);
+  const cart = (head: string) => fp([{ path: "src/cart.js", base: CART, head }], ALL);
+
+  it("marks only the method that changes, not the class", () => {
+    const a = cart(replaceOnce(CART, "this.#items.push(item);", "this.#items.push({ ...item });"));
+    const b = cart(replaceOnce(CART, "s + x.cents", "s + x.cents * x.qty"));
+    expect(a.symbols.modified).toEqual(["src/cart.js#Cart.add"]);
+    expect(b.symbols.modified).toEqual(["src/cart.js#Cart.total"]);
+    // this.total() and this.#items are uses of the members of the same class.
+    expect(a.symbols.referenced).toEqual(["src/cart.js#Cart.#items", "src/cart.js#Cart.total"]);
+    expect(b.symbols.referenced).toEqual(["src/cart.js#Cart.#items", "src/products.js#formatPrice"]);
+  });
+
+  it("marks the class when its head changes", () => {
+    const f = cart(replaceOnce(CART, "extends Base", "extends Store"));
+    expect(f.symbols.modified).toEqual(["src/cart.js#Cart"]);
+  });
+
+  it("counts a JSDoc change as a change of its method", () => {
+    const f = cart(replaceOnce(CART, "/** Add one item. */", "/** Add one item to the cart. */"));
+    expect(f.symbols.modified).toEqual(["src/cart.js#Cart.add"]);
+  });
+
+  it("reports new and removed methods without a change of the class", () => {
+    const added = cart(replaceOnce(CART, "  total() {", "  clear() {\n    this.#items = [];\n  }\n\n  total() {"));
+    expect(added.symbols).toMatchObject({ defined: ["src/cart.js#Cart.clear"], modified: [], removed: [] });
+    const removed = cart(replaceOnce(CART, "  total() {\n    return formatPrice(this.#items.reduce((s, x) => s + x.cents, 0));\n  }\n", ""));
+    expect(removed.symbols.removed).toEqual(["src/cart.js#Cart.total"]);
+    expect(removed.symbols.modified).toEqual([]);
+  });
+
+  it("finds a method signature change (R3), and a constructor change as a change of the class signature", () => {
+    const { footprint, signatures } = analyzeFootprint([{ path: "src/cart.js", base: CART, head: replaceOnce(CART, "add(item) {", "add(item, qty) {") }], ALL, NOW);
+    expect(footprint.symbols.signatureChanged).toEqual(["src/cart.js#Cart.add"]);
+    expect(signatures["src/cart.js#Cart.add"]).toEqual({ before: "Cart.add(item)", after: "Cart.add(item, qty)" });
+    const ctor = analyzeFootprint([{ path: "src/cart.js", base: CART, head: replaceOnce(CART, "constructor(owner) {", "constructor(owner, currency) {") }], ALL, NOW);
+    expect(ctor.footprint.symbols.signatureChanged).toEqual(["src/cart.js#Cart", "src/cart.js#Cart.constructor"]);
+    expect(ctor.signatures["src/cart.js#Cart"]).toEqual({ before: "Cart(owner)", after: "Cart(owner, currency)" });
+  });
+
+  it("gives members the keys of the exported names of their class", () => {
+    const base = CART.replace("export class Cart", "export default class Cart");
+    const f = fp([{ path: "src/cart.js", base, head: replaceOnce(base, "s + x.cents", "s + 2 * x.cents") }], ALL);
+    expect(f.symbols.modified).toEqual(["src/cart.js#Cart.total", "src/cart.js#default.total"]);
+  });
+
+  it("keeps the old rule (the whole class) when a version does not parse", () => {
+    const f = cart(replaceOnce(CART, "this.#items.push(item);", "this.#items.push(item;"));
+    expect(f.symbols.modified).toContain("src/cart.js#Cart");
+    expect(f.symbols.modified.some((k) => k.includes("Cart."))).toBe(false);
+  });
+
+  it("uses Owner.member of an imported class when the repository has that member", () => {
+    const base = `import { Cart } from "./cart.js";\nexport function rate() {\n  return 1;\n}\n`;
+    const head = `import { Cart } from "./cart.js";\nexport function rate() {\n  return Cart.rate() + Cart.unknown;\n}\n`;
+    const known = (k: string) => k === "src/cart.js#Cart.rate";
+    const withIndex = computeFootprint([{ path: "src/shop.js", base, head }], ALL, NOW, { knownMember: known });
+    expect(withIndex.symbols.referenced).toEqual(["src/cart.js#Cart", "src/cart.js#Cart.rate"]);
+    const without = fp([{ path: "src/shop.js", base, head }], ALL);
+    expect(without.symbols.referenced).toEqual(["src/cart.js#Cart"]);
+  });
+
+  it("gives the import edges of the changed files from the same parse (for the graph of a check)", () => {
+    const head = `import { formatPrice } from "./products.js";\nimport { Cart } from "./cart.js";\nexport const shop = () => new Cart(formatPrice(1));\n`;
+    const { imports } = analyzeFootprint([{ path: "src/shop.js", base: null, head }, { path: "src/cart.js", base: CART, head: null }], ALL, NOW);
+    expect(imports).toEqual([
+      ["src/shop.js", "src/products.js"],
+      ["src/shop.js", "src/cart.js"],
+    ]);
+  });
+
+  it("resolves aliased imports (tsconfig paths)", () => {
+    const base = `import { formatPrice } from "@/products.js";\nexport function label(p) {\n  return p.title;\n}\n`;
+    const head = base.replace("return p.title;", "return p.title + formatPrice(p.cents);");
+    const aliases = { paths: [{ pattern: "@/*", targets: ["src/*"] }] };
+    const f = computeFootprint([{ path: "src/shop.js", base, head }], ALL, NOW, { aliases });
+    expect(f.symbols.referenced).toEqual(["src/products.js#formatPrice"]);
+    expect(fp([{ path: "src/shop.js", base, head }], ALL).symbols.referenced).toEqual([]);
   });
 });

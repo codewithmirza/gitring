@@ -1,6 +1,6 @@
 import { parse } from "acorn";
 import { describe, expect, it } from "vitest";
-import { analyzeModule, extractSymbols, isAnalyzable, resolveImport, stripTypeScript } from "../../src/core/analysis/symbols";
+import { analyzeModule, extractSymbols, isAnalyzable, pathAliasesOf, resolveImport, stripTypeScript } from "../../src/core/analysis/symbols";
 import { ALL_FILES, INDEX_JS, PRODUCTS_JS, RENDER_JS } from "./fixtures";
 
 describe("extractSymbols: the app", () => {
@@ -395,9 +395,18 @@ const h = (handlers as Record<string, unknown>)["x"] as
     expect(s.decls.flatten.params).toEqual(["error", "mapper = (issue) => issue.message"]);
   });
 
-  it("falls back to the regex scanner when it cannot strip, with types removed from params", () => {
+  it("reads TSX: the types are stripped and JSX parses (acorn-jsx)", () => {
     const src = `import { toMoney } from "./money";\nexport function formatPrice(cents: number, currency?: string = "USD"): string {\n  return toMoney(cents);\n}\nexport const view = () => <div>{formatPrice(1)}</div>;\n`;
     const s = extractSymbols("view.tsx", src);
+    expect(s.parseError).toBeUndefined();
+    expect(s.decls.formatPrice).toMatchObject({ params: ["cents", 'currency = "USD"'], range: [2, 4], exported: true });
+    expect(s.references.formatPrice).toEqual(["toMoney"]);
+    expect(s.references.view).toEqual(["formatPrice"]);
+  });
+
+  it("falls back to the regex scanner when it cannot strip, with types removed from params", () => {
+    const src = `import { toMoney } from "./money";\nexport function formatPrice(cents: number, currency?: string = "USD"): string {\n  return toMoney(cents);\n}\nfunction broken( {\n  return 1;\n}\n`;
+    const s = extractSymbols("view.ts", src);
     expect(s.parseError).toBeTruthy();
     expect(s.decls.formatPrice).toMatchObject({ params: ["cents", 'currency = "USD"'], range: [2, 4], exported: true });
     expect(s.references.formatPrice).toEqual(["toMoney"]);
@@ -430,5 +439,201 @@ describe("resolveImport", () => {
     expect(resolveImport("src/render.js", "@scope/pkg/x.js", files)).toBeUndefined();
     expect(resolveImport("src/render.js", "./missing.js", files)).toBeUndefined();
     expect(resolveImport("src/render.js", "../../../x.js", files)).toBeUndefined();
+  });
+});
+
+describe("members of top-level classes and objects", () => {
+  const CART = `import { formatPrice } from "./products.js";
+
+export class Cart extends Base {
+  #items = [];
+  static TAX = 0.2;
+
+  constructor(owner, currency = "USD") {
+    super(owner);
+    this.currency = currency;
+  }
+
+  /** Add one item. */
+  add(item, qty = 1) {
+    this.#items.push({ item, qty });
+    return this.total();
+  }
+
+  total() {
+    return formatPrice(this.#items.reduce((s, x) => s + x.item.cents * x.qty, 0) * (1 + Cart.TAX));
+  }
+
+  get size() { return this.#items.length; }
+  set size(n) { this.#items.length = n; }
+}
+`;
+
+  it("records methods, fields and accessors with their own lines and params", () => {
+    const s = analyzeModule("src/cart.js", CART);
+    expect(s.parseError).toBeUndefined();
+    // The contract stays: decls hold top-level declarations only.
+    expect(Object.keys(s.decls)).toEqual(["Cart"]);
+    expect(Object.keys(s.members)).toEqual(["Cart.#items", "Cart.TAX", "Cart.constructor", "Cart.add", "Cart.total", "Cart.size"]);
+    expect(s.memberOwners).toEqual(["Cart"]);
+    expect(s.members["Cart.add"]).toMatchObject({ owner: "Cart", kind: "method", params: ["item", "qty = 1"], signature: "Cart.add(item, qty = 1)", exported: true });
+    // The JSDoc right above a method belongs to the method.
+    expect(s.members["Cart.add"].range).toEqual([12, 16]);
+    expect(s.members["Cart.total"].range).toEqual([18, 20]);
+    expect(s.members["Cart.constructor"]).toMatchObject({ kind: "method", params: ["owner", 'currency = "USD"'], range: [7, 10] });
+    expect(s.members["Cart.TAX"]).toMatchObject({ kind: "field", static: true, range: [5, 5] });
+    // A private member is not part of the interface.
+    expect(s.members["Cart.#items"].exported).toBe(false);
+    // A getter and a setter of one name are one member.
+    expect(s.members["Cart.size"]).toMatchObject({ kind: "get", range: [22, 23] });
+    expect(s.members["Cart.size"].params).toBeUndefined();
+  });
+
+  it("gives each member its own references: this.x is Owner.x", () => {
+    const s = analyzeModule("src/cart.js", CART);
+    expect(s.memberReferences["Cart.add"]).toEqual(["Cart.#items", "Cart.total"]);
+    expect(s.memberReferences["Cart.total"]).toEqual(["Cart.#items", "Cart.TAX", "formatPrice"]);
+    expect(s.memberReferences["Cart.constructor"]).toEqual(["Cart.currency"]);
+    // The class itself still uses all that its body uses (members of itself excluded).
+    expect(s.references.Cart).toEqual(["Base", "formatPrice"]);
+  });
+
+  it("records the members of top-level object literals and of the default export of a Worker", () => {
+    const s = analyzeModule(
+      "src/api.js",
+      `export const api = {\n  list(page) { return this.get("/items", page); },\n  get: async (path, page = 1) => fetch(path + page),\n  base: "/v1",\n  [dynamic]: 1,\n};\n`,
+    );
+    expect(Object.keys(s.members)).toEqual(["api.list", "api.get", "api.base"]);
+    expect(s.members["api.list"]).toMatchObject({ kind: "method", params: ["page"], range: [2, 2], exported: true });
+    expect(s.members["api.get"]).toMatchObject({ kind: "field", params: ["path", "page = 1"], signature: "api.get(path, page = 1)" });
+    expect(s.memberReferences["api.list"]).toEqual(["api.get"]);
+    expect(s.memberReferences["api.get"]).toEqual(["fetch"]);
+    const worker = analyzeModule("src/index.js", INDEX_JS);
+    expect(Object.keys(worker.members)).toEqual(["default.fetch"]);
+    expect(worker.members["default.fetch"]).toMatchObject({ kind: "method", params: ["request"], range: [5, 15], exported: true });
+  });
+
+  it("records no members when the parse fails (the regex scanner)", () => {
+    const s = analyzeModule("src/cart.js", CART.replace("total() {", "total( {"));
+    expect(s.parseError).toBeTruthy();
+    expect(s.members).toEqual({});
+    expect(s.memberOwners).toEqual([]);
+  });
+
+  it("records no members for a very large object (a table of data)", () => {
+    const rows = Array.from({ length: 250 }, (_, i) => `  k${i}: ${i},`).join("\n");
+    const s = analyzeModule("src/table.js", `export const TABLE = {\n${rows}\n};\n`);
+    expect(s.members).toEqual({});
+    expect(s.memberOwners).toEqual([]);
+  });
+
+  it("reads class members in TypeScript (types stripped from params)", () => {
+    const s = analyzeModule("src/stack.ts", `export class Stack<T> {\n  private items: T[] = [];\n  push(item: T, at?: number): this {\n    this.items.push(item);\n    return this;\n  }\n}\n`);
+    expect(s.members["Stack.push"]).toMatchObject({ params: ["item", "at"], signature: "Stack.push(item, at)", range: [3, 6] });
+    expect(s.memberReferences["Stack.push"]).toEqual(["Stack.items"]);
+  });
+});
+
+describe("JSX (acorn-jsx)", () => {
+  it("parses .jsx: components are references, HTML tags are not", () => {
+    const s = extractSymbols(
+      "src/App.jsx",
+      `import { Card } from "./Card.jsx";\nimport * as ui from "./ui.js";\nexport function App({ items }) {\n  return <main className="app">{items.map((x) => <Card key={x.id} item={x} />)}<ui.Footer note={NOTE} /></main>;\n}\n`,
+    );
+    expect(s.parseError).toBeUndefined();
+    expect(s.decls.App).toMatchObject({ kind: "function", params: ["{ items }"], range: [3, 5], exported: true });
+    expect(s.references.App).toEqual(["Card", "NOTE", "ui", "ui.Footer"]);
+  });
+
+  it("parses a .js file with JSX", () => {
+    const s = extractSymbols("src/view.js", `export const View = () => <section>It's "fine" {label}</section>;\n`);
+    expect(s.parseError).toBeUndefined();
+    expect(s.references.View).toEqual(["label"]);
+  });
+
+  it("parses .tsx with JSX text that holds quotes and colons", () => {
+    const s = extractSymbols(
+      "src/Price.tsx",
+      `import type { Product } from "./types";\nexport function Price({ p }: { p: Product }): JSX.Element {\n  const label: string = p.title as string;\n  return <span title={label}>Price: it's {format(p.cents)}</span>;\n}\n`,
+    );
+    expect(s.parseError).toBeUndefined();
+    expect(s.decls.Price).toMatchObject({ params: ["{ p }"], range: [2, 5] });
+    expect(s.references.Price).toEqual(["format"]);
+  });
+});
+
+describe("require() calls", () => {
+  it("reads require calls as imports with bindings", () => {
+    const s = analyzeModule(
+      "src/server.js",
+      `const db = require("./db");\nconst { query, close: shut } = require("./pool.js");\nconst one = require("./util").one;\nconst fs = require("fs"), limit = 10;\nrequire("./setup");\nfunction lazy() { return require("./heavy"); }\n`,
+      new Set(["src/db.js", "src/pool.js", "src/util.js", "src/setup.js", "src/heavy.js"]),
+    );
+    expect(s.imports.map((i) => [i.from, i.resolved, i.names])).toEqual([
+      ["./db", "src/db.js", [{ imported: "*", local: "db" }]],
+      ["./pool.js", "src/pool.js", [{ imported: "query", local: "query" }, { imported: "close", local: "shut" }]],
+      ["./util", "src/util.js", [{ imported: "one", local: "one" }]],
+      ["fs", undefined, [{ imported: "*", local: "fs" }]],
+      ["./setup", "src/setup.js", []],
+      ["./heavy", "src/heavy.js", []],
+    ]);
+    expect(s.bindings.shut).toEqual({ from: "./pool.js", imported: "close" });
+    // A statement of require calls only is an import, not a declaration; a mixed one keeps its declarations.
+    expect(Object.keys(s.decls)).toEqual(["fs", "limit", "lazy"]);
+  });
+
+  it("reads `import x = require()` in TypeScript", () => {
+    const s = analyzeModule("src/a.ts", `import fs = require("./fs-lite");\nexport const read = (p: string) => fs.read(p);\n`, new Set(["src/fs-lite.ts"]));
+    expect(s.imports).toEqual([{ from: "./fs-lite", resolved: "src/fs-lite.ts", names: [{ imported: "*", local: "fs" }] }]);
+  });
+});
+
+describe("path aliases (tsconfig.json, jsconfig.json)", () => {
+  const files = new Set(["src/lib/money.ts", "src/lib/index.ts", "src/components/Card.tsx", "app/util.js", "shared/x.js"]);
+
+  it("reads compilerOptions.paths and baseUrl, with comments and trailing commas", () => {
+    const tsconfig = `{
+  // the app
+  "compilerOptions": {
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"], // the source
+      "~lib": ["src/lib/index.ts"],
+      /* two targets */
+      "#shared/*": ["missing/*", "shared/*",],
+    },
+  },
+}`;
+    const aliases = pathAliasesOf(new Map([["tsconfig.json", tsconfig]]));
+    expect(aliases).toEqual({
+      baseUrl: "",
+      paths: [
+        { pattern: "@/*", targets: ["src/*"] },
+        { pattern: "~lib", targets: ["src/lib/index.ts"] },
+        { pattern: "#shared/*", targets: ["missing/*", "shared/*"] },
+      ],
+    });
+    expect(resolveImport("src/components/Card.tsx", "@/lib/money", files, aliases)).toBe("src/lib/money.ts");
+    expect(resolveImport("src/components/Card.tsx", "@/lib", files, aliases)).toBe("src/lib/index.ts");
+    expect(resolveImport("app/util.js", "~lib", files, aliases)).toBe("src/lib/index.ts");
+    expect(resolveImport("app/util.js", "#shared/x", files, aliases)).toBe("shared/x.js");
+    // baseUrl: a bare specifier can name a file from the root.
+    expect(resolveImport("shared/x.js", "app/util", files, aliases)).toBe("app/util.js");
+    expect(resolveImport("app/util.js", "react", files, aliases)).toBeUndefined();
+    // Without the aliases, nothing of this resolves.
+    expect(resolveImport("src/components/Card.tsx", "@/lib/money", files)).toBeUndefined();
+  });
+
+  it("puts the targets under baseUrl, reads jsconfig.json, and gives undefined without aliases", () => {
+    expect(pathAliasesOf(new Map([["jsconfig.json", `{ "compilerOptions": { "baseUrl": "app", "paths": { "@/*": ["./*"] } } }`]]))).toEqual({ baseUrl: "app", paths: [{ pattern: "@/*", targets: ["app/*"] }] });
+    expect(pathAliasesOf(new Map([["tsconfig.json", `{ "compilerOptions": { "strict": true } }`]]))).toBeUndefined();
+    expect(pathAliasesOf(new Map([["tsconfig.json", `{ not json`]]))).toBeUndefined();
+    expect(pathAliasesOf(new Map())).toBeUndefined();
+  });
+
+  it("fills imports[].resolved through the aliases", () => {
+    const aliases = { paths: [{ pattern: "@/*", targets: ["src/*"] }] };
+    const s = extractSymbols("src/components/Card.tsx", `import { toMoney } from "@/lib/money";\nexport const Card = () => <b>{toMoney(1)}</b>;\n`, files, aliases);
+    expect(s.imports[0].resolved).toBe("src/lib/money.ts");
   });
 });

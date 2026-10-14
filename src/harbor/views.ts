@@ -18,10 +18,10 @@ import type {
   Verdict,
 } from "../core/types";
 import type { Snapshot } from "../core/git/snapshot";
-import type { ImportGraph } from "../core/analysis/graph";
-import { analyzeModule, isAnalyzable } from "../core/analysis/symbols";
-import { analyzeFootprint, type FileVersions } from "../core/analysis/footprint";
-import type { SignatureInfo } from "../core/analysis/range";
+import { extendGraph, type ImportGraph } from "../core/analysis/graph";
+import { analyzeModule, isAnalyzable, type PathAliases } from "../core/analysis/symbols";
+import { analyzeFootprint, type FileVersions, type FootprintOptions } from "../core/analysis/footprint";
+import type { NameIndex, SignatureInfo } from "../core/analysis/range";
 import { buildVesselView, type VesselView } from "../core/coord/facts";
 
 /** A tree with the text of its files (binary files have no entry in `text`). */
@@ -36,8 +36,12 @@ export interface MainView extends TreeText {
   files: FileNode[];
   graph: ImportGraph;
   imports: [string, string][];
-  /** Signatures of top-level functions on main: `path#name` → `name(params)`. */
+  /** Signatures of top-level functions and of class and object methods on main: `path#name` → `name(params)`. */
   signatures: Record<SymbolKey, string>;
+  /** The names that main defines → their files (members as `Owner.name`). Places plan symbols without a path. */
+  definedIn: Record<string, string[]>;
+  /** The path aliases of tsconfig.json or jsconfig.json on main. */
+  aliases?: PathAliases;
 }
 
 export interface AttemptView {
@@ -48,6 +52,8 @@ export interface AttemptView {
   /** Changed paths with base/head versions. */
   changed: FileVersions[];
   signatures: Record<SymbolKey, SignatureInfo>;
+  /** Import edges of the changed and new files (their text in the work copy). */
+  imports?: [string, string][];
 }
 
 export const ACTIVE: ReadonlySet<AttemptStatus> = new Set<AttemptStatus>([
@@ -78,21 +84,71 @@ export function fileNodes(snapshot: Snapshot, text: Map<string, string>): FileNo
 
 /** Signatures of top-level functions in a set of files. */
 export function signaturesOf(text: Map<string, string>): Record<SymbolKey, string> {
-  const out: Record<SymbolKey, string> = {};
-  const files = new Set(text.keys());
+  return symbolIndex(text).signatures;
+}
+
+/**
+ * One pass over a set of files: the signatures of functions and methods (`path#name` → `name(params)`),
+ * and the files that define each name. A member counts as `Owner.name` and, for an owner that is
+ * exported under another name, as `Alias.name` too (`default.add` for `export default class Cart`).
+ */
+export function symbolIndex(text: Map<string, string>): { signatures: Record<SymbolKey, string>; definedIn: Record<string, string[]> } {
+  const signatures: Record<SymbolKey, string> = {};
+  // No prototype: a name such as "__proto__" or "constructor" is data here.
+  const definedIn = Object.create(null) as Record<string, string[]>;
+  const define = (name: string, path: string): void => {
+    const list = Object.hasOwn(definedIn, name) ? definedIn[name] : (definedIn[name] = []);
+    if (!list.includes(path)) list.push(path);
+  };
   for (const [path, src] of text) {
     if (!isAnalyzable(path)) continue;
     try {
-      const mod = analyzeModule(path, src, files);
+      const mod = analyzeModule(path, src);
       for (const d of Object.values(mod.decls)) {
-        if (d.signature) out[`${path}#${d.name}`] = d.signature;
+        if (d.signature) signatures[`${path}#${d.name}`] = d.signature;
+        define(d.name, path);
+      }
+      for (const m of Object.values(mod.members)) {
+        if (m.signature) signatures[`${path}#${m.name}`] = m.signature;
+        const rest = m.name.slice(m.owner.length);
+        define(m.name, path);
+        for (const [exported, local] of Object.entries(mod.exports)) if (local === m.owner && exported !== m.owner) define(`${exported}${rest}`, path);
       }
     } catch {
       /* analysis is best effort */
     }
   }
-  return out;
+  return { signatures, definedIn };
 }
+
+/** True for a member key that main has (`src/cart.js#Cart.add`), from `MainView.definedIn`. */
+export function knownMemberOf(definedIn: Readonly<Record<string, readonly string[]>>): (key: SymbolKey) => boolean {
+  return (key) => {
+    const at = key.indexOf("#");
+    const name = key.slice(at + 1);
+    return at > 0 && Object.hasOwn(definedIn, name) && definedIn[name].includes(key.slice(0, at));
+  };
+}
+
+/**
+ * The import graph of one course check: main, plus the import edges of the changed and new files of
+ * the work copies in the check. An import that a work copy adds, and a file that it creates, then
+ * count for the range (3 and 4) before they reach main.
+ */
+export function checkGraph(main: MainView, copies: Iterable<AttemptView>): ImportGraph {
+  const extra: [string, string][] = [];
+  for (const v of copies) if (v.imports) extra.push(...v.imports);
+  // The same edges as the last check: the same graph, so that its memo of distances stays.
+  const key = extra.map(([a, b]) => `${a}\u0000${b}`).sort().join("\u0001");
+  const last = lastCheckGraph.get(main.graph);
+  if (last && last.key === key) return last.graph;
+  const graph = extendGraph(main.graph, extra);
+  lastCheckGraph.set(main.graph, { key, graph });
+  return graph;
+}
+
+/** The graph of the last check, per graph of main. */
+const lastCheckGraph = new WeakMap<ImportGraph, { key: string; graph: ImportGraph }>();
 
 /** Full text tree of an attempt from its base text plus an overlay of changes. */
 export function overlayFiles(base: Map<string, string>, overlay: Map<string, string | null>): Map<string, string> {
@@ -115,8 +171,8 @@ export function changedVersions(base: Map<string, string>, files: Map<string, st
   return out.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
-export function footprintOf(changed: FileVersions[], allFiles: Set<string>) {
-  return analyzeFootprint(changed, allFiles, Date.now());
+export function footprintOf(changed: FileVersions[], allFiles: Set<string>, opts: FootprintOptions = {}) {
+  return analyzeFootprint(changed, allFiles, Date.now(), opts);
 }
 
 export function vesselView(
@@ -126,8 +182,9 @@ export function vesselView(
   signatures: Record<SymbolKey, SignatureInfo> | undefined,
   baseSignatures: Record<SymbolKey, string> | undefined,
   state?: VesselView["state"],
+  definedIn?: NameIndex,
 ): VesselView {
-  return buildVesselView({ attempt, intent, agent, state, signatures, baseSignatures });
+  return buildVesselView({ attempt, intent, agent, state, signatures, baseSignatures, definedIn });
 }
 
 /** Notices for an agent, from pending corrections. */

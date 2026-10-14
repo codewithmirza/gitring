@@ -4,6 +4,8 @@ import {
   buildVesselView,
   footprintSize,
   intentSimilarity,
+  measureTraffic,
+  pickCandidates,
   selectCandidates,
   stateOfAttempt,
   tokenize,
@@ -87,6 +89,36 @@ describe("selectCandidates", () => {
     const got = selectCandidates(incoming, traffic, graph);
     expect(got).toHaveLength(MAX_CANDIDATES);
     expect(got[0].view.attempt.id).toBe("att_29"); // most recent first within one range
+  });
+});
+
+describe("measureTraffic (the radar)", () => {
+  const index = () => vessel({ attemptId: "att_index", intent: makeIntent("int_i", "Index", "Index."), agent: makeAgent("agt_w", "IBIS-6"), files: { "src/index.js": { hunks: [[1, 2]] } } });
+  const styles = () => vessel({ attemptId: "att_styles", intent: makeIntent("int_s", "Styles", "CSS."), agent: makeAgent("agt_z", "LOON-8"), files: { "src/styles.js": { hunks: [[1, 2]] } } });
+  const readme = () => vessel({ attemptId: "att_readme", intent: makeIntent("int_r", "Readme", "Docs."), agent: makeAgent("agt_r", "TERN-1"), files: { "README.md": { hunks: [[1, 2]] } } });
+
+  it("measures every traffic vessel, far ones included, so that the caller can store each range", () => {
+    const got = measureTraffic(index(), [styles(), readme()], graph);
+    expect(got.map((m) => [m.view.attempt.id, m.range, m.closing])).toEqual([
+      ["att_styles", 4, false],
+      ["att_readme", 5, false],
+    ]);
+    // Nothing is near: no candidate, but the radar knows both pairs.
+    expect(pickCandidates(got)).toEqual([]);
+  });
+
+  it("makes a pair at range 4 a candidate when it came closer from 5", () => {
+    const measured = measureTraffic(index(), [styles()], graph, new Map([["att_styles", 5 as const]]));
+    expect(measured[0]).toMatchObject({ range: 4, closing: true });
+    expect(pickCandidates(measured).map((c) => [c.view.attempt.id, c.range])).toEqual([["att_styles", 4]]);
+  });
+
+  it("counts a redo (rederiving) as traffic, and not the stale work copy that it redoes", () => {
+    const incoming = darkModeVessel();
+    const redo = searchVessel({ attemptId: "att_redo", status: "rederiving" });
+    const stale = searchVessel({ attemptId: "att_stale", status: "stale", agent: makeAgent("agt_old", "SKUA-1") });
+    expect(measureTraffic(incoming, [redo, stale], graph).map((m) => m.view.attempt.id)).toEqual(["att_redo"]);
+    expect(selectCandidates(incoming, [redo, stale], graph).map((c) => [c.view.attempt.id, c.range])).toEqual([["att_redo", 0]]);
   });
 });
 

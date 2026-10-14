@@ -43,6 +43,31 @@ function workLine(v: VesselView): string {
   return parts.join("; ");
 }
 
+/** The priority and the constraints of a task, short (R5 reads the priority). */
+export function taskLine(v: VesselView): string {
+  const parts = [`priority ${v.intent.priority === "high" ? "high" : "normal"}`];
+  const constraints = (v.intent.constraints ?? []).filter((c) => typeof c === "string" && c.trim());
+  if (constraints.length) parts.push(`constraints: ${list(constraints.map((c) => cut(c, 100)), 3)}`);
+  return parts.join("; ");
+}
+
+/** The import distance of two works that edit different files, in plain words. */
+function apartLine(f: PairFacts): string {
+  switch (f.range) {
+    case 0:
+    case 2:
+      return "They edit different files.";
+    case 1:
+      return f.interfaceHits.length ? "They edit different files." : "They edit different files. One changes code that the other uses.";
+    case 3:
+      return "They edit different files that are one import apart.";
+    case 4:
+      return "They edit different files that are two imports apart.";
+    default:
+      return "They edit unrelated files.";
+  }
+}
+
 /** Plain English facts for one pair, strongest evidence first. */
 export function factsLines(f: PairFacts, otherId: string): string[] {
   const out: string[] = [];
@@ -56,7 +81,7 @@ export function factsLines(f: PairFacts, otherId: string): string[] {
   }
   if (f.sharedSymbols.length) out.push(`Both change ${list(f.sharedSymbols.map(name), 4)}.`);
   if (f.sharedFiles.length && !f.hunkOverlaps.length) out.push(`Both edit ${list(f.sharedFiles, 4)}, in different lines.`);
-  if (!f.sharedFiles.length) out.push(f.range <= 4 ? `They edit different files that are ${f.range === 3 ? "one import" : "two imports"} apart.` : "They edit unrelated files.");
+  if (!f.sharedFiles.length) out.push(apartLine(f));
   out.push(`Range ${f.range} (0 = same lines, 5 = unrelated)${f.closing && f.previousRange !== undefined ? `, closing from ${f.previousRange}` : ""}.`);
   if (f.intentSimilarity >= 0.25) out.push(`The two intents are ${f.intentSimilarity >= 0.6 ? "very" : "somewhat"} similar (${Math.round(f.intentSimilarity * 100)}%).`);
   return out;
@@ -72,12 +97,14 @@ export function buildBriefClefRequest(
     "gitring course check. Many coding agents change one repository at the same time.",
     "Decide for each traffic vessel: will its work and the incoming work collide if both continue unchanged? A collision is a text conflict or a broken interface.",
     `Incoming agent ${incoming.agent.callsign} (${incoming.state}), intent "${cut(incoming.intent.title, 120)}": ${cut(incoming.intent.goal, MAX_GOAL)}`,
+    `Incoming task: ${taskLine(incoming)}.`,
     `Incoming work: ${workLine(incoming)}. Size ${incoming.footprintSize}. Declared at ${new Date(incoming.attempt.course.declaredAt).toISOString()}.`,
   ];
   listCands.forEach((c, i) => {
     const id = `v${i}`;
     lines.push("");
     lines.push(`${id}: agent ${c.view.agent.callsign} (${c.view.state}), intent "${cut(c.view.intent.title, 120)}": ${cut(c.view.intent.goal, 160)}`);
+    lines.push(`${id} task: ${taskLine(c.view)}.`);
     lines.push(`${id} work: ${workLine(c.view)}. Size ${c.view.footprintSize}. Declared at ${new Date(c.view.attempt.course.declaredAt).toISOString()}.`);
     for (const l of factsLines(c.facts, id)) lines.push(`Fact: ${l}`);
   });

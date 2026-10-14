@@ -373,8 +373,14 @@ export interface Course {
   files: string[];
   /** Symbols the agent intends to define or change. */
   symbols: SymbolKey[];
+  /**
+   * Symbols the plan will call but not change (`path#name`). The check compares them with the changes of
+   * other plans, so two plans can be at range 1 before any code exists.
+   */
+  uses?: SymbolKey[];
   /** One-sentence approach. */
   approach: string;
+  /** When the work copy sent its first plan. A new plan for the same work copy, and a redo, keep it (R4). */
   declaredAt: Millis;
 }
 
@@ -883,6 +889,8 @@ export interface DeclareInput {
   plan: string[];
   files: string[];
   symbols: string[];
+  /** Symbols the plan will call but not change (`path#name`), see Course.uses. */
+  uses?: string[];
   approach: string;
   /** "git" asks for a fork remote + token; "api" uses gitring_read / gitring_write. */
   mode?: "api" | "git";

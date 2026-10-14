@@ -21,10 +21,13 @@ import { ArtifactsBackend } from "../platform/repo/artifacts";
 import { MemoryTreeCache, readSnapshot, diffSnapshots, type Snapshot } from "../core/git/snapshot";
 import { hashObject, isValidBranchName, utf8 } from "../core/git/objects";
 import { buildImportGraph, graphFromEdges } from "../core/analysis/graph";
-import { isAnalyzable } from "../core/analysis/symbols";
+import { isAnalyzable, pathAliasesOf } from "../core/analysis/symbols";
 import { unifiedDiff, isProbablyText, lineDiff } from "../core/text/diff";
 import {
-  selectCandidates,
+  measureTraffic,
+  pickCandidates,
+  hasHardFacts,
+  modelConfidence,
   buildPairFacts,
   assessWithRules,
   parseClefResponse,
@@ -42,6 +45,7 @@ import {
   type VesselView,
 } from "../core/coord";
 import { computeRange, shapeFromFootprint } from "../core/analysis/range";
+import type { FootprintOptions } from "../core/analysis/footprint";
 import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
 import { merge3 } from "../core/text/merge3";
@@ -58,16 +62,18 @@ import {
   WAITING,
   PROTOCOL,
   changedVersions,
+  checkGraph,
   clearance,
   failureSummary,
   fileNodes,
   footprintOf,
+  knownMemberOf,
   langOf,
   latestCheck,
   median,
   notices,
   overlayFiles,
-  signaturesOf,
+  symbolIndex,
   trafficVessel,
   vesselView,
   type AttemptView,
@@ -688,14 +694,18 @@ export class HarborMaster extends DurableObject<Env> {
     this.mainLoading = (async () => {
       const tt = await this.treeText(p.repo.name, p.mainTree);
       const analyzable = new Map([...tt.text].filter(([path]) => isAnalyzable(path)));
-      const graph = buildImportGraph(analyzable);
+      const aliases = pathAliasesOf(tt.text);
+      const graph = buildImportGraph(analyzable, aliases);
+      const index = symbolIndex(analyzable);
       const view: MainView = {
         ...tt,
         sha: p.mainSha,
         files: fileNodes(tt.snapshot, tt.text),
         graph,
         imports: graph.edges.map(([a, b]) => [a, b] as [string, string]),
-        signatures: signaturesOf(analyzable),
+        signatures: index.signatures,
+        definedIn: index.definedIn,
+        ...(aliases ? { aliases } : {}),
       };
       this.mainView = view;
       return view;
@@ -731,10 +741,16 @@ export class HarborMaster extends DurableObject<Env> {
       paths = [...overlay.keys()];
     }
     const changed = changedVersions(base.text, files, paths);
-    const { signatures } = footprintOf(changed, new Set(files.keys()));
-    const view: AttemptView = { version, files, changed, signatures };
+    const { signatures, imports } = footprintOf(changed, new Set(files.keys()), this.footprintOptions());
+    const view: AttemptView = { version, files, changed, signatures, imports };
     this.attemptViews.set(a.id, { version, view });
     return view;
+  }
+
+  /** What a footprint knows from main: the path aliases, and the members of classes and objects. */
+  private footprintOptions(): FootprintOptions {
+    const main = this.mainView;
+    return main ? { aliases: main.aliases, knownMember: knownMemberOf(main.definedIn) } : {};
   }
 
   /** Check files are written by gitring, not by agents: they never count as a collision. */
@@ -744,9 +760,11 @@ export class HarborMaster extends DurableObject<Env> {
 
   private async refreshFootprint(a: T.Attempt): Promise<AttemptView> {
     this.bump(a.id);
+    // The footprint reads the aliases and the members of main (see footprintOptions).
+    if (!this.mainView) await this.loadMain().catch(() => undefined);
     const view = await this.attemptView(a);
     const managed = this.checkPaths();
-    const { footprint } = footprintOf(view.changed.filter((c) => !managed.has(c.path)), new Set(view.files.keys()));
+    const { footprint } = footprintOf(view.changed.filter((c) => !managed.has(c.path)), new Set(view.files.keys()), this.footprintOptions());
     a.footprint = footprint;
     let additions = 0;
     let deletions = 0;
@@ -965,12 +983,15 @@ export class HarborMaster extends DurableObject<Env> {
     const mode = input.mode ?? "api";
     let attempt = input.attemptId ? this.attempts.get(input.attemptId) : undefined;
     const now = Date.now();
+    const uses = [...new Set((input.uses ?? []).map(String))].slice(0, 100);
     const course: T.Course = {
       plan: (input.plan ?? []).slice(0, 20).map(String),
       files: [...new Set((input.files ?? []).map(normPath))],
       symbols: [...new Set((input.symbols ?? []).map(String))],
+      ...(uses.length ? { uses } : {}),
       approach: String(input.approach ?? "").slice(0, 400),
-      declaredAt: now,
+      // A new plan for the same work copy keeps the time of the first plan: R4 compares the true order.
+      declaredAt: attempt?.course.declaredAt ?? now,
     };
     if (!attempt) {
       const id = newId("a");
@@ -1452,7 +1473,7 @@ export class HarborMaster extends DurableObject<Env> {
         if (landing && seqList.indexOf(landing.mainAfter) > baseIdx) state = "landed";
       }
       if (!state) continue;
-      views.push(vesselView(other, intent, agent, signatures.get(other.id)?.signatures, main.signatures, state));
+      views.push(vesselView(other, intent, agent, signatures.get(other.id)?.signatures, main.signatures, state, main.definedIn));
     }
     return views;
   }
@@ -1477,16 +1498,19 @@ export class HarborMaster extends DurableObject<Env> {
         }
       }
     }
-    const incoming = vesselView(a, intent, agent, views.get(a.id)?.signatures, main.signatures, WAITING.has(a.status) ? "waiting" : "active");
+    const incoming = vesselView(a, intent, agent, views.get(a.id)?.signatures, main.signatures, WAITING.has(a.status) ? "waiting" : "active", main.definedIn);
     const traffic = this.trafficViews(a, main, views);
     const previous = new Map<string, T.Range>();
     for (const v of traffic) {
       const pr = this.radar.get(pairKey(a.id, v.attempt.id));
       if (pr) previous.set(v.attempt.id, pr.range);
     }
-    const cands = selectCandidates(incoming, traffic, main.graph, 3, previous).map((c) => ({
+    // Main plus the imports that the work copies of this check add (new files included).
+    const graph = checkGraph(main, views.values());
+    const measured = measureTraffic(incoming, traffic, graph, previous);
+    const cands = pickCandidates(measured, 3).map((c) => ({
       view: c.view,
-      facts: buildPairFacts(incoming, c.view, main.graph, previous.get(c.view.attempt.id)),
+      facts: buildPairFacts(incoming, c.view, graph, previous.get(c.view.attempt.id)),
     }));
 
     let source: T.CourseCheck["source"] = "rules";
@@ -1501,15 +1525,19 @@ export class HarborMaster extends DurableObject<Env> {
       // Soft pairs (one import apart or more) cannot reach a correction, so the model cannot change the verdict.
       // The fixed rules decide then, and no model call is made.
       if (model !== "rules" && !modelCannotChangeVerdict(cands.map((c) => c.facts), p.settings.thresholds)) {
-        const first = await callClef(this.env.AI as never, buildBriefClefRequest("clef-flash", incoming, cands));
+        // "clef" asks the large model first (the fast model answers when it does not). "clef-flash" asks the
+        // fast model, and the large model only for ambiguous pairs.
+        const large = model === "clef";
+        let first = await callClef(this.env.AI as never, buildBriefClefRequest(large ? "clef" : "clef-flash", incoming, cands), large ? 6000 : undefined);
+        if (!first && large) first = await callClef(this.env.AI as never, buildBriefClefRequest("clef-flash", incoming, cands));
         if (first) {
           let parsed = parseClefResponse(first.res, incoming, cands);
           let used = first;
           raw = { clef: first.res.answers, model: first.model, latencyMs: first.latencyMs, missing: parsed.missing };
           // Escalate to the 27B model only for ambiguous pairs: no hard facts, close range, a coin-flip answer.
-          const ambiguous = cands.some((c) => {
+          const ambiguous = !large && cands.some((c) => {
             const as = parsed.assessments.find((x) => x.otherAttemptId === c.view.attempt.id);
-            return as && !hardFacts(c.facts) && c.facts.range <= 2 && as.collision >= 0.35 && as.collision <= 0.65;
+            return as && !hasHardFacts(c.facts) && c.facts.range <= 2 && as.collision >= 0.35 && as.collision <= 0.65;
           });
           if (ambiguous) {
             const second = await callClef(this.env.AI as never, buildBriefClefRequest("clef", incoming, cands), 6000);
@@ -1526,11 +1554,11 @@ export class HarborMaster extends DurableObject<Env> {
             const r = rules.assessments.find((x) => x.otherAttemptId === as.otherAttemptId);
             return facts && r ? anchor(as, r, facts) : as;
           });
-          confidence = Math.min(...cands.map((c) => {
-            const as = assessments.find((x) => x.otherAttemptId === c.view.attempt.id);
-            if (!as) return 1;
-            return hardFacts(c.facts) ? 0.9 : Math.max(0.3, Math.abs(as.collision - 0.5) * 2);
-          }));
+          // Only the pairs that need a change request count: a doubt about an unrelated pair cannot send the check to a person.
+          confidence = modelConfidence(
+            cands.map((c) => ({ facts: c.facts, assessment: assessments.find((x) => x.otherAttemptId === c.view.attempt.id) })),
+            p.settings.thresholds,
+          );
           const maxSim = Math.max(0, ...cands.map((c) => c.facts.intentSimilarity));
           const clefDup = parsed.duplicate >= 0.7 && maxSim >= DUPLICATE_MIN_SIMILARITY ? parsed.duplicate : Math.min(parsed.duplicate, DUPLICATE_UNSHARED_CAP);
           duplicate = Math.max(clefDup, rules.duplicate >= 0.8 ? rules.duplicate : 0);
@@ -1573,17 +1601,19 @@ export class HarborMaster extends DurableObject<Env> {
     this.db.putCheck(check);
     this.emit({ type: "check", check });
 
-    // Radar: record range and closing for each pair.
+    // Radar: record range and closing for every measured pair, near or far, so that the next check sees a far
+    // pair come closer. A candidate pair gets the verdict of this check. A far pair keeps its last verdict, and
+    // it is written only when its range or closing changes.
     const pairs: T.RadarPair[] = [];
-    for (const c of cands) {
-      const pair: T.RadarPair = {
-        a: a.id,
-        b: c.view.attempt.id,
-        range: c.facts.range,
-        closing: c.facts.closing,
-        verdict: check.verdict,
-        updatedAt: Date.now(),
-      };
+    const candidateIds = new Set(cands.map((c) => c.view.attempt.id));
+    for (const m of measured) {
+      const id = m.view.attempt.id;
+      const before = this.radar.get(pairKey(a.id, id));
+      const candidate = candidateIds.has(id);
+      if (!candidate && before && before.range === m.range && before.closing === m.closing) continue;
+      const pair: T.RadarPair = { a: a.id, b: id, range: m.range, closing: m.closing, updatedAt: Date.now() };
+      const verdict = candidate ? check.verdict : before?.verdict;
+      if (verdict) pair.verdict = verdict;
       this.radar.set(pairKey(pair.a, pair.b), pair);
       this.db.putRadar(...sortPair(pair.a, pair.b), pair);
       pairs.push(pair);
@@ -1628,9 +1658,24 @@ export class HarborMaster extends DurableObject<Env> {
         const drafted = draftDuplicateCorrection(incoming, other.view);
         this.issueCorrection(a.id, other.view.attempt.id, drafted, "R4-first-declared-stands-on", check.id, 100);
       }
+      // The same task as other work does not end the check: the other pairs that collide get their change requests too.
+      this.correctOtherPairs(outcome.corrections, cands, incoming, check.id);
     }
     this.persistStats();
     return check;
+  }
+
+  /** The change requests of the flagged pairs of a "merge-intents" check (the duplicate pair is not one of them). */
+  private correctOtherPairs(corrections: ReturnType<typeof decide>["corrections"], cands: { view: VesselView; facts: T.PairFacts }[], incoming: VesselView, checkId: string): void {
+    for (const c of corrections) {
+      const other = cands.find((x) => x.view.attempt.id === c.otherAttemptId);
+      if (!other) continue;
+      const giveWayView = c.giveWay === "incoming" ? incoming : other.view;
+      const standOnView = c.giveWay === "incoming" ? other.view : incoming;
+      if (giveWayView.state === "landed") continue;
+      const drafted = draftCorrection(giveWayView, standOnView, c.facts, c.rule, c.giveWay);
+      this.issueCorrection(giveWayView.attempt.id, standOnView.attempt.id, drafted, c.rule, checkId, severityOf(c.facts));
+    }
   }
 
   private issueCorrection(
@@ -3198,7 +3243,8 @@ export class HarborMaster extends DurableObject<Env> {
       baseSha: main.sha,
       baseTree: main.tree,
       status: "rederiving",
-      course: { ...old.course, declaredAt: now },
+      // The redo keeps the time of the plan that it redoes, so R4 stays fair to it.
+      course: { ...old.course, declaredAt: old.course.declaredAt ?? now },
       footprint: emptyFootprint(),
       corrections: [],
       lineage: { generation: old.lineage.generation + 1, rederivedFrom: old.id },
@@ -4127,10 +4173,6 @@ function anchor(model: T.CourseAssessment, rules: T.CourseAssessment, facts: T.P
   }
   const giveWayConfidence = model.giveWay === rules.giveWay ? Math.max(rules.giveWayConfidence, model.giveWayConfidence) : model.giveWayConfidence;
   return { ...model, collision: round(collision), interference: round(interference), giveWayConfidence: round(giveWayConfidence) };
-}
-
-function hardFacts(f: T.PairFacts): boolean {
-  return f.hunkOverlaps.length > 0 || f.interfaceHits.length > 0 || f.sharedSymbols.length > 0;
 }
 
 function decisiveness(as: T.CourseAssessment[]): number {
