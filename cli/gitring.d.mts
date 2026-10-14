@@ -1,3 +1,7 @@
+/**
+ * Types of the front door cli/gitring.mjs, for the tests and for TypeScript callers.
+ * Keep it in line with the export list of gitring.mjs. Each name lives in cli/lib or cli/commands.
+ */
 export const VERSION: string;
 export const CLIENT_ID: string;
 export const DEVICE_GRANT: string;

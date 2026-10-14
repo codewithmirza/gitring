@@ -1,27 +1,8 @@
 /**
- * Benchmark of the coordination logic of gitring.
- *
- * It runs the real pure code of src/core (the distance between two plans, the facts of a pair, the
- * rules of the road, the policy, the text of the change request) on synthetic plans. There is no
- * network, no Artifacts store, no Durable Object and no AI model.
- *
- *   npm run bench                                        100000 agents, 100 sectors, seed 1
- *   npm run bench -- --agents 20000 --sectors 20 --seed 7
- *
- * The script runs with plain Node (22.7 or newer): `node --experimental-transform-types` reads the
- * TypeScript files, and bench/register.mjs lets Node find the imports that have no file extension.
- * No package is added.
- *
- * Model. A sector is one part of a large code base. Each agent makes one change: it sends a plan
- * (declare), writes (grow), and lands. All agents work at the same time. A few files get most of the
- * work. Some changes edit a function signature, and some changes use a function that others edit.
- * Two runs use the same work:
- *   without  no plan check. Landing conflicts count when a landed change overlaps the lines of an agent
- *            (or changes a signature that the agent uses) and the agent did not know.
- *   with     the plan check runs when an agent declares and when it has written. The agent that must
- *            give way gets the change request and moves its edits. When a task lands, the agents near
- *            it move onto the new main (re-plot). An agent applies a change request correctly in
- *            ADAPT_P of the cases (the rest is a mistake of the agent).
+ * Benchmark of the coordination logic of gitring: how many merge conflicts the plan check avoids.
+ * Run: npm run bench -- [--agents N] [--sectors N] [--seed N]. It needs Node 22.7 or later and adds no package.
+ * It runs the real pure code of src/core on synthetic plans. There is no network, no Artifacts store and no AI model.
+ * Never add network calls here. Read next: bench/README.md (the model of the run), then src/core/coord.
  */
 import { pathToFileURL } from "node:url";
 import type * as T from "../src/core/types";
@@ -70,7 +51,7 @@ export interface BenchRow extends BenchOptions {
   ms: number;
 }
 
-/* ───────────────────────────── random numbers ───────────────────────────── */
+// ───── random numbers ─────
 
 export function mulberry32(seed: number): () => number {
   let t = seed >>> 0;
@@ -82,7 +63,7 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/* ───────────────────────────── the synthetic code base ───────────────────────────── */
+// ───── the synthetic code base ─────
 
 interface SimAgent {
   id: string;
@@ -431,7 +412,7 @@ export function courseCheck(incoming: VesselView, traffic: VesselView[], graph: 
   });
 }
 
-/* ───────────────────────────── the run ───────────────────────────── */
+// ───── the run ─────
 
 /** All sectors, with and without the plan check. The counts are the same for the same options. */
 export function runBench(opts: BenchOptions): BenchRow {
@@ -457,7 +438,7 @@ export function runBench(opts: BenchOptions): BenchRow {
   return row;
 }
 
-/* ───────────────────────────── cost of one check ───────────────────────────── */
+// ───── cost of one check ─────
 
 export interface GrowthRow {
   others: number;
@@ -497,7 +478,7 @@ export function growth(sizes: number[], seed: number, probeCount?: number): Grow
   return rows;
 }
 
-/* ───────────────────────────── output ───────────────────────────── */
+// ───── output ─────
 
 const num = (n: number) => n.toLocaleString("en-US");
 const pad = (s: string | number, w: number) => String(s).padStart(w);

@@ -1,0 +1,237 @@
+/**
+ * One scripted agent of the load test: its own MCP connection, and a few tasks one after the other.
+ * Called by runLoad in scripts/load.mjs. The agent confirms each change request and waits for the agent that continues.
+ * Never print the key or a header. Every text that leaves goes through `safe`.
+ */
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { changeRequestsIn, lastJson, streamFor } from "./load-lib.mjs";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const WORDS = "amber birch cedar delta ember fjord grove harbor island juniper kestrel lagoon meadow nectar orchid prairie quartz ridge saffron tundra umber valley willow yarrow zephyr anchor beacon canyon dune estuary forest glacier hollow inlet jetty knoll lantern marsh narrows oasis pebble quarry reef summit thicket upland vista wharf".split(" ");
+
+class Stop extends Error {}
+
+// ───── One agent ─────
+
+/** One agent: its own MCP connection, and a few tasks one after the other. */
+export async function runAgent(ctx, index) {
+  const { options, delays } = ctx;
+  const agent = makeAgent(ctx, index);
+  const { client, transport, metrics, safe } = agent;
+  try {
+    await sleep(delays[index]);
+    await client.connect(transport);
+    for (let t = 0; t < options.tasks; t++) await runTask(agent, t);
+  } catch (e) {
+    if (!(e instanceof Stop)) {
+      metrics.count("protocolErrors");
+      metrics.note(safe(e?.message ?? e));
+    }
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+// ───── The connection and the change requests ─────
+
+/** The connection of one agent, and its tool call. */
+function makeAgent(ctx, index) {
+  const { options, metrics, endpoint, key, fetchImpl = fetch, pollMs = 1000 } = ctx;
+  const rng = streamFor(options.seed, `agent-${index}`);
+  const safe = (text) => String(text).split(key).join("[key]");
+  const countingFetch = async (url, init) => {
+    const res = await fetchImpl(url, init);
+    if (res.status === 429) metrics.count("rateLimited");
+    return res;
+  };
+  const client = new Client({ name: "gitring-load", version: "0.1.0" });
+  const transport = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers: { Authorization: `Bearer ${key}` } }, fetch: countingFetch });
+
+  /** One tool call. A 429 answer waits and tries again. Any other failure of the protocol stops this agent. */
+  async function tool(name, args = {}) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const t0 = performance.now();
+      try {
+        const res = await client.callTool({ name, arguments: { project: options.project, ...args } });
+        metrics.record(name, performance.now() - t0);
+        const texts = (res.content ?? []).filter((c) => c.type === "text").map((c) => String(c.text ?? ""));
+        const text = texts[0] ?? "";
+        if (res.isError) metrics.count("toolErrors");
+        // GITRING_LOAD_TRACE=1 prints each call of each agent (no key, no header) to the error output, to find out why a task did not merge.
+        if (process.env.GITRING_LOAD_TRACE) console.error(`[agent ${index}] ${name} ${Math.round(performance.now() - t0)} ms${res.isError ? " ERROR" : ""} :: ${safe(text.split("\n")[0].slice(0, 140))}`);
+        // gitring_read and gitring_list keep the file text in the first block. Change requests can follow in a second block.
+        return { text, json: lastJson(text), isError: Boolean(res.isError), more: texts.slice(1) };
+      } catch (e) {
+        metrics.record(name, performance.now() - t0);
+        if (e?.code === 429 || /\b429\b/.test(String(e?.message))) {
+          await sleep(400 * 2 ** attempt + Math.floor(rng() * 300));
+          continue;
+        }
+        metrics.count("protocolErrors");
+        metrics.note(`${name}: ${safe(e?.message ?? e)}`);
+        throw new Stop(name);
+      }
+    }
+    metrics.count("protocolErrors");
+    metrics.note(`${name}: still 429 after 6 tries`);
+    throw new Stop(name);
+  }
+
+  const agent = { index, options, metrics, pollMs, rng, safe, client, transport, tool };
+  return { ...agent, ...makeObedience(agent) };
+}
+
+/** What an agent does with the change requests in an answer: confirm each one, and wait for the agent that continues. */
+function makeObedience({ options, metrics, pollMs, rng, tool }) {
+  const seen = new Set();
+  /** The agents that continue where this agent edits the same lines. This agent waits for them (see yieldTo). */
+  const waitFor = new Set();
+  /** Count the change requests in an answer and confirm each one. */
+  async function obey(attemptId, res) {
+    const blocks = [res.text, ...(res.more ?? [])];
+    const known = new Map(
+      blocks.flatMap((b, i) => {
+        const json = i === 0 ? res.json : lastJson(b);
+        const clr = json?.clearance ?? json;
+        return Array.isArray(clr?.corrections) ? clr.corrections : [];
+      }).map((c) => [c.id, c]),
+    );
+    for (const c of blocks.flatMap((b) => changeRequestsIn(b))) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      metrics.count("changeRequests");
+      const info = known.get(c.id);
+      if (options.giveWay && (info?.kind === "region" || info?.kind === "interface") && info.from) waitFor.add(info.from);
+      await tool("gitring_ack", { attemptId, correctionId: c.id, note: "Applied." });
+    }
+  }
+  /** Wait until the agents that continue have left the traffic (they merged or stopped), at most 30 s. */
+  async function yieldTo(attemptId) {
+    const names = [...waitFor];
+    waitFor.clear();
+    if (!names.length) return;
+    metrics.count("gaveWay");
+    const until = Date.now() + 30_000;
+    for (let poll = 0; Date.now() < until; poll++) {
+      const t = await tool("gitring_traffic", { attemptId });
+      await obey(attemptId, t);
+      const near = Array.isArray(t.json?.vessels) ? t.json.vessels : [];
+      if (!names.some((n) => near.some((v) => v.callsign === n))) return;
+      await sleep(pollMs * Math.min(4, 1 + Math.floor(poll / 3)) + Math.floor(rng() * (pollMs / 2)));
+    }
+  }
+  return { waitFor, obey, yieldTo };
+}
+
+// ───── One task ─────
+
+/** Make one task: declare it, write the files, run the tests, ask for the merge, and wait. A task has a few tries. */
+async function runTask(agent, t) {
+  const { index, options, metrics, rng, safe, tool, obey } = agent;
+  const words = Array.from({ length: 5 }, () => WORDS[Math.floor(rng() * WORDS.length)]);
+  const title = `Note about ${words.slice(0, 3).join(" ")}`;
+  const own = `load-test/${options.seed}/note-${index}-${t}.md`;
+  const shared = `load-test/${options.seed}/shared.md`;
+  const useShared = rng() < options.shared / 100; // some tasks add a line to one file that all agents edit: the plans meet
+  const line = `- ${words.join(" ")} (agent ${index}, task ${t})`;
+  const task = { words, title, own, shared, useShared, line };
+  const declared = await tool("gitring_declare", {
+    newIntent: { title, goal: `Add the file ${own} with one sentence about ${words[3]} and ${words[4]}.${useShared ? ` Add one line to ${shared}.` : ""}` },
+    plan: [`Write ${own}.`, ...(useShared ? [`Add a line to ${shared}.`] : [])],
+    files: useShared ? [own, shared] : [own],
+    symbols: [],
+    approach: "Write a small text file.",
+    agent: { id: `load-${options.seed}-${index}`, client: "gitring-load", model: "script" },
+  });
+  const attemptId = declared.json?.attemptId;
+  if (!attemptId) {
+    metrics.count("failed");
+    metrics.note(`gitring_declare: ${safe(declared.text.slice(0, 160))}`);
+    return;
+  }
+  await obey(attemptId, declared);
+  let end = "failed";
+  let over = false; // the work copy is closed: another round would only give errors
+  for (let round = 1; round <= options.rounds && end === "failed" && !over; round++) {
+    const written = await writeFiles(agent, attemptId, task);
+    if (written.json?.refused?.length) continue; // refused ten times: a try is used
+    const checked = await tool("gitring_check", { attemptId });
+    await obey(attemptId, checked);
+    if (checked.json?.ok === false) continue; // the tests fail: a try is used
+    const sent = await tool("gitring_submit", { attemptId, summary: title });
+    await obey(attemptId, sent);
+    const next = sent.json?.next;
+    if (next === "landed") end = "landed";
+    else if (next === "awaiting-approval") end = "handed";
+    else if (next === "landing-queue") {
+      const waited = await waitForMerge(agent, attemptId);
+      if (waited.end) end = waited.end;
+      if (waited.over) over = true;
+    } else continue; // for example "fix-checks": the work came back, or the tests fail. A try is used.
+  }
+  metrics.count(end);
+}
+
+/** Write the files of a task, again and again while the writes are refused or another agent continues. Answers the last write. */
+async function writeFiles(agent, attemptId, task) {
+  const { waitFor, tool, obey, yieldTo } = agent;
+  const { words, title, own, shared, useShared, line } = task;
+  // A write is refused when the shared file changed after the read. A change request can say that another agent
+  // continues on the same lines: this agent waits until that agent has left, then reads the file again and writes
+  // again. That is not a new try: a try ends with a merge that did not happen.
+  let written;
+  for (let reads = 0; reads < 10; reads++) {
+    await yieldTo(attemptId);
+    const files = [{ path: own, content: `# ${title}\n\nA sentence about ${words[3]} and ${words[4]}.\n` }];
+    if (useShared) {
+      // gitring_read answers with the text of the file, or with a sentence when the file does not exist.
+      const cur = await tool("gitring_read", { attemptId, path: shared });
+      await obey(attemptId, cur);
+      const text = cur.isError || /^The file .* does not exist\.$/.test(cur.text) ? "" : cur.text;
+      files.push({ path: shared, content: text.includes(line) ? text : `${text}${text && !text.endsWith("\n") ? "\n" : ""}${line}\n` });
+    }
+    written = await tool("gitring_write", { attemptId, files, message: title });
+    await obey(attemptId, written);
+    if (!written.json?.refused?.length && !waitFor.size) break;
+  }
+  return written;
+}
+
+/**
+ * Wait in the merge queue until the merge, a person, or a redo. Answers { end, over }: how the task ended
+ * (undefined when it did not end), and whether the work copy is closed.
+ */
+async function waitForMerge(agent, attemptId) {
+  const { options, pollMs, rng, tool, obey } = agent;
+  let end;
+  let over = false;
+  // Wait for the merge. gitring_status tells the state of the work copy. The agent does not change a work copy that waits.
+  const until = Date.now() + (options.wait ?? 120) * 1000;
+  for (let poll = 0; Date.now() < until; poll++) {
+    // An agent does not ask every second for long: the wait grows from 1 s to 4 s.
+    await sleep(pollMs * Math.min(4, 1 + Math.floor(poll / 3)) + Math.floor(rng() * (pollMs / 2)));
+    const u = await tool("gitring_status", { attemptId });
+    await obey(attemptId, u);
+    const state = u.json?.status;
+    if (state === "landed") {
+      end = "landed";
+      break;
+    }
+    if (u.json?.approval?.status === "waiting") {
+      end = "handed";
+      break;
+    }
+    if (state === "stale") {
+      end = "redone"; // the tries of the agent are used: a built-in agent does the task again
+      break;
+    }
+    if (u.isError || state === "failed" || state === "abandoned" || state === "alternate") {
+      over = true;
+      break;
+    }
+    // After a submit the work copy waits in the queue. "In work" again means that the work came back: write again.
+    if (state === "underway" || state === "declared") break;
+  }
+  return { end, over };
+}
