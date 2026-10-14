@@ -421,7 +421,7 @@ Each project has a steward. It is a watch on the project while agents work. Ever
 - A test of one work copy passes and fails by turns.
 - The merge queue has work, and no merge happened for a long time.
 
-The counts decide alone. A model (GLM 5.3 Flash) only words each problem as one plain sentence. When the model fails, a fixed sentence stands. The steward is on the `agentic` branch. It is not in a numbered release or a deployment yet.
+The counts decide alone. A model (GLM 5.3 Flash) only words each problem as one plain sentence. When the model fails, a fixed sentence stands. The steward is off by default. A project switch turns it on.
 
 ## Tests, approvals and redo
 
@@ -559,13 +559,34 @@ Most of these limits come from the design. The **Load** bullet gives numbers fro
   - gitring does not delete repositories. The repository of a finished work copy stays until you delete it.
 - **Cost**: a deployment on Cloudflare needs a paid plan (Workers Paid). Cloudflare bills Artifacts operations and storage from 14 October 2026 (see [Artifacts pricing](https://developers.cloudflare.com/artifacts/platform/pricing/)). Test containers also bill by use. A merged task made 31 calls to Artifacts on separate files: 12 git requests and 19 other calls. With a hot file it made 38 to 43. Cloudflare does not say which calls count as one operation. If every call counts, a task costs about $0.005 to $0.0065 at $0.15 for 1,000 operations. If only git requests count, it costs about $0.002.
 
-## Planned
+## Trains and tests after the merge
 
-These parts are in progress on separate branches. They are not in this code. Do not rely on them.
+When several work copies are ready, gitring takes the largest independent set. These work copies share no file and are far apart on the ladder. It composes them onto main in order and runs the tests once on main plus all of them. Each task becomes its own commit with its own why-record, and one push carries them all. When a train fails, gitring splits it to find the work that fails. The rest merges. Settings → Merging has "Largest train" (1 to 16, default 8).
 
-- **Changesets**: commits that cost the size of the change, not the size of the repository.
-- **Trains**: independent work that gitring tests once, and a test mode after the merge. A failed test finds its change by bisect and reverts it.
-- **Approvals by kind of change**: a person says yes by the kind of change. Folder rules apply when the plan arrives.
+The choice "When are tests run?" has two values:
+
+- **Before each merge** (default): work merges only when the tests of main plus the work pass.
+- **After merge, with automatic revert**: work whose own tests pass merges at once. gitring tests main in the background. When main fails, gitring bisects over the merges since the last green main and reverts the merge that broke it. The revert has its own why-record. The task opens again, and the agent gets a change request with the failed tests. When a person said yes to the reverted work, that person gets a question in the inbox.
+
+History shows trains, reverts and the test mode.
+
+## Commits that cost the size of the change
+
+A commit builds new git objects only for the changed paths. The unchanged trees keep their ids. gitring sends them with a small receive-pack client for Workers. The bytes of a commit do not grow with the size of the repository. In the test, a one-line change sends about 610 bytes. The tree is small, or it has 605 files. A full clone sends the whole tree. The clone path stays as a fallback. It starts by itself when the new path fails, unless the cause is a conflict.
+
+Notes use a fan-out tree (`ab/cdef…`). A flat notes tree moves to it on the first write. A blob cache (Cache API, key = blob id) sits in front of the reads. A work copy in api mode gets no fork when it starts. gitring makes the fork only when real git needs it.
+
+## Approvals by kind of change, and rules by folder
+
+gitring names the kind of each change: comment only, layout only, docs only, tests only, or logic. For JavaScript and TypeScript it compares the tokens without comments. "Looks risky" ignores the first three kinds and docs. The approval card says which kind it is.
+
+Owners set rules by folder in Settings → Merging:
+
+- `migrations/**`: an owner says yes.
+- `docs/**`: no yes needed.
+- `infra/**`: only the agents of the named people may change it.
+
+gitring checks the rules when the plan arrives and again when the work comes in. The answers say in plain words which rule applies.
 
 ## Security
 

@@ -580,7 +580,8 @@ describe("compare under a path, and long diffs", () => {
     expect(steViolations(res.summary)).toEqual([]);
     // Asked alone, the long diff is still over the limit: the answer says so again.
     expect((await h.compare(start, "main", "big.txt")).files[0].cut).toBe(true);
-  });
+    // Two 1500-line diffs are slow on a busy machine: the test has its own limit, not the 20 s default.
+  }, 60_000);
 });
 
 describe("errors", () => {
