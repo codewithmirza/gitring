@@ -163,6 +163,8 @@ export async function runMeet({ endpoint, key, options = {}, say = console.log, 
   const attemptOf = (res) => /work copy (a_\w+)/.exec(res.text)?.[1] ?? res.json?.attemptId;
   const status = (st, id) => (st.attempts ?? []).find((a) => a.id === id)?.status;
   const merged = (id) => (st) => status(st, id) === "landed";
+  /** The change requests of a work copy that wait for the agent to confirm them. */
+  const openOf = async (id) => ((await state()).corrections ?? []).filter((c) => c.attemptId === id && (c.status === "pending" || c.status === "delivered")).map((c) => c.id);
   const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1);
 
   let result = { ok: false, project, merges: 0, changeRequests: 0, waiting: false };
@@ -222,7 +224,9 @@ export async function runMeet({ endpoint, key, options = {}, say = console.log, 
     const idB = attemptOf(planB);
     await a.call("gitring_write", { attemptId: idA, files: [{ path: "src/price.js", content: COMMAS }, { path: "tests/price.test.js", content: PRICE_TEST() + T_COMMAS }] }, "the commas");
     const wroteB = await b.call("gitring_write", { attemptId: idB, files: [{ path: "src/price.js", content: FREE }, { path: "tests/price.test.js", content: PRICE_TEST() + T_FREE }] }, "the Free check, on the same lines");
-    for (const id of new Set([...(planB.text.matchAll(/\[(cr_\w+)\]/g) ?? []), ...(wroteB.text.matchAll(/\[(cr_\w+)\]/g) ?? [])].map((m) => m[1]))) {
+    // The answer of the write can replace the change request of the plan: Agent B confirms the ones that are open.
+    const got = new Set([...(planB.text.matchAll(/\[(cr_\w+)\]/g) ?? []), ...(wroteB.text.matchAll(/\[(cr_\w+)\]/g) ?? [])].map((m) => m[1]));
+    for (const id of (await openOf(idB)).filter((x) => got.has(x))) {
       await b.call("gitring_ack", { attemptId: idB, correctionId: id, note: "Applied. I wait for Agent A, then I change formatPrice again on the new main." }, `confirm ${id}`);
     }
     await b.call("gitring_traffic", { attemptId: idB }, "who works near me?");
@@ -236,6 +240,8 @@ export async function runMeet({ endpoint, key, options = {}, say = console.log, 
     await b.call("gitring_read", { attemptId: idB, path: "src/price.js" }, "read the new text");
     await b.call("gitring_read", { attemptId: idB, path: "tests/price.test.js" }, "read the new test");
     await b.call("gitring_write", { attemptId: idB, files: [{ path: "src/price.js", content: BOTH }, { path: "tests/price.test.js", content: PRICE_TEST() + T_COMMAS + T_FREE }] }, "both changes, on the new text");
+    // gitring checks the code at each confirmation. Agent B applied the change requests now: it confirms the open ones.
+    for (const id of await openOf(idB)) await b.call("gitring_ack", { attemptId: idB, correctionId: id, note: "Both changes are on the new main." }, `confirm ${id}`);
     await b.call("gitring_check", { attemptId: idB }, "the tests");
     await b.call("gitring_submit", { attemptId: idB, summary: "formatPrice(0) shows Free" }, "the work is ready");
     await waitFor(merged(idB), "the merge of Agent B");

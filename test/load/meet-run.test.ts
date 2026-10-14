@@ -71,9 +71,15 @@ describe("the story", () => {
     expect(text).not.toContain(key);
     expect(text).toMatch(/Look at it: https:\/\/gitring\.test\/overview\?project=meet-/);
 
+    // gitring checks the code: Agent B confirms before its change, so the change request stays open.
+    expect(text).toMatch(/Agent B \(Cursor\) calls gitring_ack[^\n]*\n  │ Your code still edits lines? [\d–, and]+ of [\w/.]+\.js\. Change it, then call gitring_ack again\. The change request stays open\./);
     // Main holds both changes, and all three tasks merged one after the other.
     const state = await world.harbor(result.project).state();
     expect(state.landings).toHaveLength(3);
+    // Agent B confirmed again after its change on the new main: no change request closed without an answer.
+    const answered = state.corrections.filter((c) => c.status !== "superseded");
+    expect(answered.length).toBeGreaterThan(0);
+    expect(answered.map((c) => c.status)).toEqual(answered.map(() => "acknowledged"));
     const files = await world.filesAt(state.project.repo.name, state.project.mainSha);
     expect(files["src/price.js"]).toContain('if (cents === 0) return "Free";');
     expect(files["src/price.js"]).toContain('.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",")');
