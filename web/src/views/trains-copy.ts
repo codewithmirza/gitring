@@ -1,5 +1,5 @@
 /**
- * Plain words for trains, the test mode and reverts (Settings and History).
+ * Plain words for merging work copies together (a "train" in the code), the test mode and reverts (Settings and History).
  * The module is pure, so tests can read it.
  */
 import type { Landing, LandingMethod, TestsWhen } from "../../../src/core/types";
@@ -15,7 +15,13 @@ export function testsWhenHelp(when: TestsWhen): string {
     : "gitring tests main plus the work before each merge. Work merges only when the tests pass.";
 }
 
-export const TRAIN_HELP = "Ready work copies that touch different files merge in one train. A train has one test run and one commit for each task. Use 1 to 16. Use 1 to turn trains off.";
+export const TRAIN_LABEL = "Most work copies in one test run";
+
+export const TRAIN_HELP =
+  "Ready work copies that change different files merge together after one test run. Each task keeps its own commit. Use a number from 1 to 16. Use 1 to merge one at a time.";
+
+/** The error under the field when the number is not from 1 to 16. */
+export const TRAIN_ERROR = "Give a number from 1 to 16 for the most work copies in one test run.";
 
 /** The largest train that a form may send: a whole number from 1 to 16, else undefined. */
 export function parseMaxTrain(text: string): number | undefined {

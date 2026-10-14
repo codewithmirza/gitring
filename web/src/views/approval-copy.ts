@@ -21,6 +21,9 @@ export interface Choice<T extends string> {
 export const LANDING_LEGEND = "When does a person say yes?";
 export const APPROVER_LEGEND = "Who says yes?";
 
+/** Under the three choices: it is true for every choice, so it is said once. */
+export const PERSON_ALSO_DECIDES = "A person also decides when no test ran or when work copies compete.";
+
 /**
  * The three landing choices. The help of "risky" names each sign of riskSigns (core/approvals.ts): the
  * parameters of a function change, build or deploy files change, files are deleted, the change is large.
@@ -29,17 +32,15 @@ export const LANDING_CHOICES: Choice<LandingMode>[] = [
   {
     value: "automatic",
     label: "Only when the tests pass",
-    help: "gitring merges the work by itself. A person still decides when no test ran or when work copies compete.",
+    help: "gitring merges the work by itself when the tests pass.",
   },
   {
     value: "risky",
     label: "When a change looks risky",
     badge: "Recommended",
     help:
-      "gitring asks when the parameters of a function change, or when build or deploy files change. " +
-      `It also asks when files are deleted, or when the change is large: ${LARGE_FILES} files or ${LARGE_LINES} changed lines. ` +
-      "A change of comments, white space or documentation only never looks risky. " +
-      "A person also decides when no test ran, or when work copies compete. New projects start with this choice.",
+      "gitring asks when the parameters of a function change, build or deploy files change, or files are deleted. " +
+      `It also asks when the change is large: ${LARGE_FILES} files or ${LARGE_LINES} changed lines.`,
   },
   {
     value: "ask",
@@ -98,11 +99,10 @@ export type FolderRuleKind = FolderRule["rule"];
 
 export const FOLDER_RULES_LEGEND = "Rules by folder";
 
-/** What the section says first: what a rule is and where gitring checks it. */
+/** What the section says first: what a rule is, and the three kinds of pattern. */
 export const FOLDER_RULES_HELP =
-  "A rule names a folder or a file pattern and says who says yes to a change there. " +
-  "gitring checks the files of each plan and the changed files of each merge. " +
-  `Patterns: migrations/** (a folder and all in it), docs/*.md (one folder), *.sql (a name, in any folder). At most ${MAX_FOLDER_RULES} rules.`;
+  "A rule says who says yes to a change in a folder or a file. " +
+  `Examples: migrations/** (a folder and all in it), docs/*.md (one folder), *.sql (a name, in any folder). At most ${MAX_FOLDER_RULES} rules.`;
 
 /** The three kinds of a rule, with one help text each. */
 export const FOLDER_RULE_CHOICES: Choice<FolderRuleKind>[] = [

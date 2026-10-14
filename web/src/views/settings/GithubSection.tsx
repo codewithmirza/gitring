@@ -31,7 +31,7 @@ const SYNC_STATE: Record<GithubSyncState, { tone: BadgeTone; icon: IconName; tex
 
 const MODE_HELP: Record<GithubSyncMode, string> = {
   // GitHub sync is optional: with it off, gitring follows GitHub only when a person asks.
-  off: 'Merged code stays in Cloudflare Artifacts. A push on GitHub does not change main. Use "Bring GitHub changes in now" for that.',
+  off: 'Merged code stays in gitring. A push on GitHub does not change main. Use "Bring GitHub changes in now" for that.',
   "pull-request": "gitring pushes each merge to a branch and keeps one pull request open to your main branch. You merge on GitHub.",
   main: "gitring pushes each merge to your main branch. A person's push to main stops the sync.",
 };
@@ -79,7 +79,7 @@ function SyncStatus({ status }: { status: GithubSyncStatus }) {
           </Badge>
           <span className="st-sync__msg">
             {pull.message}
-            {pull.at ? <span className="ink-3"> · {ago(pull.at)}</span> : null}
+            {pull.at ? <span className="st-sync__when">{ago(pull.at)}</span> : null}
           </span>
           {pull.intentId && <Link to={`/tasks/${encodeURIComponent(pull.intentId)}`}>Open the task</Link>}
           {pull.compareUrl && (
@@ -89,23 +89,19 @@ function SyncStatus({ status }: { status: GithubSyncStatus }) {
           )}
         </div>
       )}
-      {(status.syncedSha || status.at) && (
+      {status.syncedSha && (
         <p className="np__help">
-          {status.syncedSha ? (
+          GitHub has main <span className="voice-agent">{shortSha(status.syncedSha)}</span>
+          {status.branch ? (
             <>
-              GitHub has main <span className="voice-agent">{shortSha(status.syncedSha)}</span>
-              {status.branch ? (
-                <>
-                  {" "}
-                  on the branch <span className="voice-agent">{status.branch}</span>
-                </>
-              ) : null}
+              {" "}
+              on the branch <span className="voice-agent">{status.branch}</span>
             </>
           ) : null}
-          {status.syncedSha && status.at ? " · " : ""}
-          {status.at ? ago(status.at) : ""}
+          .
         </p>
       )}
+      {status.at && <p className="np__help">Updated {ago(status.at)}.</p>}
       {(status.prUrl || status.compareUrl || status.installUrl) && (
         <p className="st-sync__links">
           {status.prUrl && (

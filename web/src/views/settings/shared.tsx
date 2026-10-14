@@ -44,3 +44,6 @@ export interface SectionProps {
   settings: ProjectSettings;
   onSaved: (s: ProjectSettings) => void;
 }
+
+/** Run one action of the page with a busy key and a toast: "Name saved" on success, "The change did not save" on failure. */
+export type RunSave = (key: string, fn: () => Promise<unknown>, done: string) => Promise<void>;
