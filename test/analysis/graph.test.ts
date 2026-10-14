@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportGraph, emptyGraph, graphFromEdges } from "../../src/core/analysis/graph";
+import { buildImportGraph, emptyGraph, extendGraph, graphFromEdges, importEdges } from "../../src/core/analysis/graph";
 import { appFiles } from "./fixtures";
 
 describe("buildImportGraph: the app", () => {
@@ -102,5 +102,36 @@ describe("graphFromEdges and emptyGraph", () => {
     expect(g.neighbors("a")).toEqual([]);
     expect(g.distance("a", "b")).toBe(Infinity);
     expect(g.distance("a", "a")).toBe(0);
+  });
+});
+
+describe("import edges: require(), path aliases, work copies", () => {
+  it("counts require() calls and aliased imports as edges", () => {
+    const files = new Map([
+      ["src/server.js", `const db = require("./db");\nfunction lazy() { return require("./heavy"); }\n`],
+      ["src/db.js", "module.exports = {};\n"],
+      ["src/heavy.js", "module.exports = 1;\n"],
+      ["src/app/page.tsx", `import { Card } from "@/components/Card";\nexport default () => <Card />;\n`],
+      ["src/components/Card.tsx", "export const Card = () => <b />;\n"],
+    ]);
+    const aliases = { paths: [{ pattern: "@/*", targets: ["src/*"] }] };
+    expect(buildImportGraph(files, aliases).edges).toEqual([
+      ["src/app/page.tsx", "src/components/Card.tsx"],
+      ["src/server.js", "src/db.js"],
+      ["src/server.js", "src/heavy.js"],
+    ]);
+    expect(buildImportGraph(files).edges).not.toContainEqual(["src/app/page.tsx", "src/components/Card.tsx"]);
+  });
+
+  it("gives the edges of some files against the whole tree, and extends a graph with them", () => {
+    const main = buildImportGraph(appFiles());
+    const paths = new Set([...appFiles().keys(), "src/badge.js"]);
+    const edges = importEdges(new Map([["src/badge.js", `import { formatPrice } from "./products.js";\n`]]), paths);
+    expect(edges).toEqual([["src/badge.js", "src/products.js"]]);
+    const g = extendGraph(main, edges);
+    expect(g.distance("src/badge.js", "src/index.js")).toBe(2);
+    expect(main.distance("src/badge.js", "src/index.js")).toBe(Infinity);
+    // No new edge: the same graph (its memo of distances stays).
+    expect(extendGraph(main, [["src/index.js", "src/render.js"]])).toBe(main);
   });
 });

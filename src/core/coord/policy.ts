@@ -61,6 +61,32 @@ export function modelCannotChangeVerdict(facts: readonly PairFacts[], t: PolicyT
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
+/** Evidence that no model can argue away: overlapping lines, a used interface, or a symbol that both change. */
+export function hasHardFacts(f: PairFacts): boolean {
+  return f.hunkOverlaps.length > 0 || f.interfaceHits.length > 0 || f.sharedSymbols.length > 0;
+}
+
+/**
+ * How sure the decision model is about one pair: 0.9 with hard facts, else how far its collision answer
+ * lies from a coin flip (at least 0.3).
+ */
+export function pairConfidence(f: PairFacts, a: CourseAssessment): number {
+  return hasHardFacts(f) ? 0.9 : Math.max(0.3, Math.abs(a.collision - 0.5) * 2);
+}
+
+/**
+ * The confidence of the decision model in one check: the weakest of the pairs that need a change request.
+ * A pair that needs none cannot lead to "escalate", so its doubt does not count: a coin-flip answer for an
+ * unrelated pair does not send a clear semantic pair to a person. With no such pair: the weakest pair of
+ * all. A pair without an assessment does not count (1 when no pair has one).
+ */
+export function modelConfidence(pairs: readonly { facts: PairFacts; assessment?: CourseAssessment }[], t: PolicyThresholds): number {
+  const known = pairs.flatMap((p) => (p.assessment ? [{ facts: p.facts, assessment: p.assessment }] : []));
+  if (!known.length) return 1;
+  const flagged = known.filter((p) => needsCorrection(p.assessment, t));
+  return Math.min(...(flagged.length ? flagged : known).map((p) => pairConfidence(p.facts, p.assessment)));
+}
+
 function placeholderFacts(otherAttemptId: string): PairFacts {
   return {
     otherAttemptId,

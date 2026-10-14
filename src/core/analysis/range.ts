@@ -2,15 +2,17 @@
  * Range: the distance between two pieces of work in the code graph.
  *
  *   0  same lines (overlapping hunks on a shared file) or a symbol that both change
+ *      (a class or object and one of its members count as one symbol: `Cart` and `Cart.add`)
  *   1  one side changes a symbol (or its signature) that the other side uses
- *   2  a shared file, different lines and symbols
+ *   2  a shared file, different lines and symbols (two methods of one class, for example)
  *   3  two files one import apart
  *   4  two files two imports apart
  *   5  unrelated (open water)
  *
  * A WorkShape is the comparable outline of one vessel's work. The course (declared before
- * any code exists) gives files and symbols; the footprint (real diffs) adds hunks, signature
- * changes and references. `unionShapes(course, footprint)` is what the course check compares.
+ * any code exists) gives files, the symbols it changes and the symbols it uses; the footprint
+ * (real diffs) adds hunks, signature changes and references. `unionShapes(course, footprint)`
+ * is what the course check compares.
  *
  * Pure module: no platform APIs.
  */
@@ -215,20 +217,34 @@ export function sameSignature(a: string, b: string): boolean {
   return na === nb && pa.length === pb.length && pa.every((x, i) => x === pb[i]);
 }
 
+function byName(keys: readonly SymbolKey[]): Map<string, SymbolKey[]> {
+  const out = new Map<string, SymbolKey[]>();
+  for (const k of keys) {
+    const n = symbolName(k);
+    const list = out.get(n);
+    if (list) list.push(k);
+    else out.set(n, [k]);
+  }
+  return out;
+}
+
+/** Name of the class or object that a member key belongs to (`src/a.js#Cart.add` → `Cart`). Empty for a plain name. */
+export function ownerName(key: SymbolKey): string {
+  const name = symbolName(key);
+  const dot = name.indexOf(".");
+  return dot > 0 ? name.slice(0, dot) : "";
+}
+
 /**
  * Symbols present on both sides. A bare name (no path) matches any key with that name.
  * Returns the qualified key when one side has it. Sorted, unique.
+ * With `members`, a class or object also matches each of its members (`Cart` and `Cart.add`), in the
+ * same file; the member key is returned.
  */
-export function intersectSymbols(as: readonly SymbolKey[], bs: readonly SymbolKey[]): SymbolKey[] {
+export function intersectSymbols(as: readonly SymbolKey[], bs: readonly SymbolKey[], opts: { members?: boolean } = {}): SymbolKey[] {
   if (!as.length || !bs.length) return [];
   const bSet = new Set(bs);
-  const bByName = new Map<string, SymbolKey[]>();
-  for (const k of bs) {
-    const n = symbolName(k);
-    const list = bByName.get(n);
-    if (list) list.push(k);
-    else bByName.set(n, [k]);
-  }
+  const bByName = byName(bs);
   const out = new Set<SymbolKey>();
   for (const k of as) {
     if (bSet.has(k)) {
@@ -241,6 +257,21 @@ export function intersectSymbols(as: readonly SymbolKey[], bs: readonly SymbolKe
     } else if (sameName.some((b) => !symbolPath(b))) {
       out.add(k);
     }
+  }
+  if (opts.members) {
+    const aByName = byName(as);
+    const memberOf = (member: SymbolKey, owners: Map<string, SymbolKey[]>): void => {
+      const owner = ownerName(member);
+      if (!owner) return;
+      const path = symbolPath(member);
+      for (const o of owners.get(owner) ?? []) {
+        const op = symbolPath(o);
+        if (path && op && path !== op) continue;
+        out.add(path || !op ? member : `${op}#${symbolName(member)}`);
+      }
+    };
+    for (const k of as) memberOf(k, bByName);
+    for (const k of bs) memberOf(k, aByName);
   }
   return [...out].sort();
 }
@@ -285,34 +316,79 @@ function touchHunks(touch: FileTouch): LineRange[] {
 const uniqSorted = (xs: Iterable<string>): string[] => [...new Set(xs)].filter(Boolean).sort();
 
 /**
- * Shape of a declared course. Course symbols count as "changed"; their files count as touched.
+ * Where each name is defined on main: name → paths (`formatPrice` → ["src/products.js"]). Members of
+ * classes and objects count by their full name (`Cart.add`).
+ */
+export type NameIndex = Readonly<Record<string, readonly string[]>>;
+
+/**
+ * Keys for a symbol that a plan names without a path.
+ *
+ * Without an index of main, the bare name stays, and it then matches any key with that name. With the index:
+ *   changed  the plan's own code files (only the ones that define the name on main, when some do); a plan
+ *            with no code files gets the one main file that defines the name
+ *   used     the one main file that defines the name; with more files, the plan's own files among them;
+ *            a name that main does not define stays bare (another plan can add it)
+ * A name that matches no file gives no key: it cannot match a symbol in an unrelated file.
+ */
+export function qualifyBareName(name: string, planFiles: readonly string[], role: "changed" | "used", definedIn?: NameIndex): SymbolKey[] {
+  if (!definedIn) return [name];
+  const homes = Object.hasOwn(definedIn, name) ? (definedIn[name] ?? []) : [];
+  const code = planFiles.filter(isCodePath);
+  if (role === "changed") {
+    if (code.length) {
+      const known = code.filter((f) => homes.includes(f));
+      return (known.length ? known : code).map((f) => `${f}#${name}`);
+    }
+    return homes.length === 1 ? [`${homes[0]}#${name}`] : [];
+  }
+  if (!homes.length) return [name];
+  if (homes.length === 1) return [`${homes[0]}#${name}`];
+  return code.filter((f) => homes.includes(f)).map((f) => `${f}#${name}`);
+}
+
+/**
+ * Shape of a declared course. Course symbols count as "changed"; their files count as touched. The
+ * symbols the course uses (`course.uses`) count as "referenced", so a plan that calls a function and a
+ * plan that changes it are at range 1 before any code exists.
  * Extension: when `baseSignatures` (symbol key → signature on main) is given and a course symbol
  * carries a different parameter list (`src/products.js#formatPrice(cents, currency)`), the symbol
- * is also a declared signature change.
+ * is also a declared signature change. With `definedIn` (the names on main), a symbol without a path
+ * becomes the keys of `qualifyBareName`.
  */
-export function shapeFromCourse(course: Course, baseSignatures?: Record<SymbolKey, string>): WorkShape {
-  const files = new Set((course.files ?? []).map(normalizePath));
+export function shapeFromCourse(course: Course, baseSignatures?: Record<SymbolKey, string>, definedIn?: NameIndex): WorkShape {
+  const planFiles = (course.files ?? []).map(normalizePath);
+  const files = new Set(planFiles);
   const changed = new Set<SymbolKey>();
   const signatureChanged = new Set<SymbolKey>();
+  const referenced = new Set<SymbolKey>();
   const signatures: Record<SymbolKey, SignatureInfo> = {};
-  for (const raw of course.symbols ?? []) {
-    if (typeof raw !== "string" || !raw.trim()) continue;
+  const refs = (raw: unknown): SymbolRef[] => {
+    if (typeof raw !== "string" || !raw.trim()) return [];
     const ref = parseSymbolRef(raw);
-    if (!ref.name) continue;
-    changed.add(ref.key);
-    if (ref.path) files.add(ref.path);
-    if (ref.signature) {
-      const before = baseSignatures?.[ref.key];
-      signatures[ref.key] = before ? { before, after: ref.signature } : { after: ref.signature };
-      if (before && !sameSignature(before, ref.signature)) signatureChanged.add(ref.key);
+    return ref.name ? [ref] : [];
+  };
+  for (const ref of (course.symbols ?? []).flatMap(refs)) {
+    for (const key of ref.path ? [ref.key] : qualifyBareName(ref.name, planFiles, "changed", definedIn)) {
+      changed.add(key);
+      const path = symbolPath(key);
+      if (path) files.add(path);
+      if (ref.signature) {
+        const before = baseSignatures?.[key];
+        signatures[key] = before ? { before, after: ref.signature } : { after: ref.signature };
+        if (before && !sameSignature(before, ref.signature)) signatureChanged.add(key);
+      }
     }
+  }
+  for (const ref of (course.uses ?? []).flatMap(refs)) {
+    for (const key of ref.path ? [ref.key] : qualifyBareName(ref.name, planFiles, "used", definedIn)) referenced.add(key);
   }
   const shape: WorkShape = {
     files: uniqSorted(files),
     hunks: {},
     changed: uniqSorted(changed),
     signatureChanged: uniqSorted(signatureChanged),
-    referenced: [],
+    referenced: uniqSorted(referenced),
   };
   if (Object.keys(signatures).length) shape.signatures = signatures;
   return shape;
@@ -405,9 +481,14 @@ export function overlappingHunks(a: WorkShape, b: WorkShape, slack = HUNK_SLACK)
   return out;
 }
 
-/** Symbols one side changes (or re-signs) that the other side uses. */
+/** Symbols that both sides change. A class and one of its members count as one symbol. */
+export function sharedChanges(a: WorkShape, b: WorkShape): SymbolKey[] {
+  return intersectSymbols(a.changed, b.changed, { members: true });
+}
+
+/** Symbols one side changes (or re-signs) that the other side uses. A class and one of its members count as one symbol. */
 export function usedChanges(producer: WorkShape, consumer: WorkShape): SymbolKey[] {
-  return intersectSymbols(uniqSorted([...producer.changed, ...producer.signatureChanged]), consumer.referenced);
+  return intersectSymbols(uniqSorted([...producer.changed, ...producer.signatureChanged]), consumer.referenced, { members: true });
 }
 
 /**
@@ -451,7 +532,7 @@ export function minImportDistance(a: readonly string[], b: readonly string[], gr
 
 export function computeRange(a: WorkShape, b: WorkShape, graph: ImportGraph): Range {
   if (overlappingHunks(a, b).length > 0) return 0;
-  if (intersectSymbols(a.changed, b.changed).length > 0) return 0;
+  if (sharedChanges(a, b).length > 0) return 0;
   if (usedChanges(a, b).length > 0 || usedChanges(b, a).length > 0) return 1;
   if (sharedFiles(a, b).length > 0) return 2;
   const d = minImportDistance(a.files, b.files, graph, GRAPH_HOPS);

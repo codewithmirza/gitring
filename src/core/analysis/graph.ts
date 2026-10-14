@@ -4,7 +4,7 @@
  *
  * Pure module: runs in Node and in workerd.
  */
-import { extractSymbols, isAnalyzable, resolveImport } from "./symbols";
+import { extractSymbols, isAnalyzable, resolveImport, type PathAliases } from "./symbols";
 
 export interface ImportGraph {
   /** [importer, imported], unique, sorted. */
@@ -17,20 +17,44 @@ export interface ImportGraph {
 
 /**
  * Build the graph from file texts (path → source). Only analyzable files are parsed; relative
- * imports and `export … from` re-exports resolve against all keys of `files`. Self-imports and
- * unresolved (package) imports are dropped.
+ * imports, `export … from` re-exports and `require("…")` calls resolve against all keys of `files`
+ * (and through the path aliases, when given). Self-imports and unresolved (package) imports are dropped.
  */
-export function buildImportGraph(files: Map<string, string>): ImportGraph {
-  const paths = new Set(files.keys());
+export function buildImportGraph(files: Map<string, string>, aliases?: PathAliases): ImportGraph {
+  return graphFromEdges(importEdges(files, new Set(files.keys()), aliases));
+}
+
+/**
+ * The import edges of some files (path → source), resolved against `paths` (all files of the tree).
+ * A work copy gives the edges of its changed and new files this way, without a parse of the other files.
+ */
+export function importEdges(files: ReadonlyMap<string, string>, paths: Set<string>, aliases?: PathAliases): [string, string][] {
   const edges: [string, string][] = [];
   for (const [path, source] of files) {
     if (!isAnalyzable(path) || typeof source !== "string") continue;
     for (const imp of extractSymbols(path, source).imports) {
-      const target = resolveImport(path, imp.from, paths);
+      const target = resolveImport(path, imp.from, paths, aliases);
       if (target !== undefined && target !== path) edges.push([path, target]);
     }
   }
-  return graphFromEdges(edges);
+  return edges;
+}
+
+const edgeKeys = new WeakMap<ImportGraph, Set<string>>();
+
+/**
+ * A graph with more edges. Gives `graph` itself when every edge is in it already, so its memo of
+ * distances stays.
+ */
+export function extendGraph(graph: ImportGraph, extra: Iterable<readonly [string, string]>): ImportGraph {
+  let have = edgeKeys.get(graph);
+  if (!have) edgeKeys.set(graph, (have = new Set(graph.edges.map(([a, b]) => `${a}\u0000${b}`))));
+  const added: [string, string][] = [];
+  for (const e of extra) {
+    if (!e || e[0] === e[1] || have.has(`${e[0]}\u0000${e[1]}`)) continue;
+    added.push([e[0], e[1]]);
+  }
+  return added.length ? graphFromEdges([...graph.edges, ...added]) : graph;
 }
 
 /** Extension: a graph from stored edges (for example `ProjectState.imports`), without parsing. */

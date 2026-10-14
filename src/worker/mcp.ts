@@ -66,7 +66,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
     name: "gitring_declare",
     title: "Send a plan",
     description:
-      "Send your plan BEFORE you write code. Give the steps, the files, the functions and the approach. " +
+      "Send your plan BEFORE you write code. Give the steps, the files, the functions that you change, the functions that you call (uses), and the approach. " +
       "gitring checks the plan against the 20 nearest active plans and against main. It answers clear, or sends change requests. gitring never blocks you. " +
       "Mode 'api' (default) uses gitring_read and gitring_write. Mode 'git' gives a git remote and a token for your work copy. " +
       "Use git mode on a computer: clone, commit, push. " +
@@ -78,6 +78,10 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       plan: z.array(z.string()).describe("Short steps, in order."),
       files: z.array(z.string()).describe("Repo-relative paths you will change."),
       symbols: z.array(z.string()).optional().describe("path#name of the functions you will add or change. Add (params) if you change a signature."),
+      uses: z
+        .array(z.string())
+        .optional()
+        .describe("path#name of the functions that your plan will call but not change. Then gitring finds a conflict with a plan that changes them before code exists."),
       approach: z.string().describe("One sentence."),
       mode: z.enum(["api", "git"]).optional(),
       agent: z
@@ -97,6 +101,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
           plan: args.plan ?? [],
           files: args.files ?? [],
           symbols: args.symbols ?? [],
+          uses: args.uses ?? [],
           approach: args.approach ?? "",
           mode: args.mode,
           agent: { ...(args.agent ?? {}), kind: args.mode === "git" ? "git" : "mcp", client: args.agent?.client ?? "mcp" },

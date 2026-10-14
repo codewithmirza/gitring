@@ -4,9 +4,12 @@ import {
   DUPLICATE_UNSHARED_CAP,
   SOFT_PAIR_CAP,
   decide,
+  hasHardFacts,
   isSoftPair,
   modelCannotChangeVerdict,
+  modelConfidence,
   needsCorrection,
+  pairConfidence,
 } from "../../src/core/coord/policy";
 import { DEFAULT_THRESHOLDS, type CourseAssessment, type PairFacts, type PolicyThresholds } from "../../src/core/types";
 
@@ -190,5 +193,37 @@ describe("modelCannotChangeVerdict", () => {
       expect(decide(worst, facts, t, DUPLICATE_UNSHARED_CAP).verdict).not.toBe("clear");
       expect(decide(rules, facts, t, 0.05).verdict).toBe("clear");
     }
+  });
+});
+
+describe("modelConfidence (the doubt of the decision model)", () => {
+  // x: a flagged semantic pair with hard facts (an interface that the other side uses).
+  const semantic = { facts: f("x", { range: 1, interfaceHits: [{ changedBy: "incoming" as const, symbol: "src/a.js#f", usedAt: ["src/b.js"] }] }), assessment: a("x", { collision: 0.8, interference: 3.2 }) };
+  // y: an unrelated pair where the model answered with a coin flip.
+  const coinFlip = { facts: f("y", { range: 2, sharedFiles: ["src/c.js"] }), assessment: a("y", { collision: 0.48, interference: 1.0 }) };
+
+  it("counts hard facts and how far a collision answer lies from a coin flip", () => {
+    expect(hasHardFacts(semantic.facts)).toBe(true);
+    expect(hasHardFacts(coinFlip.facts)).toBe(false);
+    expect(pairConfidence(semantic.facts, semantic.assessment)).toBe(0.9);
+    expect(pairConfidence(coinFlip.facts, coinFlip.assessment)).toBe(0.3);
+    expect(pairConfidence(coinFlip.facts, a("y", { collision: 0.95 }))).toBeCloseTo(0.9);
+  });
+
+  it("looks only at the pairs that need a change request: one unrelated coin flip does not send the check to a person", () => {
+    const conf = modelConfidence([semantic, coinFlip], T);
+    expect(conf).toBe(0.9);
+    expect(decide([semantic.assessment, coinFlip.assessment], [semantic.facts, coinFlip.facts], T, 0.02, conf).verdict).toBe("correct");
+    // Before, the minimum over all pairs (0.3) made the same check "escalate".
+    expect(decide([semantic.assessment, coinFlip.assessment], [semantic.facts, coinFlip.facts], T, 0.02, 0.3).verdict).toBe("escalate");
+  });
+
+  it("uses the weakest pair of all when no pair needs a change request, and 1 without assessments", () => {
+    expect(modelConfidence([coinFlip], T)).toBe(0.3);
+    expect(modelConfidence([{ facts: f("z") }], T)).toBe(1);
+    expect(modelConfidence([], T)).toBe(1);
+    // A flagged pair without hard facts and with a coin-flip answer still counts.
+    const doubtful = { facts: f("w", { range: 2 }), assessment: a("w", { collision: 0.55, interference: 3.1 }) };
+    expect(modelConfidence([semantic, doubtful], T)).toBeCloseTo(0.3);
   });
 });

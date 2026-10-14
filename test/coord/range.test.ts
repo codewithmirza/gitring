@@ -8,7 +8,9 @@ import {
   mergeRanges,
   paramNames,
   parseSymbolRef,
+  qualifyBareName,
   sameSignature,
+  sharedChanges,
   shapeFromCourse,
   shapeFromFootprint,
   unionShapes,
@@ -159,5 +161,82 @@ describe("computeRange", () => {
   it("survives a graph that throws", () => {
     const broken = { edges: [], neighbors: () => [], distance: () => { throw new Error("boom"); } };
     expect(computeRange(shape({ files: ["a.js"] }), shape({ files: ["b.js"] }), broken)).toBe(5);
+  });
+});
+
+describe("plans that use symbols (Course.uses)", () => {
+  it("puts the used symbols in `referenced`: two plans are at range 1 before any code exists", () => {
+    const changer = shapeFromCourse(course(["src/products.js"], ["src/products.js#formatPrice(cents, currency)"]), { "src/products.js#formatPrice": "formatPrice(cents)" });
+    const user = shapeFromCourse({ ...course(["src/badge.js"], ["src/badge.js#renderBadge"]), uses: ["src/products.js#formatPrice"] });
+    expect(user.referenced).toEqual(["src/products.js#formatPrice"]);
+    // The used file is not a file of the plan.
+    expect(user.files).toEqual(["src/badge.js"]);
+    expect(computeRange(changer, user, graph)).toBe(1);
+    expect(computeRange(user, changer, graph)).toBe(1);
+    // Without `uses`, the two plans look unrelated.
+    expect(computeRange(changer, shapeFromCourse(course(["src/badge.js"], ["src/badge.js#renderBadge"])), graph)).toBe(5);
+  });
+});
+
+describe("plan symbols without a path", () => {
+  const definedIn = { header: ["src/render.js"], formatPrice: ["src/products.js"], init: ["src/a.js", "src/b.js"], "Cart.add": ["src/cart.js"] };
+
+  it("keep the old meaning without an index of main (any key with that name)", () => {
+    expect(qualifyBareName("header", [], "changed")).toEqual(["header"]);
+  });
+
+  it("lie in the plan's own code files, else in the one main file that defines the name", () => {
+    expect(qualifyBareName("header", ["src/render.js", "README.md"], "changed", definedIn)).toEqual(["src/render.js#header"]);
+    // A new name: each code file of the plan.
+    expect(qualifyBareName("badge", ["src/a.js", "src/b.js"], "changed", definedIn)).toEqual(["src/a.js#badge", "src/b.js#badge"]);
+    expect(qualifyBareName("formatPrice", [], "changed", definedIn)).toEqual(["src/products.js#formatPrice"]);
+    expect(qualifyBareName("Cart.add", [], "changed", definedIn)).toEqual(["src/cart.js#Cart.add"]);
+    // Two files define it, or none: no key.
+    expect(qualifyBareName("init", [], "changed", definedIn)).toEqual([]);
+    expect(qualifyBareName("nothing", ["README.md"], "changed", definedIn)).toEqual([]);
+  });
+
+  it("place used names in the one main file, else in the plan's files that define them, else keep them bare", () => {
+    expect(qualifyBareName("formatPrice", ["src/render.js"], "used", definedIn)).toEqual(["src/products.js#formatPrice"]);
+    expect(qualifyBareName("init", ["src/b.js"], "used", definedIn)).toEqual(["src/b.js#init"]);
+    expect(qualifyBareName("init", ["src/c.js"], "used", definedIn)).toEqual([]);
+    expect(qualifyBareName("slugify", [], "used", definedIn)).toEqual(["slugify"]);
+    expect(qualifyBareName("constructor", [], "used", definedIn)).toEqual(["constructor"]);
+  });
+
+  it("no longer give a false range 0 with a symbol of the same name in another file", () => {
+    const plan = shapeFromCourse(course(["src/index.js"], ["header"]), undefined, { ...definedIn, header: ["src/render.js", "src/index.js"] });
+    expect(plan.changed).toEqual(["src/index.js#header"]);
+    const other = shape({ files: ["src/render.js"], changed: ["src/render.js#header"] });
+    expect(computeRange(plan, other, graph)).toBe(3);
+    // A plan without files: the one main file that defines the name, and that file counts as touched.
+    const fileless = shapeFromCourse(course([], ["formatPrice(cents, currency)"]), { "src/products.js#formatPrice": "formatPrice(cents)" }, definedIn);
+    expect(fileless.changed).toEqual(["src/products.js#formatPrice"]);
+    expect(fileless.files).toEqual(["src/products.js"]);
+    expect(fileless.signatureChanged).toEqual(["src/products.js#formatPrice"]);
+  });
+});
+
+describe("members of classes and objects", () => {
+  const method = (name: string) => shape({ files: ["src/cart.js"], changed: [`src/cart.js#${name}`] });
+
+  it("two methods of one class are not one symbol (range 2, the shared file)", () => {
+    expect(computeRange(method("Cart.add"), method("Cart.remove"), graph)).toBe(2);
+    expect(sharedChanges(method("Cart.add"), method("Cart.remove"))).toEqual([]);
+  });
+
+  it("a class and one of its members are one symbol (range 0), also for a plan that names the class", () => {
+    expect(sharedChanges(method("Cart"), method("Cart.add"))).toEqual(["src/cart.js#Cart.add"]);
+    expect(computeRange(method("Cart"), method("Cart.add"), graph)).toBe(0);
+    expect(computeRange(shapeFromCourse(course([], ["Cart"])), method("Cart.add"), graph)).toBe(0);
+    // Not across files, and not for a name that only starts the same way.
+    expect(intersectSymbols(["src/a.js#Cart"], ["src/b.js#Cart.add"], { members: true })).toEqual([]);
+    expect(intersectSymbols(["src/a.js#Car"], ["src/a.js#Cart.add"], { members: true })).toEqual([]);
+  });
+
+  it("a change to a member that the other side uses is range 1", () => {
+    const user = shape({ files: ["src/shop.js"], referenced: ["src/cart.js#Cart.add"] });
+    expect(computeRange(method("Cart.add"), user, graph)).toBe(1);
+    expect(computeRange(method("Cart.remove"), user, graph)).toBe(5);
   });
 });

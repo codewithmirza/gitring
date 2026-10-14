@@ -1,19 +1,25 @@
 /**
  * Module symbols for footprints and the import graph: top-level declarations, exports, imports,
- * and the identifiers each declaration uses.
+ * the identifiers each declaration uses, and the members of top-level classes and objects.
  *
- * Pure module (acorn only): runs in Node and in workerd. Never throws.
+ * Pure module (acorn and acorn-jsx only): runs in Node and in workerd. Never throws.
  *
- *   .js .mjs .cjs .jsx      acorn (ecmaVersion "latest", sourceType "module"; a script retry for
- *                           CommonJS-style files)
+ *   .js .mjs .cjs           acorn (ecmaVersion "latest", sourceType "module"; a script retry for
+ *                           CommonJS-style files; a JSX retry for a .js file with JSX)
+ *   .jsx                    acorn with acorn-jsx
  *   .ts .tsx .mts .cts      best-effort type strip (types are blanked in place, so offsets and line
- *                           numbers do not move), then acorn
- *   parse failure           regex scanner; `parseError` is set
+ *                           numbers do not move), then acorn (acorn-jsx for .tsx)
+ *   parse failure           regex scanner; `parseError` is set (top-level declarations only)
+ *
+ * Imports: `import` declarations, `export … from`, and `require("…")` calls with a literal string.
+ * Specifiers resolve relative to the file, and through the path aliases of tsconfig.json or
+ * jsconfig.json (`compilerOptions.paths` and `baseUrl`) when the caller gives them.
  *
  * Line numbers are 1-based and come from character offsets with the line model of `lineDiff`
  * (lines end at "\n"), so ranges and diff hunks always agree.
  */
-import { parse, tokenizer, type Options } from "acorn";
+import { Parser, parse, tokenizer, type Options } from "acorn";
+import jsx from "acorn-jsx";
 import type { LineRange } from "../types";
 
 /* ───────────────────────────── contract types ───────────────────────────── */
@@ -67,19 +73,60 @@ export interface ImportBinding {
 }
 
 /**
+ * A member of a top-level class or of a top-level object literal (`const api = { list() {} }`,
+ * `export default { fetch() {} }`): a method, a getter or setter, or a field.
+ */
+export interface MemberInfo {
+  /** `Owner.name`, for example `Cart.add`, `Cart.#items` or `default.fetch`. */
+  name: string;
+  /** The top-level declaration that holds the member. */
+  owner: string;
+  kind: "method" | "get" | "set" | "field";
+  static?: boolean;
+  /** Parameter texts of a method (or of a field or property whose value is a function). */
+  params?: string[];
+  /** `Owner.name(p1, p2)` when `params` is known. */
+  signature?: string;
+  /** Lines of the member, with the comments right above it (its JSDoc), 1-based inclusive. */
+  range: LineRange;
+  /** The same as character offsets [start, end) of the analyzed text. */
+  span: [number, number];
+  /** The owner is exported and the member is not private (`#name`). */
+  exported: boolean;
+}
+
+/**
  * Extension of `ModuleSymbols` for footprints: what each top-level statement outside the
- * declarations uses, and the local import bindings.
+ * declarations uses, the local import bindings, and the members of top-level classes and objects.
  */
 export interface ModuleAnalysis extends ModuleSymbols {
   bindings: Record<string, ImportBinding>;
   /** Top-level statements that are not declarations or imports, with the identifiers each uses. */
   statements: { range: LineRange; references: string[] }[];
+  /**
+   * Members keyed `Owner.name`. Empty when the parse failed: the regex scanner sees top-level
+   * declarations only.
+   */
+  members: Record<string, MemberInfo>;
+  /** Member key → identifiers that the member uses. `this.x` in a method gives `Owner.x`. */
+  memberReferences: Record<string, string[]>;
+  /** Owners whose members are recorded (an owner with more than MAX_MEMBERS members is not). */
+  memberOwners: string[];
+}
+
+/** Path aliases from `compilerOptions` of tsconfig.json or jsconfig.json at the repository root. */
+export interface PathAliases {
+  /** Repo-relative directory for bare specifiers and for the targets of `paths` ("" = the root). */
+  baseUrl?: string;
+  /** `paths` entries in file order, with targets relative to the root: `{ pattern: "@/*", targets: ["src/*"] }`. */
+  paths: { pattern: string; targets: string[] }[];
 }
 
 /* ───────────────────────────── public API ───────────────────────────── */
 
 const JS_EXT = /\.(?:js|mjs|cjs|jsx)$/i;
 const TS_EXT = /\.(?:ts|tsx|mts|cts)$/i;
+const JSX_EXT = /\.(?:jsx|tsx)$/i;
 
 /** True for .js .mjs .cjs .jsx .ts .tsx .mts .cts. */
 export function isAnalyzable(path: string): boolean {
@@ -89,10 +136,11 @@ export function isAnalyzable(path: string): boolean {
 /**
  * Symbols of one module. Never throws. On a parse failure the regex scanner gives approximate
  * results and `parseError` holds the parser message.
- * Extension: pass `files` (all repo paths) to fill `imports[].resolved`.
+ * Extension: pass `files` (all repo paths) to fill `imports[].resolved`, and `aliases` to resolve
+ * aliased specifiers (`@/lib/x`) too.
  */
-export function extractSymbols(path: string, source: string, files?: Set<string>): ModuleSymbols {
-  const a = analyzeModule(path, source, files);
+export function extractSymbols(path: string, source: string, files?: Set<string>, aliases?: PathAliases): ModuleSymbols {
+  const a = analyzeModule(path, source, files, aliases);
   const out: ModuleSymbols = {
     path: a.path,
     decls: a.decls,
@@ -105,10 +153,14 @@ export function extractSymbols(path: string, source: string, files?: Set<string>
   return out;
 }
 
-/** `extractSymbols` plus statement-level references and import bindings (used by footprints). Never throws. */
-export function analyzeModule(path: string, source: string, files?: Set<string>): ModuleAnalysis {
+/**
+ * `extractSymbols` plus statement-level references, import bindings and the members of top-level
+ * classes and objects (used by footprints). Never throws.
+ */
+export function analyzeModule(path: string, source: string, files?: Set<string>, aliases?: PathAliases): ModuleAnalysis {
   let result: ModuleAnalysis;
   const ts = TS_EXT.test(path);
+  const jsxFile = JSX_EXT.test(path);
   try {
     let code = source;
     let removed: Uint8Array | undefined;
@@ -116,14 +168,22 @@ export function analyzeModule(path: string, source: string, files?: Set<string>)
       const stripped = stripTypeScriptDetailed(source, /\.tsx$/i.test(path));
       if (stripped !== null) ({ code, removed } = stripped);
     }
-    let program: AnyNode | undefined;
+    let parsed: { program: AnyNode; comments: CommentSpan[] } | undefined;
     let parseError: string | undefined;
     try {
-      program = parseProgram(code);
+      parsed = parseProgram(code, jsxFile);
     } catch (e) {
       parseError = errorMessage(e);
     }
-    result = program ? analyzeProgram(path, code, program, removed) : regexAnalysis(path, source, ts, parseError ?? "parse failed");
+    // A .js file can hold JSX (a React project without a build step for the extension).
+    if (!parsed && !ts && !jsxFile && /<[A-Za-z>]/.test(code)) {
+      try {
+        parsed = parseProgram(code, true);
+      } catch {
+        /* keep the first error */
+      }
+    }
+    result = parsed ? analyzeProgram(path, code, parsed.program, removed, parsed.comments) : regexAnalysis(path, source, ts, parseError ?? "parse failed");
   } catch (e) {
     try {
       result = regexAnalysis(path, source, ts, errorMessage(e));
@@ -133,7 +193,7 @@ export function analyzeModule(path: string, source: string, files?: Set<string>)
   }
   if (files) {
     for (const imp of result.imports) {
-      const r = resolveImport(path, imp.from, files);
+      const r = resolveImport(path, imp.from, files, aliases);
       if (r !== undefined) imp.resolved = r;
     }
   }
@@ -142,6 +202,8 @@ export function analyzeModule(path: string, source: string, files?: Set<string>)
   result.exports = plainRecord(result.exports);
   result.references = plainRecord(result.references);
   result.bindings = plainRecord(result.bindings);
+  result.members = plainRecord(result.members);
+  result.memberReferences = plainRecord(result.memberReferences);
   return result;
 }
 
@@ -160,15 +222,52 @@ export function ownEntry<T>(record: Record<string, T>, key: string): T | undefin
  * Tries the exact path, then + ".js", ".mjs", ".ts", "/index.js", "/index.ts" (then a few more:
  * ".jsx", ".tsx", ".cjs", ".mts", "/index.mjs", "/index.jsx", "/index.tsx", and the TypeScript
  * convention "./x.js" → "x.ts"). Bare package specifiers return undefined.
+ * Extension: with `aliases`, a bare specifier tries the `paths` patterns that match it (an exact
+ * pattern first, then the longest prefix before the `*`), then the `baseUrl` directory.
  */
-export function resolveImport(fromPath: string, spec: string, files: Set<string>): string | undefined {
-  if (!(spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../"))) return undefined;
+export function resolveImport(fromPath: string, spec: string, files: Set<string>, aliases?: PathAliases): string | undefined {
+  if (!(spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../"))) {
+    // An alias may start with "#" (`#shared/*`), so only a query is cut here.
+    const bare = spec.replace(/\?.*$/, "");
+    return aliases && bare && !bare.startsWith("/") ? resolveAliased(bare, files, aliases) : undefined;
+  }
   const clean = spec.replace(/[?#].*$/, "");
   const from = normalizeRepoPath(fromPath);
   const slash = from.lastIndexOf("/");
   const dir = slash < 0 ? "" : from.slice(0, slash);
   const joined = joinPath(dir, clean);
-  if (joined === undefined) return undefined;
+  return joined === undefined ? undefined : resolveJoined(joined, files);
+}
+
+function resolveAliased(spec: string, files: Set<string>, aliases: PathAliases): string | undefined {
+  const matches: { star: string; targets: string[]; weight: number }[] = [];
+  for (const { pattern, targets } of aliases.paths) {
+    const star = pattern.indexOf("*");
+    if (star < 0) {
+      if (pattern === spec) matches.push({ star: "", targets, weight: Infinity });
+      continue;
+    }
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    if (spec.length >= prefix.length + suffix.length && spec.startsWith(prefix) && spec.endsWith(suffix)) {
+      matches.push({ star: spec.slice(prefix.length, spec.length - suffix.length), targets, weight: prefix.length });
+    }
+  }
+  matches.sort((x, y) => y.weight - x.weight);
+  for (const m of matches) {
+    for (const target of m.targets) {
+      const joined = joinPath("", target.replace("*", m.star));
+      const hit = joined === undefined ? undefined : resolveJoined(joined, files);
+      if (hit !== undefined) return hit;
+    }
+  }
+  if (aliases.baseUrl === undefined) return undefined;
+  const joined = joinPath(aliases.baseUrl, spec);
+  return joined === undefined || joined === "" ? undefined : resolveJoined(joined, files);
+}
+
+/** The file for a joined repo path: the path itself, or the path with a known extension or an index file. */
+function resolveJoined(joined: string, files: Set<string>): string | undefined {
   const candidates: string[] = [];
   if (joined !== "") {
     candidates.push(joined, joined + ".js", joined + ".mjs", joined + ".ts");
@@ -189,6 +288,77 @@ export function resolveImport(fromPath: string, spec: string, files: Set<string>
   candidates.push(indexBase + "index.mjs", indexBase + "index.jsx", indexBase + "index.tsx");
   for (const c of candidates) if (files.has(c)) return c;
   return undefined;
+}
+
+/**
+ * The path aliases of a repository: `compilerOptions.paths` and `baseUrl` of the root tsconfig.json,
+ * else of the root jsconfig.json. The text may hold comments and trailing commas. `extends` is not
+ * followed. Undefined when the file is missing, cannot be read, or has no aliases. Never throws.
+ */
+export function pathAliasesOf(files: ReadonlyMap<string, string>): PathAliases | undefined {
+  for (const name of ["tsconfig.json", "jsconfig.json"]) {
+    const text = files.get(name);
+    if (typeof text !== "string") continue;
+    let options: { baseUrl?: unknown; paths?: unknown } | undefined;
+    try {
+      options = (parseJsonc(text) as { compilerOptions?: { baseUrl?: unknown; paths?: unknown } } | null)?.compilerOptions;
+    } catch {
+      continue;
+    }
+    if (!options || typeof options !== "object") continue;
+    const baseUrl = typeof options.baseUrl === "string" ? joinPath("", options.baseUrl) : undefined;
+    const paths: PathAliases["paths"] = [];
+    if (options.paths && typeof options.paths === "object" && !Array.isArray(options.paths)) {
+      for (const [pattern, raw] of Object.entries(options.paths as Record<string, unknown>)) {
+        if (!Array.isArray(raw) || (pattern.match(/\*/g)?.length ?? 0) > 1) continue;
+        // Targets are relative to baseUrl, or to the directory of the file (the root) without it.
+        const targets = raw.flatMap((t) => (typeof t === "string" ? [joinPath(baseUrl ?? "", t)] : [])).filter((t): t is string => t !== undefined && t !== "");
+        if (targets.length) paths.push({ pattern, targets });
+      }
+    }
+    if (paths.length || baseUrl !== undefined) return baseUrl === undefined ? { paths } : { baseUrl, paths };
+  }
+  return undefined;
+}
+
+/** JSON with comments and trailing commas (the tsconfig format). Throws on anything else. */
+function parseJsonc(text: string): unknown {
+  let out = "";
+  let i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "/" && text[i + 1] === "/") {
+      const nl = text.indexOf("\n", i);
+      i = nl < 0 ? text.length : nl;
+    } else if (c === "/" && text[i + 1] === "*") {
+      const close = text.indexOf("*/", i + 2);
+      i = close < 0 ? text.length : close + 2;
+    } else if (c === ",") {
+      // A comma before "}" or "]" (spaces and comments between) is a trailing comma.
+      let j = i + 1;
+      for (;;) {
+        while (j < text.length && /\s/.test(text[j])) j++;
+        if (text[j] === "/" && text[j + 1] === "/") {
+          const nl = text.indexOf("\n", j);
+          j = nl < 0 ? text.length : nl;
+        } else if (text[j] === "/" && text[j + 1] === "*") {
+          const close = text.indexOf("*/", j + 2);
+          j = close < 0 ? text.length : close + 2;
+        } else break;
+      }
+      if (text[j] !== "}" && text[j] !== "]") out += c;
+      i++;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return JSON.parse(out);
 }
 
 /* ───────────────────────────── shared helpers ───────────────────────────── */
@@ -234,6 +404,9 @@ function emptyAnalysis(path: string, parseError?: string): ModuleAnalysis {
     topLevelReferences: [],
     bindings: dict(),
     statements: [],
+    members: dict(),
+    memberReferences: dict(),
+    memberOwners: [],
   };
   if (parseError !== undefined) a.parseError = parseError;
   return a;
@@ -255,6 +428,9 @@ function lineIndex(src: string): (offset: number) => number {
   };
 }
 
+/** An owner with more members than this (a large table of data, for example) keeps its members unrecorded. */
+const MAX_MEMBERS = 200;
+
 const collapse = (s: string): string => s.replace(/\s+/g, " ").trim();
 const sortedArray = (s: Iterable<string>): string[] => [...new Set(s)].sort();
 
@@ -267,13 +443,27 @@ const ACORN_SCRIPT: Options = {
   allowReturnOutsideFunction: true,
 };
 
-/** Parse as a module; if that fails, try a (CommonJS-style) script. Throws the module error. */
-function parseProgram(code: string): AnyNode {
+/** acorn with JSX (acorn-jsx): for .jsx and .tsx files, and for .js files with JSX. */
+const JsxParser = Parser.extend(jsx());
+
+/** A comment of the source, as character offsets [start, end). */
+type CommentSpan = [number, number];
+
+/**
+ * Parse as a module; if that fails, try a (CommonJS-style) script. Throws the module error.
+ * Gives the comments too (members keep the comments right above them).
+ */
+function parseProgram(code: string, withJsx = false): { program: AnyNode; comments: CommentSpan[] } {
+  const run = (base: Options): { program: AnyNode; comments: CommentSpan[] } => {
+    const comments: CommentSpan[] = [];
+    const options: Options = { ...base, onComment: (_block: boolean, _text: string, start: number, end: number) => void comments.push([start, end]) };
+    return { program: withJsx ? JsxParser.parse(code, options) : parse(code, options), comments };
+  };
   try {
-    return parse(code, ACORN_MODULE);
+    return run(ACORN_MODULE);
   } catch (e) {
     try {
-      return parse(code, ACORN_SCRIPT);
+      return run(ACORN_SCRIPT);
     } catch {
       throw e;
     }
@@ -375,13 +565,22 @@ function hoistVars(root: AnyNode, out: Set<string>): void {
 }
 
 function memberPropertyName(node: AnyNode): string | undefined {
-  if (!node.computed) return node.property.type === "Identifier" ? node.property.name : undefined;
+  if (!node.computed) {
+    if (node.property.type === "PrivateIdentifier") return `#${node.property.name}`;
+    return node.property.type === "Identifier" ? node.property.name : undefined;
+  }
   return node.property.type === "Literal" && typeof node.property.value === "string" ? node.property.value : undefined;
 }
 
-/** Collects free identifiers (and `root.prop` for member access on a free identifier). */
+/**
+ * Collects free identifiers (and `root.prop` for member access on a free identifier). In the methods
+ * of a class or object (`thisName`), `this.prop` gives `Owner.prop`. JSX components count as uses
+ * (`<Card />` gives `Card`; `<ui.Card />` gives `ui` and `ui.Card`); HTML tags (`<div>`) do not.
+ */
 class RefCollector {
   readonly out = new Set<string>();
+  /** The class or object that `this` means here, if known. */
+  thisName?: string;
 
   walk(node: AnyNode, scope: Scope): void {
     if (!node) return;
@@ -396,6 +595,17 @@ class RefCollector {
       case "FunctionExpression":
       case "ArrowFunctionExpression":
         this.fn(node, scope);
+        return;
+      case "JSXOpeningElement":
+        this.jsxName(node.name, scope);
+        for (const at of node.attributes) this.walk(at, scope);
+        return;
+      case "JSXAttribute":
+        if (node.value) this.walk(node.value, scope);
+        return;
+      case "JSXClosingElement":
+      case "JSXIdentifier":
+      case "JSXText":
         return;
       case "ClassDeclaration":
       case "ClassExpression":
@@ -447,6 +657,10 @@ class RefCollector {
         this.walk(node.value, scope);
         return;
       case "MethodDefinition":
+        if (node.computed) this.walk(node.key, scope);
+        // A method body keeps the `this` of its class.
+        if (node.value) this.fn(node.value, scope, true);
+        return;
       case "PropertyDefinition":
       case "AccessorProperty":
         if (node.computed) this.walk(node.key, scope);
@@ -511,7 +725,10 @@ class RefCollector {
     }
   }
 
-  fn(node: AnyNode, outer: Scope): void {
+  /** A function. Its own `this` hides the `this` of a class, unless it is an arrow or a method body (`keepThis`). */
+  fn(node: AnyNode, outer: Scope, keepThis = false): void {
+    const thisBefore = this.thisName;
+    if (node.type !== "ArrowFunctionExpression" && !keepThis) this.thisName = undefined;
     const s = new Scope(outer);
     if (node.type === "FunctionExpression" && node.id) s.names.add(node.id.name);
     if (node.type !== "ArrowFunctionExpression") s.names.add("arguments");
@@ -524,13 +741,18 @@ class RefCollector {
     for (const p of node.params) this.pattern(p, s);
     if (block) for (const st of node.body.body) this.walk(st, s);
     else this.walk(node.body, s);
+    this.thisName = thisBefore;
   }
 
-  cls(node: AnyNode, outer: Scope): void {
+  /** A class. In its body, `this` means the class (`name`, else its own name). */
+  cls(node: AnyNode, outer: Scope, name?: string): void {
     if (node.superClass) this.walk(node.superClass, outer);
+    const thisBefore = this.thisName;
+    this.thisName = name ?? node.id?.name;
     const s = new Scope(outer);
     if (node.id) s.names.add(node.id.name);
     for (const m of node.body.body) this.walk(m, s);
+    this.thisName = thisBefore;
   }
 
   member(node: AnyNode, scope: Scope): void {
@@ -541,8 +763,25 @@ class RefCollector {
         const prop = memberPropertyName(node);
         if (prop !== undefined) this.out.add(`${obj.name}.${prop}`);
       }
+    } else if (obj.type === "ThisExpression") {
+      const prop = this.thisName ? memberPropertyName(node) : undefined;
+      if (prop !== undefined) this.out.add(`${this.thisName}.${prop}`);
     } else this.walk(obj, scope);
     if (node.computed) this.walk(node.property, scope);
+  }
+
+  /** The name of a JSX element: a component is a use, an HTML tag (lowercase) is not. */
+  jsxName(n: AnyNode, scope: Scope): void {
+    if (n.type === "JSXIdentifier") {
+      if (!/^[a-z]/.test(n.name) && n.name !== "this" && !scope.has(n.name)) this.out.add(n.name);
+    } else if (n.type === "JSXMemberExpression") {
+      let inner = n;
+      while (inner.object.type === "JSXMemberExpression") inner = inner.object;
+      const root = inner.object;
+      if (root.type !== "JSXIdentifier" || root.name === "this" || scope.has(root.name)) return;
+      this.out.add(root.name);
+      this.out.add(`${root.name}.${inner.property.name}`);
+    }
   }
 }
 
@@ -553,13 +792,113 @@ function nameOf(node: AnyNode): string {
 }
 
 /** `removed` (TypeScript only) marks blanked type positions, which param texts leave out. */
-function analyzeProgram(path: string, code: string, program: AnyNode, removed?: Uint8Array): ModuleAnalysis {
+function analyzeProgram(path: string, code: string, program: AnyNode, removed?: Uint8Array, comments: CommentSpan[] = []): ModuleAnalysis {
   const a = emptyAnalysis(path);
   const lineOf = lineIndex(code);
   const rangeOf = (n: AnyNode): LineRange => [lineOf(n.start), lineOf(Math.max(n.start, n.end - 1))];
   const paramText = (p: AnyNode): string => collapse(removed ? keptText(code, p.start, p.end, removed) : code.slice(p.start, p.end));
   const refSets = new Map<string, Set<string>>();
   const topLevel = new Set<string>();
+  const memberRefs = new Map<string, Set<string>>();
+
+  /** The first comment that starts at or after `offset` (comments come in source order). */
+  const commentAt = (offset: number): number => {
+    let lo = 0;
+    let hi = comments.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (comments[mid][0] < offset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+
+  /**
+   * Members of a class body or an object literal. Each member keeps the comments between the member
+   * before it (or the opening brace) and itself. An owner with more than MAX_MEMBERS members gets none.
+   */
+  const addMembers = (owner: string, node: AnyNode): void => {
+    const isClass = node.type === "ClassDeclaration" || node.type === "ClassExpression";
+    const items: AnyNode[] = isClass ? node.body.body : node.properties;
+    const found: { name: string; item: AnyNode; kind: MemberInfo["kind"]; fn?: AnyNode }[] = [];
+    for (const item of items) {
+      if (!item || item.computed) continue;
+      const key = item.key;
+      let name: string | undefined;
+      if (key?.type === "Identifier") name = key.name;
+      else if (key?.type === "PrivateIdentifier") name = `#${key.name}`;
+      else if (key?.type === "Literal" && typeof key.value === "string" && /^[A-Za-z_$][\w$]*$/.test(key.value)) name = key.value;
+      if (name === undefined) continue;
+      const value = item.value;
+      const isFn = !!value && (value.type === "FunctionExpression" || value.type === "ArrowFunctionExpression");
+      if (item.type === "MethodDefinition") found.push({ name, item, kind: item.kind === "get" || item.kind === "set" ? item.kind : "method", fn: item.kind === "get" || item.kind === "set" ? undefined : value });
+      else if (item.type === "PropertyDefinition" || item.type === "AccessorProperty") found.push({ name, item, kind: "field", fn: isFn ? value : undefined });
+      else if (item.type === "Property") {
+        const kind: MemberInfo["kind"] = item.kind === "get" || item.kind === "set" ? item.kind : item.method ? "method" : "field";
+        found.push({ name, item, kind, fn: kind !== "get" && kind !== "set" && isFn ? value : undefined });
+      }
+    }
+    if (found.length > MAX_MEMBERS) return;
+    a.memberOwners.push(owner);
+    let boundary = isClass ? node.body.start : node.start;
+    for (const { name, item, kind, fn } of found) {
+      const c = commentAt(boundary);
+      const start = c < comments.length && comments[c][1] <= item.start ? Math.min(item.start, comments[c][0]) : item.start;
+      boundary = item.end;
+      const key = `${owner}.${name}`;
+      const r = new RefCollector();
+      const root = new Scope(null);
+      const value = item.value;
+      // `this` in a method, a getter, a setter or a class field is the owner. In an arrow property of an object, it is not.
+      if (kind !== "field" || isClass || value?.type === "FunctionExpression") r.thisName = owner;
+      if (value && value.type === "FunctionExpression") r.fn(value, root, true);
+      else if (value) r.walk(value, root);
+      r.out.delete(owner);
+      r.out.delete(key);
+      const prev = ownEntry(a.members, key);
+      if (prev) {
+        // A getter and a setter (or a static and an instance member) of one name are one member.
+        prev.span = [Math.min(prev.span[0], start), Math.max(prev.span[1], item.end)];
+        prev.range = [lineOf(prev.span[0]), lineOf(Math.max(prev.span[0], prev.span[1] - 1))];
+        for (const x of r.out) memberRefs.get(key)!.add(x);
+        continue;
+      }
+      const info: MemberInfo = { name: key, owner, kind, range: [lineOf(start), lineOf(Math.max(start, item.end - 1))], span: [start, item.end], exported: false };
+      if (item.static) info.static = true;
+      if (fn) {
+        info.params = fn.params.map(paramText);
+        info.signature = `${key}(${info.params!.join(", ")})`;
+      }
+      a.members[key] = info;
+      memberRefs.set(key, r.out);
+    }
+  };
+
+  /** `require("x")` or `require("x").name`: the specifier and the property. */
+  const requireOf = (init: AnyNode): { from: string; prop?: string } | undefined => {
+    if (!init) return undefined;
+    if (init.type === "MemberExpression" && !init.computed && init.property.type === "Identifier") {
+      const inner = requireOf(init.object);
+      return inner && inner.prop === undefined ? { from: inner.from, prop: init.property.name } : undefined;
+    }
+    const arg = init.type === "CallExpression" && init.callee.type === "Identifier" && init.callee.name === "require" && init.arguments.length === 1 ? init.arguments[0] : undefined;
+    return arg && arg.type === "Literal" && typeof arg.value === "string" ? { from: arg.value } : undefined;
+  };
+
+  /** `const x = require("./x")` and `const { a, b: c } = require("./x")` bind names as an import does. */
+  const addRequire = (id: AnyNode, req: { from: string; prop?: string }): void => {
+    const names: ImportInfo["names"] = [];
+    if (id.type === "Identifier") names.push({ imported: req.prop ?? "*", local: id.name });
+    else if (id.type === "ObjectPattern" && req.prop === undefined) {
+      for (const p of id.properties) {
+        if (p.type !== "Property" || p.computed || p.key.type !== "Identifier") continue;
+        const local = p.value.type === "Identifier" ? p.value : p.value.type === "AssignmentPattern" && p.value.left.type === "Identifier" ? p.value.left : undefined;
+        if (local) names.push({ imported: p.key.name, local: local.name });
+      }
+    }
+    a.imports.push({ from: req.from, names });
+    for (const n of names) a.bindings[n.local] = { from: req.from, imported: n.imported };
+  };
 
   const addDecl = (info: DeclInfo, refs: Set<string>): void => {
     refs.delete(info.name);
@@ -590,8 +929,9 @@ function analyzeProgram(path: string, code: string, program: AnyNode, removed?: 
     } else if (node.type === "ClassDeclaration") {
       const name = nameOverride ?? (node.id ? node.id.name : "default");
       const r = new RefCollector();
-      r.cls(node, new Scope(null));
+      r.cls(node, new Scope(null), name);
       addDecl({ name, kind: "class", range, exported }, r.out);
+      ownMembers(name, node);
     } else if (node.type === "VariableDeclaration") {
       const kind: DeclInfo["kind"] = node.kind === "let" || node.kind === "var" ? node.kind : "const";
       for (const d of node.declarations) {
@@ -606,8 +946,15 @@ function analyzeProgram(path: string, code: string, program: AnyNode, removed?: 
           const info: DeclInfo = fnInit ? fnDecl(name, kind, fnInit, range, exported) : { name, kind, range, exported };
           addDecl(info, new Set(r.out));
         }
+        if (d.id.type === "Identifier") ownMembers(d.id.name, d.init);
       }
     }
+  };
+
+  /** Members of a top-level class or object literal (once per owner: a repeated `var` keeps the first). */
+  const ownMembers = (owner: string, node: AnyNode): void => {
+    if (!node || !["ClassDeclaration", "ClassExpression", "ObjectExpression"].includes(node.type) || a.memberOwners.includes(owner)) return;
+    addMembers(owner, node);
   };
 
   const addStatement = (node: AnyNode, refs: Set<string>): void => {
@@ -670,6 +1017,8 @@ function analyzeProgram(path: string, code: string, program: AnyNode, removed?: 
             : { name: "default", kind: d.type === "ClassExpression" ? "class" : "const", range, exported: true };
           addDecl(info, r.out);
           a.exports.default = "default";
+          // `export default { fetch() {} }` (a Worker): its handlers are members.
+          ownMembers("default", d);
         }
         break;
       }
@@ -684,9 +1033,17 @@ function analyzeProgram(path: string, code: string, program: AnyNode, removed?: 
       }
       case "FunctionDeclaration":
       case "ClassDeclaration":
-      case "VariableDeclaration":
         declare(st, st, false);
         break;
+      case "VariableDeclaration": {
+        const reqs = (st.declarations as AnyNode[]).map((d) => requireOf(d.init));
+        (st.declarations as AnyNode[]).forEach((d, i) => {
+          if (reqs[i]) addRequire(d.id, reqs[i]!);
+        });
+        // A statement of `require` calls only is an import, not a declaration.
+        if (!reqs.every(Boolean)) declare(st, st, false);
+        break;
+      }
       default: {
         const r = new RefCollector();
         r.walk(st, new Scope(null));
@@ -695,11 +1052,38 @@ function analyzeProgram(path: string, code: string, program: AnyNode, removed?: 
     }
   }
 
+  // Other `require("x")` calls (in a function, or a bare `require("./setup")`) are imports without names.
+  if (code.includes("require")) {
+    const seen = new Set(a.imports.map((i) => i.from));
+    const calls: { at: number; from: string }[] = [];
+    const stack: AnyNode[] = [program];
+    while (stack.length) {
+      const n = stack.pop();
+      if (n.type === "CallExpression") {
+        const req = requireOf(n);
+        if (req && !seen.has(req.from)) {
+          seen.add(req.from);
+          calls.push({ at: n.start, from: req.from });
+        }
+      }
+      for (const key in n) {
+        if (SKIP_KEYS.has(key)) continue;
+        const v = n[key];
+        if (Array.isArray(v)) {
+          for (const x of v) if (isNode(x)) stack.push(x);
+        } else if (isNode(v)) stack.push(v);
+      }
+    }
+    for (const c of calls.sort((x, y) => x.at - y.at)) a.imports.push({ from: c.from, names: [] });
+  }
+
   for (const local of Object.values(a.exports)) {
     const d = a.decls[local];
     if (d) d.exported = true;
   }
   for (const [name, set] of refSets) a.references[name] = sortedArray(set);
+  for (const m of Object.values(a.members)) m.exported = !!ownEntry(a.decls, m.owner)?.exported && !m.name.startsWith(`${m.owner}.#`);
+  for (const [key, set] of memberRefs) a.memberReferences[key] = sortedArray(set);
   a.topLevelReferences = sortedArray(topLevel);
   return a;
 }
@@ -2432,17 +2816,23 @@ function blankDecorators(src: string, removed: Uint8Array): string {
   return out.join("");
 }
 
-/** Tokens of (TypeScript) source, or null if the JavaScript tokenizer cannot read it. */
-function tokenizeTs(src: string): Tok[] | null {
+/**
+ * Tokens of (TypeScript) source, or null if the JavaScript tokenizer cannot read it. With `withJsx`,
+ * the JSX tokenizer reads TSX: JSX tokens get their own names ("jsxTagStart", "jsxName", "jsxText",
+ * "jsxTagEnd"), which the type strip leaves alone.
+ */
+function tokenizeTs(src: string, withJsx = false): Tok[] | null {
   const toks: Tok[] = [];
   try {
     let prevEnd = 0;
     let nextNl = src.indexOf("\n");
-    for (const tok of tokenizer(src, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true })) {
+    const options: Options = { ecmaVersion: "latest", sourceType: "module", allowHashBang: true };
+    for (const tok of withJsx ? JsxParser.tokenizer(src, options) : tokenizer(src, options)) {
       const type = tok.type;
       let t: string;
       if (type.keyword) t = type.keyword;
       else if (TOKEN_CATEGORIES.has(type.label)) t = type.label === "invalidTemplate" ? "template" : type.label;
+      else if (type.label.startsWith("jsx")) t = type.label;
       else t = src.slice(tok.start, tok.end);
       while (nextNl !== -1 && nextNl < prevEnd) nextNl = src.indexOf("\n", nextNl + 1);
       const nl = nextNl !== -1 && nextNl < tok.start;
@@ -2481,15 +2871,23 @@ export function stripTypeScript(source: string, tsx = false): string | null {
   return stripTypeScriptDetailed(source, tsx)?.code ?? null;
 }
 
-/** `stripTypeScript` plus a map of the positions it blanked (1 = removed). */
+/**
+ * `stripTypeScript` plus a map of the positions it blanked (1 = removed). TSX is read with the JSX
+ * tokenizer first; a .tsx file that it cannot read (a generic arrow `<T,>(x: T) => x`, for example)
+ * gets the plain tokenizer.
+ */
 function stripTypeScriptDetailed(source: string, tsx: boolean): { code: string; removed: Uint8Array } | null {
+  return tsx ? (stripWith(source, true, true) ?? stripWith(source, true, false)) : stripWith(source, false, false);
+}
+
+function stripWith(source: string, tsx: boolean, withJsx: boolean): { code: string; removed: Uint8Array } | null {
   const removed = new Uint8Array(source.length);
   let src = source;
-  let toks = tokenizeTs(src);
+  let toks = tokenizeTs(src, withJsx);
   if (toks === null && source.includes("@")) {
     // decorators are the one TypeScript construct the tokenizer cannot read
     src = blankDecorators(source, removed);
-    toks = tokenizeTs(src);
+    toks = tokenizeTs(src, withJsx);
   }
   if (toks === null) return null;
   const s = new TsStripper(src, toks, tsx);
