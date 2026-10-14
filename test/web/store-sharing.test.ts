@@ -16,7 +16,7 @@ function base(): ProjectState {
     radar: [],
     files: [{ path: "a.js", size: 10, lang: "js" }],
     imports: [],
-    stats: { courseChecks: 0, clear: 0, corrections: 0, correctionsAcknowledged: 0, escalations: 0, landings: 0, landedByMethod: { "fast-forward": 0, merge: 0, rederive: 0 }, rederives: 0, medianCheckLatencyMs: 0 },
+    stats: { courseChecks: 0, clear: 0, corrections: 0, correctionsAcknowledged: 0, escalations: 0, landings: 0, landedByMethod: { "fast-forward": 0, merge: 0, rederive: 0, revert: 0 }, rederives: 0, medianCheckLatencyMs: 0 },
   };
 }
 

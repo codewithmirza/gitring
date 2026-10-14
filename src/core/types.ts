@@ -87,7 +87,18 @@ export interface ProjectSettings {
   redo: RedoPolicy;
   /** agent-first: minutes to wait for the outside agent before a built-in agent starts (5–120). */
   redoWaitMinutes: number;
+  /**
+   * When gitring runs the tests of main plus the work:
+   *   before  before each merge (the default): work merges only when they pass
+   *   after   after the merge: work whose own tests pass merges at once; gitring tests main in the
+   *           background, finds the merge that broke it, reverts it and tells the agent
+   */
+  testsWhen: TestsWhen;
+  /** The largest train: how many independent work copies merge in one go (1–16, default 8). */
+  maxTrain: number;
 }
+
+export type TestsWhen = "before" | "after";
 
 /**
  * GitHub sync of main:
@@ -678,7 +689,8 @@ export type CorrectionKind =
   | "duplicate" // another vessel does the same work; merge or narrow scope
   | "upstream" // main moved under you; adapt to the landed change
   | "intent-amended" // a human changed the intent
-  | "review"; // a person sent the work back with a note
+  | "review" // a person sent the work back with a note
+  | "reverted"; // gitring reverted the merge of the work: tests failed on main (post-merge test mode)
 
 export interface Correction {
   id: string;
@@ -759,7 +771,8 @@ export interface LogEntry {
   data?: Record<string, unknown>;
 }
 
-export type LandingMethod = "fast-forward" | "merge" | "rederive";
+/** How work got onto main. "revert": the merge of the work was taken back (tests failed on main). */
+export type LandingMethod = "fast-forward" | "merge" | "rederive" | "revert";
 
 export interface Landing {
   id: string;
@@ -774,6 +787,12 @@ export interface Landing {
   at: Millis;
   /** Commit message (with gitring trailers). */
   message: string;
+  /** The merge rode in a train of independent work: its place in the train, and the size of the train. */
+  train?: { id: string; place: number; size: number };
+  /** When the tests of main plus the work ran: before the merge (absent on old records), or after it. */
+  testsWhen?: TestsWhen;
+  /** Method "revert": the merge that this commit takes back, the reason, and the tests that failed on main. */
+  revert?: { of: string; mainSha: string; reason: string; failed: string[] };
 }
 
 export type DecisionKind = "pick" | "send-back" | "park" | "rederive" | "amend" | "approve-checks" | "resolve-escalation";
@@ -798,7 +817,8 @@ export interface Decision {
  *
  * The first valid answer counts. A question closes without an answer when its work copies close.
  */
-export type QuestionKind = "escalation" | "redo";
+/** "revert": gitring reverted a merge that a person said yes to (tests failed on main); the person hears it here. */
+export type QuestionKind = "escalation" | "redo" | "revert";
 
 export type QuestionStatus = "open" | "answered" | "closed";
 
@@ -922,6 +942,10 @@ export interface HarborStats {
   rederives: number;
   /** Times gitring moved in-flight work onto a new main (re-plot). */
   replots?: number;
+  /** Merges that gitring took back because the tests of main failed after them (post-merge test mode). */
+  reverts?: number;
+  /** Trains: times several independent work copies merged in one go. */
+  trains?: number;
   medianCheckLatencyMs: number;
 }
 
@@ -1180,6 +1204,8 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   redo: "agent-first",
   redoWaitMinutes: 15,
   allowUntested: false,
+  testsWhen: "before",
+  maxTrain: 8,
 };
 
 /**

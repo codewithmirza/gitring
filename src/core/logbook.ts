@@ -75,6 +75,14 @@ function checksTotal(checks: CheckRun): { passed: number; total: number } {
   return { passed, total };
 }
 
+/** A merge that rode in a train: its place and the size of the train, and every work copy of the train. */
+export interface TrainInfo {
+  id: string;
+  place: number;
+  size: number;
+  attemptIds: string[];
+}
+
 /** Commit message: subject, blank line, short body, blank line, gitring-* trailers. */
 export function landingMessage(args: {
   intent: Intent;
@@ -83,8 +91,12 @@ export function landingMessage(args: {
   method: LandingMethod;
   corrections: Correction[];
   checks: CheckRun;
+  /** The merge rode in a train of independent work. */
+  train?: TrainInfo;
+  /** The tests of main plus the work run after the merge (post-merge test mode). */
+  testsAfter?: boolean;
 }): string {
-  const { intent, attempt, agent, method, corrections, checks } = args;
+  const { intent, attempt, agent, method, corrections, checks, train, testsAfter } = args;
   const generation = attempt.lineage?.generation ?? 1;
   const { passed, total } = checksTotal(checks);
   const body: string[] = [];
@@ -92,11 +104,12 @@ export function landingMessage(args: {
   if (summary) body.push(wrap(summary));
   const rederived = attempt.lineage?.rederivedFrom ? ` (a redo of ${attempt.lineage.rederivedFrom})` : "";
   const how = method === "rederive" ? "a redo on the new main" : method === "merge" ? "a 3-way merge" : "a fast-forward";
+  const tests = testsAfter ? `Tests of the work: ${passed}/${total} pass. Main is tested after the merge.` : `Tests: ${passed}/${total} pass.`;
   body.push(
     [
-      wrap(`Merged by gitring: work of ${oneLine(agent.callsign)}, ${how}.`),
+      wrap(`Merged by gitring: work of ${oneLine(agent.callsign)}, ${how}${train ? ` (train ${train.place} of ${train.size})` : ""}.`),
       `Try ${generation}${rederived}.`,
-      `Change requests: ${corrections.length}. Tests: ${passed}/${total} pass.`,
+      `Change requests: ${corrections.length}. ${tests}`,
     ].join("\n"),
   );
   const trailers = [
@@ -108,8 +121,58 @@ export function landingMessage(args: {
     `Gitring-Corrections: ${corrections.length}`,
     `Gitring-Checks: ${passed}/${total} pass`,
     `Gitring-Generation: ${generation}`,
+    ...(train ? [`Gitring-Train: ${oneLine(train.id)} ${train.place}/${train.size}`] : []),
+    ...(testsAfter ? ["Gitring-Tests: after"] : []),
   ];
   return `${subjectOf(intent.title)}\n\n${body.join("\n\n")}\n\n${trailers.join("\n")}\n`;
+}
+
+/**
+ * The commit message of a revert: gitring takes a merge back because the tests of main failed after it
+ * (post-merge test mode). The trailers name the merge and the work copy, so that the record is complete.
+ */
+export function revertMessage(args: { intent: Intent; attempt: Attempt; agent: AgentInfo; mergeSha: string; failed: string[]; checks: CheckRun }): string {
+  const { intent, attempt, agent, mergeSha, failed, checks } = args;
+  const { passed, total } = checksTotal(checks);
+  const names = failed.slice(0, 5).join(", ") + (failed.length > 5 ? ` and ${failed.length - 5} more` : "");
+  const body = [
+    wrap(`Reverted by gitring: tests failed on main after this merge (${mergeSha.slice(0, 7)}, work of ${oneLine(agent.callsign)}).`),
+    wrap(`Failed: ${names || "see the test log"}. Tests on main: ${passed}/${total} pass.`),
+    "The task is open again. The agent gets a change request with the failed tests.",
+  ];
+  const trailers = [
+    `Gitring-Intent: ${oneLine(intent.id)}`,
+    `Gitring-Attempt: ${oneLine(attempt.id)}`,
+    `Gitring-Agent: ${oneLine(agent.callsign)} (${oneLine(agent.id)})`,
+    `Gitring-Method: revert`,
+    `Gitring-Revert: ${mergeSha}`,
+    `Gitring-Checks: ${passed}/${total} pass`,
+  ];
+  return `${subjectOf(`Revert "${intent.title}"`)}\n\n${body.join("\n\n")}\n\n${trailers.join("\n")}\n`;
+}
+
+/** Git note of a revert: the why-record ("reverted: tests failed on main"), with the tests that failed. */
+export function revertNote(args: { intent: Intent; attempt: Attempt; agent: AgentInfo; mergeSha: string; landingId: string; checks: CheckRun; approvedBy?: string }): string {
+  const { intent, attempt, agent, mergeSha, landingId, checks, approvedBy } = args;
+  const note = {
+    schema: LOGBOOK_SCHEMA,
+    intent: { id: intent.id, title: intent.title, goal: intent.goal, version: intent.version },
+    attempt: { id: attempt.id, generation: attempt.lineage?.generation ?? 1, base: { sha: attempt.baseSha, tree: attempt.baseTree } },
+    agent: { id: agent.id, callsign: agent.callsign, kind: agent.kind, model: agent.model ?? null, client: agent.client ?? null },
+    method: "revert",
+    revert: {
+      reason: "reverted: tests failed on main",
+      of: { landing: landingId, commit: mergeSha },
+      ...(approvedBy ? { approvedBy } : {}),
+    },
+    checks: {
+      scope: "main",
+      passed: checks?.passed ?? 0,
+      failed: checks?.failed ?? 0,
+      cases: (checks?.cases ?? []).filter((c) => !c.ok).map((c) => ({ file: c.file, name: c.name, ok: c.ok, ...(c.error ? { error: c.error } : {}) })),
+    },
+  };
+  return `${JSON.stringify(note, null, 2)}\n`;
 }
 
 /** Git note: the full why-record as pretty JSON. */
@@ -122,8 +185,10 @@ export function landingNote(args: {
   courseChecks: CourseCheck[];
   checks: CheckRun;
   decision?: Decision;
+  train?: TrainInfo;
+  testsAfter?: boolean;
 }): string {
-  const { intent, attempt, agent, method, corrections, courseChecks, checks, decision } = args;
+  const { intent, attempt, agent, method, corrections, courseChecks, checks, decision, train, testsAfter } = args;
   const fpFiles = Object.entries(attempt.footprint?.files ?? {})
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([path, t]) => ({ path, status: t.status, additions: t.additions, deletions: t.deletions }));
@@ -186,11 +251,14 @@ export function landingNote(args: {
       assessments: k.assessments,
     })),
     checks: {
+      // "after": the tests of the work alone; main is tested after the merge (post-merge test mode).
+      ...(testsAfter ? { when: "after" } : {}),
       passed: checks?.passed ?? 0,
       failed: checks?.failed ?? 0,
       cases: (checks?.cases ?? []).map((c) => ({ file: c.file, name: c.name, ok: c.ok, ...(c.error ? { error: c.error } : {}) })),
     },
     decision: decision ?? null,
+    ...(train ? { train: { id: train.id, place: train.place, size: train.size, attempts: train.attemptIds } } : {}),
   };
   return `${JSON.stringify(note, null, 2)}\n`;
 }

@@ -82,6 +82,24 @@ export const REDO_OPTIONS: readonly QuestionOption[] = [
   { id: "park", label: "Pause the task" },
 ];
 
+/** The answers when gitring reverted a merge that a person said yes to: the agent fixes it, or a built-in agent redoes it, or the task pauses. */
+export const REVERT_OPTIONS: readonly QuestionOption[] = [
+  { id: "ok", label: "Understood: the agent fixes it" },
+  { id: "redo", label: "Redo it on the new main" },
+  { id: "park", label: "Pause the task" },
+];
+
+/** What a person reads when gitring reverted a merge that they said yes to. Each line is one plain sentence. */
+export function revertFacts(f: { title: string; agent: string; approvedBy: string; mergeSha: string; revertSha: string; failed: string[] }): string[] {
+  const names = f.failed.length <= 3 ? f.failed.join(", ") : `${f.failed.slice(0, 3).join(", ")} and ${f.failed.length - 3} more`;
+  return [
+    `${f.approvedBy} said yes to the work of ${f.agent} on "${f.title}" (${f.mergeSha.slice(0, 7)}).`,
+    `After the merge, the tests of main failed${names ? `: ${names}` : ""}.`,
+    `gitring reverted the merge (${f.revertSha.slice(0, 7)}). The task is open again.`,
+    `${f.agent} gets a change request with the failed tests.`,
+  ];
+}
+
 /** "a, b, c" for up to three names, then "and N more". */
 function listOf(items: string[], max = 3): string {
   if (items.length <= max) return items.join(", ");
@@ -167,7 +185,7 @@ function questionItem(i: InboxInput, q: Question, title: string): InboxItem {
     project: i.project,
     intentId: q.intentId,
     title,
-    headline: q.kind === "escalation" ? "Which work adapts?" : "The work did not merge",
+    headline: q.kind === "escalation" ? "Which work adapts?" : q.kind === "revert" ? "gitring reverted a merge you said yes to" : "The work did not merge",
     why: q.facts,
     at: q.askedAt,
     attemptId: q.attemptIds[0],
