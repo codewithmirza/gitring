@@ -1,6 +1,6 @@
 /**
  * The queue of things that need a person: questions, merge approvals, escalations and work that waits for a pick.
- * Read by the inbox, the task rail and the top bar. The signed-in person decides who may answer each item.
+ * Read by the shell (toasts, the tray and the top bar) through state/approvals.ts. The signed-in person decides who may answer.
  */
 import type { AgentInfo, ApprovalReason, Attempt, CourseCheck, Intent, Person, ProjectState, Question } from "../../../../src/core/types";
 import { noTestRan } from "../../../../src/core/types";

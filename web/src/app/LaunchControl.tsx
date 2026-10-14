@@ -1,6 +1,6 @@
 /**
  * Chooses how many built-in agents work on a task and which models they use, and the button that starts them.
- * Used by the composer and by the tasks page. The wait for the test budget comes from ./actions.ts.
+ * Used by the composer, the task rail and the tasks page. The wait for the test budget comes from ./actions.ts.
  */
 import { useEffect, useState } from "react";
 import type { Intent } from "../../../src/core/types";

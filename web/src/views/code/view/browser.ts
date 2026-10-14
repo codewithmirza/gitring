@@ -1,6 +1,6 @@
 /**
  * Browser helpers of the code view: remembered flags in local storage, a narrow-screen hook and copy to the clipboard.
- * Storage and the clipboard can fail (private windows, no permission). Every helper here survives that.
+ * Local storage and the clipboard can fail (private windows, no permission). The helpers for them handle that.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 

@@ -1,6 +1,6 @@
 /**
  * The agents on the map: one vessel for each active work copy, with its place, track and distance links.
- * Read by the chart. The vessel model carries no screen coordinates: web/src/chart/layout.ts adds them.
+ * Read by the chart, the traffic rail and the command palette.
  */
 import type {
   AgentInfo,
