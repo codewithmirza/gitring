@@ -25,7 +25,8 @@ private/
 *.mov
 *.zip
 *.bundle
-.claude/
+.claude/*
+!.claude/agents/
 
 # Stray local output
 *.err
