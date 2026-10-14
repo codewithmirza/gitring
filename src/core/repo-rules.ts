@@ -46,6 +46,20 @@ export function textEligible(path: string): boolean {
   return !OPAQUE_DIRS.test(path) && !OPAQUE_EXT.test(path);
 }
 
+/** Folders that only tools fill (dependencies, caches, reports). People do not write these files. */
+const GENERATED_DIRS = new Set(["node_modules", ".git", "__pycache__", ".cache", ".turbo", ".next", ".nuxt", "coverage", "target"]);
+
+/**
+ * The opaque folder that holds `path`, as a prefix with a final "/" ("node_modules/", "packages/a/dist/"),
+ * or null. `generated`: a folder of tool output, never source (node_modules, caches); else vendored or built
+ * files that a project can keep in git (vendor, dist, build, out).
+ */
+export function opaqueFolder(path: string): { folder: string; generated: boolean } | null {
+  const m = OPAQUE_DIRS.exec(path);
+  if (!m) return null;
+  return { folder: path.slice(0, m.index + m[0].length), generated: GENERATED_DIRS.has(m[2]) };
+}
+
 
 /**
  * "owner/name" of a GitHub repository, from "owner/name", "https://github.com/owner/name(.git)" or

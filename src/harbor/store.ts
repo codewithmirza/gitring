@@ -22,6 +22,8 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS seen (attempt_id TEXT NOT NULL, path TEXT NOT NULL, content TEXT, PRIMARY KEY (attempt_id, path))`,
   // Files that gitring reset to the main version in a re-plot: the agent must read them before it writes them.
   `CREATE TABLE IF NOT EXISTS mustread (attempt_id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (attempt_id, path))`,
+  // Every commit that was main, in order (the base of git-mode work is found by its place here).
+  `CREATE TABLE IF NOT EXISTS main_seq (seq INTEGER PRIMARY KEY, sha TEXT NOT NULL UNIQUE)`,
 ];
 
 export type DocTable = "intents" | "attempts" | "agents" | "corrections" | "decisions";
@@ -29,6 +31,15 @@ export type DocTable = "intents" | "attempts" | "agents" | "corrections" | "deci
 export class Db {
   constructor(private readonly sql: SqlStorage) {
     for (const s of SCHEMA) this.sql.exec(s);
+    this.migrateMainSeq();
+  }
+
+  /** Older versions kept the main commits as one JSON list in meta "mainSeq". Move it to the table once. */
+  private migrateMainSeq(): void {
+    const old = this.getMeta<string[]>("mainSeq");
+    if (!old) return;
+    for (const sha of old) this.sql.exec("INSERT OR IGNORE INTO main_seq (sha) VALUES (?)", sha);
+    this.setMeta("mainSeq", undefined);
   }
 
   /* meta */
@@ -169,6 +180,21 @@ export class Db {
       .exec<{ attempt_id: string }>("SELECT attempt_id FROM queue ORDER BY at ASC")
       .toArray()
       .map((r) => r.attempt_id);
+  }
+
+  /* main commits in order */
+  /** Add a commit that became main. A commit that is in the list already keeps its place. Returns its place. */
+  appendMain(sha: string): number {
+    this.sql.exec("INSERT OR IGNORE INTO main_seq (sha) VALUES (?)", sha);
+    return this.sql.exec<{ seq: number }>("SELECT seq FROM main_seq WHERE sha = ?", sha).one().seq;
+  }
+  /** Main starts again at one commit (a new repository: init, import, first push). */
+  resetMain(sha: string): number {
+    this.sql.exec("DELETE FROM main_seq");
+    return this.appendMain(sha);
+  }
+  mainSeq(): { seq: number; sha: string }[] {
+    return this.sql.exec<{ seq: number; sha: string }>("SELECT seq, sha FROM main_seq ORDER BY seq").toArray();
   }
 
   /* hook keys (Claude Code hook → attempt) */

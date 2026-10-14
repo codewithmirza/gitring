@@ -11,6 +11,8 @@ export interface TarEntry {
   content: string | Uint8Array;
   /** Octal file mode. Default 0o644. */
   mode?: number;
+  /** A symbolic link to this target (the content is not used). */
+  link?: string;
 }
 
 function octal(n: number, width: number): string {
@@ -23,9 +25,10 @@ function put(buf: Uint8Array, offset: number, text: string, width: number): void
   buf.set(bytes.subarray(0, width), offset);
 }
 
-function header(name: string, size: number, mode: number, type: "0" | "x", mtime: number): Uint8Array {
+function header(name: string, size: number, mode: number, type: "0" | "2" | "x", mtime: number, linkname = ""): Uint8Array {
   const h = new Uint8Array(BLOCK);
   put(h, 0, name, 100);
+  put(h, 157, linkname, 100);
   put(h, 100, octal(mode, 8), 8);
   put(h, 108, octal(0, 8), 8); // uid
   put(h, 116, octal(0, 8), 8); // gid
@@ -62,13 +65,19 @@ export function tar(entries: TarEntry[], mtime = 0): Uint8Array {
   for (const e of [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
     const path = e.path.replace(/^\/+/, "");
     if (!path || path.split("/").some((seg) => seg === ".." || seg === "")) continue;
-    const data = typeof e.content === "string" ? enc.encode(e.content) : e.content;
-    const ascii = /^[\x20-\x7e]*$/.test(path);
+    const data = e.link !== undefined ? new Uint8Array(0) : typeof e.content === "string" ? enc.encode(e.content) : e.content;
+    const longPath = !/^[\x20-\x7e]*$/.test(path) || enc.encode(path).length > 100;
+    const link = e.link ?? "";
+    const longLink = !/^[\x20-\x7e]*$/.test(link) || enc.encode(link).length > 100;
     let name = path;
-    if (!ascii || enc.encode(path).length > 100) {
-      const pax = enc.encode(paxRecord("path", path));
+    if (longPath || longLink) {
+      const pax = enc.encode((longPath ? paxRecord("path", path) : "") + (longLink ? paxRecord("linkpath", link) : ""));
       parts.push(header("PaxHeader", pax.length, 0o644, "x", mtime), pax, padding(pax.length));
-      name = path.slice(-100).replace(/[^\x20-\x7e]/g, "_");
+      if (longPath) name = path.slice(-100).replace(/[^\x20-\x7e]/g, "_");
+    }
+    if (e.link !== undefined) {
+      parts.push(header(name, 0, 0o777, "2", mtime, longLink ? link.slice(0, 100).replace(/[^\x20-\x7e]/g, "_") : link));
+      continue;
     }
     parts.push(header(name, data.length, e.mode ?? 0o644, "0", mtime), data, padding(data.length));
   }

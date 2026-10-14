@@ -331,6 +331,28 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
     expect(gitIn(binding, "fan", ["rev-parse", "refs/notes/gitring^"])).toBe(notesCommit);
   });
 
+  it("a lost race at push time removes the note again: no note names a commit that never landed", async () => {
+    const be = backend();
+    await be.ensureRepo("orphan");
+    const c1 = await be.commit({ repo: "orphan", branch: "main", parent: "", message: "1", author, changes: [{ path: "a.txt", content: "a" }], note: "note of 1\n" });
+    let racer = "";
+    server.beforeReceivePack = (repo) => {
+      // Let the notes push pass. Before the push of the branch, another writer moves main.
+      if (repo !== "orphan" || racer || !gitIn(binding, "orphan", ["ls-tree", "-r", "--name-only", "refs/notes/gitring"]).includes("\n")) return;
+      const env = { GIT_AUTHOR_NAME: "Other", GIT_AUTHOR_EMAIL: "o@x", GIT_COMMITTER_NAME: "Other", GIT_COMMITTER_EMAIL: "o@x" };
+      racer = gitIn(binding, "orphan", ["commit-tree", `${c1.sha}^{tree}`, "-p", c1.sha, "-m", "racer"], env);
+      gitIn(binding, "orphan", ["update-ref", "refs/heads/main", racer, c1.sha]);
+    };
+    const err = await be.commit({ repo: "orphan", branch: "main", parent: c1.sha, message: "mine", author, changes: [{ path: "b.txt", content: "b" }], note: "note of mine\n" }).catch((e: unknown) => e);
+    expect(racer).toMatch(/^[0-9a-f]{40}$/);
+    expect(err).toBeInstanceOf(RepoConflictError);
+    // The notes ref had the note of the lost commit for a moment. Now only the note of c1 is left.
+    expect(gitIn(binding, "orphan", ["ls-tree", "-r", "--name-only", "refs/notes/gitring"])).toBe(c1.sha);
+    expect(gitIn(binding, "orphan", ["rev-list", "--count", "refs/notes/gitring"])).toBe("3");
+    expect(await be.readNote("orphan", c1.sha)).toBe("note of 1\n");
+    git(["fsck", "--strict", "--no-dangling"], { cwd: bare("orphan") });
+  });
+
   it("a root commit can start a new branch in a non-empty repo", async () => {
     const be = backend();
     const main = (await be.resolve("demo", "main"))!;
