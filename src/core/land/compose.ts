@@ -1,4 +1,11 @@
 /**
+ * Composes a work copy onto main: a fast-forward, or a merge of each file that both sides changed.
+ *
+ * Rungs 1 and 2 of the merge ladder. It returns the file changes to apply on main and never changes its inputs.
+ * Pure (I/O only through callbacks). Read `text/merge3.ts` for the merge of one file.
+ */
+
+/*
  * Landing ladder, rungs 1 and 2: compose an attempt onto main.
  *
  *   main == base                    → fast-forward: the attempt's changes relative to base
@@ -12,6 +19,7 @@
  *
  * Returns FileChange[] to apply on MAIN. Never mutates the inputs. Pure (I/O only via callbacks).
  */
+
 import type { FileChange } from "../../platform/repo/backend";
 import type { Snapshot } from "../git/snapshot";
 import { merge3 } from "../text/merge3";

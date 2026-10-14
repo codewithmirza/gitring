@@ -1,4 +1,11 @@
 /**
+ * Builds the request to the conflict-check model (Clef) and reads its answer, with the rules as the fallback.
+ *
+ * Called by the project coordinator. The model never replaces the facts of `facts.ts`.
+ * Read `rules.ts` for the fallback and `policy.ts` for what the answers decide.
+ */
+
+/*
  * Clef request/response for the course check.
  *
  * Clef (`@cf/cloudflare/clef`, 27B) and Clef-flash (`@cf/cloudflare/clef-flash`, 9B, ~39 ms) are
@@ -29,6 +36,7 @@
  *    without duplicate.of, the most similar intent gets the noul and the others
  *    min(noul, rules duplicate).
  */
+
 import { INTERFERENCE_LEVELS, type CourseAssessment, type PairFacts, type RuleOfTheRoad } from "../types";
 import type { VesselView } from "./facts";
 import {
@@ -150,7 +158,18 @@ export function buildClefRequest(
   cands: { view: VesselView; facts: PairFacts }[],
 ): ClefRequest {
   const list = cands.slice(0, CLEF_MAX_CANDIDATES);
-  const state = {
+  const state = clefState(incoming, list);
+  const questions: Record<string, ClefQuestion> = {};
+  addCandidateQuestions(questions, list);
+  addDuplicateQuestions(questions, list);
+  const n = Object.keys(questions).length;
+  if (n > CLEF_MAX_QUESTIONS) throw new Error(`Clef request has ${n} questions; the limit is ${CLEF_MAX_QUESTIONS}.`);
+  return { model, state, questions };
+}
+
+/** The state that the model reads: the incoming work, the traffic near it, and the rules of the road. */
+function clefState(incoming: VesselView, list: { view: VesselView; facts: PairFacts }[]) {
+  return {
     task:
       "gitring course check. Many coding agents (vessels) change one repository at the same time. " +
       "Judge whether the incoming vessel's work collides with each traffic vessel v<i>. " +
@@ -185,8 +204,10 @@ export function buildClefRequest(
     })),
     rules: RULES_TEXT,
   };
+}
 
-  const questions: Record<string, ClefQuestion> = {};
+/** Three questions for each candidate: do the two collide, how much do they interfere, who adapts. */
+function addCandidateQuestions(questions: Record<string, ClefQuestion>, list: { view: VesselView; facts: PairFacts }[]): void {
   list.forEach((_c, i) => {
     const id = clefQuestionIds(i);
     const v = `v${i}`;
@@ -214,6 +235,10 @@ export function buildClefRequest(
       criteria: { incoming: "The incoming agent adapts its plan", other: `${v} adapts its plan` },
     };
   });
+}
+
+/** Is the incoming task a duplicate of a task in the traffic, and which one. */
+function addDuplicateQuestions(questions: Record<string, ClefQuestion>, list: { view: VesselView; facts: PairFacts }[]): void {
   questions.duplicate = {
     type: "noul",
     instructions: "Does the incoming intent duplicate any traffic intent?",
@@ -233,9 +258,6 @@ export function buildClefRequest(
       criteria,
     };
   }
-  const n = Object.keys(questions).length;
-  if (n > CLEF_MAX_QUESTIONS) throw new Error(`Clef request has ${n} questions; the limit is ${CLEF_MAX_QUESTIONS}.`);
-  return { model, state, questions };
 }
 
 /* ───────────────────────────── response ───────────────────────────── */

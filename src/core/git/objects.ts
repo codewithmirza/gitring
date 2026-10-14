@@ -1,4 +1,11 @@
 /**
+ * The git object model: it encodes, decodes and hashes blob, tree and commit objects like real git.
+ *
+ * Pure module (WebCrypto SHA-1, TextEncoder, TextDecoder): runs in Node 22 and in workerd.
+ * `test/git/objects.test.ts` checks the output against real git.
+ */
+
+/*
  * Git object model: encode, decode and hash blob / tree / commit objects.
  *
  * Pure module: WebCrypto SHA-1 (`globalThis.crypto.subtle`), TextEncoder and TextDecoder only (plus a
@@ -9,6 +16,7 @@
  * `hashObject`, `encodeTree` and `encodeCommit` against `git hash-object`, `git mktree`
  * and `git commit-tree`.
  */
+
 import type { CommitMeta, TreeEntry, TreeEntryType } from "../../platform/repo/backend";
 
 export type GitObjectType = "blob" | "tree" | "commit";

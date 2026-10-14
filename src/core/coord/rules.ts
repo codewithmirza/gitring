@@ -1,4 +1,11 @@
 /**
+ * The rules of the road (who gives way) and the offline assessment of a pair, which uses fixed numbers.
+ *
+ * Called by `clef.ts` (the fallback and the hard rules) and `policy.ts`. Pure functions: they never call a model.
+ * R6 always decides, so every pair has an answer.
+ */
+
+/*
  * Rules of the road (who gives way) and the deterministic rules assessment (the offline
  * stand-in for Clef, with the same output shape).
  *
@@ -32,6 +39,7 @@
  *  Give-way confidence by deciding rule: R1 0.95 · R2 0.90 · R3 0.85 · R5 0.80 · R4 0.70 ·
  *  R6 0.60 (0.50 for an R6 tie).
  */
+
 import type { CourseAssessment, PairFacts, Range, RuleOfTheRoad } from "../types";
 import { symbolName } from "../analysis/range";
 import type { VesselView } from "./facts";
@@ -76,101 +84,122 @@ const R6_TIE_CONFIDENCE = 0.5;
 
 const flip = (s: Side): Side => (s === "incoming" ? "other" : "incoming");
 
+interface RuleContext {
+  incoming: VesselView;
+  other: VesselView;
+  facts: PairFacts;
+  /** The callsign of the incoming agent. */
+  I: string;
+  /** The callsign of the other agent. */
+  O: string;
+  otherState: VesselView["state"];
+}
+
 /** Every rule, in order, with its verdict for this pair (null = does not decide). */
 export function evaluateRules(incoming: VesselView, other: VesselView, facts: PairFacts): RuleVerdict[] {
-  const I = incoming.agent.callsign;
-  const O = other.agent.callsign;
-  const otherState = facts.otherState ?? other.state;
-  const out: RuleVerdict[] = [];
+  const c: RuleContext = {
+    incoming,
+    other,
+    facts,
+    I: incoming.agent.callsign,
+    O: other.agent.callsign,
+    otherState: facts.otherState ?? other.state,
+  };
+  return [landedHasWay(c), waitingStandsOn(c), producerStandsOn(c), priorityStandsOn(c), firstDeclaredStandsOn(c), smallerGivesWay(c)];
+}
 
-  // R1 — landed work has the right of way.
-  {
-    let giveWay: Side | null = null;
-    let reason = "No vessel landed. R1 does not apply.";
-    if (otherState === "landed" && incoming.state !== "landed") {
-      giveWay = "incoming";
-      reason = `${O} landed on main. Landed work has the right of way.`;
-    } else if (incoming.state === "landed" && otherState !== "landed") {
-      giveWay = "other";
-      reason = `${I} landed on main. Landed work has the right of way.`;
-    }
-    out.push({ rule: "R1-landed-has-way", giveWay, reason });
+/** R1: landed work has the right of way. */
+function landedHasWay(c: RuleContext): RuleVerdict {
+  const { incoming, I, O, otherState } = c;
+  let giveWay: Side | null = null;
+  let reason = "No vessel landed. R1 does not apply.";
+  if (otherState === "landed" && incoming.state !== "landed") {
+    giveWay = "incoming";
+    reason = `${O} landed on main. Landed work has the right of way.`;
+  } else if (incoming.state === "landed" && otherState !== "landed") {
+    giveWay = "other";
+    reason = `${I} landed on main. Landed work has the right of way.`;
   }
+  return { rule: "R1-landed-has-way", giveWay, reason };
+}
 
-  // R2 — work that waits to land stands on against active work.
-  {
-    let giveWay: Side | null = null;
-    let reason = "No vessel waits to land against active work. R2 does not apply.";
-    if (incoming.state === "waiting" && otherState === "active") {
-      giveWay = "other";
-      reason = `${I} waits to land. Active work gives way.`;
-    } else if (otherState === "waiting" && incoming.state === "active") {
-      giveWay = "incoming";
-      reason = `${O} waits to land. Active work gives way.`;
-    }
-    out.push({ rule: "R2-waiting-stands-on", giveWay, reason });
+/** R2: work that waits to land stands on against active work. */
+function waitingStandsOn(c: RuleContext): RuleVerdict {
+  const { incoming, I, O, otherState } = c;
+  let giveWay: Side | null = null;
+  let reason = "No vessel waits to land against active work. R2 does not apply.";
+  if (incoming.state === "waiting" && otherState === "active") {
+    giveWay = "other";
+    reason = `${I} waits to land. Active work gives way.`;
+  } else if (otherState === "waiting" && incoming.state === "active") {
+    giveWay = "incoming";
+    reason = `${O} waits to land. Active work gives way.`;
   }
+  return { rule: "R2-waiting-stands-on", giveWay, reason };
+}
 
-  // R3 — the producer of an interface change stands on; consumers adapt.
-  {
-    const producers = new Set(facts.interfaceHits.map((h) => h.changedBy));
-    let giveWay: Side | null = null;
-    let reason = producers.size ? "Both vessels change an interface that the other uses. R3 does not decide." : "No interface change. R3 does not apply.";
-    if (producers.size === 1) {
-      const producer = [...producers][0] as Side;
-      const hit = facts.interfaceHits.find((h) => h.changedBy === producer)!;
-      giveWay = flip(producer);
-      reason = `${producer === "incoming" ? I : O} changes the signature of ${symbolName(hit.symbol)}. The producer stands on.`;
-    }
-    out.push({ rule: "R3-producer-stands-on", giveWay, reason });
+/** R3: the producer of an interface change stands on. Consumers adapt. */
+function producerStandsOn(c: RuleContext): RuleVerdict {
+  const { facts, I, O } = c;
+  const producers = new Set(facts.interfaceHits.map((h) => h.changedBy));
+  let giveWay: Side | null = null;
+  let reason = producers.size ? "Both vessels change an interface that the other uses. R3 does not decide." : "No interface change. R3 does not apply.";
+  if (producers.size === 1) {
+    const producer = [...producers][0] as Side;
+    const hit = facts.interfaceHits.find((h) => h.changedBy === producer)!;
+    giveWay = flip(producer);
+    reason = `${producer === "incoming" ? I : O} changes the signature of ${symbolName(hit.symbol)}. The producer stands on.`;
   }
+  return { rule: "R3-producer-stands-on", giveWay, reason };
+}
 
-  // R5 — a high-priority intent stands on.
-  {
-    let giveWay: Side | null = null;
-    let reason = "The intents have the same priority. R5 does not decide.";
-    const pi = incoming.intent.priority ?? "normal";
-    const po = other.intent.priority ?? "normal";
-    if (pi === "high" && po !== "high") {
-      giveWay = "other";
-      reason = `The intent of ${I} has high priority.`;
-    } else if (po === "high" && pi !== "high") {
-      giveWay = "incoming";
-      reason = `The intent of ${O} has high priority.`;
-    }
-    out.push({ rule: "R5-priority-stands-on", giveWay, reason });
+/** R5: a high-priority intent stands on. */
+function priorityStandsOn(c: RuleContext): RuleVerdict {
+  const { incoming, other, I, O } = c;
+  let giveWay: Side | null = null;
+  let reason = "The intents have the same priority. R5 does not decide.";
+  const pi = incoming.intent.priority ?? "normal";
+  const po = other.intent.priority ?? "normal";
+  if (pi === "high" && po !== "high") {
+    giveWay = "other";
+    reason = `The intent of ${I} has high priority.`;
+  } else if (po === "high" && pi !== "high") {
+    giveWay = "incoming";
+    reason = `The intent of ${O} has high priority.`;
   }
+  return { rule: "R5-priority-stands-on", giveWay, reason };
+}
 
-  // R4 — the earlier course stands on.
-  {
-    let giveWay: Side | null = null;
-    let reason = "The courses have the same time. R4 does not decide.";
-    const di = incoming.attempt.course?.declaredAt ?? incoming.attempt.createdAt;
-    const dO = other.attempt.course?.declaredAt ?? other.attempt.createdAt;
-    if (di < dO) {
-      giveWay = "other";
-      reason = `${I} declared its course first.`;
-    } else if (dO < di) {
-      giveWay = "incoming";
-      reason = `${O} declared its course first.`;
-    }
-    out.push({ rule: "R4-first-declared-stands-on", giveWay, reason });
+/** R4: the earlier course stands on. */
+function firstDeclaredStandsOn(c: RuleContext): RuleVerdict {
+  const { incoming, other, I, O } = c;
+  let giveWay: Side | null = null;
+  let reason = "The courses have the same time. R4 does not decide.";
+  const di = incoming.attempt.course?.declaredAt ?? incoming.attempt.createdAt;
+  const dO = other.attempt.course?.declaredAt ?? other.attempt.createdAt;
+  if (di < dO) {
+    giveWay = "other";
+    reason = `${I} declared its course first.`;
+  } else if (dO < di) {
+    giveWay = "incoming";
+    reason = `${O} declared its course first.`;
   }
+  return { rule: "R4-first-declared-stands-on", giveWay, reason };
+}
 
-  // R6 — the smaller change gives way (it costs less to adapt). A tie: the incoming vessel gives way.
-  {
-    const si = incoming.footprintSize;
-    const so = other.footprintSize;
-    let giveWay: Side = "incoming";
-    let reason = "The two changes have the same size. The incoming vessel gives way.";
-    if (si < so) reason = `${I} has the smaller change. The smaller change gives way.`;
-    else if (so < si) {
-      giveWay = "other";
-      reason = `${O} has the smaller change. The smaller change gives way.`;
-    }
-    out.push({ rule: "R6-smaller-gives-way", giveWay, reason });
+/** R6: the smaller change gives way (it costs less to adapt). A tie: the incoming vessel gives way. */
+function smallerGivesWay(c: RuleContext): RuleVerdict {
+  const { incoming, other, I, O } = c;
+  const si = incoming.footprintSize;
+  const so = other.footprintSize;
+  let giveWay: Side = "incoming";
+  let reason = "The two changes have the same size. The incoming vessel gives way.";
+  if (si < so) reason = `${I} has the smaller change. The smaller change gives way.`;
+  else if (so < si) {
+    giveWay = "other";
+    reason = `${O} has the smaller change. The smaller change gives way.`;
   }
-  return out;
+  return { rule: "R6-smaller-gives-way", giveWay, reason };
 }
 
 /** The first rule that decides (R1, R2, R3, R5, R4, R6). */

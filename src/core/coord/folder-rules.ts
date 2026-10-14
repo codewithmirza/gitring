@@ -1,4 +1,10 @@
 /**
+ * Rules by folder: who says yes to a change in a folder, and which agents may change it at all.
+ *
+ * Pure functions. The rule type `FolderRule` is in `types/settings.ts`. Owners set the rules in Settings.
+ */
+
+/*
  * Rules by folder: who says yes to a change in a folder (ProjectSettings.folderRules).
  *
  *   owner-yes  a change there needs the yes of an owner
@@ -14,11 +20,16 @@
  * These functions are pure: the project object checks the files of a plan (declare) and the changed files
  * of the work (submit) with them, and the web app shows the same words. Words are plain (ASD-STE100).
  */
+
 import type { FolderRule, Person } from "../types";
+
+// ───── Limits ─────
 
 export const MAX_FOLDER_RULES = 50;
 export const MAX_PATTERN = 200;
 export const MAX_RULE_MEMBERS = 50;
+
+// ───── Compiling and matching a pattern ─────
 
 /** One piece of a compiled pattern. */
 type Token = { t: "lit"; c: string } | { t: "one" } | { t: "star" } | { t: "any" } | { t: "dirs" };
@@ -113,6 +124,8 @@ export function rulesFor(rules: readonly FolderRule[], path: string): FolderRule
   return rules.filter((r) => matchesPattern(r.pattern, path));
 }
 
+// ───── Cleaning the rules ─────
+
 /** Keep a list of rules inside safe bounds (any owner or client can send a settings patch). */
 export function sanitizeFolderRules(raw: unknown): FolderRule[] {
   if (!Array.isArray(raw)) return [];
@@ -138,6 +151,8 @@ export function sanitizeFolderRules(raw: unknown): FolderRule[] {
   return out;
 }
 
+// ───── Words for people ─────
+
 /** "a, b, c" for up to three names, then "and N more". */
 function listOf(items: string[], max = 3): string {
   if (items.length <= max) return items.join(", ");
@@ -150,6 +165,8 @@ function namesOf(people: Person[]): string {
   if (names.length <= 1) return names[0] ?? "nobody";
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
+
+// ───── Checking paths against the rules ─────
 
 /** What the rules say about a set of paths. */
 export interface RuleVerdict {

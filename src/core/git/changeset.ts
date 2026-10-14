@@ -1,4 +1,11 @@
 /**
+ * Builds a commit from the base tree and the changed paths only, so its cost grows with the change.
+ *
+ * Pure module (WebCrypto and TextEncoder only): runs in Node 22 and in workerd.
+ * Read `snapshot.ts` and `objects.ts` for the pieces that it uses.
+ */
+
+/*
  * Changesets: a commit built from the base tree and the changed paths only. The trees on a changed path
  * are read (through the caller's cached reader) and written again; every other subtree keeps its id and
  * is never read. So the work of a commit grows with the size of the change, not with the size of the
@@ -6,6 +13,7 @@
  *
  * Pure module (WebCrypto + TextEncoder only). Runs in Node 22 and in workerd.
  */
+
 import type { FileChange, TreeEntry } from "../../platform/repo/backend";
 import { EMPTY_TREE_SHA, TREE_MODE, encodeCommit, encodeTree, hashObject, isSha, modeToType, normalizeCommitMessage, normalizeMode, utf8 } from "./objects";
 import { assertValidPath } from "./snapshot";

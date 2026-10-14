@@ -1,4 +1,11 @@
 /**
+ * Writes the change request for one pair from the facts, in short imperative sentences.
+ *
+ * Called by the project coordinator. Never blame an agent. Every message ends with the sentence in `CONTINUE`.
+ * Read `rules.ts` for who gives way.
+ */
+
+/*
  * Correction text: a template from facts, in ASD-STE100 style.
  *
  * Rules for every message: imperative instructions, one instruction per sentence, ≤ 20 words per
@@ -6,6 +13,7 @@
  * Concrete: callsigns, files, line ranges, exact signatures when known. Every message ends with
  * "Continue your work." Constraints carry the same content in machine form.
  */
+
 import type { Amendment, Correction, CorrectionKind, LineRange, PairFacts, RuleOfTheRoad, SymbolKey } from "../types";
 import { callForm, intersectSymbols, isCodePath, mergeRanges, symbolName, symbolPath, usedChanges, type SignatureInfo } from "../analysis/range";
 import type { VesselView } from "./facts";

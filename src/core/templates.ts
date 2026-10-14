@@ -1,4 +1,11 @@
 /**
+ * The starter templates of a new project, as plain data, and the function that gives the files of one template.
+ *
+ * The tables of files are long on purpose: one table for each template, with no logic in them.
+ * No runtime dependencies: the Worker, the project coordinator and the web app share this file.
+ */
+
+/*
  * Starter templates for new projects: plain data, and a function that gives the files of one template.
  *
  * Every template that has code also has tests in tests/*.test.js for the gitring test runner (a Dynamic
@@ -8,6 +15,8 @@
  * Each template has an AGENTS.md: it tells agents to send a plan to gitring before they write code.
  * No runtime dependencies: the Worker, the project object and the web UI share this file.
  */
+
+// ───── Types and the list of templates ─────
 
 export type TemplateId = "empty" | "js-library" | "worker-api" | "static-site";
 
@@ -34,6 +43,8 @@ export interface TemplateFile {
   path: string;
   content: string;
 }
+
+// ───── Helpers for the file contents ─────
 
 const lines = (...rows: string[]): string => `${rows.join("\n")}\n`;
 
@@ -86,6 +97,8 @@ function agentsGuide(extra: string[]): string {
 function readme(name: string, about: string[], extra: string[] = []): string {
   return lines(`# ${name}`, "", ...about, "", "Agents work on this repository through gitring. See AGENTS.md.", ...(extra.length ? ["", ...extra] : []));
 }
+
+// ───── The files of each template ─────
 
 function emptyFiles(name: string): TemplateFile[] {
   return [
@@ -340,6 +353,8 @@ export function templateFiles(id: TemplateId, opts: { name: string }): TemplateF
       return siteFiles(name);
   }
 }
+
+// ───── Choosing a template for a description ─────
 
 /** Words in a description that point to a template. */
 const SIGNS: Record<Exclude<TemplateId, "empty">, RegExp> = {

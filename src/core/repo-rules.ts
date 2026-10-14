@@ -1,6 +1,7 @@
 /**
- * Rules for repositories that come from outside: which remotes gitring imports, and which files of
- * a tree it reads as text. Pure module (no platform APIs).
+ * Rules for code that comes from outside: which remotes gitring imports, and which files it reads as text.
+ *
+ * Pure module (no platform APIs).
  */
 
 /**
@@ -59,7 +60,6 @@ export function opaqueFolder(path: string): { folder: string; generated: boolean
   if (!m) return null;
   return { folder: path.slice(0, m.index + m[0].length), generated: GENERATED_DIRS.has(m[2]) };
 }
-
 
 /**
  * "owner/name" of a GitHub repository, from "owner/name", "https://github.com/owner/name(.git)" or

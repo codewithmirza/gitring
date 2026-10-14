@@ -1,4 +1,11 @@
 /**
+ * Turns the assessments of the pairs into one verdict: clear, correct, merge tasks or escalate.
+ *
+ * Called by the project coordinator with the thresholds of the project. Pure functions.
+ * Read `rules.ts` (who adapts) and `corrections.ts` (what is said) next.
+ */
+
+/*
  * Course-check policy: turn assessments into a verdict.
  *
  *   duplicate ≥ τ.duplicate                               → merge-intents (duplicateOf = most similar)
@@ -13,6 +20,7 @@
  * For escalate, `corrections` still lists the pairs at stake (the caller holds or sends them).
  * For merge-intents, `corrections` lists the other flagged pairs (not the duplicate pair).
  */
+
 import type { CourseAssessment, PairFacts, PolicyThresholds, RuleOfTheRoad, Verdict } from "../types";
 
 export interface PolicyOutcome {

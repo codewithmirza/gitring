@@ -1,4 +1,4 @@
-/** Coordination: course-check facts, rules of the road, Clef I/O, policy and correction text. */
+/** The front door of the conflict check: facts, rules of the road, the model, the policy and the change requests. */
 export * from "./facts";
 export * from "./rules";
 export * from "./clef";

@@ -1,11 +1,9 @@
 /**
- * Guess how a repository installs and tests itself, from its files: lockfiles, manifests and scripts.
- * Pure: the caller gives the file list and a reader, so any tree works (a GitHub repository, or main in
- * Cloudflare Artifacts after an import, an upload or a push). guessChecks uses rules only; guessTree also
- * asks a model (through a function that the caller gives) when the rules find no test command.
+ * Guesses how a repository installs and tests itself, from its lockfiles, manifests and scripts.
  *
- * Check containers run the Cloudflare Node.js 24 image (Debian). Other toolchains come from Debian
- * packages; the container reaches package registries only.
+ * Pure: the caller gives the file list and a reader, so any tree works (an import, an upload, a push, main).
+ * `guessChecks` uses rules only. `guessTree` also asks a model when the rules find no test command.
+ * Check containers run the Cloudflare Node.js 24 image (Debian). Other tools come from Debian packages.
  */
 
 export interface GuessInput {
@@ -45,124 +43,145 @@ export async function guessChecks(input: GuessInput): Promise<ChecksGuess> {
   const pkg = has("package.json") ? parseJson(await input.read("package.json")) : null;
   const scripts = (pkg?.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {}) as Record<string, string>;
 
-  /* ───── the gitring test runner (gitring templates, and repositories that use its harness) ───── */
+  // The gitring test runner (gitring templates, and repositories that use its harness).
   if ((!scripts.test || NPM_PLACEHOLDER.test(scripts.test)) && (await usesHarness(input))) {
     reasons.push("tests/*.test.js import the gitring harness: the gitring test runner runs them, with no container and no install.");
     return { runner: "worker", stack: "JavaScript (gitring test runner)", reasons, confident: true };
   }
 
-  /* ───── JavaScript / TypeScript ───── */
-  if (has("package.json")) {
-    const deps = { ...(pkg?.dependencies as object), ...(pkg?.devDependencies as object) } as Record<string, string>;
-    const pmField = typeof pkg?.packageManager === "string" ? pkg.packageManager : "";
-    const pm = packageManager(pmField, has);
-    let install: string;
-    switch (pm.name) {
-      case "pnpm":
-        install = has("pnpm-lock.yaml") ? "corepack enable && pnpm install --frozen-lockfile" : "corepack enable && pnpm install";
-        break;
-      case "yarn":
-        install = pm.berry ? "corepack enable && yarn install --immutable" : has("yarn.lock") ? "corepack enable && yarn install --frozen-lockfile" : "corepack enable && yarn install";
-        break;
-      case "bun":
-        install = "npm install -g bun && bun install --frozen-lockfile";
-        break;
-      default:
-        install = has("package-lock.json") || has("npm-shrinkwrap.json") ? "npm ci" : "npm install";
-    }
-    reasons.push(pm.reason);
-    const run = (script: string) => (pm.name === "npm" ? (script === "test" ? "npm test" : `npm run ${script}`) : pm.name === "bun" ? `bun run ${script}` : `${pm.name} ${script === "test" ? "test" : `run ${script}`}`);
-    const ts = has("tsconfig.json") || "typescript" in deps;
-    const stack = `${ts ? "TypeScript" : "JavaScript"} (${pm.name})`;
-    if (scripts.test && !NPM_PLACEHOLDER.test(scripts.test)) {
-      reasons.push(`Test command from package.json: scripts.test is "${clip(scripts.test)}".`);
-      return { install, test: run("test"), stack, reasons, confident: true };
-    }
-    for (const name of ["test:unit", "test:ci", "tests", "check"]) {
-      if (scripts[name]) {
-        reasons.push(`Test command from package.json: scripts["${name}"].`);
-        return { install, test: run(name), stack, reasons, confident: true };
-      }
-    }
-    if ("vitest" in deps) {
-      reasons.push("package.json has vitest but no test script: gitring runs vitest.");
-      return { install, test: "npx vitest run", stack, reasons, confident: true };
-    }
-    if ("jest" in deps) {
-      reasons.push("package.json has jest but no test script: gitring runs jest.");
-      return { install, test: "npx jest --ci", stack, reasons, confident: true };
-    }
-    if (input.paths.some((p) => /(^|\/)[^/]+\.test\.(m?js|cjs)$/.test(p) && !p.includes("node_modules/"))) {
-      reasons.push("No test script, but the repository has *.test.js files: gitring runs node --test.");
-      return { install, test: "node --test", stack, reasons, confident: true };
-    }
-    if (scripts.build) {
-      reasons.push("No test script. gitring runs the build as the check, so that merged code still builds.");
-      return { install, test: run("build"), stack, reasons, confident: false };
-    }
-    reasons.push("package.json has no test script. Write the test command.");
-    return { install, stack, reasons, confident: false };
-  }
+  // The first ecosystem that fits decides. The order matters: a repository with a package.json is a JavaScript project.
+  if (has("package.json")) return guessJavaScript(input, has, reasons, pkg, scripts);
+  if (has("deno.json") || has("deno.jsonc")) return guessDeno(reasons);
+  const python = await guessPython(input, has, reasons);
+  if (python) return python;
+  if (has("go.mod")) return guessGo(reasons);
+  if (has("Cargo.toml")) return guessRust(reasons);
+  if (has("Gemfile")) return guessRuby(input, reasons);
+  const java = guessJava(has, reasons);
+  if (java) return java;
+  const make = await guessMake(input, has, reasons);
+  if (make) return make;
 
-  /* ───── Deno ───── */
-  if (has("deno.json") || has("deno.jsonc")) {
-    reasons.push("deno.json: a Deno project.");
-    return { install: "npm install -g deno", test: "deno test -A", stack: "Deno", reasons, confident: true };
-  }
+  reasons.push("gitring found no manifest that it knows. Write the install and test commands.");
+  return { reasons, confident: false };
+}
 
-  /* ───── Python ───── */
+// ───── The ecosystems ─────
+
+/** JavaScript and TypeScript: the package manager, the install command and the test script. */
+function guessJavaScript(input: GuessInput, has: (p: string) => boolean, reasons: string[], pkg: Record<string, unknown> | null, scripts: Record<string, string>): ChecksGuess {
+  const deps = { ...(pkg?.dependencies as object), ...(pkg?.devDependencies as object) } as Record<string, string>;
+  const pmField = typeof pkg?.packageManager === "string" ? pkg.packageManager : "";
+  const pm = packageManager(pmField, has);
+  let install: string;
+  switch (pm.name) {
+    case "pnpm":
+      install = has("pnpm-lock.yaml") ? "corepack enable && pnpm install --frozen-lockfile" : "corepack enable && pnpm install";
+      break;
+    case "yarn":
+      install = pm.berry ? "corepack enable && yarn install --immutable" : has("yarn.lock") ? "corepack enable && yarn install --frozen-lockfile" : "corepack enable && yarn install";
+      break;
+    case "bun":
+      install = "npm install -g bun && bun install --frozen-lockfile";
+      break;
+    default:
+      install = has("package-lock.json") || has("npm-shrinkwrap.json") ? "npm ci" : "npm install";
+  }
+  reasons.push(pm.reason);
+  const run = (script: string) => (pm.name === "npm" ? (script === "test" ? "npm test" : `npm run ${script}`) : pm.name === "bun" ? `bun run ${script}` : `${pm.name} ${script === "test" ? "test" : `run ${script}`}`);
+  const ts = has("tsconfig.json") || "typescript" in deps;
+  const stack = `${ts ? "TypeScript" : "JavaScript"} (${pm.name})`;
+  if (scripts.test && !NPM_PLACEHOLDER.test(scripts.test)) {
+    reasons.push(`Test command from package.json: scripts.test is "${clip(scripts.test)}".`);
+    return { install, test: run("test"), stack, reasons, confident: true };
+  }
+  for (const name of ["test:unit", "test:ci", "tests", "check"]) {
+    if (scripts[name]) {
+      reasons.push(`Test command from package.json: scripts["${name}"].`);
+      return { install, test: run(name), stack, reasons, confident: true };
+    }
+  }
+  if ("vitest" in deps) {
+    reasons.push("package.json has vitest but no test script: gitring runs vitest.");
+    return { install, test: "npx vitest run", stack, reasons, confident: true };
+  }
+  if ("jest" in deps) {
+    reasons.push("package.json has jest but no test script: gitring runs jest.");
+    return { install, test: "npx jest --ci", stack, reasons, confident: true };
+  }
+  if (input.paths.some((p) => /(^|\/)[^/]+\.test\.(m?js|cjs)$/.test(p) && !p.includes("node_modules/"))) {
+    reasons.push("No test script, but the repository has *.test.js files: gitring runs node --test.");
+    return { install, test: "node --test", stack, reasons, confident: true };
+  }
+  if (scripts.build) {
+    reasons.push("No test script. gitring runs the build as the check, so that merged code still builds.");
+    return { install, test: run("build"), stack, reasons, confident: false };
+  }
+  reasons.push("package.json has no test script. Write the test command.");
+  return { install, stack, reasons, confident: false };
+}
+
+/** Deno. */
+function guessDeno(reasons: string[]): ChecksGuess {
+  reasons.push("deno.json: a Deno project.");
+  return { install: "npm install -g deno", test: "deno test -A", stack: "Deno", reasons, confident: true };
+}
+
+/** Python: a virtual environment, the requirements, the package itself and the test tool. */
+async function guessPython(input: GuessInput, has: (p: string) => boolean, reasons: string[]): Promise<ChecksGuess | undefined> {
   const pyproject = has("pyproject.toml") ? ((await input.read("pyproject.toml")) ?? "") : "";
   const requirements = ["requirements-dev.txt", "requirements_dev.txt", "requirements-test.txt", "requirements.txt"].filter(has);
-  if (pyproject || requirements.length || has("setup.py") || has("setup.cfg") || has("Pipfile")) {
-    const venv = `${APT} python3-venv python3-pip > /dev/null && python3 -m venv .venv`;
-    const pip = ".venv/bin/pip install -q";
-    const steps = [venv];
-    if (requirements.length) {
-      steps.push(`${pip} ${requirements.map((r) => `-r ${r}`).join(" ")}`);
-      reasons.push(`Install from ${requirements.join(" and ")}.`);
-    }
-    const buildable = /\[build-system\]|\[project\]|\[tool\.poetry\]/.test(pyproject) || has("setup.py") || has("setup.cfg");
-    if (buildable) {
-      const optional = /\[project\.optional-dependencies\]([\s\S]*?)(?:\n\[|$)/.exec(pyproject)?.[1] ?? "";
-      const group = ["test", "tests", "testing", "dev"].find((g) => new RegExp(`^\\s*${g}\\s*=`, "m").test(optional));
-      steps.push(`${pip} -e '.${group ? `[${group}]` : ""}'`);
-      reasons.push(`Install the package itself${group ? ` with its "${group}" extras` : ""} (pyproject.toml or setup.py).`);
-    }
-    const all = `${pyproject}\n${(await Promise.all(requirements.map((r) => input.read(r)))).join("\n")}`;
-    const pytest = /\bpytest\b/i.test(all) || has("pytest.ini") || has("conftest.py") || input.paths.some((p) => /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(p));
-    if (pytest) {
-      if (!/\bpytest\b/i.test(all)) steps.push(`${pip} pytest`);
-      reasons.push("pytest finds the tests (test_*.py files or a pytest setting).");
-      return { install: steps.join(" && "), test: ".venv/bin/python -m pytest -q", stack: "Python", reasons, confident: true };
-    }
-    if (input.paths.some((p) => /(^|\/)tests?\/[^/]+\.py$/.test(p))) {
-      reasons.push("A tests folder without pytest: gitring runs unittest.");
-      return { install: steps.join(" && "), test: ".venv/bin/python -m unittest discover -v", stack: "Python", reasons, confident: true };
-    }
-    reasons.push("No Python tests found. Write the test command.");
-    return { install: steps.join(" && "), stack: "Python", reasons, confident: false };
+  if (!(pyproject || requirements.length || has("setup.py") || has("setup.cfg") || has("Pipfile"))) return undefined;
+  const venv = `${APT} python3-venv python3-pip > /dev/null && python3 -m venv .venv`;
+  const pip = ".venv/bin/pip install -q";
+  const steps = [venv];
+  if (requirements.length) {
+    steps.push(`${pip} ${requirements.map((r) => `-r ${r}`).join(" ")}`);
+    reasons.push(`Install from ${requirements.join(" and ")}.`);
   }
-
-  /* ───── Go ───── */
-  if (has("go.mod")) {
-    reasons.push("go.mod: a Go module. Go comes from Debian; a newer Go in go.mod downloads itself.");
-    return { install: `${APT} golang-go git > /dev/null && go mod download`, test: "go test ./...", stack: "Go", reasons, confident: true };
+  const buildable = /\[build-system\]|\[project\]|\[tool\.poetry\]/.test(pyproject) || has("setup.py") || has("setup.cfg");
+  if (buildable) {
+    const optional = /\[project\.optional-dependencies\]([\s\S]*?)(?:\n\[|$)/.exec(pyproject)?.[1] ?? "";
+    const group = ["test", "tests", "testing", "dev"].find((g) => new RegExp(`^\\s*${g}\\s*=`, "m").test(optional));
+    steps.push(`${pip} -e '.${group ? `[${group}]` : ""}'`);
+    reasons.push(`Install the package itself${group ? ` with its "${group}" extras` : ""} (pyproject.toml or setup.py).`);
   }
-
-  /* ───── Rust ───── */
-  if (has("Cargo.toml")) {
-    reasons.push("Cargo.toml: a Rust crate. Cargo comes from Debian.");
-    return { install: `${APT} cargo > /dev/null && cargo fetch`, test: "cargo test", stack: "Rust", reasons, confident: true };
+  const all = `${pyproject}\n${(await Promise.all(requirements.map((r) => input.read(r)))).join("\n")}`;
+  const pytest = /\bpytest\b/i.test(all) || has("pytest.ini") || has("conftest.py") || input.paths.some((p) => /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(p));
+  if (pytest) {
+    if (!/\bpytest\b/i.test(all)) steps.push(`${pip} pytest`);
+    reasons.push("pytest finds the tests (test_*.py files or a pytest setting).");
+    return { install: steps.join(" && "), test: ".venv/bin/python -m pytest -q", stack: "Python", reasons, confident: true };
   }
-
-  /* ───── Ruby ───── */
-  if (has("Gemfile")) {
-    const rspec = input.paths.some((p) => p.startsWith("spec/"));
-    reasons.push(`Gemfile: a Ruby project; ${rspec ? "spec/ uses RSpec" : "gitring runs rake test"}.`);
-    return { install: `${APT} ruby-full ruby-bundler build-essential > /dev/null && bundle install`, test: rspec ? "bundle exec rspec" : "bundle exec rake test", stack: "Ruby", reasons, confident: true };
+  if (input.paths.some((p) => /(^|\/)tests?\/[^/]+\.py$/.test(p))) {
+    reasons.push("A tests folder without pytest: gitring runs unittest.");
+    return { install: steps.join(" && "), test: ".venv/bin/python -m unittest discover -v", stack: "Python", reasons, confident: true };
   }
+  reasons.push("No Python tests found. Write the test command.");
+  return { install: steps.join(" && "), stack: "Python", reasons, confident: false };
+}
 
-  /* ───── Java / Kotlin ───── */
+/** Go. */
+function guessGo(reasons: string[]): ChecksGuess {
+  reasons.push("go.mod: a Go module. Go comes from Debian; a newer Go in go.mod downloads itself.");
+  return { install: `${APT} golang-go git > /dev/null && go mod download`, test: "go test ./...", stack: "Go", reasons, confident: true };
+}
+
+/** Rust. */
+function guessRust(reasons: string[]): ChecksGuess {
+  reasons.push("Cargo.toml: a Rust crate. Cargo comes from Debian.");
+  return { install: `${APT} cargo > /dev/null && cargo fetch`, test: "cargo test", stack: "Rust", reasons, confident: true };
+}
+
+/** Ruby: RSpec when the repository has a spec folder, else rake. */
+function guessRuby(input: GuessInput, reasons: string[]): ChecksGuess {
+  const rspec = input.paths.some((p) => p.startsWith("spec/"));
+  reasons.push(`Gemfile: a Ruby project; ${rspec ? "spec/ uses RSpec" : "gitring runs rake test"}.`);
+  return { install: `${APT} ruby-full ruby-bundler build-essential > /dev/null && bundle install`, test: rspec ? "bundle exec rspec" : "bundle exec rake test", stack: "Ruby", reasons, confident: true };
+}
+
+/** Java and Kotlin: Maven or Gradle. */
+function guessJava(has: (p: string) => boolean, reasons: string[]): ChecksGuess | undefined {
   if (has("pom.xml")) {
     reasons.push("pom.xml: a Maven project.");
     return { install: `${APT} default-jdk-headless maven > /dev/null`, test: has("mvnw") ? "./mvnw -q -B test" : "mvn -q -B test", stack: "Java (Maven)", reasons, confident: true };
@@ -171,8 +190,11 @@ export async function guessChecks(input: GuessInput): Promise<ChecksGuess> {
     reasons.push("build.gradle: a Gradle project.");
     return { install: `${APT} default-jdk-headless > /dev/null`, test: has("gradlew") ? "./gradlew test --no-daemon" : "gradle test --no-daemon", stack: "Java (Gradle)", reasons, confident: has("gradlew") };
   }
+  return undefined;
+}
 
-  /* ───── Make ───── */
+/** A Makefile with a test target. */
+async function guessMake(input: GuessInput, has: (p: string) => boolean, reasons: string[]): Promise<ChecksGuess | undefined> {
   if (has("Makefile")) {
     const mk = (await input.read("Makefile")) ?? "";
     if (/^test\s*:/m.test(mk)) {
@@ -180,9 +202,7 @@ export async function guessChecks(input: GuessInput): Promise<ChecksGuess> {
       return { install: undefined, test: "make test", stack: "Make", reasons, confident: true };
     }
   }
-
-  reasons.push("gitring found no manifest that it knows. Write the install and test commands.");
-  return { reasons, confident: false };
+  return undefined;
 }
 
 /** Test files of the gitring test runner: tests/*.test.js that import "../harness/test.js" (gitring adds the file). */

@@ -1,4 +1,10 @@
 /**
+ * Decides what gitring merges of a work copy: every change, except a few that stay out and are reported.
+ *
+ * Pure module. The project coordinator gives the file sizes.
+ */
+
+/*
  * What gitring merges of a work copy. A merge carries every change of the work: text, binary files,
  * large files, modes (an executable bit, a symlink), and files in vendored folders. A few changes stay
  * out, and gitring tells the agent about each of them:
@@ -12,6 +18,7 @@
  * A folder that main already has is carried as it is. Paths that an agent wrote one by one (gitring_write,
  * the Claude Code hook) are always carried. Pure module.
  */
+
 import { diffSnapshots, type Snapshot } from "../git/snapshot";
 import { opaqueFolder } from "../repo-rules";
 

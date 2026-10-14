@@ -1,4 +1,11 @@
 /**
+ * Shapes and helpers for history answers: why a line is there, the changes of a file, search and compare.
+ *
+ * The project coordinator computes the answers from derived data (`src/harbor/derived.ts`).
+ * The MCP tools, the REST routes and the web app read the same shapes.
+ */
+
+/*
  * History answers: why a line is there, the changes of a file, a search of the code of main, and a
  * compare of two versions. The project object computes them from derived data (src/harbor/derived.ts).
  * The MCP tools (src/worker/mcp-history.ts), the REST routes and the web app read the same shapes.
@@ -9,6 +16,7 @@
  * project, an import, a pull of outside changes). People read "merge", "task", "work copy", never the
  * code names.
  */
+
 import type { LandingMethod, Millis } from "./types";
 import type { DiffHunk } from "./text/diff";
 

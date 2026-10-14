@@ -1,10 +1,10 @@
 /**
- * Course check, steps 2 and 4: pick the traffic that is near (candidates), then compute the
- * facts of each pair (shared files, shared symbols, interface hits, hunk overlaps, range,
- * closing, intent similarity). Facts are deterministic; Clef and the rules both read them.
+ * Picks the work that is near a plan (candidates) and writes the exact facts of each pair.
  *
- * Pure module.
+ * Called by the project coordinator. The facts are exact: the rules and the model both read them. Pure module.
+ * Read `rules.ts` next.
  */
+
 import type { AgentInfo, Attempt, AttemptStatus, Footprint, Intent, LineRange, PairFacts, Range, SymbolKey } from "../types";
 import type { ImportGraph } from "../analysis/graph";
 import {

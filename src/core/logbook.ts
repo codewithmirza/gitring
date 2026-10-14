@@ -1,4 +1,10 @@
 /**
+ * The why-record of each merge: the commit message, the git note and the optional task file in the repository.
+ *
+ * Pure module. The project coordinator writes the record at every merge. `parseTrailers` reads it back.
+ */
+
+/*
  * History: the record of why each merge happened.
  *
  *  - landingMessage: commit message = subject (intent title) + short body + gitring-* trailers.
@@ -8,11 +14,16 @@
  *
  * Pure module.
  */
+
 import type { AgentInfo, Attempt, CheckRun, Correction, CourseCheck, Decision, Intent, LandingMethod } from "./types";
+
+// ───── Constants ─────
 
 export const LOGBOOK_SCHEMA = "gitring.logbook/v1";
 export const SUBJECT_MAX = 72;
 const BODY_WIDTH = 72;
+
+// ───── Small helpers ─────
 
 /** URL- and file-safe slug: lowercase ASCII words joined by "-", at most 60 characters. */
 export function slugify(s: string): string {
@@ -74,6 +85,8 @@ function checksTotal(checks: CheckRun): { passed: number; total: number } {
   const total = passed + (checks?.failed ?? 0) || checks?.cases?.length || 0;
   return { passed, total };
 }
+
+// ───── The commit message ─────
 
 /** A merge that rode in a train: its place and the size of the train, and every work copy of the train. */
 export interface TrainInfo {
@@ -151,6 +164,8 @@ export function revertMessage(args: { intent: Intent; attempt: Attempt; agent: A
   return `${subjectOf(`Revert "${intent.title}"`)}\n\n${body.join("\n\n")}\n\n${trailers.join("\n")}\n`;
 }
 
+// ───── The git note ─────
+
 /** Git note of a revert: the why-record ("reverted: tests failed on main"), with the tests that failed. */
 export function revertNote(args: { intent: Intent; attempt: Attempt; agent: AgentInfo; mergeSha: string; landingId: string; checks: CheckRun; approvedBy?: string }): string {
   const { intent, attempt, agent, mergeSha, landingId, checks, approvedBy } = args;
@@ -189,79 +204,111 @@ export function landingNote(args: {
   testsAfter?: boolean;
 }): string {
   const { intent, attempt, agent, method, corrections, courseChecks, checks, decision, train, testsAfter } = args;
-  const fpFiles = Object.entries(attempt.footprint?.files ?? {})
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([path, t]) => ({ path, status: t.status, additions: t.additions, deletions: t.deletions }));
-  const sym = attempt.footprint?.symbols;
   const note = {
     schema: LOGBOOK_SCHEMA,
-    intent: {
-      id: intent.id,
-      title: intent.title,
-      goal: intent.goal,
-      constraints: intent.constraints ?? [],
-      version: intent.version,
-      amendments: intent.amendments ?? [],
-    },
-    attempt: {
-      id: attempt.id,
-      generation: attempt.lineage?.generation ?? 1,
-      rederivedFrom: attempt.lineage?.rederivedFrom ?? null,
-      base: { sha: attempt.baseSha, tree: attempt.baseTree },
-      course: attempt.course,
-      footprint: {
-        files: fpFiles,
-        symbols: {
-          defined: sym?.defined ?? [],
-          modified: sym?.modified ?? [],
-          removed: sym?.removed ?? [],
-          signatureChanged: sym?.signatureChanged ?? [],
-        },
-        stats: attempt.stats,
-      },
-      summary: attempt.summary ?? null,
-    },
-    agent: {
-      id: agent.id,
-      callsign: agent.callsign,
-      kind: agent.kind,
-      model: agent.model ?? null,
-      client: agent.client ?? null,
-    },
+    intent: noteIntent(intent),
+    attempt: noteAttempt(attempt),
+    agent: noteAgent(agent),
     method,
-    corrections: corrections.map((c) => ({
-      id: c.id,
-      kind: c.kind,
-      rule: c.rule,
-      message: c.message,
-      standOn: c.standOnAttemptId ?? null,
-      ...(c.alsoStandOn?.length ? { alsoStandOn: c.alsoStandOn } : {}),
-      // The note is written at the merge: a change request that the agent did not confirm closes with it.
-      status: c.status === "pending" || c.status === "delivered" ? "closed" : c.status,
-      ...(c.ackNote ? { ackNote: c.ackNote } : {}),
-      ...(c.check ? { check: { applied: c.check.applied, reason: c.check.reason } } : {}),
-    })),
-    courseChecks: courseChecks.map((k) => ({
-      id: k.id,
-      trigger: k.trigger,
-      verdict: k.verdict,
-      source: k.source,
-      confidence: k.confidence,
-      latencyMs: k.latencyMs,
-      assessments: k.assessments,
-    })),
-    checks: {
-      // "after": the tests of the work alone; main is tested after the merge (post-merge test mode).
-      ...(testsAfter ? { when: "after" } : {}),
-      passed: checks?.passed ?? 0,
-      failed: checks?.failed ?? 0,
-      cases: (checks?.cases ?? []).map((c) => ({ file: c.file, name: c.name, ok: c.ok, ...(c.error ? { error: c.error } : {}) })),
-    },
+    corrections: noteCorrections(corrections),
+    courseChecks: noteCourseChecks(courseChecks),
+    checks: noteChecks(checks, testsAfter),
     decision: decision ?? null,
     ...(train ? { train: { id: train.id, place: train.place, size: train.size, attempts: train.attemptIds } } : {}),
   };
   return `${JSON.stringify(note, null, 2)}\n`;
 }
+
+/** The task as it was when the work merged. */
+function noteIntent(intent: Intent) {
+  return {
+    id: intent.id,
+    title: intent.title,
+    goal: intent.goal,
+    constraints: intent.constraints ?? [],
+    version: intent.version,
+    amendments: intent.amendments ?? [],
+  };
+}
+
+/** The work copy: its base, its plan and its real changes. */
+function noteAttempt(attempt: Attempt) {
+  const fpFiles = Object.entries(attempt.footprint?.files ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, t]) => ({ path, status: t.status, additions: t.additions, deletions: t.deletions }));
+  const sym = attempt.footprint?.symbols;
+  return {
+    id: attempt.id,
+    generation: attempt.lineage?.generation ?? 1,
+    rederivedFrom: attempt.lineage?.rederivedFrom ?? null,
+    base: { sha: attempt.baseSha, tree: attempt.baseTree },
+    course: attempt.course,
+    footprint: {
+      files: fpFiles,
+      symbols: {
+        defined: sym?.defined ?? [],
+        modified: sym?.modified ?? [],
+        removed: sym?.removed ?? [],
+        signatureChanged: sym?.signatureChanged ?? [],
+      },
+      stats: attempt.stats,
+    },
+    summary: attempt.summary ?? null,
+  };
+}
+
+/** The agent that did the work. */
+function noteAgent(agent: AgentInfo) {
+  return {
+    id: agent.id,
+    callsign: agent.callsign,
+    kind: agent.kind,
+    model: agent.model ?? null,
+    client: agent.client ?? null,
+  };
+}
+
+/** The change requests of the work copy, with how each one ended. */
+function noteCorrections(corrections: Correction[]) {
+  return corrections.map((c) => ({
+    id: c.id,
+    kind: c.kind,
+    rule: c.rule,
+    message: c.message,
+    standOn: c.standOnAttemptId ?? null,
+    ...(c.alsoStandOn?.length ? { alsoStandOn: c.alsoStandOn } : {}),
+    // The note is written at the merge: a change request that the agent did not confirm closes with it.
+    status: c.status === "pending" || c.status === "delivered" ? "closed" : c.status,
+    ...(c.ackNote ? { ackNote: c.ackNote } : {}),
+    ...(c.check ? { check: { applied: c.check.applied, reason: c.check.reason } } : {}),
+  }));
+}
+
+/** The conflict checks of the work copy. */
+function noteCourseChecks(courseChecks: CourseCheck[]) {
+  return courseChecks.map((k) => ({
+    id: k.id,
+    trigger: k.trigger,
+    verdict: k.verdict,
+    source: k.source,
+    confidence: k.confidence,
+    latencyMs: k.latencyMs,
+    assessments: k.assessments,
+  }));
+}
+
+/** The test result: the counts and every case. */
+function noteChecks(checks: CheckRun, testsAfter?: boolean) {
+  return {
+    // "after": the tests of the work alone; main is tested after the merge (post-merge test mode).
+    ...(testsAfter ? { when: "after" } : {}),
+    passed: checks?.passed ?? 0,
+    failed: checks?.failed ?? 0,
+    cases: (checks?.cases ?? []).map((c) => ({ file: c.file, name: c.name, ok: c.ok, ...(c.error ? { error: c.error } : {}) })),
+  };
+}
+
+// ───── The task file ─────
 
 /** YAML double-quoted scalar (JSON escapes are valid YAML escapes). */
 const yq = (s: string): string => JSON.stringify(s ?? "");
@@ -301,6 +348,8 @@ export function intentFile(
   } else lines.push("_None._");
   return { path: `.gitring/intents/${slug}.md`, content: `${lines.join("\n")}\n` };
 }
+
+// ───── Reading the trailers back ─────
 
 const TRAILER = /^([A-Za-z0-9][A-Za-z0-9-]*):\s?(.*)$/;
 

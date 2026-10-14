@@ -1,4 +1,10 @@
 /**
+ * The rules for "a person must say yes before this work merges": when to ask, who answers, what to say.
+ *
+ * Pure functions. The project coordinator, the Worker, the MCP tools and the web app all call them, so all say the same.
+ */
+
+/*
  * Approvals: the rules of "a person must say yes before this work merges".
  *
  * An approval is a merge that waits for a person. These functions are pure: the project object, the
@@ -12,6 +18,7 @@
  *
  * Words are plain (ASD-STE100): short sentences, no internal names.
  */
+
 import type { Approval, ApprovalReason, ApproverRule, Attempt, CheckRun, LandingMode } from "./types";
 import { noTestRan } from "./types";
 import { atLeast, type Role } from "./accounts";

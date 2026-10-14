@@ -1,6 +1,13 @@
 /**
  * The inbox of a person: everything that waits for that person in the projects where they may act.
  *
+ * Pure functions. The project coordinator builds the items of one project. The Worker joins the projects of a person.
+ * Read `approvals.ts` for the rule that makes an approval.
+ */
+
+/*
+ * The kinds of item that wait in an inbox:
+ *
  *   approval   a merge waits for a yes (an Approval that waits)
  *   stopped    a merge stopped several times, and a yes starts it again (an Approval with reason "merge-stopped")
  *   question   a conflict check asks which work adapts, or work that did not merge needs a decision (a Question)
@@ -9,6 +16,7 @@
  * These functions are pure: the project object builds the items of one project, and the Worker joins the
  * projects of a person (GET /api/me/inbox). The words are plain (ASD-STE100).
  */
+
 import type { Approval, AgentInfo, Attempt, Intent, PairFacts, Person, Question, QuestionOption } from "./types";
 import { approvalLine, approvalPath, canDecide } from "./approvals";
 import { atLeast, type Role } from "./accounts";

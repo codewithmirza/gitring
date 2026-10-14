@@ -1,4 +1,10 @@
 /**
+ * Trains: several independent work copies merge in one go, and the tests run once for all of them.
+ *
+ * Pure module: the project coordinator gives the facts (files, distances) and the test runs.
+ */
+
+/*
  * Trains: several independent work copies merge in one go.
  *
  * When the merge queue holds more than one ready work copy, gitring takes the largest set that is
@@ -13,6 +19,7 @@
  *
  * Pure module: the project object gives the facts (files, ranges) and the test runs.
  */
+
 import type { Range } from "../types";
 
 export interface TrainCandidate {

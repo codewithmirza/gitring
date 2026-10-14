@@ -1,4 +1,10 @@
 /**
+ * Line diffs for the real changes (base hunks) and for display (git-style unified diffs).
+ *
+ * Pure module (jsdiff only): runs in Node and in workerd. Every function uses the line model below.
+ */
+
+/*
  * Line diffs for footprints (base hunks) and for display (git-style unified diffs).
  *
  * Pure module (jsdiff only): runs in Node and in workerd.
@@ -10,8 +16,11 @@
  *     by that final-newline flag, so only the last line is reported as changed (like git: -1 +1).
  *   - Line numbers are 1-based. `LineRange` is inclusive.
  */
+
 import { diffLines } from "diff";
 import type { LineRange } from "../types";
+
+// ───── Types ─────
 
 export interface LineDiff {
   /**
@@ -53,6 +62,8 @@ interface Change {
   n: number;
   nc: number;
 }
+
+// ───── Finding the changes ─────
 
 /**
  * Myers work budget. jsdiff costs about O((N + M) · D) for D edits; above the budget the middle
@@ -164,6 +175,8 @@ export function lineDiff(oldText: string, newText: string): LineDiff {
   return { hunks, additions, deletions, changedNewLines };
 }
 
+// ───── The unified diff for display ─────
+
 /** "start,count" for a unified hunk header (git style: ",1" omitted; count 0 → start is the line before). */
 function hunkSpan(start0: number, count: number): string {
   const start = count === 0 ? start0 : start0 + 1;
@@ -222,6 +235,8 @@ export function unifiedDiff(path: string, oldText: string | null, newText: strin
   }
   return out.join("\n") + "\n";
 }
+
+// ───── Ranges and the text check ─────
 
 /**
  * Inclusive range overlap with `slack` lines of tolerance: [1, 3] and [5, 6] overlap with slack ≥ 2.
