@@ -15,130 +15,163 @@ const REGEX_PREFIX_WORDS = new Set([
  * Template `${…}` expressions stay visible as code.
  */
 export function maskSource(src: string, maskStrings: boolean): string {
-  const out = src.split("");
-  const n = src.length;
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to && k < n; k++) if (out[k] !== "\n" && out[k] !== "\r") out[k] = " ";
-  };
-  const tpl: number[] = []; // brace depth at each open `${`
-  let depth = 0;
-  let mode: "code" | "template" = "code";
-  let lastChar = "";
-  let lastWord = "";
-  let i = 0;
-  if (src.startsWith("#!")) {
-    const e = src.indexOf("\n");
-    i = e === -1 ? n : e;
-    blank(0, i);
+  return new SourceMasker(src, maskStrings).mask();
+}
+
+/**
+ * The state of one masking pass over a text. Template literals nest: `tpl` keeps the brace depth of every open `${`.
+ * `lastChar` and `lastWord` tell a regular expression from a division.
+ */
+class SourceMasker {
+  private readonly out: string[];
+  private readonly n: number;
+  private readonly tpl: number[] = []; // brace depth at each open `${`
+  private depth = 0;
+  private mode: "code" | "template" = "code";
+  private lastChar = "";
+  private lastWord = "";
+  private i = 0;
+
+  constructor(
+    private readonly src: string,
+    private readonly maskStrings: boolean,
+  ) {
+    this.out = src.split("");
+    this.n = src.length;
+    if (this.src.startsWith("#!")) {
+      const e = this.src.indexOf("\n");
+      this.i = e === -1 ? this.n : e;
+      this.blank(0, this.i);
+    }
   }
-  while (i < n) {
-    const c = src[i];
-    if (mode === "template") {
-      if (c === "\\") {
-        if (maskStrings) blank(i, i + 2);
-        i += 2;
-      } else if (c === "`") {
-        mode = "code";
-        lastChar = "`";
-        lastWord = "";
-        i++;
-      } else if (c === "$" && src[i + 1] === "{") {
-        // keep "{" for bracket balance; drop "$" so it is not read as an identifier
-        if (maskStrings) blank(i, i + 1);
-        tpl.push(depth);
-        mode = "code";
-        lastChar = "{";
-        lastWord = "";
-        i += 2;
-      } else {
-        if (maskStrings) blank(i, i + 1);
-        i++;
-      }
-      continue;
+
+  /** Walks the text once and gives the masked copy. */
+  mask(): string {
+    while (this.i < this.n) {
+      const c = this.src[this.i];
+      if (this.mode === "template") this.readTemplateText(c);
+      else if (c === "/" && this.src[this.i + 1] === "/") this.readLineComment();
+      else if (c === "/" && this.src[this.i + 1] === "*") this.readBlockComment();
+      else if (c === "'" || c === '"') this.readString(c);
+      else if (c === "`") { this.mode = "template"; this.i++; }
+      else if (c === "/") this.readSlash();
+      else this.readCode(c);
     }
-    if (c === "/" && src[i + 1] === "/") {
-      let e = src.indexOf("\n", i);
-      if (e === -1) e = n;
-      blank(i, e);
-      i = e;
-      continue;
+    return this.out.join("");
+  }
+
+  /** Text inside a template literal. A `${` goes back to code; a closing backtick ends the template. */
+  private readTemplateText(c: string): void {
+    if (c === "\\") {
+      if (this.maskStrings) this.blank(this.i, this.i + 2);
+      this.i += 2;
+    } else if (c === "`") {
+      this.mode = "code";
+      this.lastChar = "`";
+      this.lastWord = "";
+      this.i++;
+    } else if (c === "$" && this.src[this.i + 1] === "{") {
+      // keep "{" for bracket balance; drop "$" so it is not read as an identifier
+      if (this.maskStrings) this.blank(this.i, this.i + 1);
+      this.tpl.push(this.depth);
+      this.mode = "code";
+      this.lastChar = "{";
+      this.lastWord = "";
+      this.i += 2;
+    } else {
+      if (this.maskStrings) this.blank(this.i, this.i + 1);
+      this.i++;
     }
-    if (c === "/" && src[i + 1] === "*") {
-      const e = src.indexOf("*/", i + 2);
-      const end = e === -1 ? n : e + 2;
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    if (c === "'" || c === '"') {
-      let j = i + 1;
-      while (j < n && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
-      const closed = j < n && src[j] === c;
-      if (maskStrings) blank(i + 1, Math.min(j, n));
-      i = closed ? j + 1 : j;
-      lastChar = c;
-      lastWord = "";
-      continue;
-    }
-    if (c === "`") {
-      mode = "template";
-      i++;
-      continue;
-    }
-    if (c === "/") {
-      const regexOk = lastChar === "" || "(,=:[!&|?{};+-*%<>~^".includes(lastChar) || REGEX_PREFIX_WORDS.has(lastWord);
-      if (regexOk) {
-        let j = i + 1;
-        let inClass = false;
-        while (j < n && src[j] !== "\n") {
-          const d = src[j];
-          if (d === "\\") j += 2;
-          else {
-            if (d === "[") inClass = true;
-            else if (d === "]") inClass = false;
-            else if (d === "/" && !inClass) break;
-            j++;
-          }
+  }
+
+  /** A `//` comment: blank it up to the end of the line. */
+  private readLineComment(): void {
+    let e = this.src.indexOf("\n", this.i);
+    if (e === -1) e = this.n;
+    this.blank(this.i, e);
+    this.i = e;
+  }
+
+  /** A block comment: blank it. */
+  private readBlockComment(): void {
+    const e = this.src.indexOf("*/", this.i + 2);
+    const end = e === -1 ? this.n : e + 2;
+    this.blank(this.i, end);
+    this.i = end;
+  }
+
+  /** A string in single or double quotes: keep the quotes, blank the inside when `maskStrings` is set. */
+  private readString(c: string): void {
+    let j = this.i + 1;
+    while (j < this.n && this.src[j] !== c && this.src[j] !== "\n") j += this.src[j] === "\\" ? 2 : 1;
+    const closed = j < this.n && this.src[j] === c;
+    if (this.maskStrings) this.blank(this.i + 1, Math.min(j, this.n));
+    this.i = closed ? j + 1 : j;
+    this.lastChar = c;
+    this.lastWord = "";
+  }
+
+  /** A `/`: the start of a regular expression, or a division. The previous token decides. */
+  private readSlash(): void {
+    const regexOk = this.lastChar === "" || "(,=:[!&|?{};+-*%<>~^".includes(this.lastChar) || REGEX_PREFIX_WORDS.has(this.lastWord);
+    if (regexOk) {
+      let j = this.i + 1;
+      let inClass = false;
+      while (j < this.n && this.src[j] !== "\n") {
+        const d = this.src[j];
+        if (d === "\\") j += 2;
+        else {
+          if (d === "[") inClass = true;
+          else if (d === "]") inClass = false;
+          else if (d === "/" && !inClass) break;
+          j++;
         }
-        if (j < n && src[j] === "/") {
-          if (maskStrings) blank(i + 1, j);
-          i = j + 1;
-          while (i < n && /[a-z]/i.test(src[i])) i++;
-          lastChar = "/";
-          lastWord = "";
-          continue;
-        }
       }
-      lastChar = "/";
-      lastWord = "";
-      i++;
-      continue;
+      if (j < this.n && this.src[j] === "/") {
+        if (this.maskStrings) this.blank(this.i + 1, j);
+        this.i = j + 1;
+        while (this.i < this.n && /[a-z]/i.test(this.src[this.i])) this.i++;
+        this.lastChar = "/";
+        this.lastWord = "";
+        return;
+      }
     }
-    if (c === "{") depth++;
+    this.lastChar = "/";
+    this.lastWord = "";
+    this.i++;
+  }
+
+  /** Any other character: a brace, a word or a symbol. It moves the position `i` on. */
+  private readCode(c: string): void {
+    if (c === "{") this.depth++;
     else if (c === "}") {
-      if (tpl.length && tpl[tpl.length - 1] === depth) {
-        tpl.pop();
-        mode = "template";
-        i++;
-        continue;
+      if (this.tpl.length && this.tpl[this.tpl.length - 1] === this.depth) {
+        this.tpl.pop();
+        this.mode = "template";
+        this.i++;
+        return;
       }
-      depth--;
+      this.depth--;
     }
-    if (isWordCode(src.charCodeAt(i))) {
-      let j = i + 1;
-      while (j < n && isWordCode(src.charCodeAt(j))) j++;
-      lastWord = src.slice(i, j);
-      lastChar = src[j - 1];
-      i = j;
-      continue;
+    if (isWordCode(this.src.charCodeAt(this.i))) {
+      let j = this.i + 1;
+      while (j < this.n && isWordCode(this.src.charCodeAt(j))) j++;
+      this.lastWord = this.src.slice(this.i, j);
+      this.lastChar = this.src[j - 1];
+      this.i = j;
+      return;
     }
-    if (!isSpaceCode(src.charCodeAt(i))) {
-      lastChar = c;
-      lastWord = "";
+    if (!isSpaceCode(this.src.charCodeAt(this.i))) {
+      this.lastChar = c;
+      this.lastWord = "";
     }
-    i++;
+    this.i++;
   }
-  return out.join("");
+
+  /** Blanks [from, to) with spaces. Line breaks stay. */
+  private blank(from: number, to: number): void {
+    for (let k = from; k < to && k < this.n; k++) if (this.out[k] !== "\n" && this.out[k] !== "\r") this.out[k] = " ";
+  }
 }
 
 /** [A-Za-z0-9_$] */
