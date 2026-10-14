@@ -178,19 +178,7 @@ export abstract class ArtifactsWrites extends ArtifactsReads {
     const branchRef = `refs/heads/${input.branch}`;
     const expected = input.parent || null;
     // 2–3. Local repository at the parent.
-    const s = await this.session(input.repo, repo);
-    if (input.parent) {
-      try {
-        await git.clone({ ...this.gitOpts(s), url: s.url, ref: input.branch, singleBranch: true, depth: 1, noCheckout: true, noTags: true });
-      } catch (err) {
-        if (gitErrorCode(err) === "NotFoundError") throw branchConflict(input, await this.branchTip(repo, input.branch));
-        throw err;
-      }
-      const head = await this.resolveLocal(s, `refs/remotes/origin/${input.branch}`);
-      if (head !== input.parent) throw branchConflict(input, head);
-    } else {
-      await this.initLocal(s, input.branch);
-    }
+    const s = await this.openClone(repo, input);
 
     // 4. Objects (same encoding as the emulator). Trees read from the clone are not rewritten.
     const local = localObjects(s);
@@ -238,6 +226,24 @@ export abstract class ArtifactsWrites extends ArtifactsReads {
       throw err;
     }
     return { sha: prepared.sha, tree: prepared.tree };
+  }
+
+  /** The local git directory for the clone path: a shallow clone of the branch at the parent, or an empty one for a root commit. */
+  private async openClone(repo: ArtifactsRepo, input: CommitInput): Promise<GitSession> {
+    const s = await this.session(input.repo, repo);
+    if (input.parent) {
+      try {
+        await git.clone({ ...this.gitOpts(s), url: s.url, ref: input.branch, singleBranch: true, depth: 1, noCheckout: true, noTags: true });
+      } catch (err) {
+        if (gitErrorCode(err) === "NotFoundError") throw branchConflict(input, await this.branchTip(repo, input.branch));
+        throw err;
+      }
+      const head = await this.resolveLocal(s, `refs/remotes/origin/${input.branch}`);
+      if (head !== input.parent) throw branchConflict(input, head);
+    } else {
+      await this.initLocal(s, input.branch);
+    }
+    return s;
   }
 
   /**
