@@ -89,6 +89,8 @@ export interface Tamper {
   crossOrigin?: boolean;
   /** Leave out the user-present flag. */
   noUp?: boolean;
+  /** Set the backed-up flag (BS) without the backup-eligible flag (BE): flags that cannot be. */
+  bsWithoutBe?: boolean;
   /** The sign count to send (default: the next one). */
   signCount?: number;
   /** Change one byte of the signed data after the signature. */
@@ -182,7 +184,7 @@ export class SoftAuthenticator {
     const idLen = new Uint8Array([this.id.length >> 8, this.id.length & 0xff]);
     const attested = concat(new Uint8Array(16), idLen, this.id, this.coseKey());
     const count = t.signCount ?? (this.counts ? ++this.signCount : 0);
-    const flags = (t.noUp ? 0 : FLAG.up) | FLAG.uv | FLAG.be | FLAG.bs | FLAG.at;
+    const flags = (t.noUp ? 0 : FLAG.up) | FLAG.uv | (t.bsWithoutBe ? 0 : FLAG.be) | FLAG.bs | FLAG.at;
     const authData = await this.authData(t.rpId ?? options.rp.id, flags, count, attested);
     const fmt = t.fmt ?? "none";
     let attStmt = new Map<string, unknown>();
@@ -218,7 +220,7 @@ export class SoftAuthenticator {
   async login(options: PasskeyRequestOptions, origin: string, t: Tamper = {}): Promise<AssertionJSON> {
     const clientData = this.clientData("webauthn.get", options.challenge, origin, t);
     const count = t.signCount ?? (this.counts ? ++this.signCount : 0);
-    const authData = await this.authData(t.rpId ?? options.rpId, (t.noUp ? 0 : FLAG.up) | FLAG.uv, count);
+    const authData = await this.authData(t.rpId ?? options.rpId, (t.noUp ? 0 : FLAG.up) | FLAG.uv | (t.bsWithoutBe ? FLAG.bs : 0), count);
     const signed = concat(authData, await sha256(clientData));
     const sig = await this.sign(signed);
     if (t.breakSignature) sig[sig.length - 1] ^= 1;

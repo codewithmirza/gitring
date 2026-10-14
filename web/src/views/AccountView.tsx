@@ -15,7 +15,8 @@ import { addPasskey, listPasskeys, passkeyErrorText, passkeysWork, PasskeyStoppe
 import { ago } from "../state/format";
 import { useNow } from "../app/useNow";
 import { Link } from "../app/router";
-import { lastProvider, orderedProviders, SignInChoices } from "../app/Account";
+import { lastProvider, SignInChoices } from "../app/Account";
+import { orderedProviders } from "../state/signin";
 import "./account.css";
 
 function host(uri?: string): string | null {

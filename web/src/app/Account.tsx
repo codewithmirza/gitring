@@ -9,7 +9,7 @@ import { Icon } from "../design/icons";
 import { GitHubMark, GoogleG } from "../design/brand/marks";
 import { useStore } from "../state/store";
 import { openProject, signOut, useCanAct, useMe } from "../state/account";
-import { githubSignInUrl, googleSignInUrl } from "../state/signin";
+import { githubSignInUrl, googleSignInUrl, orderedProviders } from "../state/signin";
 import { createAccountWithPasskey, passkeyErrorText, passkeysWork, signInWithPasskey } from "../state/passkey";
 import { Link, linkProps, navigate } from "./router";
 import { openSignIn, rememberAfterSignIn, setUi, useUi } from "./ui";
@@ -240,15 +240,6 @@ export function lastProvider(): SignInKind | null {
   } catch {
     return null;
   }
-}
-
-/**
- * The outside providers that this gitring has, in a neutral order: the one used last first, then the
- * others alphabetically by name.
- */
-export function orderedProviders(available: { github: boolean; google: boolean }, last: SignInKind | null): Provider[] {
-  const list = (["github", "google"] as Provider[]).filter((p) => available[p]);
-  return last && last !== "passkey" && list.includes(last) ? [last, ...list.filter((p) => p !== last)] : list;
 }
 
 function rememberLast(kind: SignInKind) {

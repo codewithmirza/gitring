@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Directory } from "../../src/directory/directory";
 import worker from "../../src/worker/index";
+import { signInChoices } from "../../src/worker/auth";
 import { s256 } from "../../src/directory/oauth";
 import type { PasskeyCreationOptions, PasskeyRequestOptions, UserInfo } from "../../src/core/accounts";
 import { sqliteCtx } from "../support/sqlite-storage";
@@ -269,6 +270,14 @@ describe("server pages", () => {
     expect(again).toMatch(/Sign in with a passkey<\/span><span class="last">Last used<\/span>/);
   });
 
+  it("send the browser after a passkey only to a path of this site", () => {
+    const none = { github: false, google: false };
+    expect(signInChoices(none, "/oauth/authorize?req=abc", null, "n")).toContain('data-back="/oauth/authorize?req=abc"');
+    for (const bad of ["//evil.example/x", String.raw`/\evil.example`, "https://evil.example", "javascript:alert(1)"]) {
+      expect(signInChoices(none, bad, null, "n"), bad).toContain('data-back="/"');
+    }
+  });
+
   it("list passkeys first on the setup page, and the providers as optional extras", async () => {
     const { env } = setup({ GITRING_SETUP_TOKEN: "setup-token-123" });
     const b = new Browser(env);
@@ -279,5 +288,8 @@ describe("server pages", () => {
     expect(at("2. Owners")).toBeLessThan(at("3. Optional: sign in with Google"));
     expect(at("3. Optional: sign in with Google")).toBeLessThan(at("4. Optional: GitHub"));
     expect(html).toContain("user:u_0123456789");
+    const card = "People create an account with a passkey on their device: a fingerprint, a face, a PIN or a security key. gitring keeps only the public key of each passkey.";
+    expect(html).toContain(card);
+    expect(steViolations(card)).toEqual([]);
   });
 });

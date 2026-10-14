@@ -8,7 +8,7 @@ import type { Env } from "./env";
 import type * as A from "../core/accounts";
 import type * as T from "../core/types";
 import { randomToken, sameString } from "../directory/crypto";
-import type { ManifestConversion } from "../directory/directory";
+import { safeReturn, type ManifestConversion } from "../directory/directory";
 import { passkeyLabel } from "../directory/passkeys";
 import { privacyBody, termsBody } from "./legal";
 import { isCrossSiteWrite } from "./csrf";
@@ -304,7 +304,7 @@ const PASSKEY_ICON = `<svg class="pk" viewBox="0 0 24 24" aria-hidden="true" str
 export function signInChoices(providers: { github: boolean; google: boolean }, returnPath: string, last: A.SignInKind | null, nonce: string): string {
   const others = providers.github || providers.google ? `<p class="or">or</p>${providerButtons(providers, returnPath, last === "passkey" ? null : last)}` : "";
   const tag = last === "passkey" && others ? '<span class="last">Last used</span>' : "";
-  const back = returnPath.startsWith("/") && !returnPath.startsWith("//") ? returnPath : "/";
+  const back = safeReturn(returnPath);
   return `<div id="pk" class="providers" data-back="${esc(back)}">
 <button type="button" class="provider" id="pk-in">${PASSKEY_ICON}<span>Sign in with a passkey</span>${tag}</button>
 <details class="pk-new"><summary class="provider">${PASSKEY_ICON}<span>Create an account with a passkey</span></summary>
@@ -395,7 +395,7 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
     "Set up gitring",
     `<h1>Set up gitring</h1><p class="muted">${esc(o)}</p>${note ? `<div class="card"><p>${note}</p></div>` : ""}
 <div class="card"><h2>1. Passkeys</h2><p class="ok">Ready. Passkeys need no setup.</p>
-<p>People create an account with a passkey on their own device: a fingerprint, a face, a PIN or a security key. gitring keeps only the public key of each passkey.</p></div>
+<p>People create an account with a passkey on their device: a fingerprint, a face, a PIN or a security key. gitring keeps only the public key of each passkey.</p></div>
 <div class="card"><h2>2. Owners</h2>${
       owners.length
         ? `<p>These people own this gitring (they may open this page after they sign in):</p><ul>${owners.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>`

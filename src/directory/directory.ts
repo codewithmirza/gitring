@@ -966,10 +966,10 @@ export class Directory extends DurableObject<Env> {
       throw new Error(e instanceof PasskeyError ? e.message : "gitring could not read the passkey. Try again.");
     }
     if (res.userHandle && res.userHandle !== userHandleOf(row.user_id)) throw new Error("The passkey does not belong to this account. gitring did not sign you in.");
-    // Another sign-in with this passkey can finish during the check: compare the count again (no await
-    // from here to the update, so the two steps are one).
-    const current = this.sql.exec<{ sign_count: number }>("SELECT sign_count FROM passkeys WHERE id = ?", id).toArray()[0];
-    if (!current) throw new Error(unknown);
+    // Another sign-in with this passkey can finish during the check, and the person can remove the
+    // passkey: read the row again (no await from here to the update, so the two steps are one).
+    const current = this.sql.exec<{ user_id: string; public_key: string; sign_count: number }>("SELECT user_id, public_key, sign_count FROM passkeys WHERE id = ?", id).toArray()[0];
+    if (!current || current.user_id !== row.user_id || current.public_key !== row.public_key) throw new Error(unknown);
     if (!signCountOk(current.sign_count, res.signCount)) throw new Error("The passkey counter went back. This can mean a copy of the passkey. gitring did not sign you in.");
     const now = Date.now();
     this.sql.exec("UPDATE passkeys SET sign_count = ?, last_used = ? WHERE id = ?", res.signCount, now, id);
@@ -1316,7 +1316,7 @@ export class Directory extends DurableObject<Env> {
 /** A display name or a passkey name: one line, at most 80 characters. */
 function cleanName(raw: unknown): string {
   return String(raw ?? "")
-    .replace(/[ -]+/g, " ")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);

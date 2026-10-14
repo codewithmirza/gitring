@@ -17,6 +17,7 @@ import {
   type CredentialLike,
 } from "../../web/src/state/passkey";
 import { resetHttpCache } from "../../web/src/state/http";
+import { orderedProviders } from "../../web/src/state/signin";
 import { userHandleOf, verifyAssertion, verifyRegistration } from "../../src/directory/passkeys";
 import type { PasskeyCreationOptions, PasskeyRequestOptions } from "../../src/core/accounts";
 import { SoftAuthenticator } from "../support/passkey-authenticator";
@@ -71,6 +72,18 @@ function asBrowser(json: { id: string; rawId: string; type: string; response: Re
     },
   };
 }
+
+describe("the order of the sign-in choices", () => {
+  it("lists only the providers of this gitring, the one used last first, else by name", () => {
+    const both = { github: true, google: true };
+    expect(orderedProviders(both, null)).toEqual(["github", "google"]);
+    expect(orderedProviders(both, "google")).toEqual(["google", "github"]);
+    // A passkey used last: the providers keep the order by name (the passkey is above them).
+    expect(orderedProviders(both, "passkey")).toEqual(["github", "google"]);
+    expect(orderedProviders({ github: false, google: true }, "github")).toEqual(["google"]);
+    expect(orderedProviders({ github: false, google: false }, "google")).toEqual([]);
+  });
+});
 
 describe("base64url", () => {
   it("round-trips bytes, also with lengths that need padding", () => {

@@ -189,7 +189,7 @@ function bytesOf(v: unknown, size?: number): Uint8Array {
 
 /**
  * A COSE_Key (RFC 9052/9053) as a JWK: EC2 P-256 with ES256, OKP Ed25519 with EdDSA, RSA with RS256
- * (2048 bits at least). Other keys are refused.
+ * (2048 to 8192 bits: a larger key only makes each check slow). Other keys are refused.
  */
 export function coseToJwk(key: unknown): { jwk: JsonWebKey; alg: PasskeyAlg } {
   if (!(key instanceof Map)) throw new PasskeyError(INCOMPLETE);
@@ -206,7 +206,7 @@ export function coseToJwk(key: unknown): { jwk: JsonWebKey; alg: PasskeyAlg } {
     const e = bytesOf(key.get(-2));
     // A leading zero byte does not count: the modulus must have 2048 bits at least.
     const bits = n.length * 8 - (n[0] === 0 ? 8 : 0);
-    if (bits < 2048 || e.length < 1 || e.length > 8) throw new PasskeyError(UNSUPPORTED);
+    if (bits < 2048 || bits > 8192 || e.length < 1 || e.length > 8) throw new PasskeyError(UNSUPPORTED);
     return { jwk: { kty: "RSA", n: b64url(n), e: b64url(e) }, alg };
   }
   throw new PasskeyError(UNSUPPORTED);
@@ -350,6 +350,8 @@ async function checkAuthData(auth: AuthData, rpId: string): Promise<void> {
   const want = await sha256(enc.encode(rpId));
   if (b64url(auth.rpIdHash) !== b64url(want)) throw new PasskeyError(OTHER_SITE);
   if (!auth.flags.up) throw new PasskeyError("The passkey did not confirm that a person is present. Touch the key or unlock the device, then try again.");
+  // WebAuthn §6.1.3: a passkey that cannot have a backup (BE not set) cannot be backed up (BS set).
+  if (auth.flags.backedUp && !auth.flags.backupEligible) throw new PasskeyError(INCOMPLETE);
 }
 
 /* ───────────── the JSON that the browser sends ───────────── */

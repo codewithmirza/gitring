@@ -102,6 +102,26 @@ describe("a new account with a passkey", () => {
     }
   });
 
+  it("keeps a name on one line, without control characters", async () => {
+    const dir = make();
+    const { options } = await dir.passkeyRegisterOptions({ ...RP, name: "Robin\u0000\u0007 Quill\u007f\u001b[2J" });
+    expect(options.user.displayName).toBe("Robin Quill [2J");
+    const { key, user } = await createAccount(dir);
+    expect((await dir.renamePasskey(user.id, key.credentialId, "Blue\u0000key\u007f")).name).toBe("Blue key");
+  });
+
+  it("finishes after the Directory restarts between the two steps", async () => {
+    const ctx = sqliteCtx();
+    const env = { GITRING_SECRET: "test-secret-0123456789abcdef" } as Env;
+    const key = await SoftAuthenticator.create();
+    const reg = await new Directory(ctx as never, env).passkeyRegisterOptions({ ...RP, name: "Robin" });
+    // The challenge is in storage, not in memory: a new instance of the object finishes the step.
+    const made = await new Directory(ctx as never, env).passkeyRegister(reg.state, await key.register(reg.options, ORIGIN), { origin: ORIGIN });
+    const login = await new Directory(ctx as never, env).passkeyLoginOptions(RP);
+    const back = await new Directory(ctx as never, env).passkeyLogin(login.state, await key.login(login.options, ORIGIN), { origin: ORIGIN });
+    expect(back.user.id).toBe(made.user.id);
+  });
+
   it("accepts packed self attestation", async () => {
     const dir = make();
     const { user } = await createAccount(dir, "Robin", -7, { fmt: "packed" });
@@ -167,6 +187,41 @@ describe("passkey sign-in", () => {
     await refusal(signIn(dir, key, { signCount: 1 }), /counter went back/);
     // The real authenticator goes on at 3.
     expect((await signIn(dir, key)).token).toBeTruthy();
+  });
+
+  it("lets one of two sign-ins with the same count through, when both are checked at the same time", async () => {
+    const dir = make();
+    const { key } = await createAccount(dir);
+    const a = await dir.passkeyLoginOptions(RP);
+    const b = await dir.passkeyLoginOptions(RP);
+    // A copy of the passkey sends the same count as the real one. Neither call waits for the other.
+    const both = await Promise.allSettled([
+      dir.passkeyLogin(a.state, await key.login(a.options, ORIGIN, { signCount: 5 }), { origin: ORIGIN }),
+      dir.passkeyLogin(b.state, await key.login(b.options, ORIGIN, { signCount: 5 }), { origin: ORIGIN }),
+    ]);
+    expect(both.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(String((both.find((r) => r.status === "rejected") as PromiseRejectedResult).reason)).toMatch(/counter went back/);
+  });
+
+  it("does not sign in with a passkey that changed hands or went away during the check", async () => {
+    const dir = make();
+    const { key, user } = await createAccount(dir);
+    const sam = await createAccount(dir, "Sam");
+    const sql = (dir as unknown as { sql: { exec(q: string, ...b: unknown[]): unknown } }).sql;
+    // The signature check is a gap: the row changes before the Directory writes the new count.
+    const o1 = await dir.passkeyLoginOptions(RP);
+    const moved = dir.passkeyLogin(o1.state, await key.login(o1.options, ORIGIN), { origin: ORIGIN });
+    sql.exec("UPDATE passkeys SET user_id = ? WHERE id = ?", sam.user.id, key.credentialId);
+    await refusal(moved, /does not know this passkey/);
+    sql.exec("UPDATE passkeys SET user_id = ? WHERE id = ?", user.id, key.credentialId);
+    // A second passkey lets the person remove this one while a sign-in with it runs.
+    const second = await SoftAuthenticator.create();
+    const o = await dir.passkeyRegisterOptions({ ...RP, userId: user.id });
+    await dir.passkeyRegister(o.state, await second.register(o.options, ORIGIN), { origin: ORIGIN, userId: user.id });
+    const o2 = await dir.passkeyLoginOptions(RP);
+    const removed = dir.passkeyLogin(o2.state, await key.login(o2.options, ORIGIN), { origin: ORIGIN });
+    await dir.removePasskey(user.id, key.credentialId);
+    await refusal(removed, /does not know this passkey/);
   });
 
   it("refuses a missing UP flag, a bad signature, an unknown passkey and a user handle of another account", async () => {

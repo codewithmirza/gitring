@@ -149,6 +149,7 @@ describe("COSE keys", () => {
       new Map<number, unknown>([[1, 2], [3, -7], [-1, 2], [-2, x], [-3, x]]), // ES256 alg, but curve P-384
       new Map<number, unknown>([[1, 2], [3, -7], [-1, 1], [-2, new Uint8Array(31)], [-3, x]]), // short x
       new Map<number, unknown>([[1, 3], [3, -257], [-1, new Uint8Array(128).fill(0xff)], [-2, new Uint8Array([1, 0, 1])]]), // RSA 1024
+      new Map<number, unknown>([[1, 3], [3, -257], [-1, new Uint8Array(1025).fill(0xff)], [-2, new Uint8Array([1, 0, 1])]]), // RSA 8200
       new Map<number, unknown>([[1, 1], [3, -8], [-1, 4], [-2, x]]), // OKP, but X25519
       new Map<number, unknown>([[1, 2], [-1, 1], [-2, x], [-3, x]]), // no alg
     ];
@@ -246,6 +247,7 @@ describe("registration", () => {
       [{ type: "webauthn.get" }, /not for a new passkey/],
       [{ crossOrigin: true }, /frame of another site/],
       [{ noUp: true }, /person is present/],
+      [{ bsWithoutBe: true }, /not complete/],
       [{ fmt: "packed", breakSignature: true }, /attestation is not valid/],
       [{ fmt: "packed", packedAlg: -257 }, /attestation is not valid/],
     ];
@@ -291,6 +293,8 @@ describe("sign-in", () => {
     await refused(verifyAssertion(await a.login(requestOptions(), ORIGIN), want, stored), /another request/);
     await refused(verifyAssertion(await a.login(o, ORIGIN, { breakSignature: true }), want, stored), /signature is not valid/);
     await refused(verifyAssertion(await a.login(o, ORIGIN, { noUp: true }), want, stored), /person is present/);
+    // Backed up (BS) but not eligible for a backup (BE): the flags cannot be true together.
+    await refused(verifyAssertion(await a.login(o, ORIGIN, { bsWithoutBe: true }), want, stored), /not complete/);
     await refused(verifyAssertion(await a.login(o, ORIGIN, { type: "webauthn.create" }), want, stored), /not a sign-in/);
     await refused(verifyAssertion(await a.login(o, ORIGIN, { signCount: 1 }), want, stored), /counter went back/);
     await refused(verifyAssertion(await a.login(o, ORIGIN, { signCount: 0 }), want, stored), /counter went back/);
