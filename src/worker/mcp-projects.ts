@@ -44,7 +44,9 @@ export const PROJECT_TOOLS: readonly ToolDef[] = [
       visibility: z.enum(["private", "public"]).optional().describe("Default private: only you and the people you add can see it."),
       start: z
         .object({
-          kind: z.enum(["empty", "template", "files", "git"]).describe("empty: a README. template: a starter template. files: the files you send. git: an import of a public https git URL."),
+          kind: z
+            .enum(["empty", "template", "files", "git"])
+            .describe("empty: a README, a .gitignore and an AGENTS.md (the empty template). template: a starter template. files: the files you send. git: an import of a public https git URL."),
           template: z.enum(TEMPLATE_IDS).optional().describe("The template id (kind template). Call gitring_templates to see them."),
           files: z.array(z.object({ path: z.string(), content: z.string() })).optional().describe("The files of the first commit (kind files). Text only, at most 20 MB."),
           url: z.string().optional().describe("An https URL of a public git repository on any host (kind git)."),
@@ -70,8 +72,13 @@ export const PROJECT_TOOLS: readonly ToolDef[] = [
         if (start.kind === "template" && !start.template) throw new Error(`Give start.template: one of ${TEMPLATE_IDS.join(", ")}.`);
         if (start.kind === "git" && !start.url) throw new Error("Give start.url: the https URL of a public git repository.");
         if (start.kind === "files" && !start.files?.length) throw new Error("Give start.files: the path and the content of each file.");
+        // "empty" is the empty template, as in the app: its AGENTS.md tells other agents to use gitring.
         const source =
-          start.kind === "files" ? { kind: "upload" } : start.kind === "git" ? { kind: "git", url: start.url, ...(start.branch ? { branch: start.branch } : {}) } : start.kind === "template" ? { kind: "template", template: start.template } : { kind: "empty" };
+          start.kind === "files"
+            ? { kind: "upload" }
+            : start.kind === "git"
+              ? { kind: "git", url: start.url, ...(start.branch ? { branch: start.branch } : {}) }
+              : { kind: "template", template: start.kind === "template" ? start.template : "empty" };
         const t = args.tests;
         const checks = t && (t.runner || t.install || t.test) ? { runner: t.runner ?? (t.install || t.test ? "container" : "worker"), ...(t.install ? { install: t.install } : {}), ...(t.test ? { test: t.test } : {}) } : undefined;
         // The first task: firstTask, or the description when built-in agents must start on something.
@@ -86,6 +93,8 @@ export const PROJECT_TOOLS: readonly ToolDef[] = [
           launch: task ? args.launch : 0,
         });
         const id = made.project.id;
+        // Built-in agents need a task: without firstTask and description, none starts. Say so.
+        if (args.launch && !task) made.note = "No built-in agent started: give firstTask or description to start agents on a first task.";
         const importing = made.state.project.importing;
         const clone = importing ? null : await cloneOf(ctx.env.HARBOR.get(ctx.env.HARBOR.idFromName(id)), id).catch(() => null);
         const next = [
@@ -118,7 +127,7 @@ export const PROJECT_TOOLS: readonly ToolDef[] = [
             ...(clone ? { clone } : {}),
             next,
           },
-          `Project "${id}" is ready. ${what}${made.note ? ` ${made.note}` : ""} ${next[0]}`,
+          `Project "${id}" ${importing ? "exists" : "is ready"}. ${what}${made.note ? ` ${made.note}` : ""} ${next[0]}`,
         );
       } catch (e) {
         return fail(e);

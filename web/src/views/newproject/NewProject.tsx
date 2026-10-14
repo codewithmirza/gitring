@@ -7,7 +7,7 @@
 import { useRef, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import type { MeWithInstall } from "../../state/account";
 import { SignInChoices } from "../../app/Account";
-import type { FormValues, NewProjectDraft, SourceStep } from "./draft";
+import { linkOfStep, type FormValues, type NewProjectDraft, type SourceStep } from "./draft";
 import { SourceList, type SourceOption } from "./SourceList";
 import { StartList, type StartKind } from "./StartList";
 import { NEW_PROJECT_LEDE } from "./start-text";
@@ -71,9 +71,7 @@ export function NewProject({ me, draft, onDraft, headingId, returnTo, autoFocus 
     onDraft((d) => ({ ...d, step: { kind: "upload" }, form: {}, upload: { files: list, folder: rel.split("/")[0] ?? "" } }));
   };
 
-  const back$ = `${returnTo}${returnTo.includes("?") ? "&" : "?"}`;
-  const stepReturn =
-    step.kind === "github" ? `${back$}repo=${encodeURIComponent(step.repo)}` : step.kind === "list" ? returnTo : `${back$}new=${step.kind === "git" ? `git&url=${encodeURIComponent(step.url)}` : step.kind}`;
+  const stepReturn = linkOfStep(step, returnTo, draft.form);
   const stepProps = { form: draft.form, setForm, onBack: back, onStep: go, returnTo: stepReturn };
 
   return (

@@ -11,7 +11,7 @@ import { Button, Segmented } from "../../design/components";
 import { Icon } from "../../design/icons";
 import { openProject, readUpload, uploadable } from "../../state/account";
 import { openSignIn } from "../../app/ui";
-import { cachedGuess, githubConnectUrl, guessProject, isAbort, RequestError, useDelayedFlag, OFFLINE_TEXT } from "../../state/github";
+import { cachedGuess, guessProject, isAbort, RequestError, useDelayedFlag, OFFLINE_TEXT } from "../../state/github";
 import { createProjectFrom } from "../../state/projects";
 import type { FormValues, SourceStep } from "./draft";
 import { GithubMark, LockIcon } from "./marks";
@@ -455,9 +455,10 @@ export function GithubStep({ step, form, setForm, onBack, onStep, returnTo }: St
           actions={
             <>
               {s === 401 ? (
-                <a className="b-btn b-btn--secondary b-btn--sm" href={githubConnectUrl(returnTo)}>
-                  <GithubMark size={14} /> Sign in with GitHub
-                </a>
+                // The gitring sign-in ended: any sign-in choice works, and the link of the step comes back here.
+                <Button size="sm" onClick={(ev) => openSignIn({ anchor: ev.currentTarget, reason: "Sign in again to import the repository.", then: { kind: "go", to: returnTo } })}>
+                  Sign in again
+                </Button>
               ) : (
                 <Button size="sm" icon="reload" onClick={() => setNonce((n) => n + 1)}>
                   Try again

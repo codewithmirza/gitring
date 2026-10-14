@@ -277,8 +277,8 @@ export function HomeView() {
         </h2>
         <p className="home__text">
           gitring holds the code. Each project is a git repository in Cloudflare Artifacts. Describe a project or start from a template, upload a folder, push
-          with git, or import any git URL. An agent creates a project through MCP with one call. GitHub is optional: gitring can import a repository from
-          GitHub, and it can send merged code back as a pull request or straight to main.
+          with git, or import any git URL. An agent creates a project through MCP with one call. GitHub is optional. gitring can import a repository from
+          GitHub. It can also send merged code back to GitHub as a pull request, or straight to main.
         </p>
         {!signedIn && (
           <div className="home__actions">

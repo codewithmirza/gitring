@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { cleanCommand, GUESS_MODEL, guessChecks, guessMessages, guessTree, parseModelGuess, projectNameOf, projectSlug, readmeOf, type GuessMessage } from "../../src/core/guess";
 import { templateFiles } from "../../src/core/templates";
+import { GUESS_CALL, guessModel } from "../../src/platform/ai/guess";
 
 function repo(files: Record<string, string>) {
   return { paths: Object.keys(files), read: async (p: string) => files[p] ?? null };
@@ -148,5 +149,19 @@ describe("guessTree", () => {
     expect(parseModelGuess(null)).toBeNull();
     expect(readmeOf(["docs/README.md", "Readme.rst"])).toBe("Readme.rst");
     expect(guessMessages("x", ["a"], "")[0].content).toMatch(/Answer JSON only/);
+  });
+
+  it("asks GLM 5.3 Flash for a short answer, with a low reasoning effort and time for it", async () => {
+    expect(GUESS_CALL).toMatchObject({ reasoning: "low", timeoutMs: 15_000, json: true, temperature: 0 });
+    let model = "";
+    const ask = guessModel({
+      run: async (m: string) => {
+        model = m;
+        return { choices: [{ message: { content: '{"test": "make check"}' } }] };
+      },
+    })!;
+    expect(await ask([{ role: "user", content: "Repository x." }])).toBe('{"test": "make check"}');
+    expect(model).toBe("@cf/zai-org/glm-5.3-flash");
+    expect(guessModel(undefined)).toBeUndefined();
   });
 });

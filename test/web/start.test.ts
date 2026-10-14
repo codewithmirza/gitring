@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { agentsHint, CONNECT_GITHUB_NOTE, DESCRIBE_HINT, DESCRIBE_LABEL, NEW_PROJECT_LEDE, SOURCES } from "../../web/src/views/newproject/start-text";
 import { nameFromDescription } from "../../web/src/views/newproject/match";
-import { draftFromLink, EMPTY_DRAFT } from "../../web/src/views/newproject/draft";
+import { draftFromLink, EMPTY_DRAFT, LINK_PARAMS, linkOfStep } from "../../web/src/views/newproject/draft";
 import { pickTemplate } from "../../src/core/templates";
 import { steViolations } from "../coord/ste";
 
@@ -49,6 +49,24 @@ describe("links", () => {
   it("open the template step", () => {
     expect(draftFromLink(new URLSearchParams("new=template"), EMPTY_DRAFT).step).toEqual({ kind: "template" });
     expect(EMPTY_DRAFT.description).toBe("");
+  });
+
+  it("bring the person back to the same step after a sign-in, with the description", () => {
+    const back = (step: Parameters<typeof linkOfStep>[0], form = {}) => {
+      const link = linkOfStep(step, "/projects?new=1", form);
+      return draftFromLink(new URL(link, "https://gitring.test").searchParams, EMPTY_DRAFT);
+    };
+    const described = back({ kind: "describe", text: "A JSON API for my shop" }, { description: "A JSON API for my shop, with a cart" });
+    expect(described.step).toEqual({ kind: "describe", text: "A JSON API for my shop, with a cart" });
+    expect(described.description).toBe("A JSON API for my shop, with a cart");
+    expect(back({ kind: "template" }).step).toEqual({ kind: "template" });
+    expect(back({ kind: "git", url: "https://codeberg.org/robin/shop" }).step).toEqual({ kind: "git", url: "https://codeberg.org/robin/shop" });
+    expect(back({ kind: "github", repo: "robin/shop" }).step).toEqual({ kind: "github", repo: "robin/shop" });
+    expect(back({ kind: "push" }).step).toEqual({ kind: "push" });
+    expect(linkOfStep({ kind: "list" }, "/projects")).toBe("/projects");
+    // A long description goes into the link in part only.
+    expect(back({ kind: "describe", text: "x".repeat(5000) }).description).toHaveLength(1000);
+    expect(LINK_PARAMS).toContain("text");
   });
 
   it("open the URL step of 'Import from a git URL', also without a URL", () => {

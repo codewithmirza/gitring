@@ -436,6 +436,34 @@ step("C. Errors");
   await ctx.close();
 }
 
+/* ═════════════ C2. the gitring sign-in ends in the middle: any sign-in works, GitHub is not the way in ═════════════ */
+step("C2. The sign-in ends during a new project");
+{
+  await reset();
+  const { ctx, page } = await open("github");
+  const signOut = () => ctx.addCookies([{ name: "mock", value: "signedout", url: BASE }]);
+  await page.goto(`${BASE}/projects?new=template`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Start from a template" }).waitFor();
+  await signOut();
+  await page.getByRole("textbox", { name: "Name" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByText("Your sign-in ended. Sign in again. gitring keeps your choices.").waitFor();
+  check(await page.getByRole("button", { name: "Sign in again" }).isVisible(), "a 401 on create offers the normal sign-in");
+  check(!(await page.getByRole("link", { name: /Sign in with GitHub/ }).count()), "…and not a GitHub sign-in");
+
+  await ctx.addCookies([{ name: "mock", value: "github", url: BASE }]);
+  await page.goto(`${BASE}/projects?new=1`, { waitUntil: "networkidle" });
+  await page.getByRole("dialog", { name: "New project" }).waitFor();
+  await page.getByRole("combobox").fill("payments");
+  await page.getByRole("option", { name: /acme\/payments/ }).first().waitFor();
+  await signOut();
+  await page.getByRole("combobox").press("Enter");
+  await page.getByText("Your sign-in ended. Sign in again. gitring keeps your choice.").waitFor();
+  check(await page.getByRole("button", { name: "Sign in again" }).isVisible(), "a 401 on the guess of a repository offers the normal sign-in");
+  check(!(await page.getByRole("link", { name: /Sign in with GitHub/ }).count()), "…and not a GitHub sign-in");
+  await ctx.close();
+}
+
 /* ═════════════ D. no GitHub connection: Connect GitHub comes back filled ═════════════ */
 step("D. Google sign-in without GitHub");
 {

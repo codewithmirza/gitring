@@ -143,6 +143,27 @@ describe("gitring_create_project", () => {
     expect(started).toHaveLength(0);
   });
 
+  it("starts an empty project from the empty template, as the app does", async () => {
+    const res = await callTool(world, key, "gitring_create_project", { name: "Robin notes", start: { kind: "empty" } });
+    expect(res.isError, res.text).toBe(false);
+    const data = dataOf(res.text);
+    expect(data.source).toEqual({ kind: "template", template: "empty" });
+    expect(data.tests).toEqual({ runner: "worker" });
+    // Other agents that come later learn from AGENTS.md to send a plan to gitring.
+    expect(await world.harbor(data.project).file("main", "AGENTS.md")).toContain("gitring_declare");
+  });
+
+  it("says that no built-in agent started when launch has no task", async () => {
+    const res = await callTool(world, key, "gitring_create_project", { name: "Robin lib", start: { kind: "template", template: "js-library" }, launch: 2 });
+    expect(res.isError, res.text).toBe(false);
+    expect(plainProblems(res.text)).toEqual([]);
+    const data = dataOf(res.text);
+    expect(data.note).toBe("No built-in agent started: give firstTask or description to start agents on a first task.");
+    expect(steViolations(data.note)).toEqual([]);
+    expect(res.text.slice(0, res.text.indexOf("\n\n"))).toContain(data.note);
+    expect(started).toHaveLength(0);
+  });
+
   it("explains a missing template, URL or file list", async () => {
     const a = await callTool(world, key, "gitring_create_project", { name: "x", start: { kind: "template" } });
     expect(a.isError).toBe(true);
@@ -195,6 +216,16 @@ describe("gitring_clone", () => {
     const res = await callTool(world, sam.key, "gitring_clone", { project });
     expect(res.isError).toBe(true);
     expect(res.text).toMatch(/Unknown project|no access/);
+  });
+
+  it("says why there is no clone of a project whose import did not finish", async () => {
+    const res = await callTool(world, key, "gitring_create_project", { name: "Shop", start: { kind: "git", url: "https://codeberg.org/robin/shop" } });
+    const id = dataOf(res.text).project as string;
+    const h = world.harbor(id) as unknown as { project: { importing: { error?: string } } };
+    h.project.importing.error = "The import took more than 20 minutes. Try a smaller repository or a shallower branch.";
+    const clone = await callTool(world, key, "gitring_clone", { project: id });
+    expect(clone.isError).toBe(true);
+    expect(clone.text).toBe("Error: The import did not finish: The import took more than 20 minutes. Try a smaller repository or a shallower branch.");
   });
 
   it("is also a REST route for members", async () => {

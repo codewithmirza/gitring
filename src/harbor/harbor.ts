@@ -294,6 +294,9 @@ export class HarborMaster extends DurableObject<Env> {
     };
     this.project = draft;
     this.db.setMeta("generation", generation);
+    // A project id that comes back (a project that was not made, then made again) starts clean: the
+    // choice of the tests, the agents that wait for an import and the fix task belong to the old project.
+    for (const key of ["checksSet", "launchAfterImport", "pullTestTask"]) this.db.setMeta(key, undefined);
 
     // A public repository (any git host, or GitHub): Artifacts imports it with its history.
     if (source.kind === "git" || (source.kind === "github" && !source.private)) {
@@ -472,13 +475,16 @@ export class HarborMaster extends DurableObject<Env> {
     this.persistStats();
     this.emit({ type: "snapshot", state: await this.state() });
     // The code is in main now: gitring guesses how it installs and tests itself (in the background).
-    this.ctx.waitUntil(this.guessTests().catch((e) => console.warn("guess failed", errorLine(e))));
-    // Built-in agents that the creator asked for start now (see launchWhenReady).
+    const guessed = this.guessTests().catch((e) => console.warn("guess failed", errorLine(e)));
+    this.ctx.waitUntil(guessed);
+    // Built-in agents that the creator asked for start now (see launchWhenReady), after the guess: their
+    // first test run uses the guessed commands.
     const later = this.db.getMeta<{ intentId: string; fanout: number; by: T.Actor }>("launchAfterImport");
     if (later) {
       this.db.setMeta("launchAfterImport", undefined);
       this.ctx.waitUntil(
-        this.launch(later.intentId, { fanout: later.fanout }, later.by)
+        guessed
+          .then(() => this.launch(later.intentId, { fanout: later.fanout }, later.by))
           .then(() => undefined)
           .catch((e) => this.addLog({ kind: "system", intentId: later.intentId, message: `The built-in agents did not start after the import: ${String((e as Error)?.message ?? e).slice(0, 200)}` })),
       );
@@ -508,6 +514,10 @@ export class HarborMaster extends DurableObject<Env> {
     if (this.db.getMeta<boolean>("checksSet")) return null;
     const p = this.requireProject();
     if (p.importing) return null;
+    // Tests with commands, or the gitring test runner, are a choice (also on a project from before
+    // "checksSet"): only the bare default (a container, no commands) gets a guess.
+    const cur = p.settings.checks;
+    if (cur && (cur.runner === "worker" || cur.install || cur.test)) return null;
     const main = await this.loadMain();
     const g = await guessTree({ label: p.name, paths: [...main.snapshot.keys()], read: async (path) => main.text.get(path) ?? null, ask: guessModel(this.env.AI) });
     // A person (or an agent) set the tests while the model answered: their choice stays.
@@ -716,6 +726,7 @@ export class HarborMaster extends DurableObject<Env> {
    */
   async cloneAccess(): Promise<{ remote: string; token: string; expiresAt: string; branch: string }> {
     const p = this.requireProject();
+    if (p.importing?.error) throw new Error(`The import did not finish: ${p.importing.error}`);
     if (p.importing) throw new Error(p.importing.push ? "This project waits for its first git push. Clone it after the push." : "The repository is still importing. Try again in a minute.");
     const tok = await this.backend.createToken(p.repo.name, "read", 6 * 3600);
     const remote = p.repo.remote ?? (await this.backend.remoteUrl(p.repo.name));
@@ -3889,11 +3900,22 @@ export class HarborMaster extends DurableObject<Env> {
     if (p.settings.github.mode !== "off" && reason !== "sync") this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
   }
 
+  /** The test runs of main after GitHub changes, one after the other. */
+  private pullTests: Promise<unknown> = Promise.resolve();
+
   /**
    * The tests of main after GitHub changes came in. When tests fail, a high-priority task asks agents to
-   * fix them (one open task at a time). A run that did not happen (the test budget) opens no task.
+   * fix them (one open task at a time). A run that did not happen opens no task: the test budget, a test
+   * container that did not start, or a project with no test command (nothing in the code to fix).
+   * One run at a time, so that two pulls in a row cannot open two tasks.
    */
-  private async testMainAfterPull(repo: string, main: MainView, what: string): Promise<T.CheckRun> {
+  private testMainAfterPull(repo: string, main: MainView, what: string): Promise<T.CheckRun> {
+    const run = this.pullTests.then(() => this.testMainOnce(repo, main, what));
+    this.pullTests = run.catch(() => undefined);
+    return run;
+  }
+
+  private async testMainOnce(repo: string, main: MainView, what: string): Promise<T.CheckRun> {
     const run = await this.runTreeChecks(main.text, "main", "main");
     const total = run.passed + run.failed;
     if (run.wait) {
@@ -3901,11 +3923,20 @@ export class HarborMaster extends DurableObject<Env> {
       return run;
     }
     const failed = run.cases.filter((c) => !c.ok);
-    if (run.ok || !failed.length) {
-      this.addLog({ kind: "check", message: `Tests after the GitHub changes: ${run.passed}/${total} pass.`, data: { checkRunId: run.id, ok: true } });
+    if (run.ok) {
+      const message = noTestRan(run) ? "Tests after the GitHub changes: no test ran. Add tests in tests/*.test.js." : `Tests after the GitHub changes: ${run.passed}/${total} pass.`;
+      this.addLog({ kind: "check", message, data: { checkRunId: run.id, ok: true } });
       return run;
     }
-    this.addLog({ kind: "check", message: `Tests after the GitHub changes: ${failed.length} of ${total} fail on main ${main.sha.slice(0, 7)}.`, data: { checkRunId: run.id, ok: false } });
+    if (!failed.length && run.runner === "container") {
+      this.addLog({ kind: "check", message: `Tests after the GitHub changes: not run. ${run.error ?? "The test container gave no result."}`, data: { checkRunId: run.id, ok: false } });
+      return run;
+    }
+    this.addLog({
+      kind: "check",
+      message: failed.length ? `Tests after the GitHub changes: ${failed.length} of ${total} fail on main ${main.sha.slice(0, 7)}.` : `Tests after the GitHub changes: the tests do not run on main ${main.sha.slice(0, 7)}.`,
+      data: { checkRunId: run.id, ok: false },
+    });
     const openId = this.db.getMeta<string>("pullTestTask");
     const open = openId ? this.intents.get(openId) : undefined;
     if (open && !["landed", "parked", "merged-into"].includes(open.status)) return run;
@@ -3913,7 +3944,9 @@ export class HarborMaster extends DurableObject<Env> {
       {
         title: "Fix the tests after GitHub changes",
         goal: [
-          `${what} from GitHub ${repo} came into main (${main.sha.slice(0, 7)}). After that change, ${failed.length} of ${total} tests fail on main:`,
+          failed.length
+            ? `${what} from GitHub ${repo} came into main (${main.sha.slice(0, 7)}). After that change, ${failed.length} of ${total} tests fail on main:`
+            : `${what} from GitHub ${repo} came into main (${main.sha.slice(0, 7)}). After that change, the tests do not run on main.`,
           ...failed.slice(0, 12).map((c) => `- ${c.file} ${c.name}: ${(c.error ?? "failed").replace(/\s+/g, " ").slice(0, 300)}`),
           ...(failed.length > 12 ? [`- and ${failed.length - 12} more`] : []),
           ...(run.error ? [`Test runner: ${run.error.slice(0, 300)}`] : []),

@@ -19,6 +19,12 @@ let started: { projectId: string; attemptId: string }[];
 let failStart: boolean;
 let modelCalls: string[];
 let modelAnswer: string;
+/** How long the model takes to answer (ms). */
+let modelDelay: number;
+/** The test settings of the project when each built-in agent started. */
+let checksAtStart: unknown[];
+/** What the test container answers (container runner). */
+let dockAnswer: Record<string, unknown>;
 
 beforeEach(async () => {
   world = new World();
@@ -27,6 +33,9 @@ beforeEach(async () => {
   failStart = false;
   modelCalls = [];
   modelAnswer = '{"test": ""}';
+  modelDelay = 0;
+  checksAtStart = [];
+  dockAnswer = { ok: false, stage: "no-test", exitCode: 1, installMs: 5, testMs: 0, reused: false, log: "" };
   await world.init({
     LOADER: loader,
     VESSEL: {
@@ -35,15 +44,18 @@ beforeEach(async () => {
         start: async (x: { projectId: string; attemptId: string }) => {
           if (failStart) throw new Error("The agent container did not start.");
           started.push(x);
+          checksAtStart.push((await world.harbor(x.projectId).settings()).checks);
         },
       }),
     },
     AI: {
       run: async (model: string) => {
         modelCalls.push(model);
+        if (modelDelay) await new Promise((r) => setTimeout(r, modelDelay));
         return { choices: [{ message: { content: modelAnswer } }] };
       },
     },
+    DRYDOCK: { idFromName: (n: string) => n, get: () => ({ run: async () => dockAnswer }) },
   });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -154,6 +166,59 @@ describe("the guess of the tests", () => {
     expect(started).toHaveLength(1);
     expect(st.attempts[0].intentId).toBe(made.json.task.id);
   });
+
+  /** A push project that waits for its push, with a first task and one built-in agent. */
+  async function pushProject(name: string, opts: { launch?: number } = {}) {
+    world.person("robin", 1);
+    const { key } = await world.signIn("robin");
+    const made = await world.call("POST", "/api/projects", { key, body: { name, source: { kind: "push" }, ...(opts.launch ? { firstTask: { title: "Add a flag", goal: "Add --verbose." }, launch: opts.launch } : {}) } });
+    expect(made.status, made.text).toBe(201);
+    const id = made.json.project.id as string;
+    const push = async () => {
+      const repo = made.json.state.project.repo.name as string;
+      await world.backend.commit({ repo, branch: "main", parent: "", message: "First", author: { name: "Robin", email: "r@example.test" }, changes: [{ path: "README.md", content: "# Tool\n\nTest it with: make check\n" }, { path: "Makefile", content: "check:\n\t./run-checks\n" }] });
+      const checked = await world.call("POST", `/api/projects/${id}/import/check`, { key });
+      expect(checked.status, checked.text).toBe(200);
+      await world.settle();
+    };
+    return { id, key, h: world.harbor(id), push };
+  }
+
+  it("starts the agents after the guess, so that their first tests use the guessed commands", async () => {
+    const { push } = await pushProject("Tool", { launch: 1 });
+    modelAnswer = '{"install": "", "test": "make check"}';
+    // The model is slow: the agent waits for its answer.
+    modelDelay = 40;
+    await push();
+    expect(started).toHaveLength(1);
+    expect(checksAtStart).toEqual([{ runner: "container", test: "make check" }]);
+  });
+
+  it("keeps the test commands of a project from before the record of the choice", async () => {
+    const { key, h, id, push } = await pushProject("Tool");
+    expect((await world.call("PUT", `/api/projects/${id}/settings`, { key, body: { checks: { runner: "container", test: "make all" } } })).status).toBe(200);
+    // A project from before "checksSet": the commands are there, the record of the choice is not.
+    (h as unknown as { db: { setMeta(k: string, v: unknown): void } }).db.setMeta("checksSet", undefined);
+    modelAnswer = '{"install": "", "test": "make check"}';
+    await push();
+    expect((await h.settings()).checks).toEqual({ runner: "container", test: "make all" });
+    expect(modelCalls).toEqual([]);
+  });
+
+  it("forgets the choice of the tests when the project object starts again with a new project", async () => {
+    world.person("robin", 1);
+    const { key } = await world.signIn("robin");
+    const pkg = JSON.stringify({ name: "shop", scripts: { test: "vitest run" } });
+    const made = await world.call("POST", "/api/projects", { key, body: { name: "a", source: { kind: "upload" }, files: [{ path: "package.json", text: pkg }], settings: { checks: { runner: "container", test: "npm run custom" } } } });
+    expect(made.status, made.text).toBe(201);
+    const id = made.json.project.id as string;
+    await world.settle();
+    // The same project id again (a project that was not made, then made again): a new upload.
+    const h = world.harbor(id);
+    await h.init({ projectId: id, name: "a", source: { kind: "upload", files: 2 }, files: [{ path: "package.json", text: pkg }, { path: "package-lock.json", text: "{}" }] });
+    await world.settle();
+    expect((await h.settings()).checks).toEqual({ runner: "container", install: "npm ci", test: "npm test" });
+  });
 });
 
 describe("GitHub is optional", () => {
@@ -238,5 +303,37 @@ describe("tests after GitHub changes", () => {
     const st = await h.state();
     expect(st.intents.filter((i) => i.title === "Fix the tests after GitHub changes")).toHaveLength(0);
     expect(st.logs.some((l) => l.message === "Tests after the GitHub changes: 1/1 pass.")).toBe(true);
+  });
+
+  it("says that the tests did not run when the project has no test command, and opens no task", async () => {
+    world.person("alice", 1).access.set("robin/shop", { read: true, push: true });
+    const { id, key, h } = await world.linkedProject("alice");
+    // The default: a test container. The repository has no test script.
+    expect((await h.settings()).checks).toEqual({ runner: "container" });
+    world.gh.push({ "news.txt": "from GitHub\n" }, "News");
+    await world.call("POST", `/api/projects/${id}/github/pull`, { key });
+    await world.settle();
+    const st = await h.state();
+    expect(st.intents.filter((i) => i.title === "Fix the tests after GitHub changes")).toHaveLength(0);
+    const line = st.logs.map((l) => l.message).find((m) => m.startsWith("Tests after the GitHub changes"));
+    expect(line).toBe("Tests after the GitHub changes: not run. No test command. The project has no package.json test script. An owner sets the test command in Settings → Tests.");
+    expect(steViolations(line!)).toEqual([]);
+    expect(st.logs.find((l) => l.message === line)?.data).toMatchObject({ ok: false });
+  });
+
+  it("opens one task when two runs of the tests end at the same time", async () => {
+    world.person("alice", 1).access.set("robin/shop", { read: true, push: true });
+    const { h } = await world.linkedProject("alice");
+    const tester = h as unknown as {
+      loadMain(): Promise<unknown>;
+      runTreeChecks(): Promise<unknown>;
+      testMainAfterPull(repo: string, main: unknown, what: string): Promise<unknown>;
+    };
+    // Two pulls in a row: both runs of the tests fail, and they end at the same moment.
+    const failed = { id: "ck_1", subject: "x", scope: "main", ok: false, passed: 0, failed: 1, ran: 1, cases: [{ file: "tests/sum.test.js", name: "sum adds", ok: false, ms: 1, error: "Expected 3, got -1" }], ms: 1, at: 1, runner: "worker" };
+    tester.runTreeChecks = async () => failed;
+    const main = await tester.loadMain();
+    await Promise.all([tester.testMainAfterPull("robin/shop", main, "1 commit"), tester.testMainAfterPull("robin/shop", main, "1 commit")]);
+    expect((await h.state()).intents.filter((i) => i.title === "Fix the tests after GitHub changes")).toHaveLength(1);
   });
 });
