@@ -13,14 +13,14 @@ const EXPR_END_TAGS = new Set(["name", "num", "string", "regexp", "privateId", "
 /** The token list of one TypeScript file, with its bracket pairs, the cuts that blank the types, and the output text. */
 export class TsCursor {
   protected readonly n: number;
-
   private readonly match: Int32Array;
-
   private readonly cuts: [number, number][] = [];
-
   protected readonly edits: [number, string][] = [];
-
   failed = false;
+  /** Cut ranges in token space: end index (exclusive) → start index. */
+  private readonly cutStartAt = new Map<number, number>();
+  /** Names that only exist as types in this file (interfaces, type aliases, type imports, ambient declarations). */
+  protected typeOnlyNames = new Set<string>();
 
   constructor(
     protected readonly src: string,
@@ -80,9 +80,6 @@ export class TsCursor {
     if (prev === undefined || i < prev) this.cutStartAt.set(end, i);
   }
 
-  /** Cut ranges in token space: end index (exclusive) → start index. */
-  private readonly cutStartAt = new Map<number, number>();
-
   /** The token before i, skipping tokens that were cut (types end before the next real token). */
   protected effPrev(i: number): number {
     let p = i;
@@ -100,9 +97,6 @@ export class TsCursor {
     if (EXPR_END_TAGS.has(t)) return true;
     return /^[a-z]+$/.test(t) && !TOKEN_CATEGORIES.has(t) && t !== "eof" && (this.t(k - 1) === "." || this.t(k - 1) === "?.");
   }
-
-  /** Names that only exist as types in this file (interfaces, type aliases, type imports, ambient declarations). */
-  protected typeOnlyNames = new Set<string>();
 
   /** Pre-pass: which names are type-only (an `export { X }` of such a name is dropped, as TypeScript does). */
   collectTypeOnlyNames(): void {
