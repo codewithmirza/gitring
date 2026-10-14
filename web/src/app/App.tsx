@@ -10,7 +10,7 @@ import { ApprovalTray } from "./ApprovalTray";
 import { SignInPopover, WatchBanner } from "./Account";
 import { CommandPalette } from "./CommandPalette";
 import { ShortcutsPopover } from "./Shortcuts";
-import { canonicalPath, isProjectRoute, Link, navigate, setPreloader, setSearchParam, useLocationKey, useRoute, type Route } from "./router";
+import { canonicalPath, isProjectRoute, Link, navigate, setPreloader, setSearchParam, useLocationKey, useRoute, useSearchParam, type Route } from "./router";
 import { getUi, openNewIntent, openPalette, openShortcuts, openSignIn, setUi, takeAfterSignIn } from "./ui";
 import { typing } from "./keys";
 import * as V from "./views";
@@ -27,6 +27,7 @@ const TITLES: Record<Route["name"], string> = {
   approve: "Approve a merge",
   code: "Code",
   connect: "Connect",
+  replay: "Replay",
   design: "Design",
   projects: "Projects",
   settings: "Project settings",
@@ -244,6 +245,8 @@ function View({ route }: { route: Route }) {
       return <V.CodeView />;
     case "connect":
       return <V.ConnectView />;
+    case "replay":
+      return <V.ReplayView />;
     case "design":
       return V.DesignView ? <V.DesignView /> : <NotFound />;
     case "projects":
@@ -259,7 +262,7 @@ function View({ route }: { route: Route }) {
 
 /** Skeletons in the shape of the view that loads. */
 function ViewSkeleton({ route }: { route: Route }) {
-  if (route.name === "intents" || route.name === "chart" || route.name === "code") return <SkeletonSplit label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
+  if (route.name === "intents" || route.name === "chart" || route.name === "code" || route.name === "replay") return <SkeletonSplit label={`Loading ${TITLES[route.name].toLowerCase()}`} />;
   return <SkeletonPage label={route.name === "approve" ? "Loading the merge question" : `Loading ${TITLES[route.name].toLowerCase()}`} />;
 }
 
@@ -296,6 +299,8 @@ export function App() {
   const project = useStore((s) => s.state?.project.name);
   const first = useRef(true);
   const needsProject = isProjectRoute(route);
+  // Kiosk: the replay alone on the screen, for a recording (no app bar, no tray, no toasts).
+  const kiosk = useSearchParam("kiosk") === "1" && route.name === "replay";
   useShortcuts();
   useQueueToasts();
   useLocationSync();
@@ -335,15 +340,15 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.name, route.name === "approve" ? route.id : ""]);
 
-  const showNav = needsProject;
+  const showNav = needsProject && !kiosk;
   return (
-    <div className={["app", showNav && "app--nav"].filter(Boolean).join(" ")}>
+    <div className={["app", showNav && "app--nav", kiosk && "app--kiosk"].filter(Boolean).join(" ")}>
       <a href="#main" className="skip-link">
         Skip to the content
       </a>
-      <TopBar route={route} />
+      {!kiosk && <TopBar route={route} />}
       <main id="main" className={`app__main app__main--${route.name}`} tabIndex={-1}>
-        {needsProject && <WatchBanner />}
+        {needsProject && !kiosk && <WatchBanner />}
         {needsProject && !ready ? (
           <Booting route={route} />
         ) : (
@@ -356,8 +361,8 @@ export function App() {
       <SignInPopover />
       <CommandPalette />
       <ShortcutsPopover />
-      <ApprovalTray route={route} />
-      <ToastHost />
+      {!kiosk && <ApprovalTray route={route} />}
+      {!kiosk && <ToastHost />}
     </div>
   );
 }
