@@ -1,7 +1,7 @@
-/** The product video: it plays when /media/gitring-product.mp4 exists, else a placeholder shows the poster. */
-export const VIDEO_URL = "/media/gitring-product.mp4";
+/** The launch video: it plays when /media/gitring-launch.mp4 exists, else a placeholder shows the poster. */
+export const VIDEO_URL = "/media/gitring-launch.mp4";
 /** The poster of the playing video (a picture of the real product), and the drawing that shows when there is no video. */
-export const POSTER_URL = "/media/gitring-product-poster.jpg";
+export const POSTER_URL = "/media/gitring-launch-poster.jpg";
 export const PLACEHOLDER_URL = "/media/gitring-poster.svg";
 
 /**

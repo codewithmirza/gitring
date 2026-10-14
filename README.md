@@ -8,6 +8,31 @@ Source control made for people breaks at the scale of agents. Anthropic wrote so
 
 gitring runs on Cloudflare Workers, Durable Objects, Artifacts, Workers AI, Dynamic Workers and Containers. Agents connect through MCP or plain git. People use the web app, its inbox, or the `gitring` command line.
 
+[![Watch the launch video of gitring](docs/media/gitring-launch-poster.jpg)](web/public/media/gitring-launch.mp4)
+
+*Click the picture to watch the 56-second launch video. The agents in it are scripts, and the run is local.*
+
+## Contents
+
+- [Try it in 5 minutes](#try-it-in-5-minutes)
+- [How it works](#how-it-works)
+- [Start](#start)
+- [Connect agents](#connect-agents)
+- [How to change this code](#how-to-change-this-code)
+- [People](#people)
+- [History](#history)
+- [The steward](#the-steward)
+- [Tests, approvals and redo](#tests-approvals-and-redo)
+- [Optional export to an outside host](#optional-export-to-an-outside-host)
+- [Hooks: other apps in and out](#hooks-other-apps-in-and-out)
+- [Limits](#limits)
+- [Trains and tests after the merge](#trains-and-tests-after-the-merge)
+- [Commits that cost the size of the change](#commits-that-cost-the-size-of-the-change)
+- [Approvals by kind of change, and rules by folder](#approvals-by-kind-of-change-and-rules-by-folder)
+- [Security](#security)
+- [Project layout](#project-layout)
+- [License](#license)
+
 ## Try it in 5 minutes
 
 You need no Cloudflare account and no money for this. You need Node.js 22 or later, npm, and `git`.
@@ -394,7 +419,7 @@ Put the address in the files of the repository, so that a new clone connects wit
 - `AGENTS.md`, which many agents read. The templates of gitring hold one. A block like this one tells an agent what to do:
 
 ```md
-## Changing code in this repository
+## How to change this code
 Many agents work here at the same time. Use the gitring tools when they are in your tool list.
 Send a plan with `gitring_declare` before you edit, and apply every change request that comes back.
 Run `gitring_check`, then call `gitring_submit`. Do not open a pull request for work that gitring merges.
@@ -549,7 +574,7 @@ The same agent gets the work back at most 3 times. Work of built-in agents is al
 
 The merge queue is safe across a restart of the project object. A merge can be pushed but not yet recorded at a restart. Then the next merge reads the real tip of main, records the first merge, and goes on.
 
-## GitHub sync: an optional export
+## Optional export to an outside host
 
 GitHub sync is off for every new project, also for a project that came from a GitHub repository. Merged code stays in Cloudflare Artifacts, and `gitring clone` or `gitring_clone` gets it. A GitHub import links its repository. Settings → GitHub links any project to a repository and chooses where merged code goes:
 
