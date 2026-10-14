@@ -52,7 +52,7 @@ async function measure(page, { out, name }, problems) {
       smallTargets: facts.targets.under24,
       sidewaysScroll: facts.sidewaysScroll,
       typeSizes: facts.sizes.length,
-      stopsWithoutRing: stops.filter((stop) => !stop.none && stop.inView !== false && !stop.ring).length,
+      stopsWithoutRing: stops.filter((stop) => stop.ring === false).length,
       consoleProblems: problems.length,
     },
   };

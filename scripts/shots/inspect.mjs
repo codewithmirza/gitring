@@ -193,6 +193,39 @@ export function inspectPage(page) {
   return page.evaluate(`(() => {\n${IN_PAGE}\nreturn measurePage();\n})()`);
 }
 
+// ───── Keyboard ─────
+
+/** What has the focus now: its name and the box to look at for a ring (the row that holds it, when it is in a row). Runs inside the page. */
+function readFocus() {
+  const el = document.activeElement;
+  if (!el || el === document.body) return { text: "(nothing)", none: true };
+  const box = (el.closest("li, tr, [role=row], [role=listitem], [role=option]") ?? el).getBoundingClientRect();
+  const text = (el.getAttribute("aria-label") || el.textContent || el.getAttribute("placeholder") || el.tagName).trim().replace(/s+/g, " ");
+  const inView = box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
+  window.__shotsFocused = el;
+  return { text: text.slice(0, 40), inView, box: { x: box.x, y: box.y, width: box.width, height: box.height } };
+}
+
+/**
+ * True when the look of the area around the focused element changes with the focus. A ring can be an
+ * outline, a shadow, a stroke in a drawing, or an outline on a parent row, so the test compares two
+ * pictures of the area (with and without the focus) and does not read one style.
+ */
+async function showsRing(page, box) {
+  const view = page.viewportSize();
+  const x = Math.max(0, Math.floor(box.x - 8));
+  const y = Math.max(0, Math.floor(box.y - 8));
+  const width = Math.min(view.width - x, Math.ceil(box.width + 16));
+  const height = Math.min(view.height - y, Math.ceil(box.height + 16));
+  if (width < 1 || height < 1) return null;
+  const clip = { x, y, width, height };
+  const focused = await page.screenshot({ clip });
+  await page.evaluate(() => window.__shotsFocused?.blur());
+  const blurred = await page.screenshot({ clip });
+  await page.evaluate(() => window.__shotsFocused?.focus({ preventScroll: true }));
+  return !focused.equals(blurred);
+}
+
 /**
  * Presses Tab `count` times and says, for each stop, what has the focus and whether a ring shows.
  * A stop without a ring is a finding. The order of the stops is the order of a person who uses the keyboard.
@@ -202,17 +235,8 @@ export async function tabStops(page, count = 12) {
   await page.evaluate(() => document.activeElement?.blur?.());
   for (let index = 0; index < count; index += 1) {
     await page.keyboard.press("Tab");
-    stops.push(
-      await page.evaluate(() => {
-        const el = document.activeElement;
-        if (!el || el === document.body) return { text: "(nothing)", none: true };
-        const style = getComputedStyle(el);
-        const hasOutline = style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
-        const box = el.getBoundingClientRect();
-        const text = (el.getAttribute("aria-label") || el.textContent || el.getAttribute("placeholder") || el.tagName).trim().replace(/\s+/g, " ");
-        return { text: text.slice(0, 40), ring: hasOutline || style.boxShadow !== "none", inView: box.bottom > 0 && box.top < innerHeight };
-      }),
-    );
+    const { box, ...stop } = await page.evaluate(readFocus);
+    stops.push(stop.none || !stop.inView ? stop : { ...stop, ring: await showsRing(page, box) });
   }
   return stops;
 }
