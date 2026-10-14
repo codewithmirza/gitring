@@ -33,11 +33,11 @@ export const Land = memo(function Land({ layout }: { layout: ChartLayout }) {
 /** One mono character is 0.632 em wide: 7.3 px at the 11.5 px of a parcel name. */
 const CHAR_PX = 7.3;
 
-/** The name that fits in `room` px: the whole name, its start with an ellipsis, or nothing when fewer than 6 characters fit. */
+/** The name that fits in `room` px: the whole name, its start with an ellipsis, or nothing when fewer than 9 characters fit. */
 function nameThatFits(name: string, room: number): string | null {
   const chars = Math.floor(room / CHAR_PX);
   if (chars >= name.length) return name;
-  return chars >= 6 ? `${name.slice(0, chars - 1)}…` : null;
+  return chars >= 9 ? `${name.slice(0, chars - 1)}…` : null;
 }
 
 export const Parcels = memo(function Parcels({
