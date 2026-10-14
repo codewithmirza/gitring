@@ -14,6 +14,8 @@ import { SYSTEM, regionKey, severityOf, sortPair } from "../support/helpers";
 import { KIND_WORD } from "../support/words";
 import { HarborClearance } from "./clearance";
 
+// ───── Types ─────
+
 /** The words and the limits of a change request that the coordination code drafted (see draftCorrection). */
 type DraftedCorrection = { kind: T.CorrectionKind; message: string; constraints: T.Correction["constraints"] };
 

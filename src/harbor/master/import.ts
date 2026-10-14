@@ -20,6 +20,8 @@ import { seedChanges } from "../support/seed";
 import type { SeedFile } from "../support/seed";
 import { HarborTasks } from "./tasks";
 
+// ───── Types ─────
+
 /** The GitHub part of a running import. */
 type GithubImport = NonNullable<NonNullable<T.Project["importing"]>["github"]>;
 

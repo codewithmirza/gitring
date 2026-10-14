@@ -1,6 +1,12 @@
 /**
  * Outbound webhooks: the signing secret of each webhook, the signature header, and the delivery with retries.
- *
+ * Called by HarborRecords.webhook (master/records.ts) and HarborSettings (master/settings.ts).
+ * Never put a secret in the settings: it would reach the live state of the project.
+ * Read next: master/records.ts.
+ */
+import { hmacSha256Hex, randomToken } from "../directory/crypto";
+
+/**
  * Each webhook has its own secret ("whsec_…"). gitring makes it when a person adds the webhook, shows it once
  * in the answer of the settings change, and keeps it sealed in the project object (never in the settings, so
  * it never reaches the live state of the project). Each request carries
@@ -9,8 +15,6 @@
  *
  * The receiver computes the same HMAC with its copy of the secret, compares, and refuses an old t.
  */
-import { hmacSha256Hex, randomToken } from "../directory/crypto";
-
 export const SIGNATURE_HEADER = "gitring-signature";
 /** The seal purpose of webhook secrets (a key of its own, from GITRING_SECRET). */
 export const SECRET_SEAL = "webhook-secret-v1";

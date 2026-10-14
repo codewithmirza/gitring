@@ -1,14 +1,8 @@
 /**
- * The timeline of a project, read from the project object (see src/core/timeline.ts).
- *
- * Two kinds of source:
- *   - documents that the object keeps in memory in full (tasks, work copies, change requests, decisions,
- *     merges, agents): load() reads all of them, and every write goes through to storage;
- *   - the activity log and the conflict checks, which the object keeps in memory only as a recent window:
- *     they come from SQLite, a page at a time, in time order (an index on `at` keeps the reads short).
- *
- * The records leave out what the Replay view does not need and what can be large: the source of test
- * files, the output of container runs, the raw model answers and the diffs of earlier changes.
+ * Reads the timeline of a project from the project object, a page at a time (see src/core/timeline.ts).
+ * Called by HarborReads.events (master/reads.ts) for the Replay view and the demo video.
+ * Never put the source of test files, container output, raw model answers or old diffs into a record: they can be large.
+ * Read next: ../core/timeline.ts.
  */
 import type * as T from "../core/types";
 import {
@@ -21,6 +15,13 @@ import {
   type TimelineRecord,
 } from "../core/timeline";
 
+/**
+ * Two kinds of source:
+ *   - documents that the object keeps in memory in full (tasks, work copies, change requests, decisions,
+ *     merges, agents): load() reads all of them, and every write goes through to storage;
+ *   - the activity log and the conflict checks, which the object keeps in memory only as a recent window:
+ *     they come from SQLite, a page at a time, in time order (an index on `at` keeps the reads short).
+ */
 export interface TimelineSources {
   intents: Iterable<T.Intent>;
   attempts: Iterable<T.Attempt>;

@@ -1,5 +1,5 @@
 /**
- * The types of the derived data: what it reads from the project object, and the rows and steps it works with.
+ * The types of the derived data: what it reads from the project object, and its rows and steps.
  * DerivedSource is the contract with the project object (see ../master/reads.ts).
  */
 import type * as T from "../../core/types";

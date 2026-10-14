@@ -1,5 +1,5 @@
 /**
- * Takes the submit of an agent: runs the tests, asks for approval when needed, and puts the work in the queue.
+ * Takes the submit of an agent: runs the tests, asks for approval if needed, and queues the work.
  * Layer 22 of the chain in master/README.md. Extends HarborQueue (queue.ts).
  * A submit never merges by itself. It only puts work in the queue (see queue.ts).
  * Read next: decisions.ts.

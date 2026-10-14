@@ -18,6 +18,8 @@ import type { Brief, CallInfo } from "../support/types";
 import { copyStatusWord, taskStatusWord } from "../support/words";
 import { HarborCourseCheck } from "./course-check";
 
+// ───── Types ─────
+
 /** What an agent sends to gitring_declare, with the fields that the Worker and the Claude Code hook add. */
 type DeclareCall = T.DeclareInput & { attemptId?: string; projectId?: string; workdir?: string; by?: T.Actor };
 

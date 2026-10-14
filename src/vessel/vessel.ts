@@ -1,14 +1,8 @@
 /**
- * Vessel — a built-in coding agent, one Durable Object per attempt run.
- *
- * It uses exactly the same protocol as external agents (declare → write/log → check → submit),
- * through HarborMaster RPC. Corrections arrive piggybacked on every response; the vessel feeds
- * them into its next step and keeps working (no stop, no lock). It acknowledges a correction only
- * after the model saw it and acted on it: at its next write (the note names the files), or at the
- * submit without a write ("No code change was needed").
- *
- * A vessel is a Workers AI model with tools (read/write/list/checks/log/submit).
- * Each step runs in an alarm, so a long run survives eviction.
+ * Vessel: a built-in coding agent, one Durable Object for each work copy run.
+ * Called by HarborTasks.startVessel (src/harbor/master/tasks.ts). It calls back through the HarborMaster RPC methods.
+ * Never keep a change request that the model did not see: the vessel acknowledges a request only after the model acted on it.
+ * Read next: ../platform/ai/models.ts (the model calls).
  */
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../worker/env";
@@ -65,6 +59,15 @@ const MAX_FAIL_STREAK = 6;
 /** A tool answer keeps at least this many characters when the tool answers of a turn use up their room. */
 const MIN_TOOL_CHARS = 2_000;
 
+/**
+ * It uses exactly the same protocol as external agents (declare → write/log → check → submit). Change requests
+ * arrive in every answer; the vessel feeds them into its next step and keeps working (no stop, no lock). It
+ * acknowledges a change request only after the model saw it and acted on it: at its next write (the note
+ * names the files), or at the submit without a write ("No code change was needed").
+ *
+ * A vessel is a Workers AI model with tools (read, write, list, checks, log, submit). Each step runs in an
+ * alarm, so a long run survives an eviction.
+ */
 export class Vessel extends DurableObject<Env> {
   private st?: VesselState;
 

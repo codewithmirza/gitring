@@ -1,15 +1,8 @@
 /**
- * The code check of a confirmed change request (gitring_ack). An agent says "done": gitring looks at the
- * code of the work copy, not at the words of the agent.
- *
- *   avoidRegions   the changes of the work copy still replace lines of a region of the same file → not applied
- *   useSignatures  the work copy changes the function, and calls of the asked form do not work with the new
- *                  parameter list → not applied. When the work copy does not change the function, the files
- *                  where its changed code uses the function still call it with a number of arguments that
- *                  the asked form does not take → not applied.
- *
- * Constraints with nothing to check (notes only, lines of work that left the traffic, no use of the function)
- * give `applied: null`. The check is best effort: it reads the text, it does not run the code.
+ * Checks the code of a work copy when an agent confirms a change request (gitring_ack).
+ * Called by HarborProtocol.ack (master/protocol.ts). It reads the text of the work copy and never runs the code.
+ * Never trust the words of the agent: the code of the work copy decides.
+ * Read next: ../core/coord/corrections.ts (the change requests that carry the constraints).
  */
 import type { Correction, Footprint, LineRange, SymbolKey } from "../core/types";
 import { callForm, symbolName, symbolPath, type SignatureInfo } from "../core/analysis/range";
@@ -30,6 +23,18 @@ export interface AckWork {
   signatures: Record<SymbolKey, SignatureInfo>;
 }
 
+/**
+ * An agent says "done": gitring looks at the code of the work copy, not at the words of the agent.
+ *
+ *   avoidRegions   the changes of the work copy still replace lines of a region of the same file → not applied
+ *   useSignatures  the work copy changes the function, and calls of the asked form do not work with the new
+ *                  parameter list → not applied. When the work copy does not change the function, the files
+ *                  where its changed code uses the function still call it with a number of arguments that
+ *                  the asked form does not take → not applied.
+ *
+ * Constraints with nothing to check (notes only, lines of work that left the traffic, no use of the function)
+ * give `applied: null`. The check is best effort: it reads the text, it does not run the code.
+ */
 /**
  * Does the work copy keep the constraints of the change request? `regions`: false when the lines of the
  * request do not count any more (the work that holds them merged or left the traffic).
