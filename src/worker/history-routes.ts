@@ -7,14 +7,10 @@
  *   GET /api/projects/:p/search?q=&path=&limit=       a text in the files of main
  *   GET /api/projects/:p/compare?from=&to=&path=      the changes between two versions (all files, or under a path)
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
+import type { Hono } from "hono";
 import type { Role } from "../core/accounts";
 import type { HarborMaster } from "../harbor/harbor";
-import type { Principal } from "./auth";
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
+import type { C, HonoEnv } from "./http";
 
 /** What the routes need from the Worker: the role check with the project object, and the error answer. */
 export interface HistoryRouteDeps {
