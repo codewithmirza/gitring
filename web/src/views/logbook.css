@@ -110,7 +110,8 @@
   grid-template-areas:
     "sha time"
     "title title"
-    "method agent";
+    "method method"
+    "agent agent";
   gap: 4px var(--s-3);
   padding: var(--s-3) var(--s-4) var(--s-3) var(--s-5);
 }
@@ -118,7 +119,7 @@
 .lrow--compact .lrow__time { grid-area: time; }
 .lrow--compact .lrow__title { grid-area: title; }
 .lrow--compact .lrow__method { grid-area: method; }
-.lrow--compact .lrow__agent { grid-area: agent; justify-self: end; }
+.lrow--compact .lrow__agent { grid-area: agent; justify-self: start; } /* the list is narrow: the method and the agent each get a row */
 .lrow--compact .lrow__corr,
 .lrow--compact .lrow__checks { display: none; }
 
