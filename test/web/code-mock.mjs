@@ -10,6 +10,7 @@
 //   POST /__mock/emit     { events: [...] } → send to every socket
 //   POST /__mock/drop     close every socket (the app must reconnect)
 //   POST /__mock/bump     change the work copy at_s1 (a new version of its tree and files) and send the event
+// The history answers (why, history) are fixed: the merge l1 wrote every line of main.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -384,6 +385,34 @@ const server = http.createServer(async (req, res) => {
       }
       done(200);
       return send(res, 200, diffOf(id === "at_s2" ? oldFiles() : main, files));
+    }
+    if (sub === "/why" || sub === "/history") {
+      const fpth = url.searchParams.get("path") ?? "";
+      const footer = { sha: MAIN, parent: OLD, kind: "merge", at: NOW - 60 * min, subject: "Fix the footer links", files: 2, merge: { landingId: "l1", intentId: "i_footer", attemptId: "at_f1", callsign: "PETREL-2", method: "merge", tests: { passed: 12, failed: 0 } } };
+      done(200);
+      // A slow answer, so loading states are visible in checks.
+      await new Promise((r) => setTimeout(r, 150));
+      if (sub === "/history") {
+        const steps = [
+          { ...footer, change: { status: "M", additions: 3, deletions: 1 } },
+          { sha: OLD, parent: OLDER, kind: "outside", at: NOW - 26 * 60 * min, subject: "Pull of outside changes", files: 4, change: { status: "M", additions: 10, deletions: 0 } },
+          { sha: OLDER, parent: "", kind: "root", at: NOW - 3 * 24 * 60 * min, subject: "Start shop", files: 0 },
+        ];
+        return send(res, 200, { path: fpth, steps, more: false, summary: `3 changes of ${fpth}. The newest is first.` });
+      }
+      const line = Number(url.searchParams.get("line") ?? 0);
+      const record = {
+        task: { id: "i_footer", title: "Fix the footer links", goal: "Fix the footer links.\n\nMore words.", constraints: [] },
+        plan: { steps: ["Read the footer", "Fix the link targets"], files: [fpth], approach: "Change the link targets only." },
+        summary: "Links fixed.",
+        agent: { callsign: "PETREL-2", model: null },
+        method: "merge",
+        changeRequests: [{ id: "c1", kind: "region", message: "Keep out of lines 40-44.", status: "acknowledged", ackNote: "Moved the change up." }],
+        conflictChecks: ["clear", "correct"],
+        tests: { passed: 12, failed: 0, failures: [] },
+        decision: { kind: "approve", by: "Robin", rationale: "Looks right." },
+      };
+      return send(res, 200, { path: fpth, ref: url.searchParams.get("ref") ?? "main", line, text: (main.get(fpth) ?? "").split("\n")[line - 1] ?? "", step: footer, record, summary: `Line ${line} of ${fpth} on main.` });
     }
     const lm = /^\/landings\/([^/]+)$/.exec(sub);
     if (lm) {

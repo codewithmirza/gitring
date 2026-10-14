@@ -197,6 +197,20 @@ for (const [w, h] of [
     ok((await page.locator(".cv-line.is-flash").count()) > 0, `${tag}: j moves to a mark`);
     ok((await focused(page)).cls.includes("cv-gut--btn"), `${tag}: j puts the focus on the mark`);
 
+    // "Why?" needs a selected line; "History" shows the changes of the file.
+    const whyOff = page.getByRole("button", { name: "Why?", exact: true });
+    ok((await whyOff.getAttribute("aria-disabled")) === "true", `${tag}: "Why?" waits for a selected line`);
+    await page.getByRole("button", { name: "History", exact: true }).click();
+    const hist = page.getByRole("dialog", { name: "The changes of src/cart.js" });
+    await hist.waitFor();
+    await hist.locator(".lh-step").first().waitFor();
+    ok((await hist.locator(".lh-step").count()) === 3, `${tag}: History lists the changes of the file`);
+    const recordHref = await hist.getByRole("link", { name: "Merge record" }).getAttribute("href");
+    ok(/^\/history\/l1(\?|$)/.test(recordHref ?? ""), `${tag}: a merge in the history links its record`, recordHref);
+    ok(await hist.getByText(/Main moved without a merge/).count(), `${tag}: a change without a merge says so`);
+    await page.keyboard.press("Escape");
+    ok(!(await hist.count()), `${tag}: Escape closes the history`);
+
     // Line selection in the address, and go to line.
     await page.locator('.cv-ln[data-n="20"]').click();
     await page.waitForURL(/#L20$/);
@@ -211,6 +225,22 @@ for (const [w, h] of [
     await lineBox.press("Enter");
     await page.waitForURL(/#L45$/);
     ok(true, `${tag}: l goes to a line`);
+
+    // Why is line 45 here: the merge that wrote it, with its record.
+    await page.getByRole("button", { name: "Why line 45?", exact: true }).click();
+    const why = page.getByRole("dialog", { name: "Why line 45 is here" });
+    await why.waitFor();
+    await why.getByRole("heading", { name: "Fix the footer links" }).waitFor();
+    l = await log();
+    ok(count(l, /\/why\?path=src%2Fcart\.js&ref=main&line=45/) === 1, `${tag}: one why request for the line on main`, JSON.stringify(l.filter((r) => r.path.includes("/why")).map((r) => r.path)));
+    const whyText = (await why.textContent()) ?? "";
+    ok(/Work of PETREL-2/.test(whyText) && /Change the link targets only/.test(whyText) && /Keep out of lines 40-44/.test(whyText), `${tag}: the answer names the agent, the plan and the change request`, whyText);
+    ok(/12 of 12 tests pass/.test(whyText) && /Robin decided: Looks right\./.test(whyText), `${tag}: the answer has the tests and the decision`, whyText);
+    const whyHref = await why.getByRole("link", { name: "Open the merge record" }).getAttribute("href");
+    ok(/^\/history\/l1(\?|$)/.test(whyHref ?? ""), `${tag}: the answer links the merge record`, whyHref);
+    ok(await why.getByRole("link", { name: `The file after ${MAIN.slice(0, 7)}` }).count(), `${tag}: the answer links the file after that merge`);
+    await page.keyboard.press("Escape");
+    ok(!(await why.count()), `${tag}: Escape closes the answer`);
 
     // More: the rare actions, in a menu that grows from its button.
     const more = page.getByRole("button", { name: "More" });
@@ -340,6 +370,13 @@ for (const [w, h] of [
     await page.goto(`${BASE}/code/main/src/cart.js?project=shop`, { waitUntil: "networkidle" });
     await page.locator(".cv-line").first().waitFor();
     await noOverflow(page, `${tag} cart.js`);
+    await page.getByRole("button", { name: "History", exact: true }).click();
+    const hist = page.getByRole("dialog", { name: "The changes of src/cart.js" });
+    await hist.locator(".lh-step").first().waitFor();
+    const hb = await hist.boundingBox();
+    ok(hb && hb.x >= 0 && hb.x + hb.width <= 375 + 1, `${tag}: the history fits the screen`, JSON.stringify(hb));
+    await noOverflow(page, `${tag} history`);
+    await page.keyboard.press("Escape");
     await page.locator('[aria-label="Show the code or the changes (d)"], .cv-refbtn').first().click();
     const sheet = page.getByRole("dialog");
     await sheet.first().waitFor();
