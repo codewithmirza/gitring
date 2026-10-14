@@ -6,7 +6,7 @@
 import type { Approval } from "./approvals";
 import type { Millis, Person } from "./basics";
 import type { CheckRun } from "./checks";
-import type { ChangeMeaning, Course, Footprint } from "./plans";
+import type { ChangeMeaning, Course, Footprint } from "./plan-and-changes";
 
 export type AttemptStatus =
   | "declared" // course declared, fork ready, no edits yet

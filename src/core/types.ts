@@ -27,7 +27,7 @@ export * from "./types/settings";
 export * from "./types/settings-defaults";
 export * from "./types/github";
 export * from "./types/tasks";
-export * from "./types/plans";
+export * from "./types/plan-and-changes";
 export * from "./types/work-copies";
 export * from "./types/checks";
 export * from "./types/approvals";

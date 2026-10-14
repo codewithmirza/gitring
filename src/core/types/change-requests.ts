@@ -5,7 +5,7 @@
  */
 import type { Millis } from "./basics";
 import type { RuleOfTheRoad } from "./conflict-check";
-import type { LineRange, SymbolKey } from "./plans";
+import type { LineRange, SymbolKey } from "./plan-and-changes";
 
 export type CorrectionKind =
   | "interface" // use the new signature of a symbol another vessel changes

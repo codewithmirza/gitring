@@ -4,7 +4,7 @@
  * Reached through `src/core/types.ts`, the front door. It has no runtime code.
  */
 import type { Range } from "./conflict-check";
-import type { SymbolKey } from "./plans";
+import type { SymbolKey } from "./plan-and-changes";
 import type { AttemptStatus } from "./work-copies";
 
 export interface TrafficVessel {

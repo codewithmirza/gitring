@@ -6,7 +6,7 @@
  */
 
 /*
- * The inbox of a person: everything that waits for that person in the projects where they may act.
+ * The kinds of item that wait in an inbox:
  *
  *   approval   a merge waits for a yes (an Approval that waits)
  *   stopped    a merge stopped several times, and a yes starts it again (an Approval with reason "merge-stopped")

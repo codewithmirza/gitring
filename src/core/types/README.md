@@ -12,7 +12,7 @@ These files hold types and a few small constants and functions. They have no dep
 | `settings-defaults.ts` | The default settings and `withDefaults`, which fills the fields that an old project lacks. |
 | `github.ts` | The optional GitHub link: sync settings, sync status and pull status. |
 | `tasks.ts` | A task (intent): its goal, its checks, its status and its amendments. |
-| `plans.ts` | A plan (course) and the real changes (footprint) of a work copy. |
+| `plan-and-changes.ts` | A plan (course) and the real changes (footprint) of a work copy. |
 | `work-copies.ts` | A work copy (attempt): one agent's work on one task, with every field gitring keeps. |
 | `checks.ts` | The result of one test run, and `noTestRan`, the rule for a run that tested nothing. |
 | `approvals.ts` | An approval: a merge that waits for a person to say yes. |

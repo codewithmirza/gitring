@@ -5,7 +5,7 @@
  * Reached through `src/core/types.ts`, the front door.
  */
 import type { Millis } from "./basics";
-import type { LineRange, SymbolKey } from "./plans";
+import type { LineRange, SymbolKey } from "./plan-and-changes";
 
 /**
  * Range: the distance between two pieces of work in the code graph.

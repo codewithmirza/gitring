@@ -2,7 +2,7 @@
  * The planned paid packs and their prices: one source for the waitlist page, the admin view and docs/PRICING.md.
  *
  * These are planned prices. Nothing is charged: gitring has no payment code.
- * The waitlist only learns which pack people would use. This is not the plan of an agent (see `types/plans.ts`).
+ * The waitlist only learns which pack people would use. This is not the plan of an agent (see `types/plan-and-changes.ts`).
  * No runtime dependencies.
  */
 

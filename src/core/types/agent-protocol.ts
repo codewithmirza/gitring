@@ -9,7 +9,7 @@ import type { AgentKind, Millis } from "./basics";
 import type { Correction, CorrectionKind } from "./change-requests";
 import type { CheckRun } from "./checks";
 import type { Verdict } from "./conflict-check";
-import type { SymbolKey } from "./plans";
+import type { SymbolKey } from "./plan-and-changes";
 import type { Landing, LandingMethod } from "./records";
 import type { Intent, IntentStatus } from "./tasks";
 import type { TrafficVessel } from "./traffic";
