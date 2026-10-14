@@ -42,7 +42,7 @@ export function MergePanel({
         toast({
           tone: "clear",
           title: `Merged into main ${shortSha(res.landing.mainAfter)}`,
-          text: `“${intent.title}” · ${METHOD_TEXT[res.landing.method] ?? res.landing.method}.`,
+          text: `“${intent.title}”. Method: ${METHOD_TEXT[res.landing.method] ?? res.landing.method}.`,
           action: { label: "Read the merge record", onClick: () => navigate(`/history/${res.landing!.id}`) },
         });
       } else {

@@ -231,17 +231,20 @@ export function Lane({ attempt: a, all, agent, intent, corrections, checks, name
       </section>
 
       <section className="lane__sec" aria-label="Change requests received">
-        <h3 className="lane__h">
-          Change requests <span className="ink-3 voice-agent">{corrections.length}</span>
-        </h3>
         {corrections.length === 0 ? (
+          // An empty list is one quiet line, not a heading with a zero.
           <p className="ink-3 lane__empty">No change requests. The plan had no conflict.</p>
         ) : (
-          <div className="lane__corrs">
-            {corrections.map((c) => (
-              <CorrectionNotice key={c.id} correction={c} to={callsign} from={c.standOnAttemptId ? names(c.standOnAttemptId) : undefined} check={checks.get(c.checkId)} nameOf={names} now={now} />
-            ))}
-          </div>
+          <>
+            <h3 className="lane__h">
+              Change requests <span className="ink-3 voice-agent">{corrections.length}</span>
+            </h3>
+            <div className="lane__corrs">
+              {corrections.map((c) => (
+                <CorrectionNotice key={c.id} correction={c} to={callsign} from={c.standOnAttemptId ? names(c.standOnAttemptId) : undefined} check={checks.get(c.checkId)} nameOf={names} now={now} />
+              ))}
+            </div>
+          </>
         )}
       </section>
 
