@@ -383,6 +383,11 @@ export class ArtifactsBackend implements RepoBackend {
     return c?.hash ?? null;
   }
 
+  /** The last commits of a branch (first parents), newest first. Empty for a branch that does not exist. */
+  private async recentCommits(repo: ArtifactsRepo, branch: string, limit = 20): Promise<string[]> {
+    return (await repo.log({ ref: branch, limit })).map((c) => c.hash);
+  }
+
   /** Remote URL + a cached short-lived write token secret + a fresh in-memory git dir. */
   private async session(name: string, repo: ArtifactsRepo): Promise<GitSession> {
     let url = this.remotes.get(name);
@@ -742,9 +747,11 @@ export class ArtifactsBackend implements RepoBackend {
       } catch (err) {
         const code = gitErrorCode(err);
         const rejected = code === "PushRejectedError" || code === "GitPushError";
-        // undefined: the tip cannot be read now. Then the note stays: an extra note is better than a merge without its note.
-        const now = await this.branchTip(repo, input.branch).catch(() => undefined);
-        if (now === prepared.sha) return { sha: prepared.sha, tree: prepared.tree };
+        // undefined: the branch cannot be read now. Then the note stays: an extra note is better than a merge without its note.
+        const recent = await this.recentCommits(repo, input.branch).catch(() => undefined);
+        // The answer got lost, but the branch holds the commit (maybe under a newer one): it landed, with its note.
+        if (recent?.includes(prepared.sha)) return { sha: prepared.sha, tree: prepared.tree };
+        const now = recent ? (recent[0] ?? null) : undefined;
         // The commit did not land: its note names a commit that no branch holds. Remove it again (best effort).
         if (input.note && now !== undefined) await this.pushNote(s.url, s.secret, prepared.sha, null).catch(() => undefined);
         if (rejected && now !== undefined && now !== expected) throw branchConflict(input, now);

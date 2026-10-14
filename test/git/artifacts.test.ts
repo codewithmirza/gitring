@@ -257,6 +257,30 @@ describe.skipIf(!hasGitHttpBackend())("ArtifactsBackend (fake binding + git http
       expect(gitIn(binding, "flaky-lost", ["rev-list", "--count", "main"])).toBe("2");
     });
 
+    it("keeps the note when the push landed and the answer got lost, also when a newer commit is on top", async () => {
+      const root = await repoWithRoot("flaky-note");
+      let pushes = 0;
+      let racer = "";
+      const f = flaky(async (req, _n, real) => {
+        if (req.method !== "POST" || !req.url.endsWith("git-receive-pack")) return undefined;
+        pushes += 1;
+        if (pushes !== 2) return undefined; // 1: the note, 2: the branch
+        const res = await real(req);
+        for await (const chunk of res.body ?? []) void chunk;
+        // The push landed. Before the answer comes back, another writer adds a commit on top.
+        const env = { GIT_AUTHOR_NAME: "Other", GIT_AUTHOR_EMAIL: "o@x", GIT_COMMITTER_NAME: "Other", GIT_COMMITTER_EMAIL: "o@x" };
+        const tip = gitIn(binding, "flaky-note", ["rev-parse", "main"]);
+        racer = gitIn(binding, "flaky-note", ["commit-tree", `${tip}^{tree}`, "-p", tip, "-m", "racer"], env);
+        gitIn(binding, "flaky-note", ["update-ref", "refs/heads/main", racer, tip]);
+        return answer(500);
+      });
+      const res = await backend({ http: f.client }).commit({ ...second("flaky-note", root), note: "note of second\n" });
+      expect(racer).toMatch(/^[0-9a-f]{40}$/);
+      expect(gitIn(binding, "flaky-note", ["rev-parse", "main^"])).toBe(res.sha);
+      // The commit is on main, so its note stays.
+      expect(await backend().readNote("flaky-note", res.sha)).toBe("note of second\n");
+    });
+
     it("sends the body of a push again unchanged", async () => {
       const root = await repoWithRoot("flaky-body");
       const bodies: string[] = [];
