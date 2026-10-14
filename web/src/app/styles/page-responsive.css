@@ -139,7 +139,7 @@
   .topbar .topbar__conn, .topbar .topbar__queue, .topbar .topbar__search, .topbar .topbar__themecycle { min-width: 40px; height: 40px; justify-content: center; }
   /* Room for the name and Sign in: a person with an account chooses the theme in the account menu, a live connection
      needs no badge, and people who only watch get no decisions button (the decisions page still lists them). */
-  .topbar .topbar__themecycle--spare { display: none; }
+  .topbar .topbar__themecycle--phone-hidden { display: none; }
   .topbar .topbar__conn--clear { display: none; }
   .topbar .topbar__queue--watch { display: none; }
   .topbar__projname { max-width: 120px; }
