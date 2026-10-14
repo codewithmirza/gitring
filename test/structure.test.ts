@@ -27,7 +27,6 @@ const TOO_LONG: Record<string, string> = {
   "src/worker/index.ts": "split it, then delete this line",
   "web/src/views/SettingsView.tsx": "split it, then delete this line",
   "web/src/views/DesignView.tsx": "split it, then delete this line",
-  "cli/gitring.mjs": "split it, then delete this line",
   "src/platform/repo/artifacts.ts": "split it, then delete this line",
   "src/directory/oauth.ts": "split it, then delete this line",
   "src/worker/mcp-github.ts": "split it, then delete this line",
@@ -95,7 +94,6 @@ const NO_HEADER = new Set([
 
 /** Folders with 4 or more source files and no README.md yet. */
 const NO_README = new Set([
-  "scripts",
   "src/core",
   "src/core/analysis",
   "src/core/coord",
