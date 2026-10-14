@@ -5,14 +5,14 @@
  * The answer form is bound to the browser that showed it, and the Worker refuses cross-site posts.
  * Read next: src/directory/device.ts (the codes) and src/worker/oauth.ts (the token route).
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
+import type { Hono } from "hono";
 import { directory, esc, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
 import { consentAccess, CORS, formOf } from "./oauth";
 import { basicAuth, SCOPE, type PendingDevice } from "../directory/oauth";
 import { formatUserCode, normalizeUserCode, DEVICE_TTL_S } from "../directory/device";
 import { randomToken, sameString } from "../directory/crypto";
 import { clientAddress } from "./limits";
+import type { C, HonoEnv } from "./http";
 
 /*
  * The routes:
@@ -28,9 +28,6 @@ import { clientAddress } from "./limits";
  * short-lived cookie holds a random value that the form carries too, and the Worker refuses cross-site
  * posts of a browser session.
  */
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
 
 const DEVICE_COOKIE = "__Host-gitring-device";
 const CLEAR_DEVICE_COOKIE = `${DEVICE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;

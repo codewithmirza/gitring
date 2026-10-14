@@ -4,16 +4,17 @@
  * gitring calls GitHub with the GitHub App user token of the person: GitHub shows only what the person may see.
  * Read next: src/platform/github/repos.ts (the list and the guess).
  */
-import type { Context, Hono } from "hono";
+import type { Hono } from "hono";
 import type { Env } from "./env";
 import type * as A from "../core/accounts";
-import { directory, type Principal } from "./auth";
+import { directory } from "./auth";
 import { GithubClient, GithubError } from "../platform/github/api";
 import { guessFromGithub, listUserRepos, type InstallationInfo } from "../platform/github/repos";
 import { projectSlug } from "../core/guess";
 import { githubRepoName } from "../core/repo-rules";
 import { guessModel } from "../platform/ai/guess";
 import { rand } from "../harbor/ids";
+import type { HonoEnv } from "./http";
 
 /*
  * The routes:
@@ -25,9 +26,6 @@ import { rand } from "../harbor/ids";
  * gitring calls GitHub with the person's GitHub App user token: GitHub shows only what the person may see.
  * The Directory keeps the token sealed and refreshes it; this isolate keeps it for a few minutes.
  */
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
 
 /* ───────────── user tokens (isolate cache) ───────────── */
 

@@ -4,11 +4,11 @@
  * Mounted by app.ts. Only an owner reads the list or lets a person in.
  * Read next: src/worker/gate.ts (who is kept out) and src/core/waitlist.ts.
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
-import { esc, forgetPrincipal, directory, page, type Principal } from "./auth";
+import type { Hono } from "hono";
+import { esc, forgetPrincipal, directory, page } from "./auth";
 import { gateOn, waitlistCsv } from "../core/waitlist";
 import { PLANS, priceLabel } from "../core/plans";
+import type { C, HonoEnv } from "./http";
 
 /*
  * The routes:
@@ -24,9 +24,6 @@ import { PLANS, priceLabel } from "../core/plans";
  *   GET    /admin/waitlist          owner: the same as a page, with forms (no script)
  *   GET    /api/projects/:p/usage   the counters of use of a project in a month
  */
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
 
 function owner(c: C): boolean {
   const p = c.get("principal");

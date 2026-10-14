@@ -5,13 +5,13 @@
  * that started it with a short-lived cookie, so that a link to it does not work elsewhere.
  * Read next: the table of routes below.
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
+import type { Hono } from "hono";
 import { closeUserSockets, directory, esc, forgetPrincipal, lastProvider, page, readCookie, signInChoices, type Principal } from "./auth";
 import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
 import { CLI_CLIENT_ID, DEVICE_GRANT } from "../directory/device";
 import { randomToken, sameString } from "../directory/crypto";
 import { clientAddress } from "./limits";
+import type { C, HonoEnv } from "./http";
 
 /*
  * The routes:
@@ -30,9 +30,6 @@ import { clientAddress } from "./limits";
  * The logic lives in the Directory (src/directory/oauth.ts). A pending authorization is bound to the
  * browser that started it with a short-lived cookie, so that a link to it does not work elsewhere.
  */
-
-type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
-type C = Context<HonoEnv>;
 
 const REQUEST_COOKIE = "__Host-gitring-oauth";
 
