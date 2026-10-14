@@ -72,7 +72,8 @@ export const RULE_TEXT: Record<RuleOfTheRoad | "human", string> = {
   "R4-first-declared-stands-on": "The first plan has priority",
   "R5-priority-stands-on": "The high-priority task has priority",
   "R6-smaller-gives-way": "The smaller change adapts",
-  human: "A person changed the task",
+  // A person decided: a send-back, a changed task, a line request, or the answer to "which work adapts".
+  human: "A person decided",
 };
 
 export function ruleLabel(rule: RuleOfTheRoad | "human" | undefined): string {

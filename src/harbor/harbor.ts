@@ -3283,18 +3283,23 @@ export class HarborMaster extends DurableObject<Env> {
           )
         : undefined;
       message = d ? (sent ? `${option.label}. ${this.callsign(d.attemptId) ?? "The agent"} gets a change request.` : `${option.label}. The work that adapts is closed, so no change request went out.`) : "Both agents continue. Nothing changes.";
-    } else if (option.id === "park") {
-      await this.park(q.intentId, note || "A person paused the task after the work did not merge.", by);
-      message = "The task is paused.";
     } else {
-      const a = this.attempts.get(q.attemptIds[0]);
-      if (!a) throw new Error("The work copy of this question is gone.");
-      if (intent?.status === "judging") {
-        intent.status = "underway";
-        this.putIntent(intent);
+      try {
+        if (option.id === "park") {
+          await this.park(q.intentId, note || "A person paused the task after the work did not merge.", by);
+          message = "The task is paused.";
+        } else {
+          const a = this.attempts.get(q.attemptIds[0]);
+          if (!a) throw new Error("The work copy of this question is gone.");
+          const res = await this.rederive(a.id, note ? `A person asked for a redo: ${note}` : "A person asked for a redo on the new main.", by);
+          message = `A built-in agent does "${intent?.title ?? "the task"}" again on the new main.${res.attempt.waitsForBudget ? " It starts when the hourly AI budget has room." : ""}`;
+        }
+      } catch (err) {
+        // When nothing happened (no redo started), the question waits again, and the person sees why.
+        const started = [...this.attempts.values()].some((x) => x.lineage.rederivedFrom === q.attemptIds[0]);
+        if (!started && this.questions.get(questionId)?.status === "answered") this.putQuestion({ ...q, status: "open" });
+        throw err;
       }
-      const res = await this.rederive(a.id, note ? `A person asked for a redo: ${note}` : "A person asked for a redo on the new main.", by);
-      message = `A built-in agent does "${intent?.title ?? "the task"}" again on the new main.${res.attempt.waitsForBudget ? " It starts when the hourly AI budget has room." : ""}`;
     }
     this.addLog({ kind: "decision", intentId: q.intentId, attemptId: q.attemptIds[0], message: `${who.name} answers the question about "${intent?.title ?? "a task"}": ${rationale}` });
     this.webhook("question", { question: this.questions.get(questionId), task: intent?.title ?? "", link: this.questionLink(q) });
