@@ -12,7 +12,7 @@ import { readTar, type TarItem } from "../../src/platform/checks/tar";
 import type { FileChange } from "../../src/platform/repo/backend";
 import { sqliteCtx } from "../support/sqlite-storage";
 import { steViolations } from "../coord/ste";
-import { MAX_CARRY_FILE_BYTES } from "../../src/core/land/carry";
+import { MAX_CARRY_FILE_BYTES, MAX_CARRY_TOTAL_BYTES } from "../../src/core/land/carry";
 import { CrashWorld } from "./crash-world";
 
 const ROBIN = { name: "Robin", email: "robin@agents.gitring.invalid" };
@@ -109,23 +109,50 @@ describe("git mode carries every change of the push", () => {
     expect(diff.files.find((f) => f.path === "scripts/tool.sh")).toMatchObject({ status: "M", diff: "Mode changes to 100755." });
   });
 
-  it("leaves out a file larger than the limit, says so, and merges the rest", async () => {
+  it("leaves out a file over the limit of one file, and the files past the limit of one merge, says so, and merges the rest", async () => {
     const w = new CrashWorld();
     await w.start({ files: [{ path: "src/a.js", text: "export const a = 1;\n" }, TEST_FILE], settings: { landing: "automatic" } });
     const t = await declareGit(w, "video");
-    const video = new Uint8Array(MAX_CARRY_FILE_BYTES + 1);
-    video[0] = 0; // binary
+    const video = new Uint8Array(MAX_CARRY_FILE_BYTES + 1); // zeros: binary
+    // Two files under the limit of one file, but over the limit of one merge together.
+    const first = new Uint8Array(MAX_CARRY_FILE_BYTES - 1_000_000).fill(1);
+    const second = new Uint8Array(MAX_CARRY_TOTAL_BYTES - first.length + 1_000_000).fill(2);
+    first[0] = second[0] = 0;
     await push(w, t.fork, [
       { path: "media/intro.mp4", content: video },
+      { path: "media/a.bin", content: first },
+      { path: "media/b.bin", content: second },
       { path: "src/a.js", content: "export const a = 3;\n" },
     ]);
     const res = await w.harbor.submit(t.attemptId, "Add the video");
-    expect(res.message).toContain("gitring does not merge media/intro.mp4 (25 MB). The limit for one file is 25 MB.");
+    expect(res.message).toContain("gitring does not merge media/intro.mp4 (10 MB). The limit for one file is 10 MB.");
+    expect(res.message).toContain("gitring does not merge media/b.bin (8 MB). One merge carries at most 16 MB of files without text.");
+    expect(steViolations(res.message)).toEqual([]);
     await w.settle();
     expect(w.status(t.attemptId)).toBe("landed");
     const main = await mainSnapshot(w);
     expect(main.has("media/intro.mp4")).toBe(false);
+    expect(main.has("media/b.bin")).toBe(false);
+    expect(main.get("media/a.bin")!.sha).toBe(await hashObject("blob", first));
     expect(await w.harbor.file("main", "src/a.js")).toBe("export const a = 3;\n");
+  });
+
+  it("does not merge a binary file that main and the work both changed: the work goes back to its agent", async () => {
+    const w = new CrashWorld();
+    await w.start({ files: [{ path: "src/a.js", text: "export const a = 1;\n" }, TEST_FILE, { path: "img/logo.png", base64: b64(PNG) } as never], settings: { landing: "automatic" } });
+    const alpha = await declareGit(w, "a red logo");
+    const beta = await declareGit(w, "a blue logo");
+    await push(w, alpha.fork, [{ path: "img/logo.png", content: new Uint8Array([...PNG, 1]) }]);
+    await push(w, beta.fork, [{ path: "img/logo.png", content: new Uint8Array([...PNG, 2]) }]);
+    await w.harbor.submit(alpha.attemptId, "Red logo");
+    await w.settle();
+    expect(w.status(alpha.attemptId)).toBe("landed");
+
+    await w.harbor.submit(beta.attemptId, "Blue logo");
+    await w.settle();
+    expect(w.status(beta.attemptId)).toBe("underway");
+    expect(w.inner.logs.some((l) => l.message.includes("img/logo.png (binary)"))).toBe(true);
+    expect(await w.repo.readBlob(w.mainRepo, (await mainSnapshot(w)).get("img/logo.png")!.sha)).toEqual(new Uint8Array([...PNG, 1]));
   });
 
   it("does not keep the bytes of a file when its text is not exactly the blob (Latin-1)", async () => {

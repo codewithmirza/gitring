@@ -6,6 +6,7 @@
  *   generated  a new folder of tool output (node_modules, caches) that main does not have
  *   many       a new vendored or built folder (vendor, dist, build, out) with too many files
  *   large      a file larger than MAX_CARRY_FILE_BYTES (the harbor reads the size)
+ *   total      a file past MAX_CARRY_TOTAL_BYTES of files without text in one merge
  *   submodule  a submodule entry (gitring cannot merge submodules)
  *
  * A folder that main already has is carried as it is. Paths that an agent wrote one by one (gitring_write,
@@ -16,18 +17,24 @@ import { opaqueFolder } from "../repo-rules";
 
 /** A new vendored or built folder with more files than this stays out of the merge. */
 export const MAX_NEW_FOLDER_FILES = 200;
-/** A file larger than this stays out of the merge (and out of the test container). */
-export const MAX_CARRY_FILE_BYTES = 25_000_000;
+/**
+ * A file larger than this stays out of the merge (and out of the test container). A merge holds the bytes
+ * of each file without text in the memory of the project object (128 MB) up to three times: the file, the
+ * git object, the pack. The two limits keep a merge far below that memory.
+ */
+export const MAX_CARRY_FILE_BYTES = 10_000_000;
+/** One merge carries at most this many bytes of files without text. The files past it stay out. */
+export const MAX_CARRY_TOTAL_BYTES = 16_000_000;
 
 const GITLINK_MODE = "160000";
 
 export interface NotCarried {
   /** A file, or a folder with a final "/". */
   path: string;
-  why: "generated" | "many" | "large" | "submodule";
+  why: "generated" | "many" | "large" | "total" | "submodule";
   /** Files in the folder that stay out. */
   files?: number;
-  /** Size of the file (large). */
+  /** Size of the file (large, total). */
   bytes?: number;
 }
 
@@ -77,6 +84,21 @@ export function planCarry(base: Snapshot, work: Snapshot, explicit: ReadonlySet<
   return { work: drop.length ? withoutChanges(base, work, drop) : work, notCarried };
 }
 
+/**
+ * Which changed files without text stay out because of their size: a file larger than MAX_CARRY_FILE_BYTES,
+ * and the files past MAX_CARRY_TOTAL_BYTES in path order. `sized`: each changed file and its size.
+ */
+export function overSize(sized: { path: string; bytes: number }[]): NotCarried[] {
+  const out: NotCarried[] = [];
+  let total = 0;
+  for (const f of [...sized].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
+    if (f.bytes > MAX_CARRY_FILE_BYTES) out.push({ path: f.path, why: "large", bytes: f.bytes });
+    else if (total + f.bytes > MAX_CARRY_TOTAL_BYTES) out.push({ path: f.path, why: "total", bytes: f.bytes });
+    else total += f.bytes;
+  }
+  return out;
+}
+
 function sizeWord(bytes: number): string {
   return `${Math.round(bytes / 100_000) / 10} MB`;
 }
@@ -91,7 +113,9 @@ export function notCarriedText(items: NotCarried[], forAgent = true): string {
     const count = n.files !== undefined ? ` (${n.files} file${n.files === 1 ? "" : "s"})` : "";
     if (n.why === "generated") return `gitring does not merge ${n.path}${count}. Tools make these files, and main does not have this folder.`;
     if (n.why === "many") return `gitring does not merge ${n.path}${count}. The new folder has more than ${MAX_NEW_FOLDER_FILES} files.`;
-    if (n.why === "large") return `gitring does not merge ${n.path}${n.bytes ? ` (${sizeWord(n.bytes)})` : ""}. The limit for one file is ${sizeWord(MAX_CARRY_FILE_BYTES)}.`;
+    const size = n.bytes ? ` (${sizeWord(n.bytes)})` : "";
+    if (n.why === "large") return `gitring does not merge ${n.path}${size}. The limit for one file is ${sizeWord(MAX_CARRY_FILE_BYTES)}.`;
+    if (n.why === "total") return `gitring does not merge ${n.path}${size}. One merge carries at most ${sizeWord(MAX_CARRY_TOTAL_BYTES)} of files without text. Add it in a different task.`;
     return `gitring does not merge the submodule ${n.path}.`;
   });
   const more = items.length > 6 ? ` ${items.length - 6} more parts of the work do not merge.` : "";

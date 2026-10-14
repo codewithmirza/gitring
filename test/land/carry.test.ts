@@ -3,7 +3,7 @@
  * and that gitring names to the agent.
  */
 import { describe, expect, it } from "vitest";
-import { MAX_NEW_FOLDER_FILES, notCarriedText, planCarry, withoutChanges } from "../../src/core/land/carry";
+import { MAX_CARRY_FILE_BYTES, MAX_CARRY_TOTAL_BYTES, MAX_NEW_FOLDER_FILES, notCarriedText, overSize, planCarry, withoutChanges } from "../../src/core/land/carry";
 import type { Snapshot } from "../../src/core/git/snapshot";
 import { opaqueFolder } from "../../src/core/repo-rules";
 import { steViolations } from "../coord/ste";
@@ -89,16 +89,37 @@ describe("planCarry", () => {
   });
 });
 
+describe("overSize", () => {
+  it("leaves out a file over the limit of one file, then the files past the limit of one merge in path order", () => {
+    const half = MAX_CARRY_TOTAL_BYTES / 2;
+    expect(
+      overSize([
+        { path: "c.bin", bytes: half },
+        { path: "huge.mp4", bytes: MAX_CARRY_FILE_BYTES + 1 },
+        { path: "a.bin", bytes: half },
+        { path: "b.bin", bytes: 1 },
+        { path: "d.png", bytes: 0 },
+      ]),
+    ).toEqual([
+      { path: "c.bin", why: "total", bytes: half },
+      { path: "huge.mp4", why: "large", bytes: MAX_CARRY_FILE_BYTES + 1 },
+    ]);
+    expect(overSize([{ path: "a.bin", bytes: MAX_CARRY_FILE_BYTES }])).toEqual([]);
+  });
+});
+
 describe("notCarriedText", () => {
   it("names each part in short sentences, and says what the agent can do", () => {
     const text = notCarriedText([
       { path: "node_modules/", why: "generated", files: 3412 },
       { path: "build/", why: "many", files: 250 },
       { path: "assets/movie.mp4", why: "large", bytes: 41_200_000 },
+      { path: "assets/more.png", why: "total", bytes: 3_000_000 },
       { path: "ext", why: "submodule" },
     ]);
     expect(text).toContain("gitring does not merge node_modules/ (3412 files).");
-    expect(text).toContain("gitring does not merge assets/movie.mp4 (41.2 MB).");
+    expect(text).toContain("gitring does not merge assets/movie.mp4 (41.2 MB). The limit for one file is 10 MB.");
+    expect(text).toContain("gitring does not merge assets/more.png (3 MB). One merge carries at most 16 MB of files without text. Add it in a different task.");
     expect(text).toContain("gitring does not merge the submodule ext.");
     expect(text.endsWith("Remove these paths from your work if you do not need them.")).toBe(true);
     expect(steViolations(text)).toEqual([]);

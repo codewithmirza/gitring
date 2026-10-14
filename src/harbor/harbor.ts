@@ -44,7 +44,7 @@ import {
 import { computeRange, shapeFromFootprint } from "../core/analysis/range";
 import { buildBriefClefRequest } from "../core/coord/clef-brief";
 import { compose } from "../core/land/compose";
-import { MAX_CARRY_FILE_BYTES, notCarriedText, planCarry, withoutChanges, type NotCarried } from "../core/land/carry";
+import { MAX_CARRY_FILE_BYTES, MAX_CARRY_TOTAL_BYTES, notCarriedText, overSize, planCarry, withoutChanges, type NotCarried } from "../core/land/carry";
 import { merge3 } from "../core/text/merge3";
 import { landingMessage, landingNote, intentFile, parseTrailers } from "../core/logbook";
 import { MAX_TEXT_BYTES, MAX_TEXT_FILES, githubRepoName, normalizeGitUrl, publicHostname, textEligible } from "../core/repo-rules";
@@ -111,11 +111,16 @@ const LANDING_LEASE_MS = 5 * 60_000;
 const MAX_LANDING_STARTS = 4;
 /** What people and agents read when the gitring test harness ran no test (nothing is verified). */
 const NO_TEST_RAN = "No test ran. A person must decide to merge.";
-/** Bytes that one blob reader keeps after a read (a merge reads a file for its size, then for the commit). */
-const READER_CACHE_BYTES = 64_000_000;
+/**
+ * Bytes that one blob reader keeps after a read (a merge reads a file for its size, then for the commit).
+ * The project object has 128 MB of memory: these limits, and MAX_CARRY_TOTAL_BYTES, keep a merge far below it.
+ */
+const READER_CACHE_BYTES = MAX_CARRY_TOTAL_BYTES;
 /** The test container gets at most this many bytes of files without text, and reads at most this many such files. */
-const MAX_TEST_TREE_BYTES = 64_000_000;
+const MAX_TEST_TREE_BYTES = 16_000_000;
 const MAX_TEST_TREE_READS = 5000;
+/** Blobs of unknown size that gitring reads at once (it learns the size of a blob only when it reads it). */
+const SIZE_READS = 4;
 
 /** Reads blobs for a merge (see HarborMaster.blobReader). */
 interface BlobReader {
@@ -766,22 +771,25 @@ export class HarborMaster extends DurableObject<Env> {
   /** The parts of the work of a work copy that do not merge, and why. */
   private async leftOut(a: T.Attempt): Promise<NotCarried[]> {
     const view = await this.attemptView(a);
+    if (!view.opaque.length) return view.notCarried;
     return [...view.notCarried, ...(await this.largeChanges(view, await this.workReader(a, view)))];
   }
 
-  /** Changes of the work that are too large to carry (the size of each changed file without text). */
+  /**
+   * Changes of the work that are too large to carry (see overSize): the size of each changed file without
+   * text. A mode change counts too, because the merge writes the bytes of the file again.
+   */
   private async largeChanges(view: AttemptView, reader: BlobReader): Promise<NotCarried[]> {
-    const out: NotCarried[] = [];
-    const sized = view.opaque.filter((c) => c.status !== "D" && c.newSha && c.newSha !== c.oldSha && c.mode !== "160000");
-    for (let i = 0; i < sized.length; i += 16) {
+    const sized = view.opaque.filter((c) => c.status !== "D" && c.newSha && c.mode !== "160000");
+    const sizes: { path: string; bytes: number }[] = [];
+    for (let i = 0; i < sized.length; i += SIZE_READS) {
       await Promise.all(
-        sized.slice(i, i + 16).map(async (c) => {
-          const size = this.blobSizes.get(c.newSha!) ?? (await reader.readBytes(c.newSha!))?.length ?? 0;
-          if (size > MAX_CARRY_FILE_BYTES) out.push({ path: c.path, why: "large", bytes: size });
+        sized.slice(i, i + SIZE_READS).map(async (c) => {
+          sizes.push({ path: c.path, bytes: this.blobSizes.get(c.newSha!) ?? (await reader.readBytes(c.newSha!))?.length ?? 0 });
         }),
       );
     }
-    return out.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+    return overSize(sizes);
   }
 
   /**
@@ -791,23 +799,28 @@ export class HarborMaster extends DurableObject<Env> {
   private async fullTree(snapshot: Snapshot, reader: BlobReader): Promise<{ files: Map<string, PackFile>; left: string[] }> {
     const files = new Map<string, PackFile>();
     const left: string[] = [];
-    let bytes = 0;
-    let reads = 0;
+    // Text that gitring holds first; the other files are read from the repositories, a few at a time.
+    const blobs: [string, { sha: string; mode: string }][] = [];
     const entries = [...snapshot].filter(([, e]) => e.mode !== "160000");
-    for (let i = 0; i < entries.length; i += 24) {
+    for (let i = 0; i < entries.length; i += 64) {
       await Promise.all(
-        entries.slice(i, i + 24).map(async ([path, e]) => {
+        entries.slice(i, i + 64).map(async ([path, e]) => {
           const text = await reader.knownText(e.sha);
-          if (typeof text === "string") {
-            files.set(path, { content: text, mode: e.mode });
-            return;
-          }
+          if (typeof text === "string") files.set(path, { content: text, mode: e.mode });
+          else blobs.push([path, e]);
+        }),
+      );
+    }
+    blobs.sort((x, y) => (x[0] < y[0] ? -1 : 1));
+    let bytes = 0;
+    for (let i = 0; i < blobs.length; i += SIZE_READS) {
+      await Promise.all(
+        blobs.slice(i, i + SIZE_READS).map(async ([path, e], j) => {
           const size = this.blobSizes.get(e.sha);
-          if (reads >= MAX_TEST_TREE_READS || (size !== undefined && (size > MAX_CARRY_FILE_BYTES || bytes + size > MAX_TEST_TREE_BYTES))) {
+          if (i + j >= MAX_TEST_TREE_READS || (size !== undefined && (size > MAX_CARRY_FILE_BYTES || bytes + size > MAX_TEST_TREE_BYTES))) {
             left.push(path);
             return;
           }
-          reads += 1;
           const content = await reader.readBytes(e.sha);
           if (!content || content.length > MAX_CARRY_FILE_BYTES || bytes + content.length > MAX_TEST_TREE_BYTES) {
             left.push(path);
