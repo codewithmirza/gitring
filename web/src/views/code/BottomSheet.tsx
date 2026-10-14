@@ -3,12 +3,33 @@
  * It does not cover the line that it explains: the code gets room above it, and the line scrolls into that strip.
  * Tapping the code does not close it, so a person can tap another line number and read the next answer.
  * Close with the button or Escape. The sheet is not modal. Used by LineHistory.tsx. Styles: history.css.
+ * The sheet covers the bottom bar and the question card. While it is open, Tab skips the controls under it.
  */
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { popoverOpen } from "../../design/components";
 import { Icon } from "../../design/icons";
 import { revealLine } from "./view/whyLine";
+
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Marks the controls that the sheet covers (the bottom bar, the question card) as inert, so that Tab never stops on a
+ * control that nobody can see. The code view keeps its own controls: its lines scroll under the sheet. Returns the undo.
+ */
+function hideCovered(sheet: HTMLElement): () => void {
+  const top = sheet.getBoundingClientRect().top;
+  const covered: HTMLElement[] = [];
+  for (const el of document.querySelectorAll<HTMLElement>(FOCUSABLE)) {
+    if (sheet.contains(el) || el.closest(".cv") || el.closest("[inert]")) continue;
+    const box = el.getBoundingClientRect();
+    if (box.height > 0 && box.top + box.height / 2 > top) {
+      el.setAttribute("inert", "");
+      covered.push(el);
+    }
+  }
+  return () => covered.forEach((el) => el.removeAttribute("inert"));
+}
 
 export function BottomSheet({ open, onClose, label, title, returnTo, keepInView, children }: {
   open: boolean;
@@ -56,8 +77,11 @@ export function BottomSheet({ open, onClose, label, title, returnTo, keepInView,
     const sheet = box.current;
     if (!open || !sheet) return;
     const root = document.documentElement;
+    let undo = () => {};
     const settle = () => {
       root.style.setProperty("--why-sheet-h", `${Math.round(sheet.getBoundingClientRect().height)}px`);
+      undo();
+      undo = hideCovered(sheet);
       if (keepInView) requestAnimationFrame(() => revealLine(keepInView, sheet.getBoundingClientRect().top));
     };
     settle();
@@ -65,6 +89,7 @@ export function BottomSheet({ open, onClose, label, title, returnTo, keepInView,
     watch?.observe(sheet);
     return () => {
       watch?.disconnect();
+      undo();
       root.style.removeProperty("--why-sheet-h");
     };
   }, [open, keepInView]);
