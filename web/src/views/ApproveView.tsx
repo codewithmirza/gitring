@@ -161,7 +161,7 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
           ))}
           {outcome.note && (
             <p className="approve__outcomenote voice-human">
-              <span className="approve__opt">Note · </span>
+              <span className="approve__opt">Note: </span>
               {outcome.note}
             </p>
           )}
@@ -186,7 +186,7 @@ function AnswerPanel({ attempt, phase, outcome, signedIn, mayAnswer, reason, not
       ) : (
         <div className="approve__form">
           <Button variant="primary" icon="merge" block busy={sending === "approve"} disabled={busy && sending !== "approve"} onClick={() => onSend("approve", "")}>
-            Yes, merge it
+            Yes, merge
           </Button>
           {!showNote && (
             <Button ref={toggle} block aria-expanded={false} onClick={() => setNoteOpen(true)}>
@@ -360,15 +360,14 @@ function Question({ attempt }: { attempt: Attempt }) {
           <Callsign callsign={callsign} color={agent?.color ?? 0} model={agent?.model} size="md" /> {waiting ? "asks" : "asked"} to merge this into main
         </p>
         <p className="approve__meta">
-          {attempt.sender ? <>Sent by {attempt.sender.name}</> : <>No person sent this agent</>}
+          <span>{attempt.sender ? <>Sent by {attempt.sender.name}</> : <>No person sent this agent</>}</span>
           {asked && (
-            <>
-              {" · "}
+            <span>
               Asked{" "}
               <time dateTime={asked.toISOString()} title={asked.toLocaleString()}>
                 {ago(asked.getTime(), now)}
               </time>
-            </>
+            </span>
           )}
         </p>
         {waiting && (
@@ -398,13 +397,16 @@ function Question({ attempt }: { attempt: Attempt }) {
               Size and tests
             </h2>
             <p className="approve__line">{approvalLine(attempt)}</p>
-            <EvidenceBar run={attempt.checks} checking={attempt.status === "checking" || attempt.status === "submitted"} pending={intent.checks.length * 4} label="Alone" />
+            <EvidenceBar run={attempt.checks} checking={attempt.status === "checking" || attempt.status === "submitted"} pending={intent.checks.length * 4} label="Tests in the work copy" />
             {attempt.composedChecks && <EvidenceBar run={attempt.composedChecks} label="Combined with main" showFailures />}
           </section>
 
           <section className="approve__sec" aria-labelledby={`${h1}-change`}>
             <h2 className="approve__h" id={`${h1}-change`}>
-              The change <span className="approve__count voice-agent">{plural(files, "file")} · +{attempt.stats.additions} −{attempt.stats.deletions}</span>
+              The change{" "}
+              <span className="approve__count voice-agent">
+                <span>{plural(files, "file")}</span> <span>+{attempt.stats.additions}</span> <span>−{attempt.stats.deletions}</span>
+              </span>
             </h2>
             <p className="approve__tools">
               <Link to={codeHref(attempt.id, undefined, { diff: true })}>Open in code</Link>
@@ -428,7 +430,7 @@ function Question({ attempt }: { attempt: Attempt }) {
             )}
             {attempt.summary && (
               <p className="approve__summary">
-                <span className="approve__opt">Summary · </span>
+                <span className="approve__opt">Summary: </span>
                 <span className="voice-agent">{attempt.summary}</span>
               </p>
             )}

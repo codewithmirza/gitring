@@ -2,8 +2,8 @@
  * The history page: every merge into main, newest first, with its reasons.
  *
  * Dense rows are grouped by day. A filter (task, agent or file) narrows them; j and k move between rows; each row links
- * to the files it changed in the code view. A merge opens its record (logbook/WhyTrail.tsx): task, plan, change requests,
- * conflict checks, tests, decision, diff and commit. Records never change, so they load once and stay in memory; a
+ * to the files it changed in the code view. A merge opens its merge record (logbook/WhyTrail.tsx): task, plan, change requests,
+ * conflict checks, tests, decision, diff and commit. Merge records never change, so they load once and stay in memory; a
  * record also starts to load when the pointer or the focus rests on its row.
  */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -121,7 +121,7 @@ export function LogbookView({ id }: { id?: string }) {
               <h1 className="page__title" id="logbook-title" tabIndex={-1}>
                 History
               </h1>
-              <p className="page__lede">Every merge into main, with its reasons: task, plan, change requests, tests and decision. Open a merge to read its record.</p>
+              <p className="page__lede">Every merge into main, with its reasons: task, plan, change requests, tests and decision. Open a merge to read its merge record.</p>
             </>
           )}
           {rows.length > 0 && (
@@ -150,8 +150,13 @@ export function LogbookView({ id }: { id?: string }) {
               />
               {!compact && (
                 <span className="logbook__keys ink-3" aria-hidden="true">
-                  <kbd className="b-kbd">j</kbd>
-                  <kbd className="b-kbd">k</kbd> move · <kbd className="b-kbd">Enter</kbd> open
+                  <span>
+                    <kbd className="b-kbd">j</kbd>
+                    <kbd className="b-kbd">k</kbd> move
+                  </span>
+                  <span>
+                    <kbd className="b-kbd">Enter</kbd> open
+                  </span>
                 </span>
               )}
               {q && (
@@ -175,7 +180,7 @@ export function LogbookView({ id }: { id?: string }) {
         )}
         {rows.length === 0 ? (
           <EmptyState
-            text={canAct ? "No merges yet. Write a task: agents send plans, gitring checks them and merges work when its tests pass." : "No merges yet. gitring writes a record here for each merge."}
+            text={canAct ? "No merges yet. Write a task: agents send plans, gitring checks them and merges work when its tests pass." : "No merges yet. gitring writes a merge record here for each merge."}
             action={
               canAct ? (
                 <Button variant="primary" icon="plus" onClick={() => openNewIntent()}>

@@ -1,6 +1,6 @@
 /**
- * The record of one merge, step by step: task, plan, change requests, conflict checks, tests, decision, diff and commit.
- * The record loads once (it never changes) and aborts when the row closes.
+ * The merge record of one merge, step by step: task, plan, change requests, conflict checks, tests, decision, diff and commit.
+ * The record loads once (it never changes) and aborts when the row closes. Internal ids show only in "Show the raw merge record".
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, Callsign, CodeBlock, CorrectionNotice, DiffView, EmptyState, EvidenceBar, MethodBadge } from "../../design/components";
@@ -18,7 +18,7 @@ import { openInApp, withProject } from "./links";
 
 /* ───────────── parts of the record ───────────── */
 
-function Step({ icon, title, children, tone, id }: { icon: IconName; title: string; children: ReactNode; tone?: string; id: string }) {
+function Step({ icon, title, children, tone, id }: { icon: IconName; title: ReactNode; children: ReactNode; tone?: string; id: string }) {
   return (
     <li className={["trail__step", tone && `is-${tone}`].filter(Boolean).join(" ")} aria-labelledby={`trail-${id}`}>
       <span className="trail__marker" aria-hidden="true">
@@ -66,7 +66,24 @@ function DiffSkeleton() {
   );
 }
 
-/* ───────────── the why-record of one merge ───────────── */
+/** A step title with its small fact (a version, a count) apart from the words. */
+function titleWith(words: string, fact: string | number): ReactNode {
+  return (
+    <>
+      {words} <span className="trail__fact voice-agent">{fact}</span>
+    </>
+  );
+}
+
+/** The commit message in two parts: the text that people read, and the `Gitring-…` lines (ids and settings) at its end. */
+function splitTrailers(message: string): { body: string; hasTrailers: boolean } {
+  const paragraphs = message.trimEnd().split("\n\n");
+  const last = paragraphs[paragraphs.length - 1] ?? "";
+  const isTrailer = paragraphs.length > 1 && last.split("\n").every((line) => /^Gitring-[A-Za-z-]+: /.test(line));
+  return { body: isTrailer ? paragraphs.slice(0, -1).join("\n\n") : message.trimEnd(), hasTrailers: isTrailer };
+}
+
+/* ───────────── the merge record of one merge ───────────── */
 
 export function WhyTrail({ id }: { id: string }) {
   const now = useNow(15_000);
@@ -115,6 +132,8 @@ export function WhyTrail({ id }: { id: string }) {
   const total = landing.checks.passed + landing.checks.failed;
   const note = detail?.note;
   const noteText = typeof note === "string" ? note : note ? JSON.stringify(note, null, 2) : "";
+  const message = splitTrailers(landing.message);
+  const goalChanges = intent?.amendments.length ?? 0;
 
   return (
     <article className="why" aria-labelledby="why-title">
@@ -143,7 +162,7 @@ export function WhyTrail({ id }: { id: string }) {
       </header>
 
       <ol className="trail">
-        <Step icon="amend" title={`Task · v${intent?.version ?? 1}`} id="intent">
+        <Step icon="amend" title={titleWith("Task", `v${intent?.version ?? 1}`)} id="intent">
           <p className="voice-human why__goal">{intent?.goal.replace(/`/g, "")}</p>
           {intent && intent.constraints.length > 0 && (
             <ul className="why__constraints">
@@ -152,8 +171,18 @@ export function WhyTrail({ id }: { id: string }) {
               ))}
             </ul>
           )}
+          <dl className="why__facts">
+            <dt>Opened by</dt>
+            <dd>{intent?.createdBy.name}</dd>
+            {goalChanges > 0 && (
+              <>
+                <dt>Goal changed</dt>
+                <dd>{plural(goalChanges, "time")}</dd>
+              </>
+            )}
+          </dl>
           <p className="why__meta">
-            Opened by {intent?.createdBy.name} · {plural(intent?.amendments.length ?? 0, "change")} to the task · <Link to={`/tasks/${landing.intentId}`}>Open the task</Link>
+            <Link to={`/tasks/${landing.intentId}`}>Open the task</Link>
           </p>
         </Step>
 
@@ -180,15 +209,19 @@ export function WhyTrail({ id }: { id: string }) {
                   ))}
                 </ol>
               </details>
-              <p className="why__meta">
-                Plan sent at {clock(attempt.course.declaredAt)} on base <span className="voice-agent">{shortSha(attempt.baseSha)}</span> · files{" "}
-                <span className="voice-agent">{attempt.course.files.join(", ")}</span>
-              </p>
+              <dl className="why__facts">
+                <dt>Plan sent</dt>
+                <dd>
+                  {clock(attempt.course.declaredAt)} on base <span className="voice-agent">{shortSha(attempt.baseSha)}</span>
+                </dd>
+                <dt>Files</dt>
+                <dd className="voice-agent">{attempt.course.files.join(", ")}</dd>
+              </dl>
             </>
           )}
         </Step>
 
-        <Step icon="buoy" title={`Change requests · ${corrections.length}`} id="corrections" tone="correction">
+        <Step icon="buoy" title={titleWith("Change requests", corrections.length)} id="corrections" tone="correction">
           {corrections.length === 0 ? (
             <p className="ink-3">No change requests. The plan had no conflict with other work.</p>
           ) : (
@@ -210,13 +243,13 @@ export function WhyTrail({ id }: { id: string }) {
           )}
         </Step>
 
-        <Step icon="range" title={`Conflict checks · ${courseChecks.length}`} id="course-checks">
+        <Step icon="range" title={titleWith("Conflict checks", courseChecks.length)} id="course-checks">
           <ChecksTable checks={courseChecks} names={names} incoming={agent?.callsign ?? ""} mainAfter={landing.mainAfter} />
         </Step>
 
         <Step icon="check" title="Tests" id="checks" tone="clear">
           <div className="why__evidence">
-            {attempt?.checks && <EvidenceBar run={attempt.checks} label="Alone, in the work copy" />}
+            {attempt?.checks && <EvidenceBar run={attempt.checks} label="Tests in the work copy" />}
             <EvidenceBar run={landing.checks} label="Combined with main: the tests of all merged tasks" />
           </div>
         </Step>
@@ -226,8 +259,12 @@ export function WhyTrail({ id }: { id: string }) {
             <figure className="why__decision">
               <blockquote className="voice-human">“{decision.rationale}”</blockquote>
               <figcaption>
-                <Icon name="human" size={12} /> {decision.by.name} {decision.attemptIds.length > 1 ? "chose" : "said yes to"} <span className="voice-agent">{names(decision.attemptIds[0])}</span>
-                {decision.attemptIds.length > 1 ? ` over ${decision.attemptIds.slice(1).map(names).join(", ")}` : ""} · {ago(decision.at, now)}
+                <span>
+                  <Icon name="human" size={12} /> {decision.by.name} {decision.attemptIds.length > 1 ? "chose" : "said yes to"}{" "}
+                  <span className="voice-agent">{names(decision.attemptIds[0])}</span>
+                  {decision.attemptIds.length > 1 ? ` over ${decision.attemptIds.slice(1).map(names).join(", ")}` : ""}
+                </span>
+                <span>{ago(decision.at, now)}</span>
               </figcaption>
             </figure>
           ) : (
@@ -252,8 +289,7 @@ export function WhyTrail({ id }: { id: string }) {
           ) : (
             <>
               <p className="why__meta">
-                main {shortSha(landing.mainBefore)} → {shortSha(landing.mainAfter)} · {plural(detail.diff.files.length, "file")} · +{int(detail.diff.files.reduce((s, f) => s + f.additions, 0))} −
-                {int(detail.diff.files.reduce((s, f) => s + f.deletions, 0))}
+                {plural(detail.diff.files.length, "file")} changed, +{int(detail.diff.files.reduce((s, f) => s + f.additions, 0))} −{int(detail.diff.files.reduce((s, f) => s + f.deletions, 0))}
               </p>
               {detail.diff.files.length > 0 && (
                 <ul className="why__files" role="list" aria-label="Changed files">
@@ -280,19 +316,31 @@ export function WhyTrail({ id }: { id: string }) {
         </Step>
 
         <Step icon="commit" title="Commit and merge record" id="commit">
-          <CodeBlock code={landing.message} label={`commit ${shortSha(landing.mainAfter)}`} copyLabel="Copy message" />
-          {noteText && (
-            <details className="why__note">
-              <summary>Show the raw merge record (git note refs/notes/gitring)</summary>
-              <CodeBlock code={noteText} label="refs/notes/gitring" copyLabel="Copy record" />
-            </details>
-          )}
+          <CodeBlock code={message.body} label={`commit ${shortSha(landing.mainAfter)}`} copyLabel="Copy message" />
           <p className="why__meta">
-            {agent ? `${agent.callsign} · ${modelShort(agent.model)} · ` : ""}work copy <span className="voice-agent">{landing.attemptId}</span> ·{" "}
             <a href={withProject(codeHref(null, landing.mainAfter))} onClick={(e) => openInApp(e, codeHref(null, landing.mainAfter))}>
               Open the code after this merge
             </a>
           </p>
+          <details className="why__note">
+            <summary>Show the raw merge record</summary>
+            <dl className="why__facts why__ids">
+              <dt>Task</dt>
+              <dd className="voice-agent">{landing.intentId}</dd>
+              <dt>Work copy</dt>
+              <dd className="voice-agent">{landing.attemptId}</dd>
+              <dt>Merge</dt>
+              <dd className="voice-agent">{landing.id}</dd>
+              {agent && (
+                <>
+                  <dt>Model</dt>
+                  <dd className="voice-agent">{modelShort(agent.model)}</dd>
+                </>
+              )}
+            </dl>
+            {message.hasTrailers && <CodeBlock code={landing.message} label="Full commit message" copyLabel="Copy full message" />}
+            {noteText && <CodeBlock code={noteText} label="refs/notes/gitring" copyLabel="Copy merge record" />}
+          </details>
         </Step>
       </ol>
     </article>

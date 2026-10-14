@@ -71,10 +71,26 @@ function Evidence({ c, names, mainAfter }: { c: CourseCheck; names: (id: string)
         return (
           <li key={f.otherAttemptId} className="evid__item">
             <p className="evid__head">
-              Near <strong className="voice-agent">{names(f.otherAttemptId)}</strong> ({f.otherState === "landed" ? "merged" : f.otherState === "waiting" ? "waits to merge" : "works"}) · distance {f.range}
-              {f.closing ? " · closer now" : ""}
-              {a ? ` · collision ${prob(a.collision)} · ${a.giveWay === "incoming" ? "this work adapts" : "the other work adapts"}` : ""}
+              Near <strong className="voice-agent">{names(f.otherAttemptId)}</strong> ({f.otherState === "landed" ? "merged" : f.otherState === "waiting" ? "waits to merge" : "works"})
             </p>
+            <dl className="evid__facts">
+              <dt>Distance</dt>
+              <dd className="voice-agent">{f.range}</dd>
+              {f.closing && (
+                <>
+                  <dt>Trend</dt>
+                  <dd>closer now</dd>
+                </>
+              )}
+              {a && (
+                <>
+                  <dt>Collision</dt>
+                  <dd className="voice-agent">{prob(a.collision)}</dd>
+                  <dt>Adapts</dt>
+                  <dd>{a.giveWay === "incoming" ? "this work" : "the other work"}</dd>
+                </>
+              )}
+            </dl>
             {f.sharedFiles.length > 0 && (
               <p>
                 Same files:{" "}
@@ -162,7 +178,7 @@ export function ChecksTable({ checks, names, incoming, mainAfter }: { checks: Co
                   <td>{checkSourceText(c.source)}</td>
                   <td className="voice-agent">{c.latencyMs} ms</td>
                   <td className="voice-agent">{prob(c.confidence)}</td>
-                  <td className="voice-agent ink-2">{c.assessments.length ? c.assessments.map((a) => `${names(a.otherAttemptId)} ${prob(a.collision)}`).join(" · ") : `no work near ${incoming}`}</td>
+                  <td className="voice-agent ink-2">{c.assessments.length ? c.assessments.map((a) => `${names(a.otherAttemptId)} ${prob(a.collision)}`).join(", ") : `no work near ${incoming}`}</td>
                   <td>
                     <button type="button" className="ctable__why" aria-expanded={isOpen} aria-controls={`ev-${c.id}`} onClick={() => toggle(c.id)}>
                       {isOpen ? "Hide why" : "Why"}

@@ -1,8 +1,9 @@
 /**
- * The task rail: the composer, then the tasks grouped by status, each with a tick for every work copy.
- * Read by the overview and the tasks page. The composer is in ./Composer.tsx.
+ * The task rail: the composer, a filter when the list is long, then the tasks grouped by status, each with a tick for
+ * every work copy. A group of more than 20 tasks is split by day. "Start agents" shows on hover and focus only.
+ * Read by the overview and the tasks page. The composer is in ./Composer.tsx. The styles are in ../views/intents/rail.css.
  */
-import { memo, type CSSProperties } from "react";
+import { memo, useDeferredValue, useMemo, useState, type CSSProperties } from "react";
 import type { AgentInfo, Attempt, Intent } from "../../../src/core/types";
 import { Button, IconButton, Panel, SectionLabel } from "../design/components";
 import { Icon } from "../design/icons";
@@ -12,11 +13,16 @@ import { ATTEMPT_STATUS_TEXT, shortSha } from "../state/format";
 import { Link } from "./router";
 import { dropPending, setUi, useUi, type PendingTask } from "./ui";
 import { LaunchButton } from "./LaunchControl";
+import { useNow } from "./useNow";
 import { useCanAct } from "../state/account";
 import { readDraft, TaskComposer, writeDraft } from "./Composer";
+import { matchFilter, splitByDay } from "../views/intents/rail-groups";
+import "../views/intents/rail.css";
 
 /* ───────────── constants ───────────── */
 
+/** A list this long gets a filter field. A shorter list is quick to read. */
+const FILTER_FROM = 8;
 const EMPTY_GROUPS: IntentGroup[] = [];
 const EMPTY_ATTEMPTS: Attempt[] = [];
 const EMPTY_AGENTS = new Map<string, AgentInfo>();
@@ -46,7 +52,7 @@ export function LaneTicks({ attempts, agents }: { attempts: Attempt[]; agents: M
             key={a.id}
             className={`tick tick--${kind}`}
             style={{ "--vc": `var(--v${(g?.color ?? 0) % 12})` } as CSSProperties}
-            title={`${g?.callsign ?? a.agentId} · ${ATTEMPT_STATUS_TEXT[a.status]}`}
+            title={`${g?.callsign ?? a.agentId}: ${ATTEMPT_STATUS_TEXT[a.status]}`}
           />
         );
       })}
@@ -54,23 +60,24 @@ export function LaneTicks({ attempts, agents }: { attempts: Attempt[]; agents: M
   );
 }
 
-function intentMeta(i: Intent, attempts: Attempt[]): string {
+/** The facts under a task title, one text for each fact. The row shows each fact apart, with no dot between them. */
+function intentFacts(i: Intent, attempts: Attempt[]): string[] {
   const active = attempts.filter((a) => !["landed", "alternate", "abandoned", "failed"].includes(a.status));
   const ready = attempts.filter((a) => a.status === "ready").length;
   switch (i.status) {
     case "judging":
-      return `${ready} ready · needs a yes`;
+      return [`${ready} ready for a yes`];
     case "landed":
-      return `Merged ${shortSha(i.landedSha)}${attempts.length > 1 ? ` · ${attempts.length - 1} ${attempts.length > 2 ? "alternatives" : "alternative"}` : ""}`;
+      return [`Merged ${shortSha(i.landedSha)}`, ...(attempts.length > 1 ? [`${attempts.length - 1} ${attempts.length > 2 ? "alternatives" : "alternative"}`] : [])];
     case "parked":
-      return "Paused";
+      return ["Paused"];
     case "merged-into":
-      return "Duplicate of another task";
+      return ["Duplicate of another task"];
     case "open":
     case "draft":
-      return attempts.length ? `${attempts.length} ${attempts.length === 1 ? "work copy" : "work copies"}` : "No work copies yet";
+      return [attempts.length ? `${attempts.length} ${attempts.length === 1 ? "work copy" : "work copies"}` : "No work copies yet"];
     default:
-      return `${active.length} ${active.length === 1 ? "agent works" : "agents work"}${ready ? ` · ${ready} ready` : ""}`;
+      return [`${active.length} ${active.length === 1 ? "agent works" : "agents work"}`, ...(ready ? [`${ready} ready`] : [])];
   }
 }
 
@@ -99,15 +106,17 @@ const IntentRow = memo(function IntentRow({
         </span>
         <span className="irow__meta">
           <LaneTicks attempts={attempts} agents={agents} />
-          <span className="irow__status">
-            {intent.status === "judging" && <Icon name="lighthouse" size={12} />}
-            {intentMeta(intent, attempts)}
-          </span>
+          {intentFacts(intent, attempts).map((fact, n) => (
+            <span key={fact} className="irow__status">
+              {n === 0 && intent.status === "judging" && <Icon name="lighthouse" size={12} />}
+              {fact}
+            </span>
+          ))}
         </span>
       </Link>
       {(intent.status === "open" || intent.status === "draft") && (
         <span className="irow__action">
-          <LaunchButton intent={intent} label="Start" />
+          <LaunchButton intent={intent} />
         </span>
       )}
     </li>
@@ -168,11 +177,47 @@ export function IntentsRail({ selectedId }: { selectedId?: string }) {
   const { pending } = useUi();
   const total = groups.reduce((n, g) => n + g.intents.length, 0);
   const canAct = useCanAct();
+  const now = useNow(60_000);
+  const [filter, setFilter] = useState("");
+  const wordKey = useDeferredValue(filter.trim().toLowerCase());
+  const shownGroups = useMemo(() => {
+    const words = wordKey.split(/\s+/).filter(Boolean);
+    if (!words.length) return groups;
+    return groups.map((g) => ({ ...g, intents: g.intents.filter((i) => matchFilter(i, words)) })).filter((g) => g.intents.length > 0);
+  }, [groups, wordKey]);
+  const shown = shownGroups.reduce((n, g) => n + g.intents.length, 0);
   return (
     <Panel title="Tasks" count={total} headingId="intents-rail-title" className="rail rail--intents">
       {canAct && (
         <div className="rail__compose">
           <TaskComposer autoOpen={total === 0} />
+        </div>
+      )}
+      {(total > FILTER_FROM || filter) && (
+        <div className="rail__filter">
+          <label className="vh" htmlFor="rail-filter">
+            Filter the tasks
+          </label>
+          <input
+            id="rail-filter"
+            className="b-input"
+            type="search"
+            placeholder="Filter tasks"
+            autoComplete="off"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && filter) {
+                e.stopPropagation();
+                setFilter("");
+              }
+            }}
+          />
+          {wordKey && (
+            <span className="rail__count" role="status">
+              {shown} of {total}
+            </span>
+          )}
         </div>
       )}
       {pending.length > 0 && (
@@ -184,17 +229,33 @@ export function IntentsRail({ selectedId }: { selectedId?: string }) {
       )}
       {total === 0 && pending.length === 0 ? (
         <p className="rail__empty">{canAct ? "Write the first task. Agents read the title and the goal." : "No tasks yet. Members write tasks here."}</p>
+      ) : shown === 0 ? (
+        <p className="rail__empty" role="status">
+          No task matches “{filter.trim()}”.{" "}
+          <button type="button" className="rail__clear" onClick={() => setFilter("")}>
+            Clear the filter
+          </button>
+        </p>
       ) : (
-        groups.map((g) => (
+        shownGroups.map((g) => (
           <div key={g.id} className="igroup">
             <SectionLabel count={g.intents.length} id={`ig-${g.id}`}>
               {g.label}
             </SectionLabel>
-            <ul role="list" aria-labelledby={`ig-${g.id}`}>
-              {g.intents.map((i) => (
-                <IntentRow key={i.id} intent={i} attempts={byIntent?.get(i.id) ?? EMPTY_ATTEMPTS} agents={agents ?? EMPTY_AGENTS} selected={i.id === selectedId} />
-              ))}
-            </ul>
+            {splitByDay(g, now).map((part) => (
+              <div key={part.key} className={part.label ? "iday" : undefined}>
+                {part.label && (
+                  <p className="iday__label" id={`ig-${part.key}`}>
+                    {part.label}
+                  </p>
+                )}
+                <ul role="list" aria-labelledby={part.label ? `ig-${g.id} ig-${part.key}` : `ig-${g.id}`}>
+                  {part.intents.map((i) => (
+                    <IntentRow key={i.id} intent={i} attempts={byIntent?.get(i.id) ?? EMPTY_ATTEMPTS} agents={agents ?? EMPTY_AGENTS} selected={i.id === selectedId} />
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         ))
       )}

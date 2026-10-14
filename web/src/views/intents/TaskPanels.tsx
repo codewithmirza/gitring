@@ -9,7 +9,18 @@ import { harbor } from "../../state/api";
 import { ago } from "../../state/format";
 import { sourceText } from "./helpers";
 
-export function AmendPanel({ intent, onClose, returnFocus }: { intent: Intent; onClose: () => void; returnFocus: RefObject<HTMLElement | null> }) {
+/** `focus` says which field takes the focus when the panel opens: the goal, or the new constraint. */
+export function AmendPanel({
+  intent,
+  onClose,
+  returnFocus,
+  focus = "goal",
+}: {
+  intent: Intent;
+  onClose: () => void;
+  returnFocus: RefObject<HTMLElement | null>;
+  focus?: "goal" | "constraint";
+}) {
   const [goal, setGoal] = useState(intent.goal);
   const [constraint, setConstraint] = useState("");
   const [reason, setReason] = useState("");
@@ -40,15 +51,29 @@ export function AmendPanel({ intent, onClose, returnFocus }: { intent: Intent; o
   return (
     <InlinePanel label="Change the goal" onClose={onClose} returnFocus={returnFocus} onSubmit={() => void submit()} className="amend">
       <label className="inline__label" htmlFor="amend-goal">
-        Goal <span className="ink-3">· version {intent.version} → {intent.version + 1}</span>
+        Goal
       </label>
-      <textarea id="amend-goal" className="b-textarea voice-human" rows={3} value={goal} onChange={(e) => setGoal(e.target.value)} data-autofocus />
+      <textarea
+        id="amend-goal"
+        className="b-textarea voice-human"
+        rows={3}
+        value={goal}
+        onChange={(e) => setGoal(e.target.value)}
+        data-autofocus={focus === "goal" ? "" : undefined}
+      />
       <div className="amend__row">
         <div className="amend__field">
           <label className="inline__label" htmlFor="amend-constraint">
             Add a constraint <span className="ink-3">(optional)</span>
           </label>
-          <input id="amend-constraint" className="b-input voice-human" value={constraint} onChange={(e) => setConstraint(e.target.value)} placeholder="Show at most 20 results." />
+          <input
+            id="amend-constraint"
+            className="b-input voice-human"
+            value={constraint}
+            onChange={(e) => setConstraint(e.target.value)}
+            placeholder="Show at most 20 results."
+            data-autofocus={focus === "constraint" ? "" : undefined}
+          />
         </div>
         <div className="amend__field">
           <label className="inline__label" htmlFor="amend-reason">
