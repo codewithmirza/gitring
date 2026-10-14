@@ -1,11 +1,9 @@
 /**
- * Guess how a repository installs and tests itself, from its files: lockfiles, manifests and scripts.
- * Pure: the caller gives the file list and a reader, so any tree works (a GitHub repository, or main in
- * Cloudflare Artifacts after an import, an upload or a push). guessChecks uses rules only; guessTree also
- * asks a model (through a function that the caller gives) when the rules find no test command.
+ * Guesses how a repository installs and tests itself, from its lockfiles, manifests and scripts.
  *
- * Check containers run the Cloudflare Node.js 24 image (Debian). Other toolchains come from Debian
- * packages; the container reaches package registries only.
+ * Pure: the caller gives the file list and a reader, so any tree works (an import, an upload, a push, main).
+ * `guessChecks` uses rules only. `guessTree` also asks a model when the rules find no test command.
+ * Check containers run the Cloudflare Node.js 24 image (Debian). Other tools come from Debian packages.
  */
 
 export interface GuessInput {

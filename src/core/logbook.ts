@@ -1,4 +1,10 @@
 /**
+ * The why-record of each merge: the commit message, the git note and the optional task file in the repository.
+ *
+ * Pure module. The project coordinator writes the record at every merge. `parseTrailers` reads it back.
+ */
+
+/*
  * History: the record of why each merge happened.
  *
  *  - landingMessage: commit message = subject (intent title) + short body + gitring-* trailers.
@@ -8,6 +14,7 @@
  *
  * Pure module.
  */
+
 import type { AgentInfo, Attempt, CheckRun, Correction, CourseCheck, Decision, Intent, LandingMethod } from "./types";
 
 export const LOGBOOK_SCHEMA = "gitring.logbook/v1";

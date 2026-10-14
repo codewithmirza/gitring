@@ -1,4 +1,10 @@
 /**
+ * Rules by folder: who says yes to a change in a folder, and which agents may change it at all.
+ *
+ * Pure functions. The rule type `FolderRule` is in `types/settings.ts`. Owners set the rules in Settings.
+ */
+
+/*
  * Rules by folder: who says yes to a change in a folder (ProjectSettings.folderRules).
  *
  *   owner-yes  a change there needs the yes of an owner
@@ -14,6 +20,7 @@
  * These functions are pure: the project object checks the files of a plan (declare) and the changed files
  * of the work (submit) with them, and the web app shows the same words. Words are plain (ASD-STE100).
  */
+
 import type { FolderRule, Person } from "../types";
 
 export const MAX_FOLDER_RULES = 50;

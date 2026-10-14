@@ -1,8 +1,10 @@
 /**
  * The waitlist gate: who may use this gitring, and the record of interest that each waiting person leaves.
- * The gate is off unless ALLOWLIST_EMAILS or WAITLIST_ENABLED="true" is set, so a self-hosted gitring and local
- * development are not gated. No runtime dependencies.
+ *
+ * The gate is off unless ALLOWLIST_EMAILS or WAITLIST_ENABLED="true" is set, so a self-hosted gitring and local development are not gated.
+ * No runtime dependencies.
  */
+
 import { monthlyValue, PLAN_IDS, type PlanId } from "./plans";
 
 /** The settings of the gate (a part of the Worker environment). */

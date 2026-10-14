@@ -1,4 +1,10 @@
 /**
+ * A line-based 3-way merge (diff3): ours is main, theirs is the work copy.
+ *
+ * Called by `land/compose.ts`. On a conflict, the content holds git-style markers. Pure module.
+ */
+
+/*
  * Line-based 3-way merge (diff3). ours = main, theirs = attempt.
  *
  * - A region that only one side changed takes that side; the same change on both sides is clean.
@@ -14,6 +20,7 @@
  *
  * Built on node-diff3 (Khanna–Kunal–Pierce diff3 over a Hunt–McIlroy LCS). Pure.
  */
+
 import { diff3Merge } from "node-diff3";
 import type { LineRange } from "../types";
 

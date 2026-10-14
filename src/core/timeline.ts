@@ -1,4 +1,11 @@
 /**
+ * The whole history of a project as one list of records, oldest first, in pages.
+ *
+ * The replay view reads it (`GET /api/projects/:p/events`).
+ * Pure module: types and cursor helpers, shared by the Worker, the project coordinator and the web app.
+ */
+
+/*
  * The timeline of a project: its whole history as one list of records, oldest first, in pages.
  *
  * The project object keeps a short window of the activity log and the conflict checks in memory (the live
@@ -10,6 +17,7 @@
  *
  * Pure module: types and cursor helpers, shared by the Worker, the project object and the web UI.
  */
+
 import type { AgentInfo, Attempt, Correction, CourseCheck, Decision, Intent, Landing, LogEntry } from "./types";
 
 /** A task as the timeline shows it: the test files of the task without their source (the source can be long). */

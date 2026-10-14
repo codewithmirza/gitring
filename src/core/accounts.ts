@@ -1,7 +1,9 @@
 /**
- * Accounts, projects and access: types shared by the Worker, the Directory and the web UI.
- * No runtime dependencies.
+ * Roles, people, projects and access: the types and small helpers that the Worker, the registry and the web app share.
+ *
+ * No runtime dependencies. Never import Worker or storage code here.
  */
+
 import type { ProjectSource } from "./types";
 import type { WaitlistState } from "./waitlist";
 

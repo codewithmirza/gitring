@@ -1,4 +1,10 @@
 /**
+ * Line diffs for the real changes (base hunks) and for display (git-style unified diffs).
+ *
+ * Pure module (jsdiff only): runs in Node and in workerd. Every function uses the line model below.
+ */
+
+/*
  * Line diffs for footprints (base hunks) and for display (git-style unified diffs).
  *
  * Pure module (jsdiff only): runs in Node and in workerd.
@@ -10,6 +16,7 @@
  *     by that final-newline flag, so only the last line is reported as changed (like git: -1 +1).
  *   - Line numbers are 1-based. `LineRange` is inclusive.
  */
+
 import { diffLines } from "diff";
 import type { LineRange } from "../types";
 

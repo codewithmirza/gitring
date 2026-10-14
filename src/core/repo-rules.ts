@@ -1,6 +1,7 @@
 /**
- * Rules for repositories that come from outside: which remotes gitring imports, and which files of
- * a tree it reads as text. Pure module (no platform APIs).
+ * Rules for code that comes from outside: which remotes gitring imports, and which files it reads as text.
+ *
+ * Pure module (no platform APIs).
  */
 
 /**

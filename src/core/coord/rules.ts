@@ -1,4 +1,11 @@
 /**
+ * The rules of the road (who gives way) and the offline assessment of a pair, which uses fixed numbers.
+ *
+ * Called by `clef.ts` (the fallback and the hard rules) and `policy.ts`. Pure functions: they never call a model.
+ * R6 always decides, so every pair has an answer.
+ */
+
+/*
  * Rules of the road (who gives way) and the deterministic rules assessment (the offline
  * stand-in for Clef, with the same output shape).
  *
@@ -32,6 +39,7 @@
  *  Give-way confidence by deciding rule: R1 0.95 · R2 0.90 · R3 0.85 · R5 0.80 · R4 0.70 ·
  *  R6 0.60 (0.50 for an R6 tie).
  */
+
 import type { CourseAssessment, PairFacts, Range, RuleOfTheRoad } from "../types";
 import { symbolName } from "../analysis/range";
 import type { VesselView } from "./facts";

@@ -1,4 +1,11 @@
 /**
+ * The distance (range 0 to 5) between two pieces of work, and the helpers that compare files, lines and symbols.
+ *
+ * Called by `coord/facts.ts`. Pure module: no platform APIs.
+ * Read `graph.ts` for the import steps behind distances 3 and 4.
+ */
+
+/*
  * Range: the distance between two pieces of work in the code graph.
  *
  *   0  same lines (overlapping hunks on a shared file) or a symbol that both change
@@ -16,6 +23,7 @@
  *
  * Pure module: no platform APIs.
  */
+
 import type { Course, FileTouch, Footprint, LineRange, Range, SymbolKey } from "../types";
 import type { ImportGraph } from "./graph";
 

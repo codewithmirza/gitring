@@ -1,10 +1,18 @@
 /**
+ * A snapshot is a flat view of a git tree (path to file entry), with the operations on it.
+ *
+ * It reads a tree (recursive, cached), diffs two, applies file changes and builds tree objects bottom-up.
+ * Pure module (WebCrypto and TextEncoder only): runs in Node 22 and in workerd.
+ */
+
+/*
  * Snapshots: a flat view of a git tree (repo-relative path → file entry), plus the
  * operations gitring needs on top of it: read (recursive, cached, bounded concurrency),
  * diff, apply file changes, and build tree objects bottom-up.
  *
  * Pure module (WebCrypto + TextEncoder only). Runs in Node 22 and in workerd.
  */
+
 import type { FileChange, RepoBackend, TreeEntry } from "../../platform/repo/backend";
 import {
   EMPTY_TREE_SHA,

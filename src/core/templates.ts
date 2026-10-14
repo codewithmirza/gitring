@@ -1,4 +1,11 @@
 /**
+ * The starter templates of a new project, as plain data, and the function that gives the files of one template.
+ *
+ * The tables of files are long on purpose: one table for each template, with no logic in them.
+ * No runtime dependencies: the Worker, the project coordinator and the web app share this file.
+ */
+
+/*
  * Starter templates for new projects: plain data, and a function that gives the files of one template.
  *
  * Every template that has code also has tests in tests/*.test.js for the gitring test runner (a Dynamic

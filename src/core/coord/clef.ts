@@ -1,4 +1,11 @@
 /**
+ * Builds the request to the conflict-check model (Clef) and reads its answer, with the rules as the fallback.
+ *
+ * Called by the project coordinator. The model never replaces the facts of `facts.ts`.
+ * Read `rules.ts` for the fallback and `policy.ts` for what the answers decide.
+ */
+
+/*
  * Clef request/response for the course check.
  *
  * Clef (`@cf/cloudflare/clef`, 27B) and Clef-flash (`@cf/cloudflare/clef-flash`, 9B, ~39 ms) are
@@ -29,6 +36,7 @@
  *    without duplicate.of, the most similar intent gets the noul and the others
  *    min(noul, rules duplicate).
  */
+
 import { INTERFERENCE_LEVELS, type CourseAssessment, type PairFacts, type RuleOfTheRoad } from "../types";
 import type { VesselView } from "./facts";
 import {

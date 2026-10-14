@@ -1,9 +1,10 @@
 /**
- * Import graph of a tree: edges importer → imported, read as an undirected graph for distances.
- * The course check uses it for range 3 (one import hop) and range 4 (two hops).
+ * The import graph of a tree: files are nodes and imports are edges, read both ways to count steps.
  *
+ * The conflict check uses it for distance 3 (one import step) and distance 4 (two steps). `range.ts` calls it.
  * Pure module: runs in Node and in workerd.
  */
+
 import { extractSymbols, isAnalyzable, resolveImport, type PathAliases } from "./symbols";
 
 export interface ImportGraph {

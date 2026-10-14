@@ -1,4 +1,11 @@
 /**
+ * Says what kind of change a work copy makes: comments, layout, docs, tests or logic.
+ *
+ * The approval rules and the rules by folder read the kind. A doubt counts as logic: never less care.
+ * Pure module: runs in Node and in workerd. It never throws.
+ */
+
+/*
  * Meaning of a change: what kind of change it is, from the version of each file before and after.
  *
  *   comment-only     JS/TS whose tokens without comments are the same before and after
@@ -13,6 +20,7 @@
  *
  * Pure module: runs in Node and in workerd. Never throws.
  */
+
 import { Parser, tokenizer, type Options } from "acorn";
 import jsx from "acorn-jsx";
 import type { ChangeKind, ChangeMeaning } from "../types";

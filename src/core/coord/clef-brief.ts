@@ -1,10 +1,17 @@
 /**
+ * A short request for the conflict-check model: a few plain lines for each work copy, with the facts first.
+ *
+ * It uses the same question ids as `buildClefRequest` in `clef.ts`, so `parseClefResponse` reads the answers unchanged.
+ */
+
+/*
  * Compact, facts-first Clef request.
  *
  * Decision models answer best when the state is short and the facts are explicit. This builder
  * writes the state as a few plain English lines per vessel (ASD-STE100 style) and keeps the same
  * question ids as `buildClefRequest`, so `parseClefResponse` reads the answers unchanged.
  */
+
 import type { PairFacts } from "../types";
 import { INTERFERENCE_LEVELS } from "../types";
 import type { VesselView } from "./facts";
