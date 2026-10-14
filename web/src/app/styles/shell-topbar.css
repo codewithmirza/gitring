@@ -3,11 +3,15 @@
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* top bar, page, tray of the merge question (a row only on narrow screens), bottom bar (phones). */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: 100dvh;
   min-height: 0;
   background: var(--bg);
 }
+.app > .topbar { grid-row: 1; }
+.app > .app__main { grid-row: 2; }
+.app > .bottomnav { grid-row: 4; }
 .app__main {
   position: relative;
   min-height: 0;
@@ -51,6 +55,8 @@
   text-decoration: none;
   flex: none;
   border-radius: var(--r-2);
+  min-width: 32px;
+  min-height: 32px;
 }
 .topbar__wordmark {
   font-size: var(--t-md);
@@ -61,12 +67,14 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex: 0 1 auto;
   min-width: 0;
   padding-left: var(--s-4);
   border-left: 1px solid var(--line);
   line-height: 1.2;
 }
-.topbar__projname { font-size: var(--t-sm); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+/* A long name gives way first: the tabs, the search and the theme control keep their room. */
+.topbar__projname { font-size: var(--t-sm); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: clamp(96px, 14vw, 220px); }
 .topbar__sha { font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
 .topbar__nav { flex: none; margin-left: var(--s-2); }
 .topbar__right {

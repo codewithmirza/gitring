@@ -4,12 +4,14 @@
  */
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { approvalPath } from "../../../src/core/approvals";
-import { Button, Callsign, Textarea } from "../design/components";
-import { useApproverRule, waitsFor } from "../state/approvals";
+import { Button, Callsign, IconButton, Textarea } from "../design/components";
+import { factsLine, useApproverRule, waitsFor } from "../state/approvals";
 import type { ApprovalItem } from "../state/selectors";
 import { useStore } from "../state/store";
 import { answerApproval, useAnswering } from "./approvalActions";
+import { ReasonText } from "./ReasonText";
 import { Link } from "./router";
+import { useMedia } from "./useMedia";
 import "./approvals.css";
 
 interface ApprovalCardProps {
@@ -27,9 +29,14 @@ export function ApprovalCard({ item, variant, onOpen, focusReview }: ApprovalCar
   const sending = useAnswering(item.approvalId);
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
+  // On a phone the chip shows the question and the answers. The facts open on a tap.
+  const narrow = useMedia("(max-width: 760px)");
+  const [factsOpen, setFactsOpen] = useState(false);
+  const fold = variant === "chip" && narrow;
   const uid = useId();
   const titleId = `${uid}-title`;
   const noteId = `${uid}-note`;
+  const factsId = `${uid}-facts`;
   const toggle = useRef<HTMLButtonElement | null>(null);
   const busy = sending !== null;
 
@@ -61,14 +68,35 @@ export function ApprovalCard({ item, variant, onOpen, focusReview }: ApprovalCar
   const to = approvalPath(projectId, item.attemptId);
   return (
     <div className={`apcard apcard--${variant}`} role="group" aria-labelledby={titleId} data-attempt={item.attemptId}>
-      <p className="apcard__title voice-human" id={titleId}>
-        {item.title}
-      </p>
-      <p className="apcard__meta">
-        <Callsign callsign={item.callsign} color={item.color} />
-        <span className="apcard__line">{item.line}</span>
-      </p>
-      {item.why[0] && <p className="apcard__why">{item.why[0]}</p>}
+      <div className="apcard__head">
+        <p className="apcard__title voice-human" id={titleId}>
+          {item.title}
+        </p>
+        {fold && (
+          <IconButton
+            icon={factsOpen ? "chevron-up" : "chevron-down"}
+            label={factsOpen ? "Hide the facts" : "Show the facts"}
+            size="sm"
+            tooltip={false}
+            aria-expanded={factsOpen}
+            aria-controls={factsId}
+            onClick={() => setFactsOpen((x) => !x)}
+          />
+        )}
+      </div>
+      {(!fold || factsOpen) && (
+        <div className="apcard__facts" id={factsId}>
+          <p className="apcard__meta">
+            <Callsign callsign={item.callsign} color={item.color} />
+            <span className="apcard__line">{factsLine(item.line, item.why.slice(0, 1))}</span>
+          </p>
+          {item.why[0] && (
+            <p className="apcard__why">
+              <ReasonText text={item.why[0]} />
+            </p>
+          )}
+        </div>
+      )}
       <div className="apcard__acts">
         <Link to={to} className="apcard__review" aria-describedby={titleId} onClick={onOpen} data-row-first="" data-autofocus={focusReview ? "" : undefined}>
           Review

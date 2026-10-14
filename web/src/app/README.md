@@ -22,6 +22,7 @@ The app shell: the frame around every page, the router and the parts that more t
 - `ImportPanel.tsx`: what the overview shows while main is empty (a first task or an import in progress).
 - `ApprovalTray.tsx`: the tray of chips for merges that wait for a yes.
 - `ApprovalCard.tsx`: one question that asks for a yes, with the facts and the answers.
+- `ReasonText.tsx`: one reason of a merge question as text, with the changed function names in the mono voice.
 - `approvalActions.ts`: answers a question that asks for a yes (chip, list and approve page share it).
 - `QuestionCard.tsx`: one question for a person (which work adapts, a redo or a pause).
 - `lineRequest.ts`: who may ask an agent to change lines, and the request itself.

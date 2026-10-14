@@ -110,7 +110,10 @@ async function run(): Promise<void> {
     const status = e instanceof HttpError ? e.status : 0;
     if (status === 400 || status === 401 || status === 403 || status === 404) {
       store.setAccess(null);
-      store.setConn("offline", (e as Error).message);
+      // The server answered, so the connection is fine: the state is "blocked", not "offline". The page says it in
+      // plain words (App.tsx, Booting). The text of the server stays in the store and in the console, for a developer.
+      console.info(`gitring: the project did not open (status ${status}). ${(e as Error).message}`);
+      store.setConn("blocked", (e as Error).message);
       return;
     }
     bootTries++;

@@ -11,7 +11,11 @@ import type { GitringEvent, ProjectState, RadarPair } from "../../../src/core/ty
 import type { MeInfo, ProjectInfo, Role } from "../../../src/core/accounts";
 
 export type DataMode = "boot" | "live";
-export type ConnState = "connecting" | "open" | "reconnecting" | "offline";
+/**
+ * connecting, open, reconnecting and offline are about the connection.
+ * blocked: the connection works, and the server said no (no sign-in, no access, or no such project).
+ */
+export type ConnState = "connecting" | "open" | "reconnecting" | "offline" | "blocked";
 
 export interface Ripple {
   id: number;

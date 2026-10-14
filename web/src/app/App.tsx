@@ -281,24 +281,50 @@ function ViewSkeleton({ route }: { route: Route }) {
   return <SkeletonPage label={route.name === "approve" ? "Please wait for the merge question" : `Please wait for ${TITLES[route.name].toLowerCase()}`} />;
 }
 
+/**
+ * The words for a project that does not open. The server said no, so the connection is fine: the person did
+ * not do anything wrong. A person who is not signed in only needs to sign in (the link of a merge question is the usual case).
+ */
+function blockedText(route: Route, signedIn: boolean): string {
+  if (signedIn) return "This project does not exist, or you cannot open it.";
+  return route.name === "approve" ? "Sign in to answer a merge question." : "Sign in to open this project.";
+}
+
 /** Before the first project state: load it, or say why there is no project to show. */
 function Booting({ route }: { route: Route }) {
   const conn = useStore((s) => s.conn);
   const error = useStore((s) => s.error);
   const signedIn = useStore((s) => Boolean(s.me?.user));
+  const accountReady = useStore((s) => s.accountReady);
+  if (conn === "blocked" && accountReady) {
+    const toApprove = route.name === "approve";
+    return (
+      <div className="booting">
+        <EmptyState
+          text={blockedText(route, signedIn)}
+          action={
+            <div className="b-empty__actions">
+              {!signedIn && (
+                <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: toApprove ? "Sign in to answer." : "Sign in to open your projects." })}>
+                  Sign in
+                </Button>
+              )}
+              {/* A person who comes for a merge question has one thing to do. */}
+              {!(toApprove && !signedIn) && <Link to="/projects">Open the projects</Link>}
+            </div>
+          }
+        />
+      </div>
+    );
+  }
   if (conn === "offline" && error) {
     return (
       <div className="booting">
         <EmptyState
           text={error}
           action={
-            <div className="c-empty__actions">
+            <div className="b-empty__actions">
               <Link to="/projects">Open the projects</Link>
-              {!signedIn && (
-                <Button variant="primary" onClick={(e) => openSignIn({ anchor: e.currentTarget, reason: route.name === "approve" ? "Sign in to answer." : "Sign in to open your projects." })}>
-                  Sign in
-                </Button>
-              )}
             </div>
           }
         />
@@ -368,7 +394,9 @@ function Shell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.name, route.name === "approve" ? route.id : ""]);
 
-  const showNav = needsProject && !kiosk;
+  // A project that the server refused has no pages to go to: the bottom bar of the views stays away.
+  const refused = useStore((s) => s.conn === "blocked");
+  const showNav = needsProject && !kiosk && !refused;
   return (
     <div className={["app", showNav && "app--nav", kiosk && "app--kiosk"].filter(Boolean).join(" ")}>
       <a href="#main" className="skip-link">

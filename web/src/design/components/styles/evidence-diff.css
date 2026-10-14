@@ -116,8 +116,8 @@
 }
 .b-diff__table tr.is-add { background: var(--diff-add); }
 .b-diff__table tr.is-del { background: var(--diff-del); }
-.b-diff__table tr.is-add .b-diff__sign { color: var(--clear); font-weight: 500; }
-.b-diff__table tr.is-del .b-diff__sign { color: var(--danger); font-weight: 500; }
+.b-diff__table tr.is-add .b-diff__sign { color: color-mix(in oklch, var(--clear) 90%, var(--ink-1)); font-weight: 500; }
+.b-diff__table tr.is-del .b-diff__sign { color: color-mix(in oklch, var(--danger) 90%, var(--ink-1)); font-weight: 500; }
 .b-diff__table tr.is-hunk td {
   padding: 4px var(--s-3) !important;
   background: var(--accent-tint);

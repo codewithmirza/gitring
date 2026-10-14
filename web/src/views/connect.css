@@ -3,8 +3,6 @@
  * They cover the connector card, API keys, the flow diagram and copyable commands. Type sizes here: 11, 13, 15, 28.
  */
 
-.connect { max-width: 1200px; }
-
 /* ───────────── the connector card ───────────── */
 .cx-hero {
   display: grid;

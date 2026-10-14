@@ -66,9 +66,21 @@ export function announceText(total: number, titles: string[]): string {
   return titles.length > 1 ? `${head} and ${titles.length - 1} more` : head;
 }
 
-/** The title of the browser tab: a count in front of the name while merges wait for the person. */
+/**
+ * The facts line of a merge question. The server ends it with "The code logic changes." when the change is not only
+ * comments, white space, documents or tests. That sentence has no source. When a reason on the card names the real
+ * cause (changed parameters, build files, deleted files, a large change), the card leaves the sentence out.
+ */
+const CONCRETE_REASON = /^(The parameters of |Build or deploy files change|Files are deleted|This is a large change)/;
+
+export function factsLine(line: string, shownReasons: string[]): string {
+  if (!shownReasons.some((reason) => CONCRETE_REASON.test(reason))) return line;
+  return line.replace(" The code logic changes.", "");
+}
+
+/** The title of the browser tab: a count in front of the usual title (page, project, gitring) while merges wait for the person. */
 export function tabTitle(waiting: number, usual: string): string {
-  return waiting > 0 ? `(${waiting}) gitring` : usual;
+  return waiting > 0 ? `(${waiting}) ${usual}` : usual;
 }
 
 /* ───────────── what an answer did ───────────── */

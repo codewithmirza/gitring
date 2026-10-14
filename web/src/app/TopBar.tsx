@@ -21,6 +21,7 @@ import { launchAllNow } from "./actions";
 import { closePalette, openPalette, openShortcuts, setUi, useUi } from "./ui";
 import { PALETTE_KEY } from "./keys";
 import { ApprovalCard } from "./ApprovalCard";
+import { useMaxChips } from "./ApprovalTray";
 import { QuestionCard } from "./QuestionCard";
 import { landingOf, quietText } from "../views/approval-copy";
 
@@ -219,8 +220,14 @@ function OtherRow({ item, first, onDone }: { item: OtherJudgmentItem; first: boo
   );
 }
 
-function Decisions() {
+/**
+ * The button of the decisions list. A merge question has its card in the tray and its count on the Inbox button,
+ * so the button shows only when it adds something: work that is not a merge question, more questions than the
+ * tray shows, a person who only views, and the pages where the tray gives way (the replay, and the approve page when other questions wait).
+ */
+function Decisions({ route }: { route: Route }) {
   const queue = useJudgmentQueue();
+  const maxChips = useMaxChips();
   const canAct = useCanAct();
   const projectId = useStore((s) => s.state?.project.id ?? "");
   const mode = useStore((s) => landingOf(s.state?.project.settings));
@@ -251,6 +258,11 @@ function Decisions() {
   const w = canAct ? rest.length : 0;
   // The color says "needs you": only for people who can decide (members and owners).
   const needsYou = mine.length > 0;
+  const trayShowsAll = canAct && rows.length <= maxChips && rows.every((q) => q.kind === "approval" && q.mayAnswer);
+  // The approve page answers one question itself: when that is the only one, the count would repeat it.
+  const first = rows[0];
+  const onlyThisOne = route.name === "approve" && rows.length === 1 && first.kind === "approval" && first.attemptId === route.id;
+  const quiet = rows.length === 0 || onlyThisOne || (trayShowsAll && route.name !== "replay" && route.name !== "approve");
   const merges = mine.every((q) => q.kind === "approval");
   const lead = merges ? `${n} ${n === 1 ? "merge waits" : "merges wait"} for you.` : `${n} ${n === 1 ? "decision needs" : "decisions need"} you.`;
   const others = w > 0 ? ` ${w} ${w === 1 ? "waits" : "wait"} for other people.` : "";
@@ -268,6 +280,7 @@ function Decisions() {
         : n === 0
           ? `No merge waits for you.${others}`
           : `${lead}${merges ? " Yes merges the work into main. Send back tells the agent what to change." : ""}${rows.length > 1 ? " J and K move between the decisions." : ""}`;
+  if (quiet) return null;
   return (
     <>
       <button
@@ -277,7 +290,7 @@ function Decisions() {
         aria-label={label}
       >
         <Icon name={n ? "lighthouse" : "check"} />
-        <span className="topbar__queuetext">{n ? `${n} ${n === 1 ? "decision" : "decisions"}` : "No decisions"}</span>
+        <span className="topbar__queuetext">{n ? `${n} ${n === 1 ? "decision" : "decisions"}` : `${rows.length} ${rows.length === 1 ? "decision waits" : "decisions wait"} for others`}</span>
         {n > 0 && (
           <span className="topbar__queuecount" aria-hidden="true">
             {n}
@@ -373,7 +386,8 @@ function StatsStrip() {
   );
 }
 
-function ThemeControl() {
+/** The theme control. On a phone the cycle button shows only for a person who has no account menu and no project name on the bar. */
+function ThemeControl({ spare }: { spare: boolean }) {
   const theme = useTheme();
   const i = THEMES.findIndex((t) => t.id === theme);
   const next = THEMES[(i + 1) % THEMES.length];
@@ -390,7 +404,7 @@ function ThemeControl() {
   );
   return (
     <>
-      <IconButton className="topbar__themecycle" icon={theme} label={`Theme: ${THEMES[i]?.label}. Switch to ${next.label}.`} onClick={() => setTheme(next.id)} tooltip={false} />
+      <IconButton className={["topbar__themecycle", spare && "topbar__themecycle--spare"].filter(Boolean).join(" ")} icon={theme} label={`Theme: ${THEMES[i]?.label}. Switch to ${next.label}.`} onClick={() => setTheme(next.id)} tooltip={false} />
       <Segmented<Theme> label="Display theme" value={theme} onChange={setTheme} className="topbar__theme" options={options} />
     </>
   );
@@ -402,9 +416,16 @@ export function TopBar({ route }: { route: Route }) {
   const sha = useStore((s) => s.state?.project.mainSha);
   const ready = useStore((s) => s.state !== null);
   const signedIn = useStore((s) => Boolean(s.me?.user));
+  const blocked = useStore((s) => s.conn === "blocked");
+  const offline = useStore((s) => s.conn === "offline");
+  const known = useStore((s) => s.projects.some((p) => p.id === s.projectId));
   const p50 = useStore((s) => s.state?.stats.medianCheckLatencyMs ?? 0);
-  // The start page shows no project; the other pages show one when it is loaded (or loads now).
-  const project = route.name !== "home" && (ready || isProjectRoute(route));
+  // The start page shows no project. A project page shows its bar parts only when the project has loaded, and the
+  // view tabs while it loads. A page that the server refused (no sign-in, no access, no such project) shows none.
+  const onApp = route.name !== "home";
+  const loaded = onApp && ready;
+  const chrome = loaded || (onApp && isProjectRoute(route) && !blocked);
+  const named = loaded || (chrome && known);
   return (
     <header className="topbar">
       <div className="topbar__row">
@@ -412,25 +433,27 @@ export function TopBar({ route }: { route: Route }) {
           <Mark size={22} />
           <span className="topbar__wordmark">gitring</span>
         </Link>
-        {project && (
+        {named && (
           <div className="topbar__project">
             <ProjectSwitcher />
-            <span className="topbar__sha voice-agent" title="The commit of main">
-              main {shortSha(sha)}
-            </span>
+            {loaded && (
+              <span className="topbar__sha voice-agent" title="The commit of main">
+                main {shortSha(sha)}
+              </span>
+            )}
           </div>
         )}
-        {project && <ViewNav route={route} className="viewnav topbar__nav" />}
+        {chrome && <ViewNav route={route} className="viewnav topbar__nav" />}
         <div className="topbar__right">
           <SearchButton />
-          {project && <Connection />}
-          {project && <Decisions />}
+          {(loaded || (chrome && offline)) && <Connection />}
+          {loaded && <Decisions route={route} />}
           {signedIn && <InboxButton route={route} />}
           <UserMenu />
-          <ThemeControl />
+          <ThemeControl spare={signedIn || named} />
         </div>
       </div>
-      {project && (
+      {chrome && (
         <div className="substrip">
           <StatsStrip />
           <div className="substrip__right">

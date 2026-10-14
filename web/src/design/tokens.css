@@ -15,8 +15,9 @@
   --font-agent: "Atkinson Hyperlegible Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-human: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", Georgia, serif;
 
-  /* Type scale — size / line-height. At most 4 sizes in one view. */
-  --t-2xs: 10px; --lh-2xs: 12px;
+  /* Type scale — size / line-height. At most 4 sizes in one view. 11 px is the floor (12 px on a phone, see below).
+     --t-2xs is the same size as --t-xs: the name stays so that old rules keep working. */
+  --t-2xs: 11px; --lh-2xs: 14px;
   --t-xs: 11px;  --lh-xs: 16px;
   --t-sm: 13px;  --lh-sm: 20px;
   --t-md: 15px;  --lh-md: 24px;
@@ -61,6 +62,8 @@
   --rail-left: 288px;
   --rail-right: 344px;
   --topbar-h: 48px;
+  /* The column of a page that is a document (Projects, History, Connect, Settings, Account, Inbox, Not found). */
+  --page-w: 1100px;
   --substrip-h: 32px;
 }
 
@@ -248,6 +251,23 @@
   --diff-del: color-mix(in oklch, var(--danger) 14%, transparent);
   --graticule: color-mix(in oklch, var(--line) 50%, transparent);
   --contour: color-mix(in oklch, var(--accent) 35%, transparent);
+}
+
+/* A phone: the smallest text is 12 px. */
+@media (max-width: 760px) {
+  :root {
+    --t-2xs: 12px; --lh-2xs: 16px;
+    --t-xs: 12px;  --lh-xs: 16px;
+  }
+}
+
+/*
+ * The map is a drawing. Its flags and labels are laid out for 11 px and 10 px (chart/range-layers.tsx and
+ * vessel-layers.tsx measure them), so the map keeps these sizes on every screen.
+ */
+.c-svg {
+  --t-2xs: 10px; --lh-2xs: 12px;
+  --t-xs: 11px;  --lh-xs: 16px;
 }
 
 /* Reduced motion: no movement transitions, fades ≤ 120ms, no pulses. */
