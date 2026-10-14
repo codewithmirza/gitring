@@ -49,7 +49,7 @@ export function DesignView() {
           </div>
         </header>
 
-        <Foundations />
+        <Foundations m={m} />
 
         <ComponentsSection m={m} />
 

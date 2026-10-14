@@ -38,6 +38,22 @@ const VIEWS = [
   "web/src/app/TopBar.tsx",
   "web/src/app/App.tsx",
   "web/src/views/CodeView.tsx",
+  "web/src/views/code/view/CodeToolbar.tsx",
+  "web/src/views/code/view/TreePane.tsx",
+  "web/src/views/code/view/FilePane.tsx",
+  "web/src/views/code/view/renderMain.tsx",
+  "web/src/views/code/view/describeRef.tsx",
+  "web/src/views/code/view/ContextStrip.tsx",
+  "web/src/views/code/view/MarkCard.tsx",
+  "web/src/views/code/view/RefOverview.tsx",
+  "web/src/views/code/view/Skeletons.tsx",
+  "web/src/views/code/view/useCodeNavigation.tsx",
+  "web/src/views/code/view/useCodeActions.ts",
+  "web/src/views/code/view/useFileTree.ts",
+  "web/src/views/code/view/useOpenFile.ts",
+  "web/src/views/code/view/useCodeCursor.ts",
+  "web/src/views/code/view/useCodePanels.ts",
+  "web/src/views/code/view/useCodeSource.ts",
 ];
 
 describe("plain words in the views", () => {
