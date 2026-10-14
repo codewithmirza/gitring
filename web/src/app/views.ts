@@ -1,6 +1,6 @@
 /**
  * Loads each view as its own chunk, when its route opens.
- * A link starts the load earlier, on hover or focus (preloadPath). Loading twice is free: the browser keeps each module once.
+ * A link starts the load earlier, on hover or focus (preloadPath). A second load is free: the browser keeps each module once.
  * Never import a view file directly from the shell: that puts the view in the first download.
  */
 import { lazy } from "react";

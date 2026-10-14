@@ -1,6 +1,6 @@
 /**
  * Shared empty values for the store selectors of the code view.
- * A stable empty value keeps a selector from waking the view.
+ * A selector that finds nothing returns the same empty value each time, so it does not cause a render.
  */
 import type { FileNode } from "../../../../../src/core/types";
 import type { FileMarks, LastMerge, WorkCopy } from "../annotations";

@@ -1,5 +1,5 @@
 /**
- * Two helpers that stop a selector from recomputing: a memo on argument identity and a cached id map.
+ * Two helpers that save work in a selector: a memo on argument identity and a cached id map.
  * Every other file in this folder uses them. Never read the store here: these functions take plain values.
  */
 export function memo<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
