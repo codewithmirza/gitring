@@ -25,7 +25,7 @@ import { atLeast, PROJECT_ID } from "../core/accounts";
 import { actorOf, authRoutes, closeUserSockets, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, mcpScopeChallenge, oauthRoutes } from "./oauth";
 import { deviceRoutes } from "./device";
-import { cliMayCall } from "./cli";
+import { answerWay, cliMayCall } from "./cli";
 import { MCP_PATH, mcpSetOf, resourceOf, SCOPE, SCOPE_READ, type McpSet } from "../directory/oauth";
 import { githubRoutes, readAsPerson } from "./github";
 import type { RepoJson } from "../platform/github/repos";
@@ -497,17 +497,17 @@ app.post("/api/projects/:p/attempts/:id/land", async (c) => {
 });
 
 /**
- * A person answers the approval of a work copy: "approve" or "send-back" (with a note). Only a person in the
- * gitring app can answer: a browser session. A personal key or an OAuth token belongs to an agent, and an
- * agent cannot say yes for the person. `approvalId` is the question that the person saw.
+ * A person answers the approval of a work copy: "approve" or "send-back" (with a note). A person answers in the
+ * gitring app (a browser session), or with gitring's own command line when the person allows answers outside
+ * the app (contract C3, src/worker/cli.ts). A personal key or the OAuth token of another app belongs to an
+ * agent, and an agent cannot say yes for the person. `approvalId` is the question that the person saw.
  */
 app.post("/api/projects/:p/attempts/:id/decide", async (c) => {
   try {
     const h = await ready(c, c.req.param("p"), "member");
     const principal = c.get("principal");
-    if (principal.via !== "session" || !principal.user) {
-      throw new HTTPError(403, "A person must answer in the gitring app. A key or an agent token cannot say yes for a person.");
-    }
+    const way = await answerWay(c.env, principal);
+    if ("refused" in way || !principal.user) throw new HTTPError(403, "refused" in way ? way.refused : "Sign in first.");
     const body = await c.req.json<{ approvalId?: string; answer?: string; note?: string }>().catch(() => ({}) as { approvalId?: string; answer?: string; note?: string });
     if (body.answer !== "approve" && body.answer !== "send-back") throw new HTTPError(400, 'Give answer: "approve" or "send-back".');
     if (!body.approvalId || typeof body.approvalId !== "string") throw new HTTPError(400, "Give approvalId: the id of the question that you saw.");
@@ -515,7 +515,7 @@ app.post("/api/projects/:p/attempts/:id/decide", async (c) => {
       c.req.param("id"),
       { answer: body.answer, note: typeof body.note === "string" ? body.note : undefined },
       { id: principal.user.id, name: principal.user.name, role: h.role },
-      "app",
+      way.how,
       { approvalId: body.approvalId },
       new URL(c.req.url).origin,
     );

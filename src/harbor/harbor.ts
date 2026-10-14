@@ -2996,7 +2996,7 @@ export class HarborMaster extends DurableObject<Env> {
     attemptId: string,
     input: T.ApprovalAnswer,
     who: { id: string; name: string; role: Role },
-    how: "app" | "chat" = "app",
+    how: "app" | "chat" | "cli" = "app",
     expect: { approvalId?: string } = {},
     origin?: string,
   ): Promise<T.ApprovalResult> {
@@ -3035,7 +3035,7 @@ export class HarborMaster extends DurableObject<Env> {
     const by: T.Actor = { kind: "human", id: who.id, name: who.name };
     const note = String(input.note ?? "").trim().slice(0, 1000);
     const answer = { by: { id: who.id, name: who.name }, how, ...(note ? { note } : {}), at: Date.now() };
-    const where = how === "chat" ? " in the chat of the agent" : "";
+    const where = how === "chat" ? " in the chat of the agent" : how === "cli" ? " with the gitring command line" : "";
     const sign = { attemptId: a.id, task: intent.title, agent: this.callsign(a.id), line: approvalLine(a), link: this.approvalLink(a) };
 
     if (input.answer === "approve") {

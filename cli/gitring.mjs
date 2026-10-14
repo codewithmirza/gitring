@@ -608,10 +608,12 @@ async function clone(ctx, [project, folder]) {
   const access = okJson(s, await rest(ctx, s, "POST", `/api/projects/${encodeURIComponent(project)}/clone-token`, {}));
   if (!access?.remote || !access?.token) throw new CliError("The server did not give a clone address.");
   const dir = folder ?? project;
-  if (ctx.flags.json) return printJson(ctx, { project, remote: access.remote, folder: dir, ...(access.expiresAt ? { expiresAt: access.expiresAt } : {}) });
-  ctx.out(`gitring runs: git clone ${access.remote} ${dir}`);
+  const branch = typeof access.branch === "string" && access.branch ? ["--branch", access.branch] : [];
+  if (ctx.flags.json) return printJson(ctx, { project, remote: access.remote, folder: dir, ...(branch.length ? { branch: access.branch } : {}), ...(access.expiresAt ? { expiresAt: access.expiresAt } : {}) });
+  ctx.out(`gitring runs: git clone ${[...branch, access.remote, dir].join(" ")}`);
   // The token goes to git in the environment (git 2.31 or later), not in the command line or the folder.
-  const code = await ctx.run("git", ["clone", access.remote, dir], {
+  // "--" ends the options of git: a folder name that starts with a dash stays a folder name.
+  const code = await ctx.run("git", ["clone", ...branch, "--", access.remote, dir], {
     env: { ...ctx.processEnv, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.extraHeader", GIT_CONFIG_VALUE_0: gitAuthHeader(access.token), GIT_TERMINAL_PROMPT: "0" },
   });
   if (code !== 0) throw new CliError("git clone did not finish. Check that git 2.31 or later is installed, and read the git message above.");
