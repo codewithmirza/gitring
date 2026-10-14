@@ -701,7 +701,7 @@ export class HarborMaster extends DurableObject<Env> {
    * Blob reads for a merge, a re-plot or the test container. Text comes from what gitring holds (text that
    * only gitring has, the text trees it read, `known` contents), then from the repositories in order. Text is
    * given only when it is exactly the blob, so gitring never changes the bytes of a file that it carries:
-   * any other blob goes as bytes. `knownText` never reads a repository.
+   * any other blob goes as bytes. `knownText` never reads a repository (it reads the blob store of the object).
    */
   private blobReader(o: { trees: TreeText[]; repos: string[]; textBlobs?: Map<string, string>; known?: Map<string, string | Uint8Array>; texts?: [string, string][] }): BlobReader {
     const index = new Map<string, string>(o.texts ?? []);
@@ -720,8 +720,14 @@ export class HarborMaster extends DurableObject<Env> {
       if (own !== undefined) return own;
       const k = o.known?.get(sha);
       if (k !== undefined) return typeof k === "string" ? k : null;
-      const text = index.get(sha);
-      if (text === undefined) return undefined;
+      let text = index.get(sha);
+      if (text === undefined) {
+        // A blob that gitring read before (in this project object's store): no repository read.
+        const stored = this.db.getBlobText(sha);
+        if (!stored) return undefined;
+        if (stored.text === null) return null;
+        text = stored.text;
+      }
       return (await this.isExact(sha, text)) ? text : null;
     };
     const readBytes = async (sha: string): Promise<Uint8Array | null> => {
@@ -734,6 +740,8 @@ export class HarborMaster extends DurableObject<Env> {
       for (const repo of repos) {
         const bytes = await this.backend.readBlob(repo, sha).catch(() => null);
         if (!bytes) continue;
+        // Keep what readText keeps, so that the next merge or test run knows this blob without a read.
+        if (!this.db.getBlobText(sha)) this.db.putBlobText(sha, bytes.length <= MAX_TEXT_BYTES && isProbablyText(bytes) ? utf8.decode(bytes) : null);
         this.blobSizes.set(sha, bytes.length);
         if (this.blobSizes.size > 20_000) this.blobSizes.clear();
         if (cached + bytes.length <= READER_CACHE_BYTES) {

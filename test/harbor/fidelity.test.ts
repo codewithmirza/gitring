@@ -188,9 +188,9 @@ describe("api mode", () => {
 });
 
 describe("the test container gets the tree that merges", () => {
-  it("sends binary files and the executable bit, for the work and for main plus the work", async () => {
-    const runs: { files: Map<string, TarItem> }[] = [];
-    const w = new CrashWorld({
+  /** A world with the container runner. Each container run adds the files of its tree to `runs`. */
+  function containerWorld(runs: { files: Map<string, TarItem> }[]): CrashWorld {
+    return new CrashWorld({
       DRYDOCK: {
         idFromName: (n: string) => n,
         get: () => ({
@@ -204,6 +204,11 @@ describe("the test container gets the tree that merges", () => {
         }),
       },
     });
+  }
+
+  it("sends binary files and the executable bit, for the work and for main plus the work", async () => {
+    const runs: { files: Map<string, TarItem> }[] = [];
+    const w = containerWorld(runs);
     await w.start({
       runner: "container",
       files: [{ path: "src/a.js", text: "export const a = 1;\n" }, { path: "img/logo.png", base64: b64(PNG) } as never, { path: "tools/gen", text: "#!/bin/sh\n", executable: true } as never],
@@ -219,6 +224,32 @@ describe("the test container gets the tree that merges", () => {
       expect(run.files.get("tools/gen")?.mode).toBe(0o755);
       expect(utf8.decode(run.files.get("src/beta.js")!.data!)).toBe("export const beta = 1;\n");
     }
+  });
+
+  it("reads a file without text analysis from the repository once, then from its own store", async () => {
+    const runs: { files: Map<string, TarItem> }[] = [];
+    const w = containerWorld(runs);
+    await w.start({
+      runner: "container",
+      files: [{ path: "src/a.js", text: "export const a = 1;\n" }, { path: "vendor/lib.js", text: "export const lib = 1;\n" }],
+      settings: { landing: "automatic" },
+    });
+    const lib = (await mainSnapshot(w)).get("vendor/lib.js")!.sha;
+    const reads: string[] = [];
+    const readBlob = w.repo.readBlob.bind(w.repo);
+    w.repo.readBlob = async (repo: string, sha: string) => {
+      reads.push(sha);
+      return readBlob(repo, sha);
+    };
+    for (const name of ["alpha", "beta"]) {
+      const t = await w.startTask(name);
+      await w.harbor.submit(t.attemptId, `Add ${name}`);
+      await w.settle();
+      expect(w.status(t.attemptId)).toBe("landed");
+    }
+    expect(runs).toHaveLength(4);
+    for (const run of runs) expect(utf8.decode(run.files.get("vendor/lib.js")!.data!)).toBe("export const lib = 1;\n");
+    expect(reads.filter((sha) => sha === lib)).toHaveLength(1);
   });
 });
 
