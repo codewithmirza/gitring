@@ -139,6 +139,13 @@ interface TreeChange {
 
 type Engine = "fts5" | "scan";
 
+/** One side of a compare. A work copy: the tree of its base, and the work on top. */
+interface CompareSide {
+  label: string;
+  tree: string;
+  work?: { files: Map<string, string>; changed: Set<string>; deleted: Set<string> };
+}
+
 /** Lines of a text: "a\nb\n" and "a\nb" have 2, "" has 0 (the line model of src/core/text/diff.ts). */
 export function lineCount(text: string): number {
   if (!text) return 0;
@@ -234,7 +241,11 @@ export class DerivedHistory {
   private run: Promise<unknown> = Promise.resolve();
   private searchRun: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly src: DerivedSource) {
+  /** `queryBudgetMs`: how long a question waits for the history (tests make it short). */
+  constructor(
+    private readonly src: DerivedSource,
+    private readonly queryBudgetMs = QUERY_BUDGET_MS,
+  ) {
     for (const s of SCHEMA) src.sql.exec(s);
     // Durable Object SQLite has FTS5. Keep a plain scan for a SQLite that does not.
     let engine: Engine = "fts5";
@@ -388,12 +399,14 @@ export class DerivedHistory {
       const m = this.src.main();
       if (!m) return { behind: 0, total: 0 };
       this.forRepo(m.repo);
+      const count = () => this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM dd_steps").one().n;
+      // Most questions come when the history already has main: no walk.
+      if (this.tip()?.sha === m.sha) return { behind: 0, total: count() };
       const started = Date.now();
       const plan = await this.plan(m);
       let i = 0;
       if (plan.length <= upTo) for (; i < plan.length && (i === 0 || Date.now() - started < budgetMs); i++) await this.compute(plan[i], m);
-      const done = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM dd_steps").one().n;
-      return { behind: plan.length - i, total: done + plan.length - i };
+      return { behind: plan.length - i, total: count() + plan.length - i };
     });
   }
 
@@ -456,7 +469,7 @@ export class DerivedHistory {
   private async ready(): Promise<{ repo: string; sha: string; tree: string }> {
     const m = this.src.main();
     if (!m) throw new Error("The project has no main yet. Ask again when the import is done.");
-    const { behind, total } = await this.catchUp(QUERY_BUDGET_MS);
+    const { behind, total } = await this.catchUp(this.queryBudgetMs);
     if (behind > 0) {
       this.src.background(this.catchUp());
       throw new Error(`gitring builds the history of this project now (${total - behind} of ${total} changes). Ask again in a minute.`);
@@ -661,18 +674,20 @@ export class DerivedHistory {
       this.forRepo(m.repo);
       const state = this.meta<{ tree: string; engine: Engine }>("search");
       if (state?.tree === m.tree && state.engine === this.engine) return;
-      const main = await this.src.treeText(m.tree);
       if (!state || state.engine !== this.engine) {
+        const main = await this.src.treeText(m.tree);
         this.sql.exec("DELETE FROM dd_text");
         if (this.engine === "fts5") this.sql.exec("INSERT INTO dd_fts (dd_fts) VALUES ('delete-all')");
         for (const [path, body] of main.text) this.putText(path, body);
       } else {
+        // Only the touched files: read their text, then write all rows in one step.
         const { changes } = await diffTrees(this.readTree, state.tree, m.tree, Infinity);
-        for (const c of changes) {
-          const body = main.text.get(c.path);
-          if (body === undefined) this.dropText(c.path);
+        const bodies = await mapLimit(changes, TEXT_READS, (c) => (isBlob(c.now) && textEligible(c.path) ? this.src.text(c.now.hash) : Promise.resolve(null)));
+        changes.forEach((c, i) => {
+          const body = bodies[i];
+          if (body === null) this.dropText(c.path);
           else this.putText(c.path, body);
-        }
+        });
       }
       this.setMeta("search", { tree: m.tree, engine: this.engine });
     });
@@ -727,60 +742,79 @@ export class DerivedHistory {
     return found.size ? [...found][0] : null;
   }
 
-  /** One side of a compare: its text files, and the id of every file (for files without text). */
-  private async side(raw: string): Promise<{ label: string; text: Map<string, string>; ids: Map<string, string> }> {
+  /**
+   * One side of a compare: a tree, and for a work copy the files that the work changed (text files) or
+   * deleted. A work copy has the tree of its base.
+   */
+  private async side(raw: string): Promise<CompareSide> {
     const ref = String(raw ?? "").trim();
     if (!ref) throw new Error("Give two versions: main, a commit id or a work copy id.");
     const m = this.src.main();
     if (!m) throw new Error("The project has no main yet. Ask again when the import is done.");
-    const ofTree = async (tree: string, label: string) => {
-      const tt = await this.src.treeText(tree);
-      return { label, text: tt.text, ids: new Map([...tt.snapshot].map(([p, e]) => [p, `${e.sha}:${e.mode}`])) };
-    };
-    if (ref === "main" || ref === m.sha) return ofTree(m.tree, "main");
+    if (ref === "main" || ref === m.sha) return { label: "main", tree: m.tree };
     if (/^[0-9a-f]{7,40}$/.test(ref)) {
       const sha = ref.length === 40 ? ref : this.expand(ref);
       const commit = sha ? await this.src.commit(sha) : null;
       if (!commit) throw new Error(`Commit ${short(ref)} is not in this project.`);
-      return ofTree(commit.treeHash, versionWords(commit.hash));
+      return { label: versionWords(commit.hash), tree: commit.treeHash };
     }
     const wc = await this.src.workCopy(ref);
     if (!wc) throw new Error(`Unknown version "${ref}". Use main, a commit id or a work copy id.`);
-    const base = await ofTree(wc.attempt.baseTree, "");
-    const ids = base.ids;
-    for (const p of wc.deleted) ids.delete(p);
-    for (const [p, t] of wc.files) if (base.text.get(p) !== t) ids.set(p, `work:${p}`);
-    return { label: versionWords(ref, wc.callsign), text: wc.files, ids };
+    // The files of a work copy are the text of its base plus the work: the changed ones differ from the base.
+    const base = await this.src.treeText(wc.attempt.baseTree);
+    const changed = new Set(wc.deleted);
+    for (const [p, t] of wc.files) if (base.text.get(p) !== t) changed.add(p);
+    return { label: versionWords(ref, wc.callsign), tree: wc.attempt.baseTree, work: { files: wc.files, changed, deleted: new Set(wc.deleted) } };
   }
 
-  /** The changes from one version to another: each side is main, a commit id or a work copy id. */
+  /**
+   * The file at `path` of one side: null when the side does not have it, else its id and its text (null
+   * for a file without text). `entry`: the tree entry when the caller knows it (null: not in the tree).
+   */
+  private async fileOf(s: CompareSide, path: string, entry?: TreeEntry | null): Promise<{ id: string; text: string | null } | null> {
+    if (s.work?.changed.has(path)) {
+      const t = s.work.deleted.has(path) ? undefined : s.work.files.get(path);
+      return t === undefined ? null : { id: `work:${path}`, text: t };
+    }
+    const e = entry === undefined ? await this.entryAt(s.tree, path) : entry;
+    if (!e || e.type === "tree") return null;
+    return { id: `${e.hash}:${e.mode}`, text: isBlob(e) && textEligible(path) ? await this.src.text(e.hash) : null };
+  }
+
+  /**
+   * The changes from one version to another: each side is main, a commit id or a work copy id. The tree
+   * diff never opens a subtree that did not change, and only the changed files are read.
+   */
   async compare(from: string, to: string): Promise<CompareAnswer> {
     const [a, b] = await Promise.all([this.side(from), this.side(to)]);
-    const paths = [...new Set([...a.ids.keys(), ...b.ids.keys(), ...a.text.keys(), ...b.text.keys()])].sort();
+    const { changes, cut } = await diffTrees(this.readTree, a.tree, b.tree, COMPARE_FILES + 1);
+    const inTrees = new Map(changes.map((c) => [c.path, c]));
+    const paths = [...new Set([...inTrees.keys(), ...(a.work?.changed ?? []), ...(b.work?.changed ?? [])])].sort();
+    const pairs = await mapLimit(paths, TEXT_READS, async (path) => {
+      const c = inTrees.get(path);
+      const [fa, fb] = await Promise.all([this.fileOf(a, path, c ? (c.old ?? null) : undefined), this.fileOf(b, path, c ? (c.now ?? null) : undefined)]);
+      return { path, fa, fb };
+    });
     const files: CompareFile[] = [];
     let additions = 0;
     let deletions = 0;
     let chars = 0;
-    let more = false;
-    for (const path of paths) {
-      const ta = a.text.get(path) ?? null;
-      const tb = b.text.get(path) ?? null;
-      const ia = a.ids.get(path);
-      const ib = b.ids.get(path);
-      if (ta !== null && ta === tb) continue;
-      if (ta === null && tb === null && ia === ib) continue;
+    let more = cut;
+    for (const { path, fa, fb } of pairs) {
+      if (!fa && !fb) continue;
+      if (fa && fb && (fa.id === fb.id || (fa.text !== null && fa.text === fb.text))) continue;
       if (files.length >= COMPARE_FILES || chars >= COMPARE_CHARS) {
         more = true;
         break;
       }
-      const inA = ta !== null || ia !== undefined;
-      const inB = tb !== null || ib !== undefined;
-      const status = !inA ? "A" : !inB ? "D" : "M";
+      const status = !fa ? "A" : !fb ? "D" : "M";
       // A side that has the file without text: gitring compares only the ids.
-      if ((inA && ta === null) || (inB && tb === null)) {
+      if ((fa && fa.text === null) || (fb && fb.text === null)) {
         files.push({ path, status, additions: 0, deletions: 0, diff: "", binary: true });
         continue;
       }
+      const ta = fa?.text ?? null;
+      const tb = fb?.text ?? null;
       const d = lineDiff(ta ?? "", tb ?? "");
       const diff = unifiedDiff(path, ta, tb);
       chars += diff.length;

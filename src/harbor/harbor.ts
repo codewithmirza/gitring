@@ -2311,7 +2311,12 @@ export class HarborMaster extends DurableObject<Env> {
       };
       this.landings.push(landing);
       this.db.putLanding(landing, note);
-      this.derived.landed(touched.length);
+      // The history of main follows in the background; a fault there never stops the merge record.
+      try {
+        this.derived.landed(touched.length);
+      } catch (e) {
+        console.warn("history", errorLine(e));
+      }
     }
     a.status = "landed";
     a.mergeWait = undefined;

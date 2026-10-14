@@ -25,6 +25,8 @@ class Project {
   notes = new Map<string, string>();
   work = new Map<string, WorkCopyFiles>();
   treeReads = 0;
+  textReads = 0;
+  commitReads = 0;
   pending: Promise<unknown>[] = [];
   /** Every commit of main, in order: the files after it. */
   versions: { sha: string; files: Map<string, string> }[] = [];
@@ -48,12 +50,16 @@ class Project {
       note: (id) => this.notes.get(id) ?? null,
       callsign: (id) => `Robin-${id}`,
       title: (id) => `Task ${id}`,
-      commit: (sha) => this.backend.readCommit(REPO, sha),
+      commit: (sha) => {
+        this.commitReads++;
+        return this.backend.readCommit(REPO, sha);
+      },
       readTree: (tree) => {
         this.treeReads++;
         return this.backend.readTree(REPO, tree);
       },
       text: async (sha) => {
+        this.textReads++;
         const bytes = await this.backend.readBlob(REPO, sha);
         return bytes ? decoder.decode(bytes) : null;
       },
@@ -330,6 +336,35 @@ describe("cost and order", () => {
     expect((await h.history({})).steps).toHaveLength(5);
   });
 
+  it("answers in plain words that the history is not ready when a question cannot wait, and finishes it after the answer", async () => {
+    p = new Project();
+    await p.start({ "a.js": lines("a") });
+    for (let i = 0; i < 4; i++) await p.commit({ "a.js": lines("a", `${i}`) });
+    const h = new DerivedHistory(p.source(), 0);
+    const err = await h.history({}).then(
+      () => "",
+      (e: Error) => e.message,
+    );
+    expect(err).toBe("gitring builds the history of this project now (1 of 5 changes). Ask again in a minute.");
+    expect(steViolations(err)).toEqual([]);
+    await p.settle();
+    expect((await h.history({})).steps).toHaveLength(5);
+  });
+
+  it("reads nothing of the repository for a question when the history already has main", async () => {
+    p = new Project();
+    await p.start({ "a.js": lines("a") });
+    await p.commit({ "a.js": lines("a", "b") });
+    const h = new DerivedHistory(p.source());
+    await h.history({});
+    p.commitReads = 0;
+    p.treeReads = 0;
+    expect((await h.history({ path: "a.js" })).steps).toHaveLength(2);
+    expect(p.commitReads).toBe(0);
+    // Only the root tree: was the file there at the start of the history?
+    expect(p.treeReads).toBe(1);
+  });
+
   it("starts again for a new repository of the project", async () => {
     p = new Project();
     await p.start({ "a.js": lines("a") });
@@ -384,7 +419,10 @@ describe("search", () => {
       const h = await shop(noFts);
       expect((await h.search({ query: "discount" })).total).toBe(0);
       await p.commit({ "src/price.js": lines("export function priceOf(item) {", "  return discount(item.price);", "}"), "README.md": null });
+      p.textReads = 0;
       const after = await h.search({ query: "discount" });
+      // One touched text file to read; the deleted file has nothing to read.
+      expect(p.textReads).toBe(1);
       expect(after.files.map((f) => f.path)).toEqual(["src/price.js"]);
       expect((await h.search({ query: "Prices: see" })).total).toBe(0);
       expect((p.db.storage.sql.exec("SELECT COUNT(*) AS n FROM dd_text").one() as { n: number }).n).toBe(2);
@@ -420,6 +458,80 @@ describe("compare", () => {
     expect(wc.files.map((f) => [f.path, f.status])).toEqual([["a.js", "M"]]);
     await expect(h.compare("main", "nope")).rejects.toThrow('Unknown version "nope". Use main, a commit id or a work copy id.');
     await expect(h.compare("main", "0000000")).rejects.toThrow("Commit 0000000 is not in this project.");
+  });
+});
+
+describe("compare cost and files", () => {
+  it("reads only the changed files and the subtrees on their paths", async () => {
+    p = new Project();
+    const big: Record<string, string> = {};
+    for (let d = 0; d < 10; d++) for (let f = 0; f < 10; f++) big[`dir${d}/f${f}.txt`] = lines(`${d}.${f}`);
+    const root = await p.start(big);
+    await p.commit({ "dir3/f2.txt": lines("changed"), "dir7/new.txt": lines("new") });
+    const h = new DerivedHistory(p.source());
+    p.textReads = 0;
+    p.treeReads = 0;
+    const res = await h.compare(root, "main");
+    expect(res.files.map((f) => [f.path, f.status, f.additions, f.deletions])).toEqual([
+      ["dir3/f2.txt", "M", 1, 1],
+      ["dir7/new.txt", "A", 1, 0],
+    ]);
+    // Two roots, two dir3 trees, two dir7 trees. The old and new text of f2.txt, the text of new.txt.
+    expect(p.treeReads).toBe(6);
+    expect(p.textReads).toBe(3);
+  });
+
+  it("shows a file without text by its id, and the files that a work copy deletes", async () => {
+    p = new Project();
+    const start = await p.start({ "a.js": lines("a"), "b.js": lines("b"), "logo.png": "PNG-1" });
+    const startTree = p.main.tree;
+    await p.commit({ "logo.png": "PNG-2" });
+    const h = new DerivedHistory(p.source());
+    const pic = await h.compare(start, "main");
+    expect(pic.files).toEqual([{ path: "logo.png", status: "M", additions: 0, deletions: 0, diff: "", binary: true }]);
+    expect(pic.summary).toBe(`commit ${start.slice(0, 7)} and main differ in 1 file (+0 -0).`);
+    p.work.set("a_d", {
+      attempt: { id: "a_d", baseSha: start, baseTree: startTree } as T.Attempt,
+      files: new Map([["a.js", lines("a", "more")]]),
+      deleted: ["b.js"],
+      callsign: "Robin-3",
+      title: "Drop b",
+    });
+    const wc = await h.compare("main", "a_d");
+    expect(wc.files.map((f) => [f.path, f.status, f.binary ?? false])).toEqual([
+      ["a.js", "M", false],
+      ["b.js", "D", false],
+      ["logo.png", "M", true],
+    ]);
+    expect(wc.files[1]).toMatchObject({ deletions: 1, additions: 0 });
+    expect(wc.summary).toBe("main and the work copy of Robin-3 differ in 3 files (+1 -1).");
+    for (const t of [pic.summary, wc.summary]) expect(steViolations(t)).toEqual([]);
+  });
+});
+
+describe("errors", () => {
+  it("answers each refusal in plain words", async () => {
+    p = new Project();
+    const empty = new DerivedHistory(p.source());
+    const messages: string[] = [];
+    const refuse = async (work: Promise<unknown>) => {
+      const msg = await work.then(
+        () => "",
+        (e: Error) => e.message,
+      );
+      expect(msg).not.toBe("");
+      messages.push(msg);
+      return msg;
+    };
+    expect(await refuse(empty.why({ path: "a.js" }))).toBe("The project has no main yet. Ask again when the import is done.");
+    expect(await refuse(empty.search({ query: "x" }))).toBe("The project has no main yet. Ask again when the import is done.");
+    await p.start({ "a.js": lines("a") });
+    const h = new DerivedHistory(p.source());
+    expect(await refuse(h.why({ path: " " }))).toBe("Give the path of a file.");
+    expect(await refuse(h.why({ path: "a.js", ref: "0000000" }))).toBe("gitring has no history for commit 0000000. Ask about main, a commit of main or a work copy.");
+    expect(await refuse(h.search({ query: "x".repeat(201) }))).toBe("Give a text of at most 200 characters.");
+    expect(await refuse(h.compare("", "main"))).toBe("Give two versions: main, a commit id or a work copy id.");
+    for (const m of messages) expect(steViolations(m), m).toEqual([]);
   });
 });
 
