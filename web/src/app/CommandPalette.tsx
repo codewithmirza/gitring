@@ -80,6 +80,7 @@ function useEntries(): Item[] {
       page("/tasks", "Tasks", "amend", "g t");
       page("/history", "History", "logbook", "g h", "merges and why");
       page("/code", "Code", "code", "g c", "files of main and of each work copy");
+      page("/replay", "Replay", "play", undefined, "the history on the map, step by step");
       page("/connect", "Connect", "plug", "g k");
       if (canAct) page("/settings", "Project settings", "gear", undefined, "name, members, tests, GitHub");
     }

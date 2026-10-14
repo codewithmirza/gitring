@@ -21,6 +21,7 @@ import { servePreview } from "../platform/checks/preview";
 import type * as T from "../core/types";
 import type * as A from "../core/accounts";
 import { atLeast, PROJECT_ID } from "../core/accounts";
+import { isTimelineCursor, timelineLimit } from "../core/timeline";
 import { actorOf, authRoutes, closeUserSockets, directory, forgetPrincipal, resolvePrincipal, type Principal } from "./auth";
 import { mcpChallenge, mcpScopeChallenge, oauthRoutes } from "./oauth";
 import { MCP_PATH, mcpSetOf, resourceOf, SCOPE, SCOPE_READ, type McpSet } from "../directory/oauth";
@@ -541,6 +542,22 @@ app.get("/api/projects/:p/attempts/:id/diff", async (c) => {
     return c.json(await h.attemptDiff(c.req.param("id")));
   } catch (e) {
     return err(c, e, 404);
+  }
+});
+
+/**
+ * The whole history of the project, oldest first, a page at a time (the Replay view reads it):
+ * ?after=<the `next` cursor of the page before>&limit=<1–2000, default 500>. Viewers of a public project
+ * may read it: it has what the live state shows them.
+ */
+app.get("/api/projects/:p/events", async (c) => {
+  try {
+    const h = await ready(c, c.req.param("p"), "viewer");
+    const after = c.req.query("after") || null;
+    if (after !== null && !isTimelineCursor(after)) throw new HTTPError(400, "Give `after` as the `next` cursor of an earlier page.");
+    return c.json(await h.events(after, timelineLimit(c.req.query("limit"))));
+  } catch (e) {
+    return err(c, e, 500);
   }
 });
 

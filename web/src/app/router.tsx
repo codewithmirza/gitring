@@ -9,6 +9,7 @@ export type Route =
   | { name: "approve"; id: string }
   | { name: "code"; ref?: string; path?: string }
   | { name: "connect" }
+  | { name: "replay" }
   | { name: "design" }
   | { name: "projects" }
   | { name: "settings" }
@@ -28,6 +29,7 @@ function decode(part: string): string {
  * Paths: "/" home, "/overview", "/tasks" and "/tasks/:id", "/history" and "/history/:id",
  * "/approve/:id" (a person says yes to the merge of a work copy),
  * "/code", "/code/:ref" and "/code/:ref/<file path>" (ref: main, a work copy id or a commit), "/connect",
+ * "/replay" (the history of the project played back on the map),
  * "/projects", "/settings", "/account", "/inbox" (what waits for the person in all projects). Old paths stay as aliases: "/chart", "/intents/:id", "/logbook/:id".
  * "/design" exists in development builds only.
  */
@@ -51,6 +53,8 @@ export function parseRoute(pathname: string): Route {
       return { name: "code", ref: parts[1], path: parts.length > 2 ? parts.slice(2).join("/") : undefined };
     case "connect":
       return { name: "connect" };
+    case "replay":
+      return { name: "replay" };
     case "design":
       if (import.meta.env.DEV) return { name: "design" };
       break;
@@ -83,6 +87,7 @@ export function isProjectRoute(route: Route): boolean {
     route.name === "approve" ||
     route.name === "code" ||
     route.name === "connect" ||
+    route.name === "replay" ||
     route.name === "settings"
   );
 }

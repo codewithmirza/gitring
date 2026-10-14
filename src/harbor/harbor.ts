@@ -10,6 +10,8 @@ import { DurableObject } from "cloudflare:workers";
 import type * as T from "../core/types";
 import { DEFAULT_SETTINGS, isLandingMode, noTestRan, withDefaults } from "../core/types";
 import { Db } from "./store";
+import { readTimeline } from "./timeline";
+import type { TimelinePage } from "../core/timeline";
 import { CHECK_RUN, callsignFor, colorFor, newId, rand, repoSafe } from "./ids";
 import { hmacSha256Hex, seal, sha256Hex, unseal } from "../directory/crypto";
 import { deliverWebhook, newWebhookSecret, SECRET_SEAL, secretHint } from "./webhooks";
@@ -4134,6 +4136,24 @@ export class HarborMaster extends DurableObject<Env> {
       /* keep text */
     }
     return { landing, note, diff: await this.attemptDiff(landing.attemptId) };
+  }
+
+  /**
+   * The whole history of the project, oldest first, one page at a time (the Replay view reads it). It reads
+   * the activity log and the conflict checks from storage, not only the recent window of the live state.
+   * `after`: the `next` cursor of the page before (absent: from the start).
+   */
+  async events(after?: string | null, limit?: number): Promise<TimelinePage> {
+    this.requireProject();
+    const sources = {
+      intents: this.intents.values(),
+      attempts: this.attempts.values(),
+      corrections: this.corrections.values(),
+      decisions: this.decisions,
+      landings: this.landings,
+      agents: this.agents.values(),
+    };
+    return readTimeline(this.ctx.storage.sql, sources, after ?? null, limit);
   }
 
   /** Changes on every start of this object: versions of work copies are counted in memory. */

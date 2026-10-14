@@ -12,6 +12,7 @@ const loaders = {
   approve: () => import("../views/ApproveView"),
   code: () => import("../views/CodeView"),
   connect: () => import("../views/ConnectView"),
+  replay: () => import("../views/ReplayView"),
   projects: () => import("../views/ProjectsView"),
   settings: () => import("../views/SettingsView"),
   account: () => import("../views/AccountView"),
@@ -24,6 +25,7 @@ export const LogbookView = lazy(() => loaders.logbook().then((m) => ({ default: 
 export const ApproveView = lazy(() => loaders.approve().then((m) => ({ default: m.ApproveView })));
 export const CodeView = lazy(() => loaders.code().then((m) => ({ default: m.CodeView })));
 export const ConnectView = lazy(() => loaders.connect().then((m) => ({ default: m.ConnectView })));
+export const ReplayView = lazy(() => loaders.replay().then((m) => ({ default: m.ReplayView })));
 export const ProjectsView = lazy(() => loaders.projects().then((m) => ({ default: m.ProjectsView })));
 export const SettingsView = lazy(() => loaders.settings().then((m) => ({ default: m.SettingsView })));
 export const AccountView = lazy(() => loaders.account().then((m) => ({ default: m.AccountView })));

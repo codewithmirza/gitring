@@ -25,7 +25,7 @@ const EMPTY: never[] = [];
 
 /* ───────────── placement ───────────── */
 
-interface Placement {
+export interface Placement {
   wx: number;
   wy: number;
   ox: number;
@@ -34,7 +34,7 @@ interface Placement {
   offshore: boolean;
 }
 
-function placeVessels(vessels: VesselModel[], layout: ChartLayout, compact = false): Map<string, Placement> {
+export function placeVessels(vessels: VesselModel[], layout: ChartLayout, compact = false): Map<string, Placement> {
   const spots = new Map<string, { wx: number; wy: number; offshore: boolean; list: VesselModel[] }>();
   for (const v of vessels) {
     let key = "";
@@ -94,7 +94,7 @@ function placeVessels(vessels: VesselModel[], layout: ChartLayout, compact = fal
 
 /* ───────────── static layers ───────────── */
 
-const Sea = memo(function Sea({ layout }: { layout: ChartLayout }) {
+export const Sea = memo(function Sea({ layout }: { layout: ChartLayout }) {
   return (
     <g className="c-sea" aria-hidden="true">
       {layout.islands.map((i) => (
@@ -107,7 +107,7 @@ const Sea = memo(function Sea({ layout }: { layout: ChartLayout }) {
   );
 });
 
-const Land = memo(function Land({ layout }: { layout: ChartLayout }) {
+export const Land = memo(function Land({ layout }: { layout: ChartLayout }) {
   return (
     <g className="c-land" aria-hidden="true">
       {layout.islands.map((i) => (
@@ -117,7 +117,7 @@ const Land = memo(function Land({ layout }: { layout: ChartLayout }) {
   );
 });
 
-const Parcels = memo(function Parcels({
+export const Parcels = memo(function Parcels({
   layout,
   kq,
   onHover,
@@ -172,7 +172,7 @@ const Parcels = memo(function Parcels({
   );
 });
 
-function CompassRose({ x, y, r }: { x: number; y: number; r: number }) {
+export function CompassRose({ x, y, r }: { x: number; y: number; r: number }) {
   const ticks = [];
   for (let d = 0; d < 360; d += 10) {
     const long = d % 30 === 0;
@@ -217,7 +217,7 @@ function colName(i: number): string {
   return s;
 }
 
-const Graticule = memo(function Graticule({ t, w, h, origin, part }: { t: Transform; w: number; h: number; origin: { x: number; y: number }; part: "grid" | "frame" }) {
+export const Graticule = memo(function Graticule({ t, w, h, origin, part }: { t: Transform; w: number; h: number; origin: { x: number; y: number }; part: "grid" | "frame" }) {
   let step = 64;
   while (step * t.k < 44) step *= 2;
   while (step * t.k > 150 && step > 16) step /= 2;
@@ -307,7 +307,7 @@ const Graticule = memo(function Graticule({ t, w, h, origin, part }: { t: Transf
 
 /* ───────────── dynamic layers ───────────── */
 
-const Contours = memo(function Contours({ layout, vessels }: { layout: ChartLayout; vessels: VesselModel[] }) {
+export const Contours = memo(function Contours({ layout, vessels }: { layout: ChartLayout; vessels: VesselModel[] }) {
   const counts = new Map<string, number>();
   for (const v of vessels) {
     for (const f of new Set([...v.track, ...(v.file ? [v.file] : [])])) counts.set(f, (counts.get(f) ?? 0) + 1);
@@ -420,7 +420,7 @@ const Vessel = memo(function Vessel(p: VesselProps) {
   );
 });
 
-const RangeLines = memo(function RangeLines({
+export const RangeLines = memo(function RangeLines({
   lines,
   pos,
   k,
@@ -496,7 +496,7 @@ const Pulses = memo(function Pulses({ pos, k }: { pos: Map<string, { x: number; 
   );
 });
 
-const Buoys = memo(function Buoys({
+export const Buoys = memo(function Buoys({
   buoys,
   layout,
   k,
@@ -560,7 +560,7 @@ const Buoys = memo(function Buoys({
   );
 });
 
-const TracksLayer = memo(function TracksLayer({
+export const TracksLayer = memo(function TracksLayer({
   vessels,
   layout,
   pos,
@@ -601,7 +601,7 @@ const TracksLayer = memo(function TracksLayer({
   );
 });
 
-const VesselLayer = memo(function VesselLayer({
+export const VesselLayer = memo(function VesselLayer({
   vessels,
   placements,
   k,
