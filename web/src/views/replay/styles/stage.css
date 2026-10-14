@@ -1,4 +1,4 @@
-/* The kiosk mode and the stage: the map with its overlays, the title block, the tasks, main and the title cards. */
+/* The kiosk mode and the stage: the map with its overlays, the title block, tasks, main and title cards. */
 
 /* Kiosk: the replay fills the window (no app bar, no bottom bar). */
 .app--kiosk { grid-template-rows: minmax(0, 1fr); }

@@ -1,5 +1,5 @@
 /**
- * Approvals in the web app: which merges wait for the person who looks at the page, and the words for them.
+ * Approvals in the web app: which merges wait for this person, and the words for them.
  * The rules (who may answer, the facts of a question) come from core/approvals through the selector. Nothing
  * here decides who may say yes: the Worker checks every answer again.
  */

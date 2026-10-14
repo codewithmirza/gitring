@@ -1,5 +1,5 @@
 /**
- * What the code view shows when a ref has no file open: the work copy, the merge or main, with its changes and README.
+ * What the code view shows when no file is open: the work copy, merge or main, with its README.
  */
 import { Icon } from "../../../design/icons";
 import { Link } from "../../../app/router";

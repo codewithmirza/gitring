@@ -1,3 +1,7 @@
+/**
+ * Badges: a small label with an icon and text, and the badges for merge methods and statuses.
+ * Color is never the only signal: each badge has an icon and text.
+ */
 import type { ReactNode } from "react";
 import type { AttemptStatus, IntentStatus, LandingMethod } from "../../../../src/core/types";
 import { Icon, type IconName } from "../icons";

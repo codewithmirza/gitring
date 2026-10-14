@@ -1,3 +1,7 @@
+/**
+ * Shows a unified diff as rows with line numbers. parseUnified turns diff text into rows.
+ * Used by the tasks page, the history page and the code page.
+ */
 import { Fragment, useMemo, useState } from "react";
 import { Icon } from "../icons";
 import { Button } from "./Button";

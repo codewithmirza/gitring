@@ -1,3 +1,6 @@
+/**
+ * A number with a label, and the row that holds several of them.
+ */
 import type { ReactNode } from "react";
 
 interface StatProps {

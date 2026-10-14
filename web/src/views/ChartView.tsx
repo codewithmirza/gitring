@@ -1,3 +1,7 @@
+/**
+ * The overview page: the map, the task rail, the traffic rail and the activity log.
+ * On phones the four parts are tabs. The map is its own chunk and starts to load with this file.
+ */
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { IntentsRail } from "../app/IntentsRail";
 import { TrafficRail } from "../app/TrafficRail";

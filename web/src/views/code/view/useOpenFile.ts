@@ -1,5 +1,5 @@
 /**
- * The open file: its text, its line count, the README of a ref, the loading flags and the marks in the gutter.
+ * The open file: its text, its line count, the README, the loading flags and the gutter marks.
  */
 import { useMemo } from "react";
 import { annoList, headChanges, lanesFor, marksByLine, type Lane } from "../annotations";

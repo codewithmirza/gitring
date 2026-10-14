@@ -1,3 +1,7 @@
+/**
+ * A tooltip: it shows on hover and on focus after 400 ms and repeats a label.
+ * It never holds the only copy of key information.
+ */
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 

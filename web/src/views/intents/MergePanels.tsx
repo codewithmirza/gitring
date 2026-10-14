@@ -1,5 +1,5 @@
 /**
- * The two panels that finish a work copy: merge it into main with a reason, or ask for a redo on the new main.
+ * The two panels that finish a work copy: merge it into main, or ask for a redo.
  */
 import { useState, type RefObject } from "react";
 import type { Attempt, Intent } from "../../../../src/core/types";

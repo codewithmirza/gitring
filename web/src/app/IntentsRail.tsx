@@ -1,3 +1,7 @@
+/**
+ * The task rail: the composer, then the tasks grouped by status, each with a tick for every work copy.
+ * Read by the overview and the tasks page. The composer is in ./Composer.tsx.
+ */
 import { memo, type CSSProperties } from "react";
 import type { AgentInfo, Attempt, Intent } from "../../../src/core/types";
 import { Button, IconButton, Panel, SectionLabel } from "../design/components";

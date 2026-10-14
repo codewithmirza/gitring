@@ -1,5 +1,5 @@
 /**
- * The output side of the highlighter: Emit collects the tokens of a line, and make() turns a line function into a Highlighter.
+ * Collects the tokens of a line (Emit) and turns a line function into a Highlighter (make).
  */
 import { PLAIN } from "./classes";
 

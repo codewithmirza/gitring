@@ -1,5 +1,5 @@
 /**
- * The toolbar of the code view: the files button, the ref switcher, Code or Diff, Find file, the file count and Clone.
+ * The toolbar of the code view: files button, ref switcher, Code or Diff, Find file and Clone.
  */
 import { Icon } from "../../../design/icons";
 import { plural } from "../../../state/format";

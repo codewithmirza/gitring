@@ -1,6 +1,6 @@
 /**
- * "/" — the start page. Visitors read what gitring is, how it works and how to add it to their agent as an
- * MCP connector, then sign in. Signed-in people go to their remembered project, else their first project,
+ * The start page ("/"): visitors read what gitring is, how it works and how to add it to their agent.
+ * Then they sign in. Signed-in people go to their remembered project, else their first project,
  * else to their projects. With "/?home" they can read this page too.
  */
 import { useEffect, useState, type CSSProperties } from "react";

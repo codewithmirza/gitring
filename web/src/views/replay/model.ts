@@ -1,12 +1,7 @@
 /**
- * Replay model: the history of a project (timeline records, see src/core/timeline.ts) as a script of
- * steps, the world at each step, a playback schedule and the short map effects of each step.
- *
- *   buildScript(records, agents)  records to steps, oldest first, one caption and one stage each
- *   worldAt(script, i)            what the map and the panels show after step i
- *   scheduleOf(steps, speed)      when each step starts on the wall clock (idle time compressed)
- *   effectsAt(script, s, wall)    the map effects that run at a wall time, with their progress
- *
+ * Replay model: the history of a project as steps, the world at each step, a schedule and map effects.
+ * buildScript(records, agents) makes the steps. worldAt(script, i) gives what the map shows after step i.
+ * scheduleOf(steps, speed) gives the wall time of each step. effectsAt(script, s, wall) gives the map effects.
  * This file is the front door of model/. It is a pure module (no React, no DOM).
  * test/web/replay.test.ts checks the mapping step by step.
  */

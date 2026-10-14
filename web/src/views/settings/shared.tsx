@@ -1,5 +1,5 @@
 /**
- * What every settings section shares: the props of a section, the hook that saves a part of the settings, the inline error.
+ * What every settings section shares: its props, the hook that saves a part, the inline error.
  * A section saves only its own part. The server merges it and answers the full settings.
  */
 import { useState } from "react";

@@ -1,3 +1,6 @@
+/**
+ * Tabs with a tab list (the arrow keys move and select) and the panel of each tab.
+ */
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 
 export interface TabDef<T extends string> {

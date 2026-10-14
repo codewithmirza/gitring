@@ -1,5 +1,6 @@
 /**
- * The other ways to sign in: Google and GitHub, and the GitHub connection that imports repositories and sends merged code back.
+ * The other ways to sign in: Google and GitHub, and the GitHub connection for repositories.
+ * The GitHub connection imports repositories and sends merged code back.
  */
 import { Button, InlineConfirm } from "../../design/components";
 import { Icon } from "../../design/icons";

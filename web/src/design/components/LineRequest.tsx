@@ -1,3 +1,7 @@
+/**
+ * The line request: pick lines in a diff, then ask the agent to change them in a form.
+ * The agent gets the request as a change request in the answer of its next call.
+ */
 import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import { Icon } from "../icons";
 import { Button } from "./Button";

@@ -1,5 +1,6 @@
 /**
- * Shared empty values for the store selectors of the code view. A stable empty value keeps a selector from waking the view.
+ * Shared empty values for the store selectors of the code view.
+ * A stable empty value keeps a selector from waking the view.
  */
 import type { FileNode } from "../../../../../src/core/types";
 import type { FileMarks, LastMerge, WorkCopy } from "../annotations";

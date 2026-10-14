@@ -1,3 +1,7 @@
+/**
+ * The top bar: view tabs, search, connection state, decisions, the inbox button, stats and theme.
+ * The view tabs also make the bottom bar on phones. The words of decisions come from ../views/approval-copy.ts.
+ */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Attempt } from "../../../src/core/types";
 import { Mark, Icon, type IconName } from "../design/icons";

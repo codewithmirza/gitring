@@ -1,3 +1,6 @@
+/**
+ * A menu of actions on a Popover: Menu, MenuItem, MenuSeparator and MenuLabel, with full keyboard control.
+ */
 import { createContext, useContext, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 import { Popover, type PopoverCloseReason } from "./Popover";

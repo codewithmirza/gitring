@@ -1,5 +1,5 @@
 /**
- * The file tree of the code view: the rows, the open folders, the filter, and the marks on rows and folders.
+ * The file tree of the code view: rows, open folders, the filter, and marks on rows and folders.
  * The open folders stay in memory for each project and ref while the page lives, so back and forward keep them.
  */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";

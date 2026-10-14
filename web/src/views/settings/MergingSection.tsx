@@ -1,5 +1,5 @@
 /**
- * The Merging section of the settings: who says yes to a merge, rules by folder, and what happens to work that cannot merge.
+ * The Merging section of the settings: who says yes, rules by folder, and work that cannot merge.
  * Only an owner changes it. The words come from ../approval-copy.ts.
  */
 import { useEffect, useState } from "react";

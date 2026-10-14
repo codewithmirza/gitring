@@ -1,3 +1,6 @@
+/**
+ * A bar with one segment for each test: solid when the test passes, hatched when it fails.
+ */
 import { noTestRan, type CheckRun } from "../../../../src/core/types";
 import { Icon } from "../icons";
 import { ProgressRule } from "./ProgressRule";

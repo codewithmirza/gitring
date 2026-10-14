@@ -1,5 +1,5 @@
 /**
- * The types of a replay script: the kinds of step, the stage of each kind and the shape of a step.
+ * The types of a replay script: the kinds of step, their stages and the shape of a step.
  * Read by build-script.ts (which makes the steps) and by every file that plays them.
  */
 import type { AgentInfo, Attempt, CheckRun, Correction, CourseCheck, Landing } from "../../../../../src/core/types";

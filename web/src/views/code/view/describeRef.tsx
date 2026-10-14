@@ -1,5 +1,5 @@
 /**
- * Words for the ref on screen: the label of the toolbar button, a plain text, the ref that "Why" asks about and who may ask the agent.
+ * Words for the ref on screen: the toolbar label, a plain text, the ref for "Why", and who may ask.
  * It is a plain function, not a hook: it reads only what it is given.
  */
 import type { ReactNode } from "react";

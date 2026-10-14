@@ -1,19 +1,10 @@
 /**
  * The code page: the real files of main, of each active work copy and of past merges, with live marks.
  * The marks where agents work come from the live state, so the page makes no extra requests for them.
- *
- *   left   the file tree (virtual list, filter, folders open where agents work)
- *   right  the file: line numbers, colors, soft wrap; a gutter with each agent's changed lines and the
- *          lines that change requests keep agents out of; "who works here" above the code.
- *   top    the ref switcher (w), Code | Diff for a work copy (d), Find file (t), Go to line (l),
- *          Copy link with the commit (y), the tree on or off ([), j / k between marks, Clone (members:
- *          a git clone command with a 6-hour read token).
- *
- * Address: /code/<ref>/<path>?view=diff#L10-L20 (see ./code/links). The path stays in the address,
- * so every view of a file has a link.
- *
- * This file only puts the page together. The state is in code/view/model.ts (one hook for each concern),
- * and each part of the screen is a pane in code/view/. Read code/view/README.md first.
+ * Address: /code/<ref>/<path>?view=diff#L10-L20 (see ./code/links). Every view of a file has a link.
+ * The file tree is on the left and the file is on the right (line numbers, colors, a gutter with the marks of
+ * agents). The toolbar has the ref switcher (w), Code or Diff (d), Find file (t), Go to line (l) and Copy link (y).
+ * This file only puts the page together. Read code/view/README.md first.
  */
 import { Popover } from "../design/components";
 import { MarkCard } from "./code/view/MarkCard";

@@ -1,5 +1,5 @@
 /**
- * The step for a folder upload: read the folder in the browser, show what will go up and its size, then create the project.
+ * The step for a folder upload: read the folder in the browser, show its size, then create the project.
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Visibility } from "../../../../../src/core/accounts";

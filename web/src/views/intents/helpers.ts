@@ -1,5 +1,5 @@
 /**
- * Small helpers of the tasks page: where a task came from, the shared diff loader, the merge button words and a suggested reason.
+ * Small helpers of the tasks page: the source of a task, the diff loader, merge button words, a reason.
  */
 import { noTestRan, type Attempt, type Intent } from "../../../../src/core/types";
 import { harbor, type DiffResult } from "../../state/api";

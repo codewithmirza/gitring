@@ -1,5 +1,6 @@
 /**
- * The keys of the code view (t, w, l, y, d, [, j, k), the links to copy or open elsewhere, and the title of the browser tab.
+ * The keys of the code view, the links to copy or open elsewhere, and the browser tab title.
+ * The keys are t, w, l, y, d, [, j and k.
  * A key does nothing while a field, a menu or a dialog has the focus, or right after the g key of the app.
  */
 import { useEffect, useRef } from "react";

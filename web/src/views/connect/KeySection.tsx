@@ -1,5 +1,5 @@
 /**
- * The API key section: a personal key for scripts, hooks and clients without OAuth, and the setup text for each client.
+ * The API key section: a personal key for scripts, hooks and clients without OAuth, with setup text.
  * The key shows one time only. The text of each tab comes from ../connect-text.ts.
  */
 import { useState, type FormEvent } from "react";

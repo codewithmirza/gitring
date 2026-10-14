@@ -1,9 +1,9 @@
 /**
- * The tray: one chip for every merge that waits for a yes from the person who looks. It shows on every
- * project page, so that a question does not wait behind a page that the person does not look at. At most
- * three chips show, the newest at the bottom; "+N more" opens the decisions list. A small window shows
- * fewer chips: the tray must not cover the page. On the approve page the tray is one line, because the
- * answer of that page is in the same corner.
+ * The tray: one chip for every merge that waits for a yes from the person who looks.
+ * It shows on every project page, so that a question does not wait behind a page that the person does not look at.
+ * At most three chips show, the newest at the bottom; "+N more" opens the decisions list.
+ * A small window shows fewer chips: the tray must not cover the page.
+ * On the approve page the tray is one line, because the answer of that page is in the same corner.
  */
 import { useEffect, useRef, useState } from "react";
 import { announceText, useMyQuestions } from "../state/approvals";

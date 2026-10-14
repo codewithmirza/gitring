@@ -1,5 +1,5 @@
 /**
- * What the code view shows: the address, the project data from the store, the ref on screen, and its loaded tree and diff.
+ * What the code view shows: the address, the store data, the ref on screen, its tree and diff.
  * The first hook of the model. It reads the store and the network; the hooks after it read its result.
  */
 import { useMemo, useState } from "react";

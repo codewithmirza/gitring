@@ -1,5 +1,5 @@
 /**
- * Two small demos of the style guide: a sample chart in SVG, and the motion demo with a vessel and a pulse.
+ * Two demos of the style guide: a sample chart in SVG, and the motion demo.
  */
 import { useState, type CSSProperties } from "react";
 import { Button } from "../../design/components";

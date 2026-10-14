@@ -1,6 +1,6 @@
 /**
- * The views, each in its own chunk. A view's code loads when its route opens, or earlier when a link to it
- * gets hover or focus (preloadPath). Loading twice is free: the browser keeps each module once.
+ * The views, each in its own chunk. A view's code loads when its route opens.
+ * A link starts the load earlier, on hover or focus (preloadPath). Loading twice is free: the browser keeps each module once.
  */
 import { lazy } from "react";
 import { parseRoute, type Route } from "./router";

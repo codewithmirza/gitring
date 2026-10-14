@@ -1,5 +1,5 @@
 /**
- * The "/connect" page: add gitring to an agent as an MCP connector (OAuth: no key to copy), or use an API key.
+ * "/connect": add gitring to an agent as an MCP connector (no key to copy), or use an API key.
  *
  * Then git mode, the Claude Code hook, inputs from other apps and events out.
  * Requests: the connect info once for each project; the OAuth apps every 5 s only while this tab is visible

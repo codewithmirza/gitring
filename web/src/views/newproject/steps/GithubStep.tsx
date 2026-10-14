@@ -1,5 +1,5 @@
 /**
- * The step for a GitHub repository: gitring guesses the name and the branch, and the person can change the sync mode.
+ * The step for a GitHub repository: gitring guesses the name and branch; the person can change the sync mode.
  * GitHub is optional. Sync is off by default.
  */
 import { useEffect, useId, useState, type FormEvent } from "react";

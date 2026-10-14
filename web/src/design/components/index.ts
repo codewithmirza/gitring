@@ -1,3 +1,7 @@
+/**
+ * The public surface of the design system components: import them from here, not from the single files.
+ * It also loads the styles (components.css). Read README.md for the list of files.
+ */
 import "./components.css";
 
 export { Button, IconButton, type ButtonVariant } from "./Button";

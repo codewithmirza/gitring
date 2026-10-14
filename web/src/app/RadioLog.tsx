@@ -1,3 +1,7 @@
+/**
+ * The activity log: every log line from every agent, with filters, as a polite live region.
+ * It shows the last 150 lines. The open or closed choice stays in local storage.
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogEntry } from "../../../src/core/types";
 import { IconButton, LogLine, Segmented } from "../design/components";

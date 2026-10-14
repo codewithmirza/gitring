@@ -1,3 +1,7 @@
+/**
+ * A dialog on the native dialog element, as a centered window or as a side sheet.
+ * The browser holds the focus inside and Escape closes it. Focus returns to the control that opened it.
+ */
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { IconButton } from "./Button";
 

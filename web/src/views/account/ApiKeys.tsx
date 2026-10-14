@@ -1,5 +1,5 @@
 /**
- * The personal API keys of the person: the list, make a key (it shows one time only) and revoke a key.
+ * The personal API keys: the list, a new key (it shows one time only) and a revoke button.
  */
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ApiKeyInfo } from "../../../../src/core/accounts";

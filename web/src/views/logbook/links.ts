@@ -1,5 +1,5 @@
 /**
- * Two link helpers of the history page: an app link that keeps the ?project= of the address, and a click that stays in the app.
+ * Two link helpers of the history page: a link that keeps ?project=, and a click that stays in the app.
  */
 import { type MouseEvent } from "react";
 import { navigate } from "../../app/router";

@@ -1,5 +1,5 @@
 /**
- * Moving around the code view: open a path, links to paths, prefetch on hover, the list of refs and the marks of the file finder.
+ * Navigation of the code view: open a path, links, prefetch, the list of refs and finder marks.
  */
 import { useCallback, useMemo } from "react";
 import { isCommitId } from "../../../state/api";

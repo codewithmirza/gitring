@@ -1,5 +1,5 @@
 /**
- * One theme of the style guide: its color tokens with the contrast of each against the page, and the 12 agent colors.
+ * One theme of the style guide: its color tokens with their contrast, and the 12 agent colors.
  * It reads the real computed colors, so the numbers cannot drift from the product.
  */
 import { useLayoutEffect, useRef, useState } from "react";

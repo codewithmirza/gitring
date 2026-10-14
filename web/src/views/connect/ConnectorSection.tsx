@@ -1,5 +1,5 @@
 /**
- * The connector section: the steps to add gitring to an agent app by OAuth, and the live status of connected apps.
+ * The connector section: the steps to add gitring to an agent app by OAuth, and the live status.
  * The status polls every 5 s only while the tab is visible and no app is connected yet.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";

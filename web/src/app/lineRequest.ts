@@ -1,6 +1,6 @@
 /**
- * Line requests: a person selects lines on the diff of a work copy (the task lane or the Code view) and asks
- * the agent to change them. The agent gets a change request in the answer of its next call.
+ * Line requests: a person selects lines on the diff of a work copy and asks the agent to change them.
+ * Used by the task lane and the Code view. The agent gets a change request in the answer of its next call.
  */
 import type { Attempt } from "../../../src/core/types";
 import { linesText, toast, type LineRequestInput } from "../design/components";

@@ -1,5 +1,5 @@
 /**
- * The right side of the code view: the file header (path, size, tools), the strip of who works here, and the body.
+ * The right side of the code view: the file header, the strip of who works here, and the body.
  */
 import { kb, plural } from "../../../state/format";
 import { langLabel } from "../../labels";

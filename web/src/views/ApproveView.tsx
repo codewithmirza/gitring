@@ -1,5 +1,5 @@
 /**
- * The approve page: one work copy that asks to merge into main, and the person who says yes or sends it back.
+ * The approve page: one work copy asks to merge into main, and the person says yes or sends it back.
  * Address: /approve/<work copy id>?project=<project id>. The page follows the live state. When somebody else
  * answers, or the agent changes the work, the page shows that in place.
  */

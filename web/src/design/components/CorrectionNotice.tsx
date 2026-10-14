@@ -1,3 +1,7 @@
+/**
+ * Shows one change request: who must adapt, why, its status, and the conflict check behind it.
+ * CorrectionMessage shows the text of a change request, with the diff blocks of a rebase.
+ */
 import { useId, useState } from "react";
 import type { Correction, CourseCheck } from "../../../../src/core/types";
 import { ago, codeSpans, CORRECTION_KIND_TEXT, ruleLabel } from "../../state/format";

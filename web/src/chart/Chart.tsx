@@ -1,5 +1,6 @@
 /**
- * The overview map: a map of the repository with every active agent, its plan, the files it touched, its distance to other work and every change request.
+ * The overview map: the repository with every active agent, its plan, its files and its change requests.
+ * The map also shows the distance of each agent to other work.
  *
  * Geometry lives in world units; strokes are non-scaling hairlines; glyphs and labels keep a constant screen size.
  * Layers are memoized so an event re-renders only what moved. This file holds the Chart component and

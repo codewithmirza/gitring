@@ -1,5 +1,5 @@
 /**
- * The proof parts of a merge record: the merge ladder (which method was used), the evidence of a conflict check and the table of checks.
+ * The proof parts of a merge record: the merge ladder, the evidence of a conflict check, the checks table.
  */
 import { Fragment, useState } from "react";
 import type { CourseCheck, LandingMethod } from "../../../../src/core/types";

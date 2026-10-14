@@ -1,5 +1,5 @@
 /**
- * The panels of the task header: change the goal, pause the task, and the versions of the goal (the living spec).
+ * The panels of the task header: change the goal, pause the task, and the versions of the goal.
  */
 import { useState, type RefObject } from "react";
 import type { Intent } from "../../../../src/core/types";

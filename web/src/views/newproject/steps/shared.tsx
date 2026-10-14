@@ -1,5 +1,5 @@
 /**
- * The parts that every step shares: the props, the step head, a guess row, the problem box and the submit button.
+ * The parts every step shares: the props, the step head, a guess row, the problem box, the submit button.
  * Used by the step files in this folder. Never import it from outside this folder.
  */
 import { useEffect, useRef, type ReactNode } from "react";

@@ -1,6 +1,6 @@
 /**
- * A link inside the code view: a real <a href> (new tab, copy link) that changes the view without a page
- * load on a plain click. It keeps the query of the address (?project=) and supports #L line anchors.
+ * A link in the code view that changes the view without a page load on a plain click.
+ * It is a real <a href>: a new tab and Copy link work. It keeps the query of the address (?project=) and supports #L line anchors.
  */
 import type { ComponentPropsWithRef, MouseEvent } from "react";
 import { codeUrl, goCode, type CodeLocation } from "./links";

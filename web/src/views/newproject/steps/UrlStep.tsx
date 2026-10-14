@@ -1,5 +1,5 @@
 /**
- * The step for a public git URL: the URL, the name, the branch and who can see the project, then create it.
+ * The step for a public git URL: the URL, name, branch and visibility, then create the project.
  */
 import { useId, useState, type FormEvent } from "react";
 import type { Visibility } from "../../../../../src/core/accounts";

@@ -1,3 +1,7 @@
+/**
+ * The traffic rail of the overview: one row for each active agent, and the detail of the selected agent.
+ * It reads the vessels from the selectors. It never changes them: a click only selects.
+ */
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { AgentInfo, Correction, LogEntry } from "../../../src/core/types";
 import { AttemptBadge, Badge, Callsign, CorrectionNotice, EmptyState, IconButton, LogLine, Panel, RangeIndicator, SectionLabel } from "../design/components";

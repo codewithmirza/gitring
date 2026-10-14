@@ -1,5 +1,6 @@
 /**
- * The task composer: "Write a task…" at the top of the task rail. A click or the key n opens it in place.
+ * The task composer: "Write a task…" at the top of the task rail.
+ * A click or the key n opens it in place.
  * One field is enough (the title); the goal, a test file, the agents and the priority have defaults.
  * The draft stays in this browser per project, through Escape, page loads and the sign-in redirect.
  * A sent task shows at once as "On its way" in the list; if the send fails, the text comes back.

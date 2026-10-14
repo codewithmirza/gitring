@@ -1,5 +1,5 @@
 /**
- * Chooses what the right side of the code view shows: a message, a diff, the overview of a ref, or the code of the file.
+ * Chooses what the right side of the code view shows: a message, a diff, an overview or code.
  * It is a plain function, not a hook. The first case that fits wins, in the order of the checks.
  */
 import type { ReactNode } from "react";

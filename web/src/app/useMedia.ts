@@ -1,3 +1,6 @@
+/**
+ * A hook that says whether a media query matches, for example a narrow screen.
+ */
 import { useEffect, useState } from "react";
 
 /** True while the media query matches, for example "(max-width: 600px)". Without matchMedia it is false. */

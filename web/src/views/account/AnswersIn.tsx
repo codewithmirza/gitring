@@ -1,5 +1,5 @@
 /**
- * The choice of where the person answers merge questions: in the chat of the agent, in the gitring app, or in both.
+ * Where the person answers merge questions: in the chat of the agent, in the app, or in both.
  */
 import { useEffect, useState } from "react";
 import type { ApprovalsIn } from "../../../../src/core/accounts";

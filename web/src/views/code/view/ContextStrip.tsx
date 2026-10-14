@@ -1,5 +1,5 @@
 /**
- * The strip above the code that says who works on this file, which change requests apply and what the last merge was.
+ * The strip above the code: who works on this file, which change requests apply, the last merge.
  */
 import { useState, type ReactNode } from "react";
 import type { LineRange } from "../../../../../src/core/types";

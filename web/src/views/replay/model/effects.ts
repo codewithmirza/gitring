@@ -1,5 +1,5 @@
 /**
- * The short effects that the map plays for each step (a flying request, a pulse), and their progress at a wall time.
+ * The short effects that the map plays for each step, and their progress at a wall time.
  */
 import { indexAt, type Schedule } from "./schedule";
 import type { ReplayScript, ReplayStep } from "./steps";

@@ -1,5 +1,5 @@
 /**
- * The small state of the toolbar and the panels: popovers, soft wrap, the tree on or off, the phone panel and the copy notice.
+ * The small state of the toolbar and panels: popovers, soft wrap, tree on or off, phone panel, copy notice.
  * Wrap and tree stay in local storage, so they survive a reload.
  */
 import { useCallback, useEffect, useRef, useState } from "react";

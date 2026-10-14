@@ -1,5 +1,5 @@
 /**
- * The tasks page ("/tasks" and "/tasks/:id"): the task rail on the left and the detail of one task on the right.
+ * The tasks page ("/tasks" and "/tasks/:id"): the task rail and the detail of one task.
  *
  * The detail shows the goal and its versions, then one lane for each work copy with its plan, files, diff and
  * tests, and the panels to merge, redo or pause. Read next: intents/ (the lane, the panels, the helpers).

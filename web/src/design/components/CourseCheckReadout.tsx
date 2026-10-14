@@ -1,3 +1,8 @@
+/**
+ * The readout of a conflict check: the chance of conflict, the overlap and the chance of duplicate.
+ * Each number shows beside its limit.
+ * It also shows the rule that decided who gives way.
+ */
 import type { CourseCheck, PolicyThresholds } from "../../../../src/core/types";
 import { DEFAULT_THRESHOLDS, INTERFERENCE_LEVELS } from "../../../../src/core/types";
 import { checkSourceText, prob, ruleLabel, RANGE_TEXT, TRIGGER_TEXT } from "../../state/format";

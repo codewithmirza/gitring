@@ -1,5 +1,5 @@
 /**
- * The token classes of the highlighter: a number for each kind of text and the CSS class that the number maps to.
+ * The token classes of the highlighter: a number for each kind of text, and its CSS class.
  */
 /**
  * A small syntax highlighter for the code view: JavaScript, TypeScript (also JSX and TSX), JSON, CSS,

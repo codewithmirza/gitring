@@ -1,5 +1,5 @@
 /**
- * The selected lines of the code view, the jump to a line, the flash of a mark, and the move between marks (j and k).
+ * The line selection of the code view: jumps, the flash of a mark, and the j and k moves.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LineRange } from "../../../../../src/core/types";

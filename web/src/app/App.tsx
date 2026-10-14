@@ -1,3 +1,8 @@
+/**
+ * The app shell: the top bar, the page of each route, the shortcuts, the toasts and the first load.
+ * Views load lazily through ./views.ts. Never import a lazy view here.
+ * Read next: ./router.tsx (the paths), ./views.ts (the lazy views) and ./TopBar.tsx.
+ */
 import { Suspense, useEffect, useRef } from "react";
 import { Button, EmptyState, SkeletonPage, SkeletonSplit, ToastHost, toast } from "../design/components";
 import { store, useStore } from "../state/store";

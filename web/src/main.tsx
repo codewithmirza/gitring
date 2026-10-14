@@ -1,3 +1,7 @@
+/**
+ * The entry of the web app: it loads the styles, starts the theme and the boot, and draws App.
+ * Nothing imports this file. Read next: app/App.tsx (the shell) and state/api/boot.ts (the first load).
+ */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./design/fonts";

@@ -1,3 +1,7 @@
+/**
+ * The anchored popover with a tail, and the focus and keyboard helpers that menus and pickers share.
+ * Escape closes it and returns the focus to the trigger. A click outside closes it.
+ */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { place, type Align, type Side } from "./placement";

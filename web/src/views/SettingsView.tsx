@@ -1,5 +1,5 @@
 /**
- * The "/settings" page: the settings of the open project, with General and Members here and one file for each other section.
+ * The "/settings" page: General and Members here, and one file for each other section.
  *
  * The page shows the settings of the live project state at once, then the full settings from the server (members only).
  * Each section saves on its own. Destructive actions confirm in place (no modal dialogs).

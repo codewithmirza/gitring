@@ -1,3 +1,7 @@
+/**
+ * A short form that opens in place under the control that asked for it, instead of a modal dialog.
+ * Escape closes it and the focus goes back to the control.
+ */
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { tabbables } from "./Popover";
 

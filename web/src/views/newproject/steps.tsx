@@ -1,5 +1,5 @@
 /**
- * The second step of a new project: gitring's guesses for the chosen source, each one on one line and editable in place.
+ * The second step of a new project: gitring's guesses for the chosen source, each editable in place.
  *
  * There is ONE button: "Create project" (Enter). The sources: a description (a template, the first task and
  * built-in agents), a template, an upload, a push, any git URL, a GitHub repository.

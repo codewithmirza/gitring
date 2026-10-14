@@ -1,5 +1,5 @@
 /**
- * The layers of the agents on the map: the vessels with their wakes, and the tracks of the files they touched.
+ * The layers of the agents on the map: the vessels with their wakes and the tracks of their files.
  * Read by the chart and by the replay map. Labels and glyphs keep a constant screen size.
  */
 import { memo, type CSSProperties } from "react";

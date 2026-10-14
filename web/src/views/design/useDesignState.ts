@@ -1,5 +1,5 @@
 /**
- * The small state of the style guide: the segment of the sample control, the sample tab, the sample dialog and the icon names.
+ * The small state of the style guide: sample segment, tab, dialog and the icon names.
  */
 import { useState } from "react";
 import { ICONS, type IconName } from "../../design/icons";
