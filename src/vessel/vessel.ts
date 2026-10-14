@@ -3,7 +3,9 @@
  *
  * It uses exactly the same protocol as external agents (declare → write/log → check → submit),
  * through HarborMaster RPC. Corrections arrive piggybacked on every response; the vessel feeds
- * them into its next step and keeps working (no stop, no lock).
+ * them into its next step and keeps working (no stop, no lock). It acknowledges a correction only
+ * after the model saw it and acted on it: at its next write (the note names the files), or at the
+ * submit without a write ("No code change was needed").
  *
  * A vessel is a Workers AI model with tools (read/write/list/checks/log/submit).
  * Each step runs in an alarm, so a long run survives eviction.
@@ -11,7 +13,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../worker/env";
 import type * as T from "../core/types";
-import { chat, lastChatError, parseJsonLoose, type ChatMessage, type ToolDef } from "../platform/ai/models";
+import { chat, contextBudget, lastChatError, parseJsonLoose, type ChatMessage, type ToolDef } from "../platform/ai/models";
 import type { HarborMaster } from "../harbor/harbor";
 
 /** The HarborMaster RPC surface a vessel uses (typed as the class; RPC serializes tuples as arrays). */
@@ -33,7 +35,12 @@ interface VesselState {
   step: number;
   /** LLM conversation. */
   messages: ChatMessage[];
+  /** Corrections that arrived and that the model did not see yet. */
   corrections: T.CorrectionNotice[];
+  /** Corrections that the model saw and did not act on yet, with the files it wrote since then. */
+  open?: OpenRequest[];
+  /** Ids of the corrections that this vessel acknowledged (a later answer can still list one). */
+  acked?: string[];
   submits: number;
   lastError?: string;
   /** Stagnation guard: failing checks signature, repeats, and writes since the last check run. */
@@ -42,6 +49,12 @@ interface VesselState {
   writesSinceCheck?: number;
   /** Model calls that failed in a row. */
   failStreak?: number;
+}
+
+/** A correction in the prompt of the model, and the files that the model wrote after it saw it. */
+export interface OpenRequest {
+  notice: T.CorrectionNotice;
+  files: string[];
 }
 
 const MAX_LLM_STEPS = 30;
@@ -132,7 +145,8 @@ export class Vessel extends DurableObject<Env> {
     const h = this.harbor(c.projectId);
 
     if (st.phase === "start") {
-      const brief = await h.brief(c.attemptId, c.intentId);
+      // A model with a large context (GLM 5.3) gets far more file text in its first prompt.
+      const brief = await h.brief(c.attemptId, c.intentId, { model: c.model });
       let prior = "";
       if (c.rederiveOf) {
         try {
@@ -146,10 +160,12 @@ export class Vessel extends DurableObject<Env> {
         { role: "system", content: systemPrompt(c.callsign, brief.runner) },
         { role: "user", content: briefPrompt(brief, prior) },
       ];
+      // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low").
       const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
         maxTokens: 1200,
         temperature: 0.2,
         timeoutMs: 120_000,
+        reasoning: "high",
       });
       if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
       const course = parseJsonLoose<{ plan?: string[]; files?: string[]; symbols?: string[]; approach?: string }>(plan?.message.content) ?? {};
@@ -165,7 +181,8 @@ export class Vessel extends DurableObject<Env> {
       });
       st.messages.push({ role: "assistant", content: `My plan: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
       st.messages.push({ role: "user", content: clearanceText(res.clearance) + "\nNow do the work with the tools." });
-      this.absorb(st, res.clearance);
+      // The clearance text holds its change requests: the model sees them in its next turn.
+      this.show(st, res.clearance.corrections ?? []);
       st.phase = "working";
       return true;
     }
@@ -175,7 +192,9 @@ export class Vessel extends DurableObject<Env> {
         st.phase = "submitted";
         return true;
       }
-      const res = await chat(this.env.AI as never, c.model, trimMessages(st.messages), { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000 });
+      const budget = contextBudget(c.model);
+      const turn = withOpenRequests(trimMessages(st.messages, budget.turnChars), st.open ?? []);
+      const res = await chat(this.env.AI as never, c.model, turn, { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000, reasoning: "low" });
       if (!res) {
         st.failStreak = (st.failStreak ?? 0) + 1;
         st.lastError = `model call failed: ${lastChatError ?? "no answer"}`;
@@ -188,31 +207,31 @@ export class Vessel extends DurableObject<Env> {
       st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
       if (!msg.tool_calls?.length) {
         st.messages.push({ role: "user", content: "Use the tools. Write the files with write_file, run run_checks, then call submit." });
+        this.showNew(st);
         return true;
       }
       for (const call of msg.tool_calls) {
-        const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments));
-        st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: out.text.slice(0, 14_000) });
+        const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments), msg.content);
+        st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: out.text.slice(0, budget.toolChars) });
         if (out.done) {
           st.phase = "done";
           return false;
         }
       }
+      // The model wrote files after it saw a change request: it acted on the request.
+      await this.ackActed(st);
       const recent = st.messages.slice(-8).filter((m) => m.role === "tool").map((m) => m.name);
       if (recent.filter((n) => n === "write_file").length >= 2 && !recent.includes("run_checks")) {
         st.messages.push({ role: "user", content: "Run run_checks now. The checks are the contract: make every assertion pass." });
       }
-      if (st.corrections.length) {
-        st.messages.push({ role: "user", content: correctionsText(st.corrections) });
-        for (const n of st.corrections) await h.ack(c.attemptId, n.id, "I apply this change request.").catch(() => undefined);
-        st.corrections = [];
-      }
+      this.showNew(st);
       return true;
     }
 
     if (st.phase === "submitted") {
       if (st.submits >= MAX_SUBMITS) return false;
       st.submits += 1;
+      await this.ackBeforeSubmit(st, lastAssistantLine(st.messages));
       const res = await h.submit(c.attemptId, "Work complete.");
       this.absorb(st, res.clearance);
       return res.next === "fix-checks" && st.submits < MAX_SUBMITS ? (st.phase = "working", true) : false;
@@ -220,7 +239,8 @@ export class Vessel extends DurableObject<Env> {
     return false;
   }
 
-  private async runTool(st: VesselState, name: string, args: Record<string, unknown>): Promise<{ text: string; done?: boolean }> {
+  /** One tool call of the model. `said`: the text of the model in the same turn (the reason for a submit). */
+  private async runTool(st: VesselState, name: string, args: Record<string, unknown>, said?: string | null): Promise<{ text: string; done?: boolean }> {
     const c = st.config;
     const h = this.harbor(c.projectId);
     switch (name) {
@@ -234,7 +254,10 @@ export class Vessel extends DurableObject<Env> {
       case "write_file": {
         const res = await h.write({ attemptId: c.attemptId, files: [{ path: String(args.path ?? ""), content: String(args.content ?? "") }], message: String(args.note ?? "") });
         this.absorb(st, res.clearance);
-        if (res.written.length) st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
+        if (res.written.length) {
+          st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
+          for (const o of st.open ?? []) for (const f of res.written) if (!o.files.includes(f)) o.files.push(f);
+        }
         const notes = [
           `Written: ${res.written.join(", ") || "nothing"}.`,
           res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
@@ -269,6 +292,7 @@ export class Vessel extends DurableObject<Env> {
       }
       case "submit": {
         st.submits += 1;
+        await this.ackBeforeSubmit(st, firstLine(said) || firstLine(String(args.summary ?? "")));
         const res = await h.submit(c.attemptId, String(args.summary ?? "Work complete."));
         this.absorb(st, res.clearance);
         if (res.next === "fix-checks" && st.submits < MAX_SUBMITS) return { text: res.message };
@@ -281,9 +305,51 @@ export class Vessel extends DurableObject<Env> {
 
   /* ───────────────────────── shared ───────────────────────── */
 
+  /** Keep the new corrections of an answer (gitring lists a correction again until the vessel acknowledges it). */
   private absorb(st: VesselState, clr: T.Clearance | undefined): void {
     if (!clr?.corrections?.length) return;
-    for (const n of clr.corrections) if (!st.corrections.some((x) => x.id === n.id)) st.corrections.push(n);
+    for (const n of clr.corrections) {
+      if (st.corrections.some((x) => x.id === n.id) || st.open?.some((o) => o.notice.id === n.id) || st.acked?.includes(n.id)) continue;
+      st.corrections.push(n);
+    }
+  }
+
+  /** The model has these corrections in its prompt now: they wait for its next write or its submit. */
+  private show(st: VesselState, notices: T.CorrectionNotice[]): void {
+    const open = (st.open ??= []);
+    for (const n of notices) if (!open.some((o) => o.notice.id === n.id) && !st.acked?.includes(n.id)) open.push({ notice: n, files: [] });
+    const shown = new Set(notices.map((n) => n.id));
+    st.corrections = st.corrections.filter((n) => !shown.has(n.id));
+  }
+
+  /** New change requests go into the prompt now. gitring hears about them when the model acts on them. */
+  private showNew(st: VesselState): void {
+    if (!st.corrections.length) return;
+    st.messages.push({ role: "user", content: correctionsText(st.corrections) });
+    this.show(st, st.corrections);
+  }
+
+  /** Acknowledge each open correction that the model acted on: it wrote files after it saw the request. */
+  private async ackActed(st: VesselState): Promise<void> {
+    for (const o of [...(st.open ?? [])]) if (o.files.length) await this.ack(st, o, changedNote(o.files));
+  }
+
+  /**
+   * Before a submit: acknowledge the corrections that the model acted on, and say for the others that no code
+   * change was needed (the model submits without a write since it saw them). `line`: the reason of the model.
+   */
+  private async ackBeforeSubmit(st: VesselState, line: string): Promise<void> {
+    await this.ackActed(st);
+    for (const o of [...(st.open ?? [])]) await this.ack(st, o, `No code change was needed: ${line || "the work meets the request."}`);
+  }
+
+  private async ack(st: VesselState, o: OpenRequest, note: string): Promise<void> {
+    st.open = (st.open ?? []).filter((x) => x !== o);
+    st.acked = [...(st.acked ?? []), o.notice.id].slice(-100);
+    const clr = await this.harbor(st.config.projectId)
+      .ack(st.config.attemptId, o.notice.id, note)
+      .catch(() => undefined);
+    this.absorb(st, clr);
   }
 
   private async load(): Promise<VesselState | undefined> {
@@ -370,14 +436,57 @@ function safeArgs(raw: string): Record<string, unknown> {
   }
 }
 
-/** Keep the system prompt, the brief and the latest turns. */
-function trimMessages(messages: ChatMessage[], keep = 24): ChatMessage[] {
-  if (messages.length <= keep + 2) return messages;
+/** The note of an acknowledgement after a write: the files that the model changed (the ack note holds 300 characters). */
+export function changedNote(files: string[]): string {
+  const shown = files.slice(0, 6).join(", ");
+  return `I changed ${shown}${files.length > 6 ? ` and ${files.length - 6} more files` : ""} for this change request.`;
+}
+
+/** The first line of a model text, short (an ack note quotes it). */
+export function firstLine(text: string | null | undefined): string {
+  const line = (text ?? "").trim().split("\n")[0].trim();
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+}
+
+function lastAssistantLine(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const line = messages[i].role === "assistant" ? firstLine(messages[i].content) : "";
+    if (line) return line;
+  }
+  return "";
+}
+
+/** The characters of a message in a model call. */
+function sizeOf(m: ChatMessage): number {
+  return (m.content?.length ?? 0) + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0);
+}
+
+/**
+ * Keep the system prompt, the brief and the latest turns: at most `keep` messages after the brief, and at most
+ * `maxChars` characters in all (the oldest turns go first). The last model turn and its tool answers stay.
+ */
+export function trimMessages(messages: ChatMessage[], maxChars = Infinity, keep = 24): ChatMessage[] {
   const head = messages.slice(0, 2);
-  let tail = messages.slice(-keep);
+  let tail = messages.length <= keep + 2 ? messages.slice(2) : messages.slice(-keep);
+  const room = maxChars - head.reduce((n, m) => n + sizeOf(m), 0);
+  let total = tail.reduce((n, m) => n + sizeOf(m), 0);
+  const lastTurn = tail.map((m) => m.role).lastIndexOf("assistant");
+  let drop = 0;
+  while (total > room && drop < lastTurn) total -= sizeOf(tail[drop++]);
+  tail = tail.slice(drop);
   // Never start the tail with a tool message (its assistant call would be missing).
   while (tail.length && tail[0].role === "tool") tail = tail.slice(1);
   return [...head, ...tail];
+}
+
+/**
+ * A change request stays in the prompt until the vessel acknowledges it. When the turn of the request left
+ * the trimmed history, the request comes back after the brief.
+ */
+export function withOpenRequests(turn: ChatMessage[], open: OpenRequest[]): ChatMessage[] {
+  const missing = open.filter((o) => !turn.some((m) => m.role === "user" && (m.content ?? "").includes(`[${o.notice.id}]`)));
+  if (!missing.length) return turn;
+  return [...turn.slice(0, 2), { role: "user", content: `STILL OPEN. ${correctionsText(missing.map((o) => o.notice))}` }, ...turn.slice(2)];
 }
 
 const TOOLS: ToolDef[] = [

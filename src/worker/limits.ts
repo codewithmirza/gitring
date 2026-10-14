@@ -10,7 +10,8 @@
  *             a flood of keys or cookies that are not valid stops at the edge, not at the account store.
  *             It runs on every route that reads a credential (a key, a session cookie, a hook URL key).
  *   RL_HOOK   inbound hooks (/hooks/*), per key: the person of an API key, the key in the hook URL, or
- *             the address when the request has no key (240 per minute)
+ *             the address when the request has no key (1200 per minute: Claude Code hooks of one person
+ *             come for each tool call of each of its agents)
  *   RL_PREVIEW live previews (/preview/*), per address (600 per minute: a page loads many files)
  */
 import type { Env } from "./env";

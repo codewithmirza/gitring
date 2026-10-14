@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, InlineConfirm, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
-import type { ApproverRule, CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, ProjectSettings, RedoPolicy, WebhookTarget } from "../../../src/core/types";
+import type { ApproverRule, CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, ProjectSettings, RedoPolicy, SettingsAnswer, WebhookInput } from "../../../src/core/types";
 import { githubRepoName } from "../../../src/core/repo-rules";
 import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess, useMe, type MeWithInstall } from "../state/account";
 import { isAbort, pullFromGithub, sendToGithub, syncStatus } from "../state/github";
@@ -17,6 +17,7 @@ import { Link } from "../app/router";
 import { RepoSelect } from "./newproject/RepoSelect";
 import { APPROVAL_EVENT_NOTE, APPROVER_CHOICES, APPROVER_LEGEND, LANDING_CHOICES, LANDING_LEGEND, WEBHOOK_EVENTS, approverOf, landingOf, untestedHelp } from "./approval-copy";
 import { ChoiceList } from "./ChoiceList";
+import { SECRET_ONCE, SIGNATURE_HELP, secretLine } from "./webhook-copy";
 import "./projects.css";
 
 /** Save a part of the settings. The server merges it and answers the full settings (or an error to show inline). */
@@ -833,16 +834,22 @@ const MAX_WEBHOOKS = 5;
 /** The server keeps only https URLs with a host name (others are dropped without a word). */
 const URL_OK = /^https:\/\/[^\s/]+\.[^\s]+$/;
 
-function newWebhook(): WebhookTarget {
+function newWebhook(): WebhookInput {
   const id = `wh_${Math.random().toString(36).slice(2, 10)}`;
   return { id, url: "", events: ["landing"], format: "json", enabled: true };
 }
 
 function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) {
   const approvalHelpId = `${useId().replace(/:/g, "")}-approval-help`;
-  const [list, setList] = useState<WebhookTarget[]>(settings.webhooks ?? []);
+  const [list, setList] = useState<WebhookInput[]>(settings.webhooks ?? []);
   const [tried, setTried] = useState(false);
-  const { busy, error, setError, save } = useSave(projectId, onSaved);
+  // The secrets of new webhooks: the server shows each one only once, in the answer of the save.
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const { busy, error, setError, save } = useSave(projectId, (s) => {
+    const { webhookSecrets, ...rest } = s as SettingsAnswer;
+    setSecrets(webhookSecrets ?? {});
+    onSaved(rest);
+  });
   const saved = JSON.stringify(settings.webhooks ?? []);
 
   useEffect(() => {
@@ -851,9 +858,10 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
 
-  const change = (id: string, patch: Partial<WebhookTarget>) => setList((l) => l.map((w) => (w.id === id ? { ...w, ...patch } : w)));
-  const bad = (w: WebhookTarget) => !URL_OK.test(w.url.trim());
+  const change = (id: string, patch: Partial<WebhookInput>) => setList((l) => l.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  const bad = (w: WebhookInput) => !URL_OK.test(w.url.trim());
   const dirty = JSON.stringify(list) !== saved;
+  const before = new Map((settings.webhooks ?? []).map((w) => [w.id, w]));
 
   const submit = () => {
     setTried(true);
@@ -870,6 +878,7 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
         Webhooks
       </h2>
       <p className="np__help">gitring sends a POST request to each webhook when an event happens: JSON, or a Slack message. At most {MAX_WEBHOOKS} webhooks.</p>
+      <p className="np__help">{SIGNATURE_HELP}</p>
       <p className="np__help" id={approvalHelpId}>
         {APPROVAL_EVENT_NOTE}
       </p>
@@ -909,8 +918,23 @@ function WebhooksSection({ projectId, owner, settings, onSaved }: SectionProps) 
                 />
               ))}
             </fieldset>
+            {secrets[w.id] ? (
+              <>
+                <CodeBlock label={`Webhook ${i + 1}: secret`} code={secrets[w.id]} copyLabel="Copy secret" />
+                <p className="np__help" role="status">
+                  {SECRET_ONCE}
+                </p>
+              </>
+            ) : (
+              <p className="np__help">{secretLine(w, before.get(w.id))}</p>
+            )}
             <div className="st-actions">
               <Checkbox label="On" checked={w.enabled} disabled={!owner} onChange={(e) => change(w.id, { enabled: e.target.checked })} />
+              {owner && before.has(w.id) && !w.newSecret && (
+                <Button size="sm" variant="ghost" icon="key" onClick={() => change(w.id, { newSecret: true })}>
+                  Make a new secret
+                </Button>
+              )}
               {owner && (
                 <Button size="sm" variant="ghost" icon="close" onClick={() => setList((l) => l.filter((x) => x.id !== w.id))}>
                   Remove

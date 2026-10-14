@@ -4,7 +4,7 @@
  */
 import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } from "../../../src/core/accounts";
 import { atLeast } from "../../../src/core/accounts";
-import type { GithubSyncStatus, ProjectSettings, ProjectSource } from "../../../src/core/types";
+import type { GithubSyncStatus, ProjectSettings, ProjectSource, SettingsAnswer } from "../../../src/core/types";
 import { store, useStore } from "./store";
 import { getJson, HttpError, invalidate, send } from "./http";
 
@@ -172,9 +172,9 @@ export async function readUpload(list: { file: File; path: string }[]): Promise<
 }
 
 export const getSettings = (project: string) => call<ProjectSettings>("GET", `/api/projects/${encodeURIComponent(project)}/settings`);
-/** Save part of the settings. The server merges the patch and answers the full settings. */
+/** Save part of the settings. The server merges the patch and answers the full settings (and the secrets of new webhooks, once). */
 export const putSettings = (project: string, patch: Partial<ProjectSettings>) =>
-  call<ProjectSettings>("PUT", `/api/projects/${encodeURIComponent(project)}/settings`, patch);
+  call<SettingsAnswer>("PUT", `/api/projects/${encodeURIComponent(project)}/settings`, patch);
 
 /** GitHub sync of main: the status (members) and Sync now (owners). */
 export const getGithubStatus = (project: string) => call<GithubSyncStatus>("GET", `/api/projects/${encodeURIComponent(project)}/github`);

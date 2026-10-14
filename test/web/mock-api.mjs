@@ -69,7 +69,7 @@ function settingsDefaults(extra = {}) {
     autoLand: false,
     fanout: 1,
     decisionModel: "clef-flash",
-    agentModels: ["@cf/moonshotai/kimi-k2.7-code", "@cf/openai/gpt-oss-120b"],
+    agentModels: ["@cf/zai-org/glm-5.3-flash", "@cf/zai-org/glm-5.3"],
     intentsInRepo: true,
     allowUntested: false,
     thresholds: { collision: 0.5, interference: 1.7, duplicate: 0.7, minConfidence: 0.55 },

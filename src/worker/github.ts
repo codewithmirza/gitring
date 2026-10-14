@@ -16,7 +16,7 @@ import { GithubClient, GithubError } from "../platform/github/api";
 import { guessFromGithub, listUserRepos, type InstallationInfo } from "../platform/github/repos";
 import { cleanCommand, projectSlug } from "../core/guess";
 import { githubRepoName } from "../core/repo-rules";
-import { chat } from "../platform/ai/models";
+import { chat, SHORT_JOB_MODEL } from "../platform/ai/models";
 import { rand } from "../harbor/ids";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
@@ -198,7 +198,7 @@ async function askModel(env: Env, repo: string, branch: string, userId: string):
   });
   const res = await chat(
     env.AI as never,
-    "@cf/zai-org/glm-4.7-flash",
+    SHORT_JOB_MODEL,
     [
       {
         role: "system",
@@ -207,7 +207,8 @@ async function askModel(env: Env, repo: string, branch: string, userId: string):
       },
       { role: "user", content: `Repository ${repo}.\nFiles:\n${files.paths.join("\n")}\n\nREADME:\n${files.readme}` },
     ],
-    { maxTokens: 300, timeoutMs: 8000, json: true, temperature: 0 },
+    // A short guess: little reasoning, and time for the reasoning tokens of GLM 5.3 Flash.
+    { maxTokens: 300, timeoutMs: 15_000, json: true, temperature: 0, reasoning: "low" },
   );
   const text = res?.message.content ?? "";
   const m = /\{[\s\S]*\}/.exec(text);

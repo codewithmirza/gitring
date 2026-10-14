@@ -107,7 +107,7 @@ function corr(status: Correction["status"], kind: Correction["kind"] = "interfac
 }
 
 const AGENT: AgentInfo = { id: "ag-kestrel-7", callsign: "KESTREL-7", kind: "builtin", model: "@cf/zai-org/glm-5.3-flash", color: 0, status: "underway", lastSeen: T0 };
-const AGENT2: AgentInfo = { id: "ag-petrel-2", callsign: "PETREL-2", kind: "builtin", model: "@cf/openai/gpt-oss-120b", color: 2, status: "underway", lastSeen: T0 };
+const AGENT2: AgentInfo = { id: "ag-petrel-2", callsign: "PETREL-2", kind: "builtin", model: "@cf/zai-org/glm-5.3", color: 2, status: "underway", lastSeen: T0 };
 const LOGS: [LogEntry, AgentInfo | undefined][] = [
   [{ id: "l1", at: T0, kind: "declare", message: "Declare course: A search form in the header. Results use the normal shelf." }, AGENT2],
   [{ id: "l2", at: T0 + 1000, kind: "check", message: "Course check: correction · clef-flash 44 ms" }, AGENT2],
@@ -743,7 +743,7 @@ export function DesignView() {
               <Field label="Model">
                 <Select defaultValue="glm">
                   <option value="glm">glm-5.3-flash</option>
-                  <option value="kimi">kimi-k2.7-code</option>
+                  <option value="glm-big">glm-5.3</option>
                 </Select>
               </Field>
               <Field label="Why this attempt?" help="Human voice: serif italic.">
@@ -752,7 +752,7 @@ export function DesignView() {
               <div className="b-field">
                 <span className="b-field__label">Models</span>
                 <Checkbox label={<span className="voice-agent">glm-5.3-flash</span>} defaultChecked />
-                <Checkbox label={<span className="voice-agent">gpt-oss-120b</span>} />
+                <Checkbox label={<span className="voice-agent">glm-5.3</span>} />
               </div>
             </div>
           </Specimen>

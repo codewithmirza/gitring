@@ -91,6 +91,9 @@ export let lastChatError: string | undefined;
  */
 export type ReasoningEffort = "low" | "high" | "max";
 
+/** The model for short jobs outside the agents (the guess of the test command of a repository). */
+export const SHORT_JOB_MODEL = "@cf/zai-org/glm-5.3-flash";
+
 /** GLM 5.3 and GLM 5.3 Flash on Workers AI: 1,048,576 tokens of context; `reasoning_effort` is mandatory. */
 export function isGlm53(model: string): boolean {
   return /\/glm-5\.3(?:-flash)?$/.test(model);
@@ -135,6 +138,12 @@ export function cleanToolCalls(calls: unknown): ToolCall[] | undefined {
   return out.length ? out : undefined;
 }
 
+/** The answer text of a reply, without a reasoning block that some models put at the start ("<think>…</think>"). */
+export function answerText(content: unknown): string | null {
+  if (typeof content !== "string") return null;
+  return content.replace(/^\s*<think>[\s\S]*?<\/think>\s*/, "");
+}
+
 export async function chat(
   ai: AiLike | undefined,
   model: string,
@@ -168,10 +177,10 @@ export async function chat(
     const raw = (await withTimeout(ai.run(model, input, options), opts.timeoutMs ?? 90_000, `chat ${model}`)) as ChatCompletion;
     if (raw?.choices?.[0]?.message) {
       const m = raw.choices[0].message;
-      // Reasoning text (reasoning_content, reasoning) never goes into the conversation: only the answer does.
+      // Reasoning text (reasoning_content, reasoning, a <think> block) never goes into the conversation: only the answer does.
       const toolCalls = cleanToolCalls(m.tool_calls);
       return {
-        message: { role: "assistant", content: typeof m.content === "string" ? m.content : null, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
+        message: { role: "assistant", content: answerText(m.content), ...(toolCalls ? { tool_calls: toolCalls } : {}) },
         finishReason: raw.choices[0].finish_reason ?? "stop",
         usage: raw.usage,
         latencyMs: Date.now() - t0,
@@ -200,6 +209,8 @@ export interface ContextBudget {
   fileChars: number;
   /** All the messages of one turn together, in characters (older turns go first). */
   turnChars: number;
+  /** One tool answer (a file that the agent reads, a test result), in characters. */
+  toolChars: number;
 }
 
 /**
@@ -207,8 +218,8 @@ export interface ContextBudget {
  * more of the repository. Other models keep the old budget. The turn limit keeps the cost of a turn sensible.
  */
 export function contextBudget(model: string | undefined): ContextBudget {
-  if (model && isGlm53(model)) return { briefChars: 400_000, fileChars: 100_000, turnChars: 800_000 };
-  return { briefChars: 60_000, fileChars: 20_000, turnChars: 240_000 };
+  if (model && isGlm53(model)) return { briefChars: 400_000, fileChars: 100_000, turnChars: 800_000, toolChars: 100_000 };
+  return { briefChars: 60_000, fileChars: 20_000, turnChars: 240_000, toolChars: 14_000 };
 }
 
 /** Extract the first JSON object from a model reply (fenced or bare). */
