@@ -3,9 +3,10 @@
  * the agent models (GLM 5.3), the size of the brief per model, signed webhooks, the git command of
  * gitring_update, and the id prefix of check runs.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { budgetWait, containerRun, gitPullCommand } from "../../src/harbor/harbor";
-import { hmacSha256Hex } from "../../src/directory/crypto";
+import { hmacSha256Hex, unseal } from "../../src/directory/crypto";
+import { SECRET_SEAL, secretHint } from "../../src/harbor/webhooks";
 import { DEFAULT_SETTINGS } from "../../src/core/types";
 import { World } from "./world";
 import { steViolations } from "../coord/ste";
@@ -146,6 +147,44 @@ describe("outbound webhooks", () => {
     const same = await world.call("PUT", `/api/projects/${p.id}/settings`, { key, body: { webhooks: [hook] } });
     expect(same.json.webhookSecrets).toBeUndefined();
     expect(same.json.webhooks[0].secretHint).toBeUndefined();
+  });
+
+  it("keeps the hint and the stored secret together when two changes of the webhooks come at the same time", async () => {
+    const { world, key } = await newWorld();
+    const p = await world.createProject(key, "books", { "src/a.js": "export const a = 1;\n" });
+    const h = world.harbor(p.id);
+    const first = await h.updateSettings({ webhooks: [hook] } as never);
+    const robinHook = first.webhooks[0];
+    // The first seal of change A waits; change B runs to its end in that time.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let hold = true;
+    const subtle = crypto.subtle;
+    const real = subtle.encrypt.bind(subtle);
+    const spy = vi.spyOn(subtle, "encrypt").mockImplementation(async (...args: Parameters<SubtleCrypto["encrypt"]>) => {
+      if (hold) {
+        hold = false;
+        await held;
+      }
+      return real(...args);
+    });
+    try {
+      const a = h.updateSettings({ webhooks: [robinHook, { ...hook, id: "wh_two", url: "https://hooks.robin.dev/two" }] } as never);
+      await new Promise((r) => setTimeout(r, 5));
+      const b = await h.updateSettings({ webhooks: [{ ...robinHook, newSecret: true }] } as never);
+      expect(b.webhookSecrets?.wh_robin).toMatch(/^whsec_/);
+      release();
+      const done = await a;
+      // Change A came last: it keeps the secret of change B for wh_robin, with its hint, and makes one for wh_two.
+      expect(Object.keys(done.webhookSecrets ?? {})).toEqual(["wh_two"]);
+      const stored = (h as unknown as { db: { getMeta(k: string): Record<string, string> } }).db.getMeta("webhookSecrets");
+      const secret = await unseal<string>("concurrency-secret-0123456789abcdef", stored.wh_robin, SECRET_SEAL);
+      expect(secret).toBe(b.webhookSecrets!.wh_robin);
+      expect(done.webhooks.find((w) => w.id === "wh_robin")!.secretHint).toBe(secretHint(secret));
+    } finally {
+      spy.mockRestore();
+      release();
+    }
   });
 
   it("gives each webhook its own id", async () => {

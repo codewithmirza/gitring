@@ -3919,7 +3919,6 @@ export class HarborMaster extends DurableObject<Env> {
   }
 
   async updateSettings(raw: Partial<T.ProjectSettings>): Promise<T.SettingsAnswer> {
-    const p = this.requireProject();
     const patch = sanitizeSettings(raw, this.allowedModels());
     // Webhook secrets: the new ones go into this answer only (shown once in Settings).
     let webhookSecrets: Record<string, string> | undefined;
@@ -3928,6 +3927,8 @@ export class HarborMaster extends DurableObject<Env> {
       patch.webhooks = made.list;
       if (Object.keys(made.shown).length) webhookSecrets = made.shown;
     }
+    // The project after the wait above (from here to the save, nothing waits).
+    const p = this.requireProject();
     const oldGithub = p.settings.github;
     // GitHub settings merge: a field that the patch leaves out keeps its value; repo "" unlinks.
     const rawG = raw.github && typeof raw.github === "object" ? (raw.github as unknown as Record<string, unknown>) : undefined;
@@ -4014,30 +4015,33 @@ export class HarborMaster extends DurableObject<Env> {
    * project keeps it sealed. Secrets of removed webhooks go.
    */
   private async webhookSecrets(next: T.WebhookTarget[], raw: unknown): Promise<{ list: T.WebhookTarget[]; shown: Record<string, string> }> {
-    const before = new Map(this.requireProject().settings.webhooks.map((w) => [w.id, w]));
     const asked = new Set(
       (Array.isArray(raw) ? (raw as T.WebhookInput[]) : []).filter((w) => w && w.newSecret === true && typeof w.id === "string").map((w) => w.id),
     );
-    const shown: Record<string, string> = {};
-    const sealed: Record<string, string> = {};
-    for (const w of next) {
-      const old = before.get(w.id);
-      if (old && old.url === w.url && !asked.has(w.id)) continue;
-      const key = this.env.GITRING_SECRET;
-      if (!key) throw new Error("gitring cannot make a secret for the webhook: the server has no GITRING_SECRET.");
-      shown[w.id] = newWebhookSecret();
-      sealed[w.id] = await seal(key, shown[w.id], SECRET_SEAL);
+    const wants = (w: T.WebhookTarget, old: T.WebhookTarget | undefined) => !old || old.url !== w.url || asked.has(w.id);
+    // Seal a candidate secret for each webhook (at most 5) first. These are the only waits: another change of
+    // the settings can come in between, so the choice below reads the settings after them.
+    const key = this.env.GITRING_SECRET;
+    const made = new Map<string, { secret: string; sealed: string }>();
+    for (const w of key ? next : []) {
+      const secret = newWebhookSecret();
+      made.set(w.id, { secret, sealed: await seal(key!, secret, SECRET_SEAL) });
     }
     // No wait from here to the save of the settings: the stored secrets and the list change together.
+    const before = new Map(this.requireProject().settings.webhooks.map((w) => [w.id, w]));
     const stored = this.db.getMeta<Record<string, string>>("webhookSecrets") ?? {};
+    const shown: Record<string, string> = {};
     const kept: Record<string, string> = {};
     const list: T.WebhookTarget[] = [];
     for (const w of next) {
       const old = before.get(w.id);
       const { secretHint: _hint, ...plain } = w;
-      if (shown[w.id]) {
-        kept[w.id] = sealed[w.id];
-        list.push({ ...plain, secretHint: secretHint(shown[w.id]) });
+      const fresh = wants(w, old) ? made.get(w.id) : undefined;
+      if (wants(w, old) && !fresh) throw new Error("gitring cannot make a secret for the webhook: the server has no GITRING_SECRET.");
+      if (fresh) {
+        shown[w.id] = fresh.secret;
+        kept[w.id] = fresh.sealed;
+        list.push({ ...plain, secretHint: secretHint(fresh.secret) });
       } else if (stored[w.id]) {
         kept[w.id] = stored[w.id];
         list.push({ ...plain, ...(old?.secretHint ? { secretHint: old.secretHint } : {}) });

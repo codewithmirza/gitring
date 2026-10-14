@@ -61,6 +61,8 @@ const MAX_LLM_STEPS = 30;
 const MAX_SUBMITS = 5;
 /** Model calls that may fail in a row before the vessel stops. */
 const MAX_FAIL_STREAK = 6;
+/** A tool answer keeps at least this many characters when the tool answers of a turn use up their room. */
+const MIN_TOOL_CHARS = 2_000;
 
 export class Vessel extends DurableObject<Env> {
   private st?: VesselState;
@@ -121,6 +123,9 @@ export class Vessel extends DurableObject<Env> {
     }
     if ((st.failStreak ?? 0) >= MAX_FAIL_STREAK) st.phase = "done";
     st.step += 1;
+    // Storage keeps only the history that the next turns can send: the oldest turns never go to the model
+    // again, and one value in storage holds at most 2 MB.
+    st.messages = trimMessages(st.messages, contextBudget(st.config.model).turnChars);
     if ((st.phase as string) === "done") {
       // Work that did not reach "ready" leaves the traffic; the attempt fails with the reason.
       const why =
@@ -160,11 +165,12 @@ export class Vessel extends DurableObject<Env> {
         { role: "system", content: systemPrompt(c.callsign, brief.runner) },
         { role: "user", content: briefPrompt(brief, prior) },
       ];
-      // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low").
+      // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low"), so the
+      // call gets more time (up to 16,384 reasoning tokens before the answer).
       const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
         maxTokens: 1200,
         temperature: 0.2,
-        timeoutMs: 120_000,
+        timeoutMs: 240_000,
         reasoning: "high",
       });
       if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
@@ -210,9 +216,13 @@ export class Vessel extends DurableObject<Env> {
         this.showNew(st);
         return true;
       }
+      // All the tool answers of one turn share a limit too (a model can call read_file many times in one turn).
+      let room = budget.turnToolChars;
       for (const call of msg.tool_calls) {
         const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments), msg.content);
-        st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: out.text.slice(0, budget.toolChars) });
+        const text = out.text.slice(0, Math.min(budget.toolChars, Math.max(MIN_TOOL_CHARS, room)));
+        room -= text.length;
+        st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: text });
         if (out.done) {
           st.phase = "done";
           return false;
@@ -231,7 +241,9 @@ export class Vessel extends DurableObject<Env> {
     if (st.phase === "submitted") {
       if (st.submits >= MAX_SUBMITS) return false;
       st.submits += 1;
-      await this.ackBeforeSubmit(st, lastAssistantLine(st.messages));
+      // The step limit sends the work, not the model: a request that the model did not act on stays open
+      // (the model did not say that it needs no change).
+      await this.ackActed(st);
       const res = await h.submit(c.attemptId, "Work complete.");
       this.absorb(st, res.clearance);
       return res.next === "fix-checks" && st.submits < MAX_SUBMITS ? (st.phase = "working", true) : false;
@@ -339,17 +351,25 @@ export class Vessel extends DurableObject<Env> {
    * change was needed (the model submits without a write since it saw them). `line`: the reason of the model.
    */
   private async ackBeforeSubmit(st: VesselState, line: string): Promise<void> {
-    await this.ackActed(st);
-    for (const o of [...(st.open ?? [])]) await this.ack(st, o, `No code change was needed: ${line || "the work meets the request."}`);
+    // The requests that are open now (an answer below can open a request again: it waits for a new write).
+    for (const o of [...(st.open ?? [])]) await this.ack(st, o, o.files.length ? changedNote(o.files) : `No code change was needed: ${line || "the work meets the request."}`);
   }
 
   private async ack(st: VesselState, o: OpenRequest, note: string): Promise<void> {
     st.open = (st.open ?? []).filter((x) => x !== o);
     st.acked = [...(st.acked ?? []), o.notice.id].slice(-100);
-    const clr = await this.harbor(st.config.projectId)
+    const res: unknown = await this.harbor(st.config.projectId)
       .ack(st.config.attemptId, o.notice.id, note)
       .catch(() => undefined);
-    this.absorb(st, clr);
+    // The answer is the clearance of the work copy, or an answer that holds the clearance and the code check
+    // of the acknowledgement (contract C2).
+    const answer = res as (Partial<T.Clearance> & { clearance?: T.Clearance; outcome?: string; check?: { applied?: boolean | null; reason?: string } }) | undefined;
+    this.absorb(st, answer?.clearance ?? (answer?.corrections ? (answer as T.Clearance) : undefined));
+    if (answer?.outcome !== "open" && answer?.check?.applied !== false) return;
+    // gitring checked the code, and the work does not follow the request yet: the request stays open. The
+    // model sees it again at the end of this turn (with the reason), and the vessel waits for a new write.
+    st.acked = st.acked.filter((id) => id !== o.notice.id);
+    st.corrections.push(stillOpen(o.notice, answer.check?.reason));
   }
 
   private async load(): Promise<VesselState | undefined> {
@@ -448,12 +468,9 @@ export function firstLine(text: string | null | undefined): string {
   return line.length > 200 ? `${line.slice(0, 199)}…` : line;
 }
 
-function lastAssistantLine(messages: ChatMessage[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const line = messages[i].role === "assistant" ? firstLine(messages[i].content) : "";
-    if (line) return line;
-  }
-  return "";
+/** A change request that stays open after an acknowledgement: gitring checked the code, and the work does not follow it yet. */
+export function stillOpen(notice: T.CorrectionNotice, reason: string | undefined): T.CorrectionNotice {
+  return { ...notice, message: `${notice.message} This change request is still open: ${reason?.trim() || "the code does not follow it yet."}` };
 }
 
 /** The characters of a message in a model call. */

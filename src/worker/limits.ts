@@ -57,9 +57,14 @@ export function hasCredential(req: Request): boolean {
   return /^Bearer\s+\S/i.test(req.headers.get("authorization") ?? "") || /(?:^|;\s*)__Host-gitring=/.test(req.headers.get("cookie") ?? "");
 }
 
-/** The key in the URL of a hook (/hooks/slack and /hooks/github carry `?key=`), or null. */
+/**
+ * The key in the URL of a hook, or null. Only /hooks/slack and /hooks/github carry one (`?key=`, from the
+ * Connect page): on other hooks a `?key=` is not a credential, and it does not get a counter of its own.
+ */
 export function hookUrlKey(req: Request): string | null {
-  return new URL(req.url).searchParams.get("key") || null;
+  const url = new URL(req.url);
+  if (url.pathname !== "/hooks/slack" && url.pathname !== "/hooks/github") return null;
+  return url.searchParams.get("key") || null;
 }
 
 /**

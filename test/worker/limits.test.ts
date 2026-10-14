@@ -68,6 +68,13 @@ describe("limits on hooks and previews", () => {
     const bare = new Request("https://x/hooks/github-app", { headers: { "cf-connecting-ip": "203.0.113.9" } });
     expect(hookUrlKey(bare)).toBeNull();
     expect(await hookLimitKey(bare, null)).toBe("ip:203.0.113.9");
+    // A hook that does not check a URL key: a random ?key= does not get a counter of its own.
+    for (const path of ["/hooks/intents", "/hooks/github-app", "/hooks/claude/shop"]) {
+      const dodge = new Request(`https://x${path}?key=random-1`, { headers: { "cf-connecting-ip": "203.0.113.9" } });
+      expect(hookUrlKey(dodge), path).toBeNull();
+      expect(await hookLimitKey(dodge, null), path).toBe("ip:203.0.113.9");
+    }
+    expect(hookUrlKey(new Request("https://x/hooks/github?project=shop&key=k2"))).toBe("k2");
   });
 });
 

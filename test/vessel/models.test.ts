@@ -78,16 +78,25 @@ describe("chat models", () => {
     expect(cleanToolCalls(undefined)).toBeUndefined();
     expect(answerText(null)).toBeNull();
     expect(answerText("plain")).toBe("plain");
+    // A model that stopped while it thought: all of the text is reasoning.
+    expect(answerText("<think>The user wants")).toBe("");
+    // The old answer shape gets the same treatment.
+    const legacy = await chat(ai({ response: "<think>hidden thoughts</think>Hello." }), "@cf/zai-org/glm-5.3-flash", [{ role: "user", content: "Hi" }]);
+    expect(legacy!.message.content).toBe("Hello.");
   });
 
   it("gives a model with a 1M-token context a larger budget", () => {
     const glm = contextBudget("@cf/zai-org/glm-5.3-flash");
     const other = contextBudget("@cf/moonshotai/kimi-k2.7-code");
-    expect(other).toEqual({ briefChars: 60_000, fileChars: 20_000, turnChars: 240_000, toolChars: 14_000 });
+    expect(other).toEqual({ briefChars: 60_000, fileChars: 20_000, turnChars: 240_000, toolChars: 14_000, turnToolChars: 140_000 });
     expect(glm.briefChars).toBe(400_000);
     expect(glm.fileChars).toBeGreaterThan(other.fileChars);
     // One turn stays far below the context of the model (about 4 characters a token).
     expect(glm.turnChars / 4).toBeLessThan(1_048_576 / 2);
+    // The stored history of an agent is one value of Durable Object storage (2 MB): 2 bytes a character at most.
+    expect(glm.turnChars * 2).toBeLessThan(2_000_000);
+    // A full brief and the largest turn fit in the turn budget.
+    expect(glm.briefChars + 50_000 + glm.turnToolChars + 40_000).toBeLessThanOrEqual(glm.turnChars);
     expect(contextBudget(undefined)).toEqual(other);
   });
 });

@@ -138,9 +138,13 @@ export function cleanToolCalls(calls: unknown): ToolCall[] | undefined {
   return out.length ? out : undefined;
 }
 
-/** The answer text of a reply, without a reasoning block that some models put at the start ("<think>…</think>"). */
+/**
+ * The answer text of a reply, without a reasoning block that some models put at the start ("<think>…</think>").
+ * A block with no end (the model stopped while it thought) is all reasoning: the answer is empty.
+ */
 export function answerText(content: unknown): string | null {
   if (typeof content !== "string") return null;
+  if (/^\s*<think>/.test(content) && !content.includes("</think>")) return "";
   return content.replace(/^\s*<think>[\s\S]*?<\/think>\s*/, "");
 }
 
@@ -187,7 +191,7 @@ export async function chat(
       };
     }
     if (typeof raw?.response === "string") {
-      return { message: { role: "assistant", content: raw.response }, finishReason: "stop", usage: raw.usage, latencyMs: Date.now() - t0 };
+      return { message: { role: "assistant", content: answerText(raw.response) }, finishReason: "stop", usage: raw.usage, latencyMs: Date.now() - t0 };
     }
     lastChatError = `unexpected response: ${JSON.stringify(raw).slice(0, 300)}`;
     console.warn("chat:", lastChatError);
@@ -211,15 +215,19 @@ export interface ContextBudget {
   turnChars: number;
   /** One tool answer (a file that the agent reads, a test result), in characters. */
   toolChars: number;
+  /** All the tool answers of one turn together, in characters (a model can read many files in one turn). */
+  turnToolChars: number;
 }
 
 /**
  * The budget of a model. GLM 5.3 reads 1,048,576 tokens (about 4 characters each): the brief may hold far
  * more of the repository. Other models keep the old budget. The turn limit keeps the cost of a turn sensible.
+ * It also keeps the history of a built-in agent in one value of Durable Object storage (at most 2 MB: 800,000
+ * characters take 1.6 MB when a text has characters above U+00FF).
  */
 export function contextBudget(model: string | undefined): ContextBudget {
-  if (model && isGlm53(model)) return { briefChars: 400_000, fileChars: 100_000, turnChars: 800_000, toolChars: 100_000 };
-  return { briefChars: 60_000, fileChars: 20_000, turnChars: 240_000, toolChars: 14_000 };
+  if (model && isGlm53(model)) return { briefChars: 400_000, fileChars: 100_000, turnChars: 800_000, toolChars: 100_000, turnToolChars: 200_000 };
+  return { briefChars: 60_000, fileChars: 20_000, turnChars: 240_000, toolChars: 14_000, turnToolChars: 140_000 };
 }
 
 /** Extract the first JSON object from a model reply (fenced or bare). */
