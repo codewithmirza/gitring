@@ -19,6 +19,7 @@ import { dayLabel, lineRangeText } from "./labels";
 import { useStore } from "../state/store";
 import { byId, indexes, selectLogbook, type LogbookRow } from "../state/selectors";
 import { codeHref } from "./code/links";
+import { methodSentence, testsSentence, trainText } from "./trains-copy";
 import "./logbook.css";
 
 const EMPTY: LogbookRow[] = [];
@@ -79,6 +80,8 @@ function Row({ r, compact, selected, now, onKey }: { r: LogbookRow; compact: boo
         </span>
         <span className="lrow__method">
           <MethodBadge method={r.landing.method} />
+          {trainText(r.landing) && <Badge tone="neutral">{trainText(r.landing)}</Badge>}
+          {r.landing.testsWhen === "after" && r.landing.method !== "revert" && <Badge tone="neutral">Tested after</Badge>}
         </span>
         <span className="lrow__agent">{r.agent && <Callsign callsign={r.agent.callsign} color={r.agent.color} model={r.agent.model} />}</span>
         <span className="lrow__corr">
@@ -406,6 +409,7 @@ function WhyTrail({ id }: { id: string }) {
             History
           </Link>
           <MethodBadge method={landing.method} />
+          {trainText(landing) && <Badge tone="neutral">{trainText(landing)}</Badge>}
           <span className="voice-agent ink-2">
             {shortSha(landing.mainBefore)} → {shortSha(landing.mainAfter)}
           </span>
@@ -417,7 +421,7 @@ function WhyTrail({ id }: { id: string }) {
         <p className="why__lede">
           {agent && <Callsign callsign={agent.callsign} color={agent.color} model={agent.model} showModel />}
           <span>
-            merged it with {landing.method === "fast-forward" ? "a fast-forward" : landing.method === "merge" ? "a 3-way merge" : "a redo on the new main"}. {landing.checks.passed}/{total} tests pass on main.
+            {methodSentence(landing.method)}. {testsSentence(landing, total)}
           </span>
         </p>
       </header>

@@ -88,6 +88,7 @@ export const CORRECTION_KIND_TEXT: Record<CorrectionKind, string> = {
   upstream: "Main moved",
   "intent-amended": "Goal changed",
   review: "Sent back",
+  reverted: "Merge reverted",
 };
 
 /** Short words for the change-request markers on the map. */
@@ -98,12 +99,14 @@ export const CORRECTION_KIND_SHORT: Record<CorrectionKind, string> = {
   upstream: "main",
   "intent-amended": "goal",
   review: "sent back",
+  reverted: "reverted",
 };
 
 export const METHOD_TEXT: Record<LandingMethod, string> = {
   "fast-forward": "Fast-forward",
   merge: "3-way merge",
   rederive: "Redo",
+  revert: "Revert",
 };
 
 /** Distance between two pieces of work in the code (0 = closest). */

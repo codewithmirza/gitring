@@ -90,6 +90,7 @@ const REQUEST_WHAT: Record<CorrectionKind, string> = {
   upstream: "read the merged change",
   "intent-amended": "the task changed",
   review: "a person sent the work back",
+  reverted: "gitring reverted the merge: tests failed on main",
 };
 
 export function requestCaption(kind: CorrectionKind, to: string, from?: string): string {
@@ -144,6 +145,7 @@ export function leaseCaption(agent: string): string {
 export function composeCaption(agent: string, method: LandingMethod): string {
   if (method === "fast-forward") return `Main did not move. gitring puts the work of ${agent} on top of main: a fast-forward.`;
   if (method === "merge") return `Main moved after the plan of ${agent}. gitring joins the work and main with a 3-way merge.`;
+  if (method === "revert") return `Tests failed on main after the merge of the work of ${agent}. gitring reverts it.`;
   return `gitring puts the redo of ${agent} on the new main.`;
 }
 

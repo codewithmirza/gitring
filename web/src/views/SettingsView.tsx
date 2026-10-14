@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Badge, Button, Checkbox, CodeBlock, EmptyState, Field, InlineConfirm, Input, Segmented, Select, toast, type BadgeTone } from "../design/components";
 import { Icon, type IconName } from "../design/icons";
 import type { GithubRepo, MemberInfo, Role, Visibility } from "../../../src/core/accounts";
-import type { ApproverRule, CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, ProjectSettings, RedoPolicy, SettingsAnswer, WebhookInput } from "../../../src/core/types";
+import type { ApproverRule, CheckSettings, GithubSyncMode, GithubSyncState, GithubSyncStatus, LandingMode, ProjectSettings, RedoPolicy, SettingsAnswer, TestsWhen, WebhookInput } from "../../../src/core/types";
 import { githubRepoName } from "../../../src/core/repo-rules";
 import { addMember, archiveProject, getSettings, listMembers, loadProjects, putSettings, removeMember, updateProject, useAccess, useMe, type MeWithInstall } from "../state/account";
 import { isAbort, pullFromGithub, sendToGithub, syncStatus } from "../state/github";
@@ -17,6 +17,7 @@ import { Link } from "../app/router";
 import { RepoSelect } from "./newproject/RepoSelect";
 import { APPROVAL_EVENT_NOTE, APPROVER_CHOICES, APPROVER_LEGEND, LANDING_CHOICES, LANDING_LEGEND, WEBHOOK_EVENTS, approverOf, landingOf, untestedHelp } from "./approval-copy";
 import { ChoiceList } from "./ChoiceList";
+import { TESTS_WHEN_OPTIONS, TRAIN_HELP, parseMaxTrain, testsWhenHelp } from "./trains-copy";
 import { SECRET_ONCE, SIGNATURE_HELP, secretLine } from "./webhook-copy";
 import "./projects.css";
 
@@ -387,6 +388,7 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
   const [intentsInRepo, setIntentsInRepo] = useState(settings.intentsInRepo);
   const [redo, setRedo] = useState<RedoPolicy>(settings.redo ?? "agent-first");
   const [wait, setWait] = useState(String(settings.redoWaitMinutes ?? 15));
+  const [train, setTrain] = useState(String(settings.maxTrain ?? 8));
   const { busy, error, setError, save } = useSave(projectId, onSaved);
 
   // Reset the form only when these values change on the server (a save in another section keeps this draft).
@@ -396,13 +398,15 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
     setIntentsInRepo(settings.intentsInRepo);
     setRedo(settings.redo ?? "agent-first");
     setWait(String(settings.redoWaitMinutes ?? 15));
-  }, [savedLanding, savedApprover, settings.intentsInRepo, settings.redo, settings.redoWaitMinutes]);
+    setTrain(String(settings.maxTrain ?? 8));
+  }, [savedLanding, savedApprover, settings.intentsInRepo, settings.redo, settings.redoWaitMinutes, settings.maxTrain]);
 
   const dirty =
     landing !== savedLanding ||
     approver !== savedApprover ||
     intentsInRepo !== settings.intentsInRepo ||
     redo !== (settings.redo ?? "agent-first") ||
+    train !== String(settings.maxTrain ?? 8) ||
     (redo === "agent-first" && wait !== String(settings.redoWaitMinutes ?? 15));
   const submit = () => {
     const minutes = Number(wait);
@@ -410,8 +414,13 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
       setError("Give a wait time from 5 to 120 minutes.");
       return;
     }
+    const maxTrain = parseMaxTrain(train);
+    if (maxTrain === undefined) {
+      setError("Give a train size from 1 to 16.");
+      return;
+    }
     // `landing` replaces the old `autoLand`: the server keeps `autoLand` equal to it, so the form never writes `autoLand`.
-    void save({ landing, approver, intentsInRepo, redo, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
+    void save({ landing, approver, intentsInRepo, redo, maxTrain, ...(redo === "agent-first" ? { redoWaitMinutes: minutes } : {}) }, "Merge settings saved");
   };
 
   return (
@@ -448,6 +457,11 @@ function MergingSection({ projectId, owner, settings, onSaved }: SectionProps) {
             <Input type="number" min={5} max={120} step={1} inputMode="numeric" value={wait} disabled={!owner} onChange={(e) => setWait(e.target.value)} />
           </Field>
         )}
+      </div>
+      <div className="st-row">
+        <Field label="Largest train (work copies)" help={TRAIN_HELP}>
+          <Input type="number" min={1} max={16} step={1} inputMode="numeric" value={train} disabled={!owner} onChange={(e) => setTrain(e.target.value)} />
+        </Field>
       </div>
       {owner && (
         <div>
@@ -487,6 +501,14 @@ function ChecksSection({ projectId, owner, settings, onSaved }: SectionProps) {
         Tests
       </h2>
       <p className="np__help">gitring runs the tests before a work copy is ready, and again on main plus the work copy before it merges. Work merges only when they pass.</p>
+      <Segmented<TestsWhen>
+        label="When are tests run?"
+        value={settings.testsWhen ?? "before"}
+        disabled={!owner || busy}
+        onChange={(testsWhen) => owner && testsWhen !== (settings.testsWhen ?? "before") && void save({ testsWhen }, "Test settings saved")}
+        options={TESTS_WHEN_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+      />
+      <p className="np__help">{testsWhenHelp(settings.testsWhen ?? "before")}</p>
       <Segmented<CheckSettings["runner"]>
         label="Where tests run"
         value={cs.runner}

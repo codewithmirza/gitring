@@ -27,6 +27,7 @@ const METHOD_ICON: Record<LandingMethod, IconName> = {
   "fast-forward": "fastforward",
   merge: "merge",
   rederive: "rederive",
+  revert: "reload",
 };
 
 export function MethodBadge({ method }: { method: LandingMethod }) {
