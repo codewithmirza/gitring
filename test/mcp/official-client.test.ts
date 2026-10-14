@@ -102,7 +102,7 @@ describe("a client of the 2026-07-28 revision that can show a form", () => {
     const id = await shoutWork(client);
     await client.callTool({ name: "gitring_submit", arguments: { project, attemptId: id, summary: "Add shout" } });
     expect(shown).toHaveLength(1);
-    expect(shown[0].message).toMatch(/^Merge "Shout" into main\? 2 files, \+\d+ -0\. \d+ of \d+ tests pass\. This project asks a person before every merge\.$/);
+    expect(shown[0].message).toMatch(/^Merge "Shout" into main\? 2 files, \+\d+ -0\. \d+ of \d+ tests pass. [A-Z][^.]*. This project asks a person before every merge\.$/);
     expect(shown[0].fields).toEqual(["answer", "note"]);
   });
 

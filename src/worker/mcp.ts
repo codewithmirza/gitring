@@ -110,9 +110,11 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
           // The person behind the key or the sign-in sent this agent. That person answers the approval.
           by: actorOf(ctx.who),
         });
+        // The rules by folder that the plan touches: the agent reads them with the plan, before any work exists.
+        const rules = res.rules?.length ? ` ${res.rules.join(" ")}` : "";
         return text(
           res,
-          `You are ${res.callsign} on the task "${res.intent.title}" (work copy ${res.attemptId}). Conflict check: ${VERDICT_WORD[res.clearance.verdict] ?? res.clearance.verdict}. ${res.clearance.advice}`,
+          `You are ${res.callsign} on the task "${res.intent.title}" (work copy ${res.attemptId}). Conflict check: ${VERDICT_WORD[res.clearance.verdict] ?? res.clearance.verdict}. ${res.clearance.advice}${rules}`,
           res.clearance,
         );
       } catch (e) {
@@ -251,6 +253,7 @@ export const GITRING_TOOLS: readonly ToolDef[] = [
       "Ask for a merge when your tests pass. gitring tests again. " +
       "Then it merges the work (fast-forward, 3-way merge, or a redo on the new main). " +
       "Sometimes a person must say yes first. The project can ask for it. It is also needed when the change looks risky, when no test ran, or when work copies compete. " +
+      "A change of comments, white space or documentation only does not look risky. A rule by folder of the project can ask for the yes of an owner. " +
       "gitring then asks the person. It asks in this chat if the client can show a question and the person allows it. If not, the answer has a link to the gitring app. " +
       "Wait for the person. Do not change the work copy. Call gitring_status to see the answer. " +
       "When the project sends merges to GitHub, the merge goes there too.",

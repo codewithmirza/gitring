@@ -15,6 +15,8 @@
 import type { Approval, ApprovalReason, ApproverRule, Attempt, CheckRun, LandingMode } from "./types";
 import { noTestRan } from "./types";
 import { atLeast, type Role } from "./accounts";
+import { SAFE_KINDS, kindWords } from "./analysis/meaning";
+import { ruleReasons, type RuleVerdict } from "./coord/folder-rules";
 
 /** Files that build, run or deploy the code. A change there can break more than the task. */
 const BUILD_OR_DEPLOY = /(^|\/)(\.github\/|package(-lock)?\.json$|pnpm-lock\.yaml$|yarn\.lock$|wrangler\.(toml|json|jsonc)$|Dockerfile[^/]*$|docker-compose[^/]*$|\.env[^/]*$|migrations\/)/;
@@ -38,9 +40,11 @@ function nameOf(symbol: string): string {
 /**
  * What makes a change look risky. Each sign is one plain sentence. No sign means the change looks safe.
  * These signs only raise the need for a person. A change that shows none can still be wrong: the tests decide that.
+ * A change of comments, formatting or documentation only (see core/analysis/meaning.ts) shows no sign.
  */
-export function riskSigns(a: Pick<Attempt, "footprint" | "stats">): string[] {
+export function riskSigns(a: Pick<Attempt, "footprint" | "stats" | "meaning">): string[] {
   const signs: string[] = [];
+  if (a.meaning && SAFE_KINDS.has(a.meaning.kind)) return signs;
   const changed = a.footprint.symbols.signatureChanged;
   if (changed.length) {
     signs.push(`The parameters of ${listOf([...new Set(changed.map(nameOf))])} change. Other code can call ${changed.length === 1 ? "it" : "them"}.`);
@@ -61,27 +65,36 @@ export function riskSigns(a: Pick<Attempt, "footprint" | "stats">): string[] {
  * Does the work need a person before it merges? The project setting says "automatic", "risky" or "ask".
  * Two things need a person in every mode: no test ran (nothing is verified), and other work copies that
  * compete on the same task (a person chooses one).
+ *
+ * The rules by folder (`rules`, see core/coord/folder-rules.ts) come on top: a rule that needs the yes of
+ * an owner makes the question one for owners only (`ownerOnly`). Work that is all under "no yes needed"
+ * rules skips the questions of the setting and of a missing test; competing work copies still need a person.
  */
-export function approvalNeeded(i: { mode: LandingMode; untested: boolean; competing: number; signs: string[] }): { reason: ApprovalReason; why: string[] } | null {
+export function approvalNeeded(i: { mode: LandingMode; untested: boolean; competing: number; signs: string[]; rules?: RuleVerdict }): { reason: ApprovalReason; why: string[]; ownerOnly?: boolean } | null {
   const why: string[] = [];
-  if (i.untested) why.push("No test ran. The work is not verified.");
+  const ruled = Boolean(i.rules && (i.rules.ownerYes.length || i.rules.notAllowed.length));
+  const noYes = Boolean(i.rules?.noYes);
+  if (i.untested && !noYes) why.push("No test ran. The work is not verified.");
   if (i.competing > 0) why.push(`${i.competing + 1} work copies compete on this task. A person chooses one.`);
-  if (i.mode === "ask") why.push("This project asks a person before every merge.");
+  if (ruled) why.push(...ruleReasons(i.rules!));
+  if (noYes) {
+    /* a rule of the project: no yes of a person for this work */
+  } else if (i.mode === "ask") why.push("This project asks a person before every merge.");
   else if (i.mode === "risky") why.push(...i.signs);
   if (!why.length) return null;
-  const reason: ApprovalReason = i.untested ? "no-test-ran" : i.competing > 0 ? "competing" : i.mode === "ask" ? "project-asks" : "looks-risky";
-  return { reason, why };
+  const reason: ApprovalReason = i.untested && !noYes ? "no-test-ran" : i.competing > 0 ? "competing" : ruled ? "folder-rule" : i.mode === "ask" ? "project-asks" : "looks-risky";
+  return { reason, why, ...(ruled ? { ownerOnly: true } : {}) };
 }
 
 /**
  * Who may answer an approval. A viewer never. An owner always. Another member only when the rule is
  * "sender" and they are the person who sent the agent, or when no person sent it (old work, or work that
- * no person started).
+ * no person started). A question for owners only (a rule by folder) has no other answer.
  */
-export function canDecide(approval: Pick<Approval, "approver"> | undefined, who: { id: string | null | undefined; role: Role | null | undefined }, rule: ApproverRule = "sender"): boolean {
+export function canDecide(approval: Pick<Approval, "approver" | "ownerOnly"> | undefined, who: { id: string | null | undefined; role: Role | null | undefined }, rule: ApproverRule = "sender"): boolean {
   if (!who.id || !atLeast(who.role, "member")) return false;
   if (who.role === "owner") return true;
-  if (rule === "owner") return false;
+  if (rule === "owner" || approval?.ownerOnly) return false;
   return !approval?.approver || approval.approver.id === who.id;
 }
 
@@ -95,11 +108,12 @@ export function testsLine(run: CheckRun | undefined): string {
   return run.ok ? `${run.passed} of ${total} tests pass.` : `${run.failed} of ${total} tests fail.`;
 }
 
-/** What a person needs to know at a glance: the size of the change and the tests. */
-export function approvalLine(a: Pick<Attempt, "stats" | "checks" | "composedChecks">): string {
+/** What a person needs to know at a glance: the size of the change, the tests, and what kind of change it is. */
+export function approvalLine(a: Pick<Attempt, "stats" | "checks" | "composedChecks" | "meaning">): string {
   const n = a.stats.filesChanged;
   const size = `${n} ${n === 1 ? "file" : "files"}, +${a.stats.additions} -${a.stats.deletions}`;
-  return `${size}. ${testsLine(a.composedChecks ?? a.checks)}`;
+  const kind = a.meaning && n > 0 ? ` ${kindWords(a.meaning.kind)}` : "";
+  return `${size}. ${testsLine(a.composedChecks ?? a.checks)}${kind}`;
 }
 
 /** The question that a chat card shows: short, with the facts (`line` is approvalLine), and the reason to ask. */

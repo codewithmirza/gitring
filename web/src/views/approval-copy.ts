@@ -4,9 +4,10 @@
  * Pure (no React): the Settings page and the Connect page use these, and a unit test keeps the words
  * true to the rules in core/approvals.ts. Words are plain (ASD-STE100): at most 20 words in a sentence.
  */
-import type { ApproverRule, GitringEventType, LandingMode } from "../../../src/core/types";
+import type { ApproverRule, FolderRule, GitringEventType, LandingMode } from "../../../src/core/types";
 import { isLandingMode } from "../../../src/core/types";
 import { LARGE_FILES, LARGE_LINES } from "../../../src/core/approvals";
+import { MAX_FOLDER_RULES } from "../../../src/core/coord/folder-rules";
 
 /** One choice of a radio group: a short name and one help text. */
 export interface Choice<T extends string> {
@@ -37,6 +38,7 @@ export const LANDING_CHOICES: Choice<LandingMode>[] = [
     help:
       "gitring asks when the parameters of a function change, or when build or deploy files change. " +
       `It also asks when files are deleted, or when the change is large: ${LARGE_FILES} files or ${LARGE_LINES} changed lines. ` +
+      "A change of comments, white space or documentation only never looks risky. " +
       "A person also decides when no test ran, or when work copies compete. New projects start with this choice.",
   },
   {
@@ -88,6 +90,35 @@ export function landingOf(s: { landing?: unknown; autoLand?: unknown } | null | 
 /** Who answers: the person who sent the agent, unless the settings say "owner". */
 export function approverOf(s: { approver?: unknown } | null | undefined): ApproverRule {
   return s?.approver === "owner" ? "owner" : "sender";
+}
+
+/* ───────────── rules by folder ───────────── */
+
+export type FolderRuleKind = FolderRule["rule"];
+
+export const FOLDER_RULES_LEGEND = "Rules by folder";
+
+/** What the section says first: what a rule is and where gitring checks it. */
+export const FOLDER_RULES_HELP =
+  "A rule names a folder or a file pattern and says who says yes to a change there. " +
+  "gitring checks the files of each plan and the changed files of each merge. " +
+  `Patterns: migrations/** (a folder and all in it), docs/*.md (one folder), *.sql (a name, in any folder). At most ${MAX_FOLDER_RULES} rules.`;
+
+/** The three kinds of a rule, with one help text each. */
+export const FOLDER_RULE_CHOICES: Choice<FolderRuleKind>[] = [
+  { value: "owner-yes", label: "An owner says yes", help: "A change there needs the yes of an owner, in every merge choice above." },
+  { value: "no-yes", label: "No yes needed", help: "A change there merges when its tests pass, also when no test ran. Work copies that compete still need a person." },
+  { value: "members", label: "Only the agents of these members", help: "The plan of another agent is refused. Work that changed the files anyway needs the yes of an owner." },
+];
+
+/** The label of a kind of rule, for a list. */
+export function folderRuleLabel(kind: FolderRuleKind): string {
+  return FOLDER_RULE_CHOICES.find((c) => c.value === kind)?.label ?? kind;
+}
+
+/** The rules of a project as the Settings page edits them (a server from before rules sends none). */
+export function folderRulesOf(s: { folderRules?: unknown } | null | undefined): FolderRule[] {
+  return Array.isArray(s?.folderRules) ? (s!.folderRules as FolderRule[]) : [];
 }
 
 /** Help for "Merge when no test runs" (the gitring test runner only: a container run decides by its exit code). */

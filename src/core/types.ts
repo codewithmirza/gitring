@@ -87,7 +87,20 @@ export interface ProjectSettings {
   redo: RedoPolicy;
   /** agent-first: minutes to wait for the outside agent before a built-in agent starts (5–120). */
   redoWaitMinutes: number;
+  /** Rules by folder: who says yes to a change there (see core/coord/folder-rules.ts). Owners set them. */
+  folderRules: FolderRule[];
 }
+
+/**
+ * A rule by folder. `pattern` is a path pattern (`**` any folders, `*` one name part): `migrations/**`,
+ * `docs/*.md`, `*.sql`.
+ *   owner-yes  a change there needs the yes of an owner
+ *   no-yes     a change there needs no yes (not for competing work copies: a person still chooses one)
+ *   members    only the agents of these people may change it; the plan of another agent is refused,
+ *              and work that changed it anyway needs the yes of an owner
+ * gitring checks the files of a plan (declare) and the changed files of the work (submit).
+ */
+export type FolderRule = { pattern: string; rule: "owner-yes" | "no-yes" } | { pattern: string; rule: "members"; members: Person[] };
 
 /**
  * GitHub sync of main:
@@ -435,6 +448,23 @@ export interface Footprint {
   computedAt: Millis;
 }
 
+/**
+ * What a change means (see core/analysis/meaning.ts), from the safest kind to the one that needs care:
+ *   comment-only     only comments differ (JS/TS: the tokens without comments are the same)
+ *   formatting-only  only white space differs
+ *   docs-only        only documentation files differ (Markdown, text)
+ *   test-only        only test files differ
+ *   logic            the code itself differs
+ */
+export type ChangeKind = "comment-only" | "formatting-only" | "docs-only" | "test-only" | "logic";
+
+export interface ChangeMeaning {
+  /** The kind of the whole change: the kind of its file that needs the most care. */
+  kind: ChangeKind;
+  /** The kind of each changed file. */
+  files: Record<string, ChangeKind>;
+}
+
 /* ───────────────────────────── attempts ───────────────────────────── */
 
 export type AttemptStatus =
@@ -502,6 +532,8 @@ export interface Attempt {
   status: AttemptStatus;
   course: Course;
   footprint: Footprint;
+  /** What the change means: comments, formatting, documentation, tests or logic (set with the footprint). */
+  meaning?: ChangeMeaning;
   /** Ids of corrections sent to this attempt. */
   corrections: string[];
   checks?: CheckRun;
@@ -575,6 +607,7 @@ export type ApprovalReason =
   | "competing" // other work copies compete on the same task
   | "project-asks" // the project asks before every merge
   | "looks-risky" // the project asks when a change looks risky, and this one does
+  | "folder-rule" // a rule by folder of the project asks for the yes of an owner
   | "merge-stopped"; // the merge did not finish after several tries
 
 export interface Approval {
@@ -591,6 +624,8 @@ export interface Approval {
   digest: string;
   /** The person who answers: the sender of the work copy. Absent: any member. Owners can always answer. */
   approver?: Person;
+  /** Only an owner answers: a rule by folder asks for the yes of an owner (`approver` is then absent). */
+  ownerOnly?: boolean;
   askedAt: Millis;
   /** how: in the gitring app, in the chat of the agent, or with the gitring command line. */
   answer?: { by: Person; how: "app" | "chat" | "cli"; note?: string; at: Millis };
@@ -1062,6 +1097,8 @@ export interface DeclareResult {
     tokenExpiresAt?: string;
   };
   clearance: Clearance;
+  /** The rules by folder that the plan touches, in plain sentences (see ProjectSettings.folderRules). */
+  rules?: string[];
   /** How to work with gitring (short protocol reminder). */
   protocol: string[];
 }
@@ -1180,6 +1217,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   redo: "agent-first",
   redoWaitMinutes: 15,
   allowUntested: false,
+  folderRules: [],
 };
 
 /**
@@ -1209,5 +1247,6 @@ export function withDefaults(s: Partial<ProjectSettings> | undefined): ProjectSe
     thresholds: { ...DEFAULT_THRESHOLDS, ...(s?.thresholds ?? {}) },
     webhooks: Array.isArray(s?.webhooks) ? s!.webhooks : [],
     github: { ...DEFAULT_SETTINGS.github, ...(s?.github ?? {}) },
+    folderRules: Array.isArray(s?.folderRules) ? s!.folderRules : [],
   };
 }
