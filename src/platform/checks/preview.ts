@@ -29,9 +29,11 @@ const PREVIEW_CPU_MS = 5_000;
 const STRIPPED_REQUEST_HEADERS = ["cookie", "authorization"];
 const SANDBOX_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads";
 
-/** Modules of the app: every .js/.mjs file, main module src/index.js. null if there is no src/index.js. */
+/** Modules of the app: every .js/.mjs file, main module src/index.js. null if there is no src/index.js, or it has no fetch handler. */
 export function previewModules(files: Map<string, string>): { mainModule: string; modules: Record<string, string> } | null {
-  if (!files.has(PREVIEW_MAIN_MODULE)) return null;
+  const main = files.get(PREVIEW_MAIN_MODULE);
+  // A library has a src/index.js too, but no fetch handler. It has no app to show.
+  if (main === undefined || !/\bfetch\b/.test(main)) return null;
   const modules: Record<string, string> = {};
   for (const [path, content] of files) {
     if (isModulePath(path)) modules[path] = content;

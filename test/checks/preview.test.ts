@@ -33,6 +33,10 @@ describe("previewModules", () => {
     expect(previewModules(new Map([["index.js", "export default {}"]]))).toBeNull();
   });
 
+  it("returns null when src/index.js has no fetch handler (a library)", () => {
+    expect(previewModules(new Map([["src/index.js", "export function words(t) { return t.split(' '); }"]]))).toBeNull();
+  });
+
   it("takes every .js/.mjs file, with src/index.js as the main module", () => {
     const code = previewModules(greeter)!;
     expect(code.mainModule).toBe("src/index.js");
