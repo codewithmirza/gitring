@@ -155,6 +155,24 @@ describe("git mode carries every change of the push", () => {
     expect(await w.repo.readBlob(w.mainRepo, (await mainSnapshot(w)).get("img/logo.png")!.sha)).toEqual(new Uint8Array([...PNG, 1]));
   });
 
+  it("merges a text file with a byte order mark that main and the work both changed, and keeps the mark", async () => {
+    const w = new CrashWorld();
+    const BOM = [0xef, 0xbb, 0xbf];
+    const text = (first: string, last: string) => new Uint8Array([...BOM, ...utf8.encode(`${first}\nusing System;\nclass A {}\nclass B {}\nclass C {}\n${last}\n`)]);
+    await w.start({ files: [{ path: "src/a.js", text: "export const a = 1;\n" }, TEST_FILE, { path: "src/Win.cs", base64: b64(text("// one", "// end")) } as never], settings: { landing: "automatic" } });
+    const alpha = await declareGit(w, "a first line");
+    const beta = await declareGit(w, "a last line");
+    await push(w, alpha.fork, [{ path: "src/Win.cs", content: text("// ONE", "// end") }]);
+    await push(w, beta.fork, [{ path: "src/Win.cs", content: text("// one", "// END") }]);
+    await w.harbor.submit(alpha.attemptId, "First line");
+    await w.settle();
+    await w.harbor.submit(beta.attemptId, "Last line");
+    await w.settle();
+    expect(w.status(alpha.attemptId)).toBe("landed");
+    expect(w.status(beta.attemptId)).toBe("landed");
+    expect((await mainSnapshot(w)).get("src/Win.cs")!.sha).toBe(await hashObject("blob", text("// ONE", "// END")));
+  });
+
   it("does not keep the bytes of a file when its text is not exactly the blob (Latin-1)", async () => {
     const w = new CrashWorld();
     await w.start({ files: [{ path: "src/a.js", text: "export const a = 1;\n" }, TEST_FILE], settings: { landing: "automatic" } });

@@ -111,6 +111,8 @@ const LANDING_LEASE_MS = 5 * 60_000;
 const MAX_LANDING_STARTS = 4;
 /** What people and agents read when the gitring test harness ran no test (nothing is verified). */
 const NO_TEST_RAN = "No test ran. A person must decide to merge.";
+/** The UTF-8 byte order mark as text. gitring's text of a file never starts with it (TextDecoder takes it away). */
+const BOM = "﻿";
 /**
  * Bytes that one blob reader keeps after a read (a merge reads a file for its size, then for the commit).
  * The project object has 128 MB of memory: these limits, and MAX_CARRY_TOTAL_BYTES, keep a merge far below it.
@@ -681,20 +683,24 @@ export class HarborMaster extends DurableObject<Env> {
     return text;
   }
 
-  /** Blob ids → is the text that gitring holds exactly the blob? */
-  private exactBlobs = new Map<string, boolean>();
+  /** Blob ids → how the text that gitring holds gives the blob: as it is, with a byte order mark first, or not at all. */
+  private exactBlobs = new Map<string, "same" | "bom" | "no">();
   /** Blob ids → size in bytes, for blobs that gitring read for a merge. */
   private blobSizes = new Map<string, number>();
 
-  /** Is `text` exactly the blob `sha` (UTF-8 that gives the same bytes again)? Latin-1 text, for example, is not. */
-  private async isExact(sha: string, text: string): Promise<boolean> {
-    let ok = this.exactBlobs.get(sha);
-    if (ok === undefined) {
-      ok = (await hashObject("blob", utf8.encode(text))) === sha;
+  /**
+   * The text of the blob `sha` that gives exactly its bytes again as UTF-8, from `text` (the text that gitring
+   * holds), or null. The text that gitring reads has no byte order mark: a blob with one gets it back here.
+   * Latin-1 text, for example, gives null.
+   */
+  private async exactText(sha: string, text: string): Promise<string | null> {
+    let how = this.exactBlobs.get(sha);
+    if (how === undefined) {
+      how = (await hashObject("blob", utf8.encode(text))) === sha ? "same" : (await hashObject("blob", utf8.encode(`${BOM}${text}`))) === sha ? "bom" : "no";
       if (this.exactBlobs.size > 20_000) this.exactBlobs.clear();
-      this.exactBlobs.set(sha, ok);
+      this.exactBlobs.set(sha, how);
     }
-    return ok;
+    return how === "same" ? text : how === "bom" ? `${BOM}${text}` : null;
   }
 
   /**
@@ -728,7 +734,7 @@ export class HarborMaster extends DurableObject<Env> {
         if (stored.text === null) return null;
         text = stored.text;
       }
-      return (await this.isExact(sha, text)) ? text : null;
+      return this.exactText(sha, text);
     };
     const readBytes = async (sha: string): Promise<Uint8Array | null> => {
       const own = o.textBlobs?.get(sha);
@@ -757,7 +763,7 @@ export class HarborMaster extends DurableObject<Env> {
       if (held !== undefined) return held;
       for (const repo of repos) {
         const text = await this.readText(repo, sha);
-        if (text !== null) return (await this.isExact(sha, text)) ? text : null;
+        if (text !== null) return this.exactText(sha, text);
       }
       return null;
     };
