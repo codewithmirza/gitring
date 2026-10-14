@@ -59,7 +59,7 @@ export interface StewardInput {
   queue: { attemptId: string; at: number }[];
 }
 
-/* ───────────────────────── the limits ───────────────────────── */
+// ───── The limits ─────
 
 /** The same test failed in this many test runs of a work copy in a row. */
 export const STUCK_RUNS = 3;
@@ -76,7 +76,7 @@ export const WINDOW_MS = 2 * 3600_000;
 /** How many tests of a work copy one note names. */
 const NAMED_TESTS = 3;
 
-/* ───────────────────────── small helpers ───────────────────────── */
+// ───── Small helpers ─────
 
 function minutes(ms: number): number {
   return Math.max(1, Math.round(ms / 60_000));
@@ -145,7 +145,7 @@ function runsByCopy(i: StewardInput): Map<string, TestRun[]> {
   return out;
 }
 
-/* ───────────────────────── the counters ───────────────────────── */
+// ───── The counters ─────
 
 /**
  * A work copy that ran its tests at least STUCK_RUNS times, and one test failed in every one of the last
@@ -366,7 +366,7 @@ export function stewardFindings(i: StewardInput): Finding[] {
   return [...stuckTests(i), ...bouncingRequests(i), ...hotLines(i), ...flappingTests(i), ...stuckQueue(i)];
 }
 
-/* ───────────────────────── the words of the model ───────────────────────── */
+// ───── The words of the model ─────
 
 /** The model answers a list of messages with text, or null when it fails (as core/guess.ts AskModel). */
 export type AskSteward = (messages: ChatMessage[]) => Promise<string | null>;

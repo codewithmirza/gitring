@@ -1,6 +1,8 @@
 /**
- * HarborMaster persistence: SQLite (Durable Object storage) with JSON documents.
- * The DO keeps an in-memory mirror; this class is the write-through layer.
+ * The SQLite storage of the project coordinator: JSON documents in the storage of the Durable Object.
+ * Created by the base layer (master/state.ts). The layers keep a copy in memory; this class is the write-through layer.
+ * Never save a record here without the same change in the copy in memory: the two must agree (see master/records.ts).
+ * Read next: master/state.ts (the load at start-up).
  */
 
 export const SCHEMA = [

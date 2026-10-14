@@ -1,5 +1,8 @@
 /**
- * Pure helpers for the HarborMaster: tree text views, footprints, vessel views, traffic and clearance text.
+ * Pure helpers that build tree texts, real changes, agent views, traffic and check results from the state of a project.
+ * Called by the layers in master/ (for example files.ts, work-views.ts and clearance.ts).
+ * Never read or write storage here: every function gets what it needs as an argument.
+ * Read next: master/work-views.ts (the view of one work copy).
  */
 import type {
   AgentInfo,

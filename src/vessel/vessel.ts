@@ -1,5 +1,5 @@
 /**
- * Vessel: a built-in coding agent, one Durable Object for each work copy run.
+ * The agent runner (Vessel): a built-in coding agent, one Durable Object for each work copy run.
  * Called by HarborTasks.startVessel (src/harbor/master/tasks.ts). It calls back through the HarborMaster RPC methods.
  * Never keep a change request that the model did not see: the vessel acknowledges a request only after the model acted on it.
  * Read next: ../platform/ai/models.ts (the model calls).
@@ -159,7 +159,7 @@ export class Vessel extends DurableObject<Env> {
     void phase0;
   }
 
-  /* ───────────────────────── LLM ───────────────────────── */
+  // ───── Model steps ─────
 
   private async llmStep(st: VesselState): Promise<boolean> {
     if (st.phase === "start") return this.planStep(st);
@@ -354,7 +354,7 @@ export class Vessel extends DurableObject<Env> {
     return { text };
   }
 
-  /* ───────────────────────── shared ───────────────────────── */
+  // ───── Shared helpers ─────
 
   /** Keep the new corrections of an answer (gitring lists a correction again until the vessel acknowledges it). */
   private absorb(st: VesselState, clr: T.Clearance | undefined): void {
@@ -421,7 +421,7 @@ export class Vessel extends DurableObject<Env> {
   }
 }
 
-/* ───────────────────────── LLM helpers ───────────────────────── */
+// ───── Model helpers ─────
 
 const COURSE_REQUEST =
   "Send your plan before you write code. Reply with JSON only: " +

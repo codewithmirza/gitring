@@ -1,7 +1,8 @@
 /**
  * Saves tasks, work copies, change requests and questions, and tells people, webhooks and waiting agents.
  * Layer 2 of the chain in master/README.md. Extends HarborState (state.ts).
- * Every change of a record goes through a put method of this layer. Never write to the database around it.
+ * A change of a record goes through a put method of this layer: it saves, tells the app and wakes waiting agents.
+ * A quiet save with no event is allowed only where the code says why.
  * Read next: files.ts.
  */
 import type * as T from "../../core/types";

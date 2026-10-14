@@ -97,7 +97,7 @@ export function readTimeline(sql: SqlStorage, src: TimelineSources, after: strin
   return { records: out, next: out.length ? out[out.length - 1].cursor : null, done: !full, agents: [...src.agents] };
 }
 
-/* ───────────── what a record holds ───────────── */
+// ───── What a record holds ─────
 
 function intentRecord(i: T.Intent): TimelineIntent {
   return { ...i, checks: i.checks.map((c) => ({ id: c.id, path: c.path, description: c.description })) };

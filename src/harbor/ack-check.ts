@@ -110,7 +110,7 @@ function callFiles(fp: Footprint, key: SymbolKey): string[] {
   return fp.symbols.referenced.some((k) => symbolName(k) === name && (!path || !symbolPath(k) || symbolPath(k) === path)) ? Object.keys(fp.files) : [];
 }
 
-/* ───────────────────────── parameter lists and calls ───────────────────────── */
+// ───── Parameter lists and calls ─────
 
 interface Param {
   optional: boolean;

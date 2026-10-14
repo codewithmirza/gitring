@@ -2,6 +2,7 @@
  * Starts a project from a source (empty, files, template, git URL or GitHub) and finishes the import.
  * Layer 7 of the chain in master/README.md. Extends HarborTasks (tasks.ts).
  * A long import continues from the alarm (see alarm in harbor.ts) and survives a restart of the object.
+ * It also guesses the test command of a new project and gives the git push and clone access.
  * Read next: clearance.ts.
  */
 import type * as T from "../../core/types";
