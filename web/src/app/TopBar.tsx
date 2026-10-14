@@ -223,7 +223,7 @@ function OtherRow({ item, first, onDone }: { item: OtherJudgmentItem; first: boo
 /**
  * The button of the decisions list. A merge question has its card in the tray and its count on the Inbox button,
  * so the button shows only when it adds something: work that is not a merge question, more questions than the
- * tray shows, a person who only views, and the pages where the tray gives way (the replay and the approve page).
+ * tray shows, a person who only views, and the pages where the tray gives way (the replay, and the approve page when other questions wait).
  */
 function Decisions({ route }: { route: Route }) {
   const queue = useJudgmentQueue();
@@ -259,7 +259,10 @@ function Decisions({ route }: { route: Route }) {
   // The color says "needs you": only for people who can decide (members and owners).
   const needsYou = mine.length > 0;
   const trayShowsAll = canAct && rows.length <= maxChips && rows.every((q) => q.kind === "approval" && q.mayAnswer);
-  const quiet = rows.length === 0 || (trayShowsAll && route.name !== "replay" && route.name !== "approve");
+  // The approve page answers one question itself: when that is the only one, the count would repeat it.
+  const first = rows[0];
+  const onlyThisOne = route.name === "approve" && rows.length === 1 && first.kind === "approval" && first.attemptId === route.id;
+  const quiet = rows.length === 0 || onlyThisOne || (trayShowsAll && route.name !== "replay" && route.name !== "approve");
   const merges = mine.every((q) => q.kind === "approval");
   const lead = merges ? `${n} ${n === 1 ? "merge waits" : "merges wait"} for you.` : `${n} ${n === 1 ? "decision needs" : "decisions need"} you.`;
   const others = w > 0 ? ` ${w} ${w === 1 ? "waits" : "wait"} for other people.` : "";
