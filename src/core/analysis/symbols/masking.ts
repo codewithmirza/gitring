@@ -4,7 +4,6 @@
  * Used by `regex-analysis.ts` and `ts-tokens.ts`. It never changes the length of the text or its line breaks.
  */
 
-
 const REGEX_PREFIX_WORDS = new Set([
   "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await",
 ]);

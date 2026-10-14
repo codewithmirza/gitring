@@ -61,7 +61,6 @@ export function opaqueFolder(path: string): { folder: string; generated: boolean
   return { folder: path.slice(0, m.index + m[0].length), generated: GENERATED_DIRS.has(m[2]) };
 }
 
-
 /**
  * "owner/name" of a GitHub repository, from "owner/name", "https://github.com/owner/name(.git)" or
  * "git@github.com:owner/name.git". null when the text names no GitHub repository.
