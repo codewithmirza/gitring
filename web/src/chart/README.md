@@ -7,6 +7,7 @@ The overview map of a project: the repository as islands, with every active agen
 - `layout.ts`: the islands and parcels (files) for a file list.
 - `panzoom.ts`: pan and zoom of the map by pointer, wheel and keys.
 - `placement.ts`: the place of each vessel on the map.
+- `tags.ts`: which agents show a callsign flag, and on which side (pure, no React).
 - `static-layers.tsx`: sea, land, parcels, compass rose and graticule.
 - `vessel-layers.tsx`: the vessels, their wakes and their tracks.
 - `range-layers.tsx`: contours, distance lines, pulses and change-request buoys.
