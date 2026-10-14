@@ -32,7 +32,7 @@ Some names in the code are older than the plain names that people read. The API 
 | landing | merge | Work joins main. |
 | replot | rebase by gitring | gitring moves a work copy onto the new main. |
 | rederive | redo | An agent does the work again on the new main. |
-| logbook | why-record | The record of why each merge happened. |
+| logbook | merge record | The record of why each merge happened. The page that lists merges is called History. |
 | HarborMaster (harbor) | project coordinator | The one Durable Object of a project. |
 | Vessel | agent runner | The Durable Object that runs a built-in agent. |
 | Directory | registry | The global Durable Object for people, projects and settings. |

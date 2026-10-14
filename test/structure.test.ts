@@ -17,7 +17,6 @@ const MIN_FILES_FOR_README = 4;
 
 /** Files over the size limit. A file may stay only if it is one cohesive table, with the reason as the value. */
 const TOO_LONG: Record<string, string> = {
-  "src/harbor/harbor.ts": "split it, then delete this line",
   "src/core/analysis/symbols.ts": "split it, then delete this line",
   "src/directory/directory.ts": "split it, then delete this line",
   "web/src/design/components/components.css": "split it, then delete this line",
@@ -33,7 +32,6 @@ const TOO_LONG: Record<string, string> = {
   "web/src/views/ConnectView.tsx": "split it, then delete this line",
   "web/src/app/app.css": "split it, then delete this line",
   "web/src/chart/Chart.tsx": "split it, then delete this line",
-  "src/harbor/derived.ts": "split it, then delete this line",
   "web/src/views/replay/model.ts": "split it, then delete this line",
   "web/src/views/IntentsView.tsx": "split it, then delete this line",
   "web/src/views/newproject/steps.tsx": "split it, then delete this line",
@@ -98,7 +96,6 @@ const NO_README = new Set([
   "src/core/analysis",
   "src/core/coord",
   "src/directory",
-  "src/harbor",
   "src/platform/github",
   "src/platform/repo",
   "src/worker",
