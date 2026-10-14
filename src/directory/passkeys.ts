@@ -1,6 +1,14 @@
 /**
- * Passkeys (WebAuthn Level 2): a person signs in with a key on their own device, and gitring needs no
- * outside account. Web Crypto only, no dependencies; runs in Workers and in Node.
+ * The WebAuthn checks for passkeys: read a new passkey and check a sign-in. No storage.
+ *
+ * A person signs in with a key on their own device, and gitring needs no outside account.
+ * Web Crypto only, no dependencies. It runs in Workers and in Node.
+ * Read next: src/directory/layers/passkey-accounts.ts (where the passkeys are kept).
+ */
+import { b64url, fromB64url, sameString } from "./crypto";
+
+/*
+ * The parts of this file:
  *
  *   CBOR      a small decoder for the attestation object and COSE keys (definite lengths only)
  *   COSE      public keys → JWK: ES256 (-7), EdDSA with Ed25519 (-8), RS256 (-257)
@@ -13,7 +21,6 @@
  * certificates, or another format, counts as "none". The RP id is the host name of the request.
  * The Directory keeps the credentials (table passkeys) and the one-time challenges (table states).
  */
-import { b64url, fromB64url, sameString } from "./crypto";
 
 export const PASSKEY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS passkeys (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, public_key TEXT NOT NULL, alg INTEGER NOT NULL, sign_count INTEGER NOT NULL, transports TEXT, name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER)`,

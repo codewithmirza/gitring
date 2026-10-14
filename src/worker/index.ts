@@ -1,5 +1,5 @@
 /**
- * The entry point of the Worker: /mcp goes to the MCP server, API and page paths go to the app, the rest to the web app.
+ * The entry point of the Worker: it sends each request to the MCP server, the app or the web app.
  *
  * Wrangler loads this file. It re-exports the Durable Object classes and has the fetch handler.
  * Keep the path list at the end of the file in step with run_worker_first in wrangler.jsonc (a test checks it).

@@ -1,5 +1,20 @@
 /**
- * OAuth 2.1 routes for MCP clients (Claude, Claude Code, Cursor, Codex and other agents):
+ * The OAuth 2.1 routes for MCP clients (Claude, Claude Code, Cursor, Codex and other agents).
+ *
+ * The logic lives in the Directory (src/directory/oauth.ts). A pending authorization is bound to the browser
+ * that started it with a short-lived cookie, so that a link to it does not work elsewhere.
+ * Read next: the table of routes below.
+ */
+import type { Context, Hono } from "hono";
+import type { Env } from "./env";
+import { closeUserSockets, directory, esc, forgetPrincipal, lastProvider, page, readCookie, signInChoices, type Principal } from "./auth";
+import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
+import { CLI_CLIENT_ID, DEVICE_GRANT } from "../directory/device";
+import { randomToken, sameString } from "../directory/crypto";
+import { clientAddress } from "./limits";
+
+/*
+ * The routes:
  *
  *   GET  /.well-known/oauth-protected-resource[/mcp[/github|/readonly]]
  *                                                      RFC 9728: an MCP endpoint and its server (one resource each)
@@ -15,13 +30,6 @@
  * The logic lives in the Directory (src/directory/oauth.ts). A pending authorization is bound to the
  * browser that started it with a short-lived cookie, so that a link to it does not work elsewhere.
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
-import { closeUserSockets, directory, esc, forgetPrincipal, lastProvider, page, readCookie, signInChoices, type Principal } from "./auth";
-import { basicAuth, isCimdId, MCP_PATH, resourceOf, SCOPE, SCOPE_READ } from "../directory/oauth";
-import { CLI_CLIENT_ID, DEVICE_GRANT } from "../directory/device";
-import { randomToken, sameString } from "../directory/crypto";
-import { clientAddress } from "./limits";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
 type C = Context<HonoEnv>;
@@ -239,6 +247,14 @@ function expiredPage(): Response {
 }
 
 export function oauthRoutes(app: Hono<HonoEnv>): void {
+  metadataRoutes(app);
+  authorizeRoutes(app);
+  tokenRoutes(app);
+  grantRoutes(app);
+}
+
+/** The CORS preflight, the metadata documents of the OAuth server and client registration. */
+function metadataRoutes(app: Hono<HonoEnv>): void {
   for (const path of ["/.well-known/*", "/oauth/register", "/oauth/token", "/oauth/revoke"]) {
     app.options(path, () => new Response(null, { status: 204, headers: CORS }));
   }
@@ -258,7 +274,10 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
     const res = await directory(c.env).oauthRegister(body, clientAddress(c.req.raw));
     return json(res.body, res.status, { ...CORS, "cache-control": "no-store" });
   });
+}
 
+/** The page where a person allows an app. */
+function authorizeRoutes(app: Hono<HonoEnv>): void {
   app.get("/oauth/authorize", async (c) => {
     const dir = directory(c.env);
     const o = originOf(c);
@@ -305,7 +324,10 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
     const url = form.decision === "allow" ? await dir.oauthApprove(reqId, p.user.id, o) : await dir.oauthDeny(reqId, o);
     return url ? redirect(url, CLEAR_REQUEST_COOKIE) : expiredPage();
   });
+}
 
+/** The token and revoke endpoints. */
+function tokenRoutes(app: Hono<HonoEnv>): void {
   app.post("/oauth/token", async (c) => {
     const form = await formOf(c);
     const res = await directory(c.env).oauthToken(form, basicAuth(c.req.header("authorization")), originOf(c), clientAddress(c.req.raw));
@@ -320,7 +342,10 @@ export function oauthRoutes(app: Hono<HonoEnv>): void {
     if (res.body) return json(res.body, res.status, { ...CORS, "cache-control": "no-store" });
     return new Response(null, { status: res.status, headers: { ...CORS, "cache-control": "no-store" } });
   });
+}
 
+/** The apps that a person allowed: list and remove. */
+function grantRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/oauth/grants", async (c) => {
     const u = c.get("principal").user;
     if (!u) return json({ error: "Sign in first." }, 401);

@@ -1,13 +1,7 @@
 /**
- * Project creation, shared by REST (POST /api/projects) and MCP (gitring_create_project): one code path,
- * so an agent and a person get the same checks and the same project.
+ * Project creation, shared by REST (POST /api/projects) and MCP (gitring_create_project).
  *
- *   source   template | empty | upload (files) | push | git (any https URL) | github (one import among
- *            others; GitHub sync starts off)
- *   seed     HarborMaster.init: the files in one commit, or an import that runs in the background
- *   settings the tests (when the caller gives them), the GitHub link of a GitHub import
- *   task     optional: the first task, and built-in agents that start on it (also after an import)
- *
+ * One code path: an agent and a person get the same checks and the same project.
  * People own their projects. The operator key (scripts) makes projects that no person owns.
  * Also here: the git command that clones a project with a read token (the token goes in a header).
  */
@@ -23,6 +17,19 @@ import { isTemplateId, TEMPLATES } from "../core/templates";
 import { tokenSecret } from "../platform/repo/artifacts";
 import { retryAfterReset } from "./mcp-kit";
 import type { SeedFile } from "../harbor/harbor";
+
+/*
+ * What a new project is made of:
+ *
+ *   source   template | empty | upload (files) | push | git (any https URL) | github (one import among
+ *            others; GitHub sync starts off)
+ *   seed     HarborMaster.init: the files in one commit, or an import that runs in the background
+ *   settings the tests (when the caller gives them), the GitHub link of a GitHub import
+ *   task     optional: the first task, and built-in agents that start on it (also after an import)
+ *
+ * People own their projects. The operator key (scripts) makes projects that no person owns.
+ * Also here: the git command that clones a project with a read token (the token goes in a header).
+ */
 
 /** A refusal with the HTTP status for REST (MCP shows the message). `extra` goes into the JSON answer (installUrl). */
 export class ProjectError extends Error {

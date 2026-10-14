@@ -1,5 +1,21 @@
 /**
- * The device grant (RFC 8628) in the Worker: the routes of a sign-in for programs without a browser.
+ * The routes of the device grant (RFC 8628): a sign-in for programs that have no browser.
+ *
+ * Called by app.ts. The logic is in the Directory (src/directory/oauth-store/devices.ts).
+ * The answer form is bound to the browser that showed it, and the Worker refuses cross-site posts.
+ * Read next: src/directory/device.ts (the codes) and src/worker/oauth.ts (the token route).
+ */
+import type { Context, Hono } from "hono";
+import type { Env } from "./env";
+import { directory, esc, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
+import { consentAccess, CORS, formOf } from "./oauth";
+import { basicAuth, SCOPE, type PendingDevice } from "../directory/oauth";
+import { formatUserCode, normalizeUserCode, DEVICE_TTL_S } from "../directory/device";
+import { randomToken, sameString } from "../directory/crypto";
+import { clientAddress } from "./limits";
+
+/*
+ * The routes:
  *
  *   POST /oauth/device_authorization   a program (the gitring command line) asks for a sign-in: a device
  *                                      code for itself, and a user code for the person
@@ -12,14 +28,6 @@
  * short-lived cookie holds a random value that the form carries too, and the Worker refuses cross-site
  * posts of a browser session.
  */
-import type { Context, Hono } from "hono";
-import type { Env } from "./env";
-import { directory, esc, lastProvider, page, providerButtons, readCookie, type Principal } from "./auth";
-import { consentAccess, CORS, formOf } from "./oauth";
-import { basicAuth, SCOPE, type PendingDevice } from "../directory/oauth";
-import { formatUserCode, normalizeUserCode, DEVICE_TTL_S } from "../directory/device";
-import { randomToken, sameString } from "../directory/crypto";
-import { clientAddress } from "./limits";
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
 type C = Context<HonoEnv>;

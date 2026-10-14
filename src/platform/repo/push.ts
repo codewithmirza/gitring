@@ -1,6 +1,15 @@
 /**
- * A small git smart-HTTP client for one thing: push a pack of new objects and move refs, with nothing
- * to clone first. Written for Workers (fetch, TextEncoder, no git library):
+ * A small git smart-HTTP client for one job: push a pack of new objects and move refs.
+ *
+ * Written for Workers (fetch, TextEncoder, no git library). Nothing is cloned first.
+ * Its errors are not RepoConflictError: the caller reads the branch and decides what a rejection means.
+ * Read next: src/platform/repo/artifacts-backend/writes.ts (the caller).
+ */
+import { isSha } from "../../core/git/objects";
+import { concat } from "./pack";
+
+/*
+ * The two calls, and the errors:
  *
  *   advertisedRefs  GET <remote>/info/refs?service=git-receive-pack (Basic auth): every ref of the
  *                   remote with its commit id, plus the capabilities of the server;
@@ -12,8 +21,6 @@
  * PushRejectedError (`ng`, or an unpack that failed). None of them is RepoConflictError: the caller reads
  * the branch and decides what a rejection means.
  */
-import { isSha } from "../../core/git/objects";
-import { concat } from "./pack";
 
 const ZERO_ID = "0".repeat(40);
 const SERVICE = "git-receive-pack";

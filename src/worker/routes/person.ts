@@ -11,6 +11,13 @@ import { closeUserSockets, directory, forgetPrincipal } from "../auth";
 import { err, harbor, HTTPError, needUser, type HonoEnv } from "../http";
 
 export function personRoutes(app: Hono<HonoEnv>): void {
+  keyRoutes(app);
+  prefsAndInboxRoutes(app);
+  pushRoutes(app);
+}
+
+/** The personal API keys of the person. */
+function keyRoutes(app: Hono<HonoEnv>): void {
   // ───── API keys ─────
 
   app.get("/api/keys", async (c) => c.json(await directory(c.env).listKeys(needUser(c).id)));
@@ -35,7 +42,10 @@ export function personRoutes(app: Hono<HonoEnv>): void {
     }
     return ok ? c.body(null, 204) : c.json({ error: "Unknown key." }, 404);
   });
+}
 
+/** The preferences and the inbox of the person. */
+function prefsAndInboxRoutes(app: Hono<HonoEnv>): void {
   // ───── the person: preferences, inbox, push ─────
 
   app.get("/api/me/prefs", async (c) => c.json(await directory(c.env).prefs(needUser(c).id)));
@@ -78,7 +88,10 @@ export function personRoutes(app: Hono<HonoEnv>): void {
     );
     return c.json({ items: lists.flat().sort((a, b) => a.at - b.at), at: Date.now() });
   });
+}
 
+/** Push notifications for the inbox. */
+function pushRoutes(app: Hono<HonoEnv>): void {
   /** Push notifications for the inbox: available on this gitring, the public key for the browser, and the devices of the person. */
   app.get("/api/me/push", async (c) => c.json(await directory(c.env).pushStatus(needUser(c).id)));
 

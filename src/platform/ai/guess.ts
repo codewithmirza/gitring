@@ -1,6 +1,7 @@
 /**
- * The model behind the guess of the install and test commands (core/guess.ts guessTree): Workers AI,
- * asked for one short JSON answer. No AI binding: no model, and the rules decide alone.
+ * The model behind the guess of the install and test commands: Workers AI, one short JSON answer.
+ *
+ * Without an AI binding there is no model, and the rules of core/guess.ts (guessTree) decide alone.
  */
 import { GUESS_MODEL, type AskModel } from "../../core/guess";
 import { chat } from "./models";

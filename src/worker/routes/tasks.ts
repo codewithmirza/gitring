@@ -12,6 +12,13 @@ import { answerWay } from "../cli";
 import { err, HTTPError, ready, type HonoEnv } from "../http";
 
 export function taskRoutes(app: Hono<HonoEnv>): void {
+  intentRoutes(app);
+  decisionRoutes(app);
+  workCopyRoutes(app);
+}
+
+/** The state of a project, and the tasks: create, change, launch, park. */
+function intentRoutes(app: Hono<HonoEnv>): void {
   // ───── project state + intents ─────
 
   app.get("/api/projects/:p/state", async (c) => {
@@ -65,7 +72,10 @@ export function taskRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** Where a person decides: merge a work copy, answer an approval, answer a question. */
+function decisionRoutes(app: Hono<HonoEnv>): void {
   // ───── attempts ─────
 
   app.post("/api/projects/:p/attempts/:id/land", async (c) => {
@@ -133,7 +143,10 @@ export function taskRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** Actions on one work copy: ask for a change, redo, read the diff. */
+function workCopyRoutes(app: Hono<HonoEnv>): void {
   /**
    * A person asks the agent to change some lines of its work (a line comment on the diff). The agent gets a
    * change request in the answer of its next call. Only a person in the gitring app can send it.

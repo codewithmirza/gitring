@@ -1,6 +1,17 @@
 /**
- * MCP tools for projects: an agent creates a project with one call, lists the starter templates, and
- * clones a project with plain git. gitring is the home of the code: GitHub is not needed for any of it.
+ * The MCP tools for projects: create a project, list the starter templates, clone with plain git.
+ *
+ * gitring is the home of the code: GitHub is not needed for any of it.
+ * The creation is the same code as POST /api/projects (src/worker/projects.ts, contract C5).
+ */
+import { z } from "zod";
+import type { HarborMaster } from "../harbor/harbor";
+import { TEMPLATES, type TemplateId } from "../core/templates";
+import { ADDS, READS, defineTool, fail, text, type ToolContext, type ToolDef } from "./mcp-kit";
+import { cloneHelp, createProjectFor, type CloneHelp } from "./projects";
+
+/*
+ * The tools:
  *
  *   gitring_create_project  a new project of the caller (OAuth token with the scope mcp, or a key; the
  *                           operator key makes a project that no person owns), seeded, tests guessed,
@@ -10,11 +21,6 @@
  *
  * The creation is the same code as POST /api/projects (src/worker/projects.ts, contract C5).
  */
-import { z } from "zod";
-import type { HarborMaster } from "../harbor/harbor";
-import { TEMPLATES, type TemplateId } from "../core/templates";
-import { ADDS, READS, defineTool, fail, text, type ToolContext, type ToolDef } from "./mcp-kit";
-import { cloneHelp, createProjectFor, type CloneHelp } from "./projects";
 
 const TEMPLATE_IDS = TEMPLATES.map((t) => t.id) as [TemplateId, ...TemplateId[]];
 

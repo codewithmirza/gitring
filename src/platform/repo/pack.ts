@@ -1,10 +1,9 @@
 /**
- * A git pack for a push, written in a Worker: version 2, every object whole (no deltas), each object
- * deflated with the platform CompressionStream (zlib format, as git stores it), and the SHA-1 of the
- * whole pack as the trailer. `git index-pack` and the receive-pack of Artifacts read it as a normal pack.
+ * Writes a git pack for a push, in a Worker: version 2, every object whole, deflated, with a SHA-1 trailer.
  *
  * Pure module: WebCrypto, TextEncoder and CompressionStream only. It runs in Node 22 and in workerd.
- * The pack carries the NEW objects of a commit only; the server has the rest.
+ * The pack carries the NEW objects of a commit only: the server has the rest.
+ * `git index-pack` and the receive-pack of Artifacts read it as a normal pack.
  */
 import { type GitObjectType, hexToBytes, sha1Hex } from "../../core/git/objects";
 

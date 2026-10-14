@@ -1,7 +1,8 @@
 /**
- * Privacy policy and terms of this deployment (linked from the Google consent screen).
- * The texts describe what the code does: keep them true when the data model changes.
- * `contact` is HTML (already escaped), from the optional GITRING_CONTACT variable.
+ * The privacy policy and the terms of this deployment, as page bodies.
+ *
+ * The Google consent screen links to them. The texts describe what the code does: keep them true when the data model changes.
+ * `contact` is HTML that is already escaped. It comes from the optional variable GITRING_CONTACT.
  */
 
 const UPDATED = "13 October 2026";

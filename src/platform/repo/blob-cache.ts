@@ -1,8 +1,8 @@
 /**
- * A content-addressed cache of blobs in front of Artifacts reads. A blob never changes (its id is the hash of
- * its bytes), so a copy in the Workers Cache API is good for ever and needs no coordination: every project
- * object in a location shares it, under a URL made of the blob id. Small blobs only; the rest always come
- * from Artifacts. Without the Cache API (Node tests) the cache is off.
+ * A cache of blobs in front of Artifacts reads, keyed by the id of the blob.
+ *
+ * A blob never changes (its id is the hash of its bytes), so a copy in the Workers Cache API needs no coordination.
+ * Every project object in a location shares it. Small blobs only. Without the Cache API (Node tests) the cache is off.
  */
 
 export interface BlobCache {

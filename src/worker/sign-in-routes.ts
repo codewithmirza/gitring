@@ -39,6 +39,12 @@ function signInError(returnTo: string, provider: string, code: "stopped" | "expi
 }
 
 export function signInRoutes(app: Hono<HonoEnv>): void {
+  signInFlowRoutes(app);
+  sessionRoutes(app);
+}
+
+/** Start a sign-in and finish it at the callback. */
+function signInFlowRoutes(app: Hono<HonoEnv>): void {
   app.get("/auth/:provider/start", async (c) => {
     const provider = c.req.param("provider");
     if (provider !== "github" && provider !== "google") return c.text("Unknown provider.", 404);
@@ -81,7 +87,10 @@ export function signInRoutes(app: Hono<HonoEnv>): void {
     if (res.linked) forgetPrincipal({ userId: res.user.id });
     return new Response(null, { status: 302, headers });
   });
+}
 
+/** Sign out, sign out everywhere, and who am I. */
+function sessionRoutes(app: Hono<HonoEnv>): void {
   app.post("/auth/logout", async (c) => {
     const p = c.get("principal");
     if (p.session) {

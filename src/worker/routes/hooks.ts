@@ -88,6 +88,12 @@ async function claudeHook(c: C, project: string | undefined) {
 }
 
 export function hookRoutes(app: Hono<HonoEnv>): void {
+  keyAndGithubHookRoutes(app);
+  slackAndClaudeHookRoutes(app);
+}
+
+/** Hooks from a key and from GitHub: open a task from outside. */
+function keyAndGithubHookRoutes(app: Hono<HonoEnv>): void {
   /** Any app: a member's API key (Authorization: Bearer gk_…) opens an intent, and can launch agents. */
   app.post("/hooks/intents", async (c) => {
     try {
@@ -159,7 +165,10 @@ export function hookRoutes(app: Hono<HonoEnv>): void {
     if ("refused" in res) return c.json({ ignored: true, reason: res.refused });
     return c.json({ intent: res.intent.id }, 201);
   });
+}
 
+/** Hooks from Slack and from Claude Code. */
+function slackAndClaudeHookRoutes(app: Hono<HonoEnv>): void {
   /** Slack slash command: /gitring <intent title> — <goal>. Needs SLACK_SIGNING_SECRET and ?project=. */
   app.post("/hooks/slack", async (c) => {
     const raw = await c.req.text();

@@ -1,12 +1,8 @@
 /**
- * GitHub for people: the repositories they can import, and a guess for a new project from one of them.
+ * The routes that list the GitHub repositories of a person and guess a new project from one of them.
  *
- *   GET /api/github/repos[?refresh=1]          repositories of the gitring app's installations that the
- *                                               person can see (cached a minute; refresh after an install)
- *   GET /api/github/guess?repo=owner/name       name, id, branch, install and test commands, sync mode
- *
- * gitring calls GitHub with the person's GitHub App user token: GitHub shows only what the person may see.
- * The Directory keeps the token sealed and refreshes it; this isolate keeps it for a few minutes.
+ * gitring calls GitHub with the GitHub App user token of the person: GitHub shows only what the person may see.
+ * Read next: src/platform/github/repos.ts (the list and the guess).
  */
 import type { Context, Hono } from "hono";
 import type { Env } from "./env";
@@ -18,6 +14,17 @@ import { projectSlug } from "../core/guess";
 import { githubRepoName } from "../core/repo-rules";
 import { guessModel } from "../platform/ai/guess";
 import { rand } from "../harbor/ids";
+
+/*
+ * The routes:
+ *
+ *   GET /api/github/repos[?refresh=1]          repositories of the gitring app's installations that the
+ *                                               person can see (cached a minute; refresh after an install)
+ *   GET /api/github/guess?repo=owner/name       name, id, branch, install and test commands, sync mode
+ *
+ * gitring calls GitHub with the person's GitHub App user token: GitHub shows only what the person may see.
+ * The Directory keeps the token sealed and refreshes it; this isolate keeps it for a few minutes.
+ */
 
 type HonoEnv = { Bindings: Env; Variables: { principal: Principal } };
 type C = Context<HonoEnv>;
@@ -76,6 +83,12 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 }
 
 export function githubRoutes(app: Hono<HonoEnv>): void {
+  githubDisconnectRoutes(app);
+  githubRepoRoutes(app);
+}
+
+/** Disconnect GitHub. */
+function githubDisconnectRoutes(app: Hono<HonoEnv>): void {
   /** Disconnect GitHub: gitring revokes and forgets the GitHub token. Signing in with GitHub still works. */
   app.delete("/api/me/github", async (c) => {
     const p = c.get("principal");
@@ -84,7 +97,10 @@ export function githubRoutes(app: Hono<HonoEnv>): void {
     forgetGithubUser(p.user.id);
     return new Response(null, { status: 204 });
   });
+}
 
+/** The repositories of the person and the guess for one of them. */
+function githubRepoRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/github/repos", async (c) => {
     const user = c.get("principal").user;
     if (!user) return json({ error: "Sign in first." }, 401);

@@ -1,8 +1,8 @@
 /**
- * History tools of the gitring set: why a line is there, the changes of a file, a search of the code of
- * main, and a compare of two versions. They only read, so the read-only endpoint (/mcp/readonly) has them
- * too. An agent needs no clone for these questions: the project object answers them from derived data
- * (src/harbor/derived.ts).
+ * The history tools of the gitring set: why a line is there, file changes, code search and compare.
+ *
+ * They only read, so the read-only endpoint (/mcp/readonly) has them too.
+ * An agent needs no clone for these questions: the project object answers them from derived data (src/harbor/derived.ts).
  */
 import { z } from "zod";
 import type { HarborMaster } from "../harbor/harbor";

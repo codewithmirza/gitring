@@ -1,9 +1,9 @@
 /**
- * Shared parts of the MCP tool sets (src/worker/mcp.ts and mcp-github.ts): how a tool is defined, how it
- * is registered, how the caller's role on a project is checked, and how an answer looks.
+ * Shared parts of the MCP tool sets: how a tool is defined, registered and checked, and how an answer looks.
  *
- * A tool is plain data (a name, a title, a description, a schema, annotations) plus a handler. The Worker
- * reads the same data to know which tools only read (the read-only scope and path).
+ * Used by src/worker/mcp.ts and src/worker/mcp-github.ts.
+ * A tool is plain data (name, title, description, schema, annotations) plus a handler.
+ * The Worker reads the same data to know which tools only read (the read-only scope and path).
  */
 import { z } from "zod";
 import type { InputRequiredResult, McpServer, RequestStateCodec, ServerContext } from "@modelcontextprotocol/server";

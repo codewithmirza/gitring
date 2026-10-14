@@ -1,5 +1,16 @@
 /**
- * Web Push for people on the go, without content (RFC 8030 with VAPID, RFC 8292).
+ * Web Push for people on the go: an empty push message that tells the app to open the inbox.
+ *
+ * gitring needs no encryption keys of the device, and no text leaves gitring (RFC 8030 with VAPID, RFC 8292).
+ * The service worker of the app (public/sw.js) reads GET /api/me/inbox with the cookie of the person.
+ * Push is off when a key is absent, and the app hides the switch.
+ */
+import type { Env } from "./env";
+import { b64url, fromB64url } from "../directory/crypto";
+import { publicHostname } from "../core/repo-rules";
+
+/*
+ * How the push works, and the keys:
  *
  * gitring sends an empty push message to the push service of a device. The message has no content, so
  * gitring needs no encryption keys of the device and no text leaves gitring: the service worker of the app
@@ -12,9 +23,6 @@
  *   VAPID_SUBJECT      a contact for the push services: "mailto:…" or "https://…"
  * Make them with: npx web-push generate-vapid-keys. When one is absent, push is off and the app hides the switch.
  */
-import type { Env } from "./env";
-import { b64url, fromB64url } from "../directory/crypto";
-import { publicHostname } from "../core/repo-rules";
 
 export interface PushKeys {
   publicKey: string;

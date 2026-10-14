@@ -1,8 +1,9 @@
 /**
- * The waitlist gate in the Worker (src/core/waitlist.ts says when it is on). A person who is not allowed can
- * sign in and use the waitlist pages. Everything else answers 403 with the code "waitlist": the REST API, live
- * sockets, previews, hooks and the MCP endpoints. Tokens and sessions that already exist are checked the same
- * way, because the check reads the person, not the token. The operator key (GITRING_KEY) always passes.
+ * The waitlist gate in the Worker: a person who is not allowed reaches the waitlist pages only.
+ *
+ * src/core/waitlist.ts says when the gate is on. Everything else answers 403 with the code "waitlist".
+ * That covers the REST API, live sockets, previews, hooks and the MCP endpoints, also for tokens and sessions that exist.
+ * The check reads the person, not the token. The operator key (GITRING_KEY) always passes.
  */
 import type { Env } from "./env";
 import type { Principal } from "./auth";

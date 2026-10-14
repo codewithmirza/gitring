@@ -1,5 +1,5 @@
 /**
- * The read routes of a project: the timeline, a merge, the file tree, one file, history questions and the agent runner status.
+ * The read routes of a project: timeline, merges, files, history questions and the agent runner status.
  *
  * Mounted by app.ts. Viewers of a public project may read all of these. The agent runner status is for members.
  * Read next: src/worker/history-routes.ts (why, history, search, compare) and src/harbor/derived.ts.
@@ -29,6 +29,12 @@ async function shortHash(s: string): Promise<string> {
 }
 
 export function codeRoutes(app: Hono<HonoEnv>): void {
+  timelineRoutes(app);
+  fileAndHistoryRoutes(app);
+}
+
+/** The timeline of a project and one merge. */
+function timelineRoutes(app: Hono<HonoEnv>): void {
   /**
    * The whole history of the project, oldest first, a page at a time (the Replay view reads it):
    * ?after=<the `next` cursor of the page before>&limit=<1–2000, default 500>. Viewers of a public project
@@ -54,7 +60,10 @@ export function codeRoutes(app: Hono<HonoEnv>): void {
       return err(c, e, 500);
     }
   });
+}
 
+/** The file tree, one file, history questions and the agent runner status. */
+function fileAndHistoryRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/projects/:p/tree", async (c) => {
     try {
       const h = await ready(c, c.req.param("p"), "viewer");

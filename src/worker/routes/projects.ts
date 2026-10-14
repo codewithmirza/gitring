@@ -12,6 +12,12 @@ import { createProjectFor, ProjectError, type CreateProjectInput } from "../proj
 import { forgetRoles } from "../roles";
 
 export function projectRoutes(app: Hono<HonoEnv>): void {
+  projectCrudRoutes(app);
+  memberRoutes(app);
+}
+
+/** The project list and one project: list, create, read, rename, archive. */
+function projectCrudRoutes(app: Hono<HonoEnv>): void {
   // ───── projects ─────
 
   app.get("/api/projects", async (c) => {
@@ -81,7 +87,10 @@ export function projectRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** The members of a project: list, add, remove. */
+function memberRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/projects/:p/members", async (c) => {
     const { id } = await access(c, c.req.param("p"), "member");
     return c.json(await directory(c.env).members(id));

@@ -1,11 +1,9 @@
 /**
- * RepoBackend — the only way gitring touches git storage.
+ * RepoBackend: the only way gitring touches git storage.
  *
- * ArtifactsBackend is the implementation: the Cloudflare Artifacts binding for control-plane +
- * reads, isomorphic-git (in-memory, shallow) for writes, because `git push` is the only write path.
- * Tests use a git-object test double (test/support/git-emulator) with the same interface.
- *
- * All hashes are lowercase 40-char SHA-1 git object ids.
+ * ArtifactsBackend is the implementation. Tests use a git-object test double (test/support/git-emulator) with the same interface.
+ * All hashes are lowercase 40-character SHA-1 git object ids.
+ * Read next: src/platform/repo/artifacts.ts.
  */
 
 export type TreeEntryType = "tree" | "blob" | "symlink" | "gitlink" | "exec";

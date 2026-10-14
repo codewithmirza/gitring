@@ -1,6 +1,17 @@
 /**
- * Bring GitHub changes into gitring: what changed on the GitHub default branch since a commit that
- * gitring already has, merged with main file by file.
+ * Bring GitHub changes into gitring: merge what changed on GitHub with main, file by file.
+ *
+ * Pure module: fetch and the repository backend come in as arguments.
+ * Read next: the table of cases below, and src/platform/github/sync.ts (the way back).
+ */
+import type { FileChange, RepoBackend } from "../repo/backend";
+import type { Snapshot } from "../../core/git/snapshot";
+import { merge3 } from "../../core/text/merge3";
+import { isProbablyText, unifiedDiff } from "../../core/text/diff";
+import { githubMessage, GITHUB_API } from "./api";
+
+/*
+ * The words of the merge, and the rule for each path:
  *
  *   since   a GitHub commit that gitring has (the import, the last pull, or the last sync)
  *   head    the GitHub default branch now
@@ -11,14 +22,7 @@
  *   main = base        take GitHub's version
  *   head = base        only gitring changed it: keep main
  *   both changed       3-way merge of the text; overlapping changes are conflicts
- *
- * Pure module: fetch and the repository backend come in as arguments.
  */
-import type { FileChange, RepoBackend } from "../repo/backend";
-import type { Snapshot } from "../../core/git/snapshot";
-import { merge3 } from "../../core/text/merge3";
-import { isProbablyText, unifiedDiff } from "../../core/text/diff";
-import { githubMessage, GITHUB_API } from "./api";
 
 export interface UpstreamInput {
   repo: string;

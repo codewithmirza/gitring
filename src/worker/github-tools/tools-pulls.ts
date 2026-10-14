@@ -1,5 +1,5 @@
 /**
- * The pull request tools of the GitHub-compatible set: ask for a merge, read, list, wait for the merge, update the branch.
+ * The pull request tools of the GitHub-compatible set: ask for a merge, read, list, wait, update the branch.
  *
  * merge_pull_request never merges by itself and never skips the tests. gitring merges when the tests pass and a person said yes.
  */

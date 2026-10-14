@@ -64,6 +64,13 @@ async function changeGithubLink(c: C, h: ReadyProject, body: Partial<T.ProjectSe
 }
 
 export function settingsRoutes(app: Hono<HonoEnv>): void {
+  projectToolRoutes(app);
+  githubLinkRoutes(app);
+  connectAndSettingsRoutes(app);
+}
+
+/** Tokens for git, the import check and launch all. */
+function projectToolRoutes(app: Hono<HonoEnv>): void {
   /** A push project: a 24-hour write token for the owner's first `git push`. */
   app.post("/api/projects/:p/push-token", async (c) => {
     try {
@@ -104,7 +111,10 @@ export function settingsRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** The status of the GitHub link, sync now and pull now. */
+function githubLinkRoutes(app: Hono<HonoEnv>): void {
   /** GitHub sync status (members) and Sync now (owners). */
   app.get("/api/projects/:p/github", async (c) => {
     try {
@@ -133,7 +143,10 @@ export function settingsRoutes(app: Hono<HonoEnv>): void {
       return err(c, e);
     }
   });
+}
 
+/** Connect info, settings, usage and the operator diagnostics. */
+function connectAndSettingsRoutes(app: Hono<HonoEnv>): void {
   app.get("/api/projects/:p/connect", async (c) => {
     try {
       const h = await ready(c, c.req.param("p"), "viewer");

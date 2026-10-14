@@ -1,5 +1,5 @@
 /**
- * Small helpers of the sign-in files: the cookies of a browser session, of a sign-in and of a passkey, and the origin.
+ * Small helpers of the sign-in files: the cookies of gitring and the origin of a request.
  *
  * Every cookie of gitring is set here, so that its rules (Secure, HttpOnly, SameSite) stay in one place.
  * Read next: src/worker/principal.ts (who is calling) and src/worker/sign-in-routes.ts.

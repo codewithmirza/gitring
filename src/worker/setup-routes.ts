@@ -66,6 +66,13 @@ async function setupPage(c: C, token: string | null, note?: string): Promise<Res
 }
 
 export function setupRoutes(app: Hono<HonoEnv>): void {
+  legalRoutes(app);
+  ownerSetupRoutes(app);
+  githubAppSetupRoutes(app);
+}
+
+/** The privacy and terms pages. */
+function legalRoutes(app: Hono<HonoEnv>): void {
   // Privacy policy and terms (the Google consent screen links to them).
   const contact = (c: C): string | null => {
     const v = (c.env.GITRING_CONTACT ?? "").trim();
@@ -74,7 +81,10 @@ export function setupRoutes(app: Hono<HonoEnv>): void {
   };
   app.get("/privacy", (c) => page("Privacy", privacyBody(contact(c))));
   app.get("/terms", (c) => page("Terms", termsBody(contact(c))));
+}
 
+/** The setup page and the Google sign-in settings. */
+function ownerSetupRoutes(app: Hono<HonoEnv>): void {
   app.get("/setup", async (c) => {
     const token = c.req.query("token") ?? null;
     if (!setupAllowed(c, token)) return page("Setup", `<h1>Setup is closed</h1><p>Open the setup link with its token, or sign in as an owner of this gitring.</p><p><a class="btn" href="/">Open gitring</a></p>`, 403);
@@ -92,7 +102,10 @@ export function setupRoutes(app: Hono<HonoEnv>): void {
       return setupPage(c, token, esc((e as Error).message));
     }
   });
+}
 
+/** The GitHub App setup: the callback, save, ready and installed pages. */
+function githubAppSetupRoutes(app: Hono<HonoEnv>): void {
   app.get("/setup/github/callback", async (c) => {
     const code = c.req.query("code");
     const state = c.req.query("state");

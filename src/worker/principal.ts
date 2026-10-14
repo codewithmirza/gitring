@@ -1,5 +1,5 @@
 /**
- * Who is calling: a browser session, a personal API key, an OAuth token or the operator key, found in a short cache.
+ * Finds who is calling: a browser session, a personal API key, an OAuth token or the operator key.
  *
  * Called by the request guard (src/worker/request-guard.ts) and by the MCP entry. A removed key stops working within 30 seconds.
  * Never log a token. Read next: src/worker/auth-kit.ts (cookies) and src/directory/layers/credentials.ts.

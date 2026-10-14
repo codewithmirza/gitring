@@ -1,7 +1,8 @@
 /**
- * The SQL tables of the Directory. Every statement is safe to run again: the Directory runs all of them at start.
+ * The SQL tables of the Directory. Each statement is safe to run again.
  *
- * Add a table or an index with CREATE ... IF NOT EXISTS. Never change a column of a stored table here: old data depends on it.
+ * The Directory runs all of them at start. Add a table or an index with CREATE ... IF NOT EXISTS.
+ * Never change a column of a stored table here: old data depends on it.
  * Read next: src/directory/layers/store.ts (runs this list) and src/directory/passkeys.ts (the passkey tables).
  */
 

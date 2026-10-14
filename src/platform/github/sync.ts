@@ -1,17 +1,23 @@
 /**
  * Send main to GitHub with the GitHub Git Data API (REST, no git protocol).
  *
+ * Pure module: the repository backend and fetch come in as arguments (tests use the git emulator).
+ * Never throws: a problem comes back as a status for people.
+ * Read next: src/platform/github/upstream.ts (the way back).
+ */
+import type { CommitMeta, RepoBackend, TreeEntry } from "../repo/backend";
+import type * as T from "../../core/types";
+
+/*
+ * What a sync does:
+ *
  * For each gitring commit on main that GitHub does not have, gitring makes one GitHub commit with the
  * same tree, message, author and dates: it uploads the changed blobs, makes a tree on top of the parent
  * tree, then the commit. Commits that came from GitHub (an import) keep their ids, so the walk stops at
  * the first commit that GitHub already has. Then:
  *   main          fast-forward the default branch (GitHub refuses when a person pushed to it)
  *   pull-request  point `branch` at the new tip and keep one pull request open to the default branch
- *
- * Pure module: the repository backend and fetch come in as arguments (tests use the git emulator).
  */
-import type { CommitMeta, RepoBackend, TreeEntry } from "../repo/backend";
-import type * as T from "../../core/types";
 
 export interface GithubApi {
   /** "owner/name". */
