@@ -1,21 +1,22 @@
 /**
- * The steward: a watch on a project while agents work. Every few minutes the project object counts the
- * facts in its records (the test runs, the change requests, the merge queue) and reports a real anomaly to
- * the inbox in plain words (a Question of kind "steward", with the one answer "Seen"):
+ * The steward: counts the facts of a project while agents work, and finds real anomalies.
+ * Called by HarborTasks.stewardSweep (master/tasks.ts) every few minutes. A finding goes to the inbox as a question of kind "steward".
+ * Facts first: the counters decide alone. A model only words a finding, and the template sentence stands when it fails.
+ * Never let the model decide whether an anomaly exists. Everything that a person reads follows ASD-STE100.
+ * Read next: master/tasks.ts.
+ */
+import type { AgentInfo, Attempt, Correction, Intent, Landing, LineRange, LogEntry } from "../core/types";
+import { chat, SHORT_JOB_MODEL, type AiLike, type ChatMessage } from "../platform/ai/models";
+
+/**
+ * The anomalies that the steward reports, in plain words (a Question of kind "steward", with the one answer "Seen"):
  *
  *   stuck-test   a work copy ran its tests again and again, and the same test failed each time
  *   bounce       change requests go back and forth between the same two agents
  *   hot-lines    many change requests name the same lines of one file
  *   flap         a test of one work copy passes and fails by turns
  *   queue        the merge queue has work, and no merge happened for a long time
- *
- * Facts first: the counters here are pure and decide alone. A model (GLM 5.3 Flash) only words a finding
- * into one plain sentence; when it fails, the template sentence stands. Everything a person reads follows
- * ASD-STE100: short sentences, one meaning per word.
  */
-import type { AgentInfo, Attempt, Correction, Intent, Landing, LineRange, LogEntry } from "../core/types";
-import { chat, SHORT_JOB_MODEL, type AiLike, type ChatMessage } from "../platform/ai/models";
-
 export type StewardKind = "stuck-test" | "bounce" | "hot-lines" | "flap" | "queue";
 
 export interface Finding {
@@ -58,7 +59,7 @@ export interface StewardInput {
   queue: { attemptId: string; at: number }[];
 }
 
-/* ───────────────────────── the limits ───────────────────────── */
+// ───── The limits ─────
 
 /** The same test failed in this many test runs of a work copy in a row. */
 export const STUCK_RUNS = 3;
@@ -75,7 +76,7 @@ export const WINDOW_MS = 2 * 3600_000;
 /** How many tests of a work copy one note names. */
 const NAMED_TESTS = 3;
 
-/* ───────────────────────── small helpers ───────────────────────── */
+// ───── Small helpers ─────
 
 function minutes(ms: number): number {
   return Math.max(1, Math.round(ms / 60_000));
@@ -144,7 +145,7 @@ function runsByCopy(i: StewardInput): Map<string, TestRun[]> {
   return out;
 }
 
-/* ───────────────────────── the counters ───────────────────────── */
+// ───── The counters ─────
 
 /**
  * A work copy that ran its tests at least STUCK_RUNS times, and one test failed in every one of the last
@@ -365,7 +366,7 @@ export function stewardFindings(i: StewardInput): Finding[] {
   return [...stuckTests(i), ...bouncingRequests(i), ...hotLines(i), ...flappingTests(i), ...stuckQueue(i)];
 }
 
-/* ───────────────────────── the words of the model ───────────────────────── */
+// ───── The words of the model ─────
 
 /** The model answers a list of messages with text, or null when it fails (as core/guess.ts AskModel). */
 export type AskSteward = (messages: ChatMessage[]) => Promise<string | null>;

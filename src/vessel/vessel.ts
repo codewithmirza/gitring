@@ -1,14 +1,8 @@
 /**
- * Vessel — a built-in coding agent, one Durable Object per attempt run.
- *
- * It uses exactly the same protocol as external agents (declare → write/log → check → submit),
- * through HarborMaster RPC. Corrections arrive piggybacked on every response; the vessel feeds
- * them into its next step and keeps working (no stop, no lock). It acknowledges a correction only
- * after the model saw it and acted on it: at its next write (the note names the files), or at the
- * submit without a write ("No code change was needed").
- *
- * A vessel is a Workers AI model with tools (read/write/list/checks/log/submit).
- * Each step runs in an alarm, so a long run survives eviction.
+ * The agent runner (Vessel): a built-in coding agent, one Durable Object for each work copy run.
+ * Called by HarborTasks.startVessel (src/harbor/master/tasks.ts). It calls back through the HarborMaster RPC methods.
+ * Never keep a change request that the model did not see: the vessel acknowledges a request only after the model acted on it.
+ * Read next: ../platform/ai/models.ts (the model calls).
  */
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../worker/env";
@@ -65,6 +59,15 @@ const MAX_FAIL_STREAK = 6;
 /** A tool answer keeps at least this many characters when the tool answers of a turn use up their room. */
 const MIN_TOOL_CHARS = 2_000;
 
+/**
+ * It uses exactly the same protocol as external agents (declare → write/log → check → submit). Change requests
+ * arrive in every answer; the vessel feeds them into its next step and keeps working (no stop, no lock). It
+ * acknowledges a change request only after the model saw it and acted on it: at its next write (the note
+ * names the files), or at the submit without a write ("No code change was needed").
+ *
+ * A vessel is a Workers AI model with tools (read, write, list, checks, log, submit). Each step runs in an
+ * alarm, so a long run survives an eviction.
+ */
 export class Vessel extends DurableObject<Env> {
   private st?: VesselState;
 
@@ -156,114 +159,123 @@ export class Vessel extends DurableObject<Env> {
     void phase0;
   }
 
-  /* ───────────────────────── LLM ───────────────────────── */
+  // ───── Model steps ─────
 
   private async llmStep(st: VesselState): Promise<boolean> {
+    if (st.phase === "start") return this.planStep(st);
+    if (st.phase === "working") return this.workStep(st);
+    if (st.phase === "submitted") return this.submitStep(st);
+    return false;
+  }
+
+  /** The first step: read the brief, ask the model for a plan, and declare it. */
+  private async planStep(st: VesselState): Promise<boolean> {
     const c = st.config;
     const h = this.harbor(c.projectId);
-
-    if (st.phase === "start") {
-      // A model with a large context (GLM 5.3) gets far more file text in its first prompt.
-      const brief = await h.brief(c.attemptId, c.intentId, { model: c.model });
-      let prior = "";
-      if (c.rederiveOf) {
-        try {
-          const diff = await h.attemptDiff(c.rederiveOf);
-          prior = diff.files.map((f) => f.diff).join("\n").slice(0, 12_000);
-        } catch {
-          /* no prior diff */
-        }
+    // A model with a large context (GLM 5.3) gets far more file text in its first prompt.
+    const brief = await h.brief(c.attemptId, c.intentId, { model: c.model });
+    let prior = "";
+    if (c.rederiveOf) {
+      try {
+        const diff = await h.attemptDiff(c.rederiveOf);
+        prior = diff.files.map((f) => f.diff).join("\n").slice(0, 12_000);
+      } catch {
+        /* no prior diff */
       }
-      st.messages = [
-        { role: "system", content: systemPrompt(c.callsign, brief.runner) },
-        { role: "user", content: briefPrompt(brief, prior) },
-      ];
-      // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low"), so the
-      // call gets more time (up to 16,384 reasoning tokens before the answer).
-      const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
-        maxTokens: 1200,
-        temperature: 0.2,
-        timeoutMs: 240_000,
-        reasoning: "high",
-      });
-      this.countTokens(c, plan?.usage);
-      if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
-      const course = parseJsonLoose<{ plan?: string[]; files?: string[]; symbols?: string[]; approach?: string }>(plan?.message.content) ?? {};
-      const res = await h.declare({
-        attemptId: c.attemptId,
-        intentId: c.intentId,
-        agent: { id: c.agentId, kind: "builtin", model: c.model },
-        plan: (course.plan ?? ["Read the code", "Change the code", "Run the checks"]).slice(0, 8),
-        files: course.files ?? brief.intent.scope?.paths ?? [],
-        symbols: course.symbols ?? [],
-        approach: course.approach ?? `Implement "${brief.intent.title}".`,
-        mode: "api",
-      });
-      st.messages.push({ role: "assistant", content: `My plan: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
-      st.messages.push({ role: "user", content: clearanceText(res.clearance) + "\nNow do the work with the tools." });
-      // The clearance text holds its change requests: the model sees them in its next turn.
-      this.show(st, res.clearance.corrections ?? []);
-      st.phase = "working";
+    }
+    st.messages = [
+      { role: "system", content: systemPrompt(c.callsign, brief.runner) },
+      { role: "user", content: briefPrompt(brief, prior) },
+    ];
+    // The plan is the hard part: the model thinks more ("high") than in a routine tool turn ("low"), so the
+    // call gets more time (up to 16,384 reasoning tokens before the answer).
+    const plan = await chat(this.env.AI as never, c.model, [...st.messages, { role: "user", content: COURSE_REQUEST }], {
+      maxTokens: 1200,
+      temperature: 0.2,
+      timeoutMs: 240_000,
+      reasoning: "high",
+    });
+    this.countTokens(c, plan?.usage);
+    if (!plan) st.lastError = `planning call failed: ${lastChatError ?? "no answer"}`;
+    const course = parseJsonLoose<{ plan?: string[]; files?: string[]; symbols?: string[]; approach?: string }>(plan?.message.content) ?? {};
+    const res = await h.declare({
+      attemptId: c.attemptId,
+      intentId: c.intentId,
+      agent: { id: c.agentId, kind: "builtin", model: c.model },
+      plan: (course.plan ?? ["Read the code", "Change the code", "Run the checks"]).slice(0, 8),
+      files: course.files ?? brief.intent.scope?.paths ?? [],
+      symbols: course.symbols ?? [],
+      approach: course.approach ?? `Implement "${brief.intent.title}".`,
+      mode: "api",
+    });
+    st.messages.push({ role: "assistant", content: `My plan: ${JSON.stringify({ plan: course.plan, files: course.files, symbols: course.symbols, approach: course.approach })}` });
+    st.messages.push({ role: "user", content: clearanceText(res.clearance) + "\nNow do the work with the tools." });
+    // The clearance text holds its change requests: the model sees them in its next turn.
+    this.show(st, res.clearance.corrections ?? []);
+    st.phase = "working";
+    return true;
+  }
+
+  /** One turn of work: the model answers with tool calls, and the tools run. False: the vessel is done. */
+  private async workStep(st: VesselState): Promise<boolean> {
+    const c = st.config;
+    if (st.step > MAX_LLM_STEPS) {
+      st.phase = "submitted";
       return true;
     }
-
-    if (st.phase === "working") {
-      if (st.step > MAX_LLM_STEPS) {
-        st.phase = "submitted";
-        return true;
-      }
-      const budget = contextBudget(c.model);
-      const turn = withOpenRequests(trimMessages(st.messages, budget.turnChars), st.open ?? []);
-      const res = await chat(this.env.AI as never, c.model, turn, { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000, reasoning: "low" });
-      if (!res) {
-        st.failStreak = (st.failStreak ?? 0) + 1;
-        st.lastError = `model call failed: ${lastChatError ?? "no answer"}`;
-        // Rate limits on paid models: wait longer before the next turn.
-        if (/429|rate|capacity|busy|3040|5035/i.test(lastChatError ?? "")) await new Promise((r) => setTimeout(r, 12_000));
-        return true;
-      }
-      st.failStreak = 0;
-      this.countTokens(c, res.usage);
-      const msg = res.message;
-      st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
-      if (!msg.tool_calls?.length) {
-        st.messages.push({ role: "user", content: "Use the tools. Write the files with write_file, run run_checks, then call submit." });
-        this.showNew(st);
-        return true;
-      }
-      // All the tool answers of one turn share a limit too (a model can call read_file many times in one turn).
-      let room = budget.turnToolChars;
-      for (const call of msg.tool_calls) {
-        const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments), msg.content);
-        const text = out.text.slice(0, Math.min(budget.toolChars, Math.max(MIN_TOOL_CHARS, room)));
-        room -= text.length;
-        st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: text });
-        if (out.done) {
-          st.phase = "done";
-          return false;
-        }
-      }
-      // The model wrote files after it saw a change request: it acted on the request.
-      await this.ackActed(st);
-      const recent = st.messages.slice(-8).filter((m) => m.role === "tool").map((m) => m.name);
-      if (recent.filter((n) => n === "write_file").length >= 2 && !recent.includes("run_checks")) {
-        st.messages.push({ role: "user", content: "Run run_checks now. The checks are the contract: make every assertion pass." });
-      }
+    const budget = contextBudget(c.model);
+    const turn = withOpenRequests(trimMessages(st.messages, budget.turnChars), st.open ?? []);
+    const res = await chat(this.env.AI as never, c.model, turn, { tools: TOOLS, toolChoice: "auto", maxTokens: 6000, temperature: 0.2, timeoutMs: 150_000, reasoning: "low" });
+    if (!res) {
+      st.failStreak = (st.failStreak ?? 0) + 1;
+      st.lastError = `model call failed: ${lastChatError ?? "no answer"}`;
+      // Rate limits on paid models: wait longer before the next turn.
+      if (/429|rate|capacity|busy|3040|5035/i.test(lastChatError ?? "")) await new Promise((r) => setTimeout(r, 12_000));
+      return true;
+    }
+    st.failStreak = 0;
+    this.countTokens(c, res.usage);
+    const msg = res.message;
+    st.messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
+    if (!msg.tool_calls?.length) {
+      st.messages.push({ role: "user", content: "Use the tools. Write the files with write_file, run run_checks, then call submit." });
       this.showNew(st);
       return true;
     }
-
-    if (st.phase === "submitted") {
-      if (st.submits >= MAX_SUBMITS) return false;
-      st.submits += 1;
-      // The step limit sends the work, not the model: a request that the model did not act on stays open
-      // (the model did not say that it needs no change).
-      await this.ackActed(st);
-      const res = await h.submit(c.attemptId, "Work complete.");
-      this.absorb(st, res.clearance);
-      return res.next === "fix-checks" && st.submits < MAX_SUBMITS ? (st.phase = "working", true) : false;
+    // All the tool answers of one turn share a limit too (a model can call read_file many times in one turn).
+    let room = budget.turnToolChars;
+    for (const call of msg.tool_calls) {
+      const out = await this.runTool(st, call.function.name, safeArgs(call.function.arguments), msg.content);
+      const text = out.text.slice(0, Math.min(budget.toolChars, Math.max(MIN_TOOL_CHARS, room)));
+      room -= text.length;
+      st.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: text });
+      if (out.done) {
+        st.phase = "done";
+        return false;
+      }
     }
-    return false;
+    // The model wrote files after it saw a change request: it acted on the request.
+    await this.ackActed(st);
+    const recent = st.messages.slice(-8).filter((m) => m.role === "tool").map((m) => m.name);
+    if (recent.filter((n) => n === "write_file").length >= 2 && !recent.includes("run_checks")) {
+      st.messages.push({ role: "user", content: "Run run_checks now. The checks are the contract: make every assertion pass." });
+    }
+    this.showNew(st);
+    return true;
+  }
+
+  /** The step limit sends the work to the merge, or a submit that came back with failing checks sends it again. */
+  private async submitStep(st: VesselState): Promise<boolean> {
+    const c = st.config;
+    const h = this.harbor(c.projectId);
+    if (st.submits >= MAX_SUBMITS) return false;
+    st.submits += 1;
+    // The step limit sends the work, not the model: a request that the model did not act on stays open
+    // (the model did not say that it needs no change).
+    await this.ackActed(st);
+    const res = await h.submit(c.attemptId, "Work complete.");
+    this.absorb(st, res.clearance);
+    return res.next === "fix-checks" && st.submits < MAX_SUBMITS ? (st.phase = "working", true) : false;
   }
 
   /** One tool call of the model. `said`: the text of the model in the same turn (the reason for a submit). */
@@ -278,40 +290,10 @@ export class Vessel extends DurableObject<Env> {
       case "list_files": {
         return { text: (await h.list(c.attemptId, args.dir ? String(args.dir) : undefined)).join("\n") };
       }
-      case "write_file": {
-        const res = await h.write({ attemptId: c.attemptId, files: [{ path: String(args.path ?? ""), content: String(args.content ?? "") }], message: String(args.note ?? "") });
-        this.absorb(st, res.clearance);
-        if (res.written.length) {
-          st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
-          for (const o of st.open ?? []) for (const f of res.written) if (!o.files.includes(f)) o.files.push(f);
-        }
-        const notes = [
-          `Written: ${res.written.join(", ") || "nothing"}.`,
-          res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
-          ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
-          res.written.length || res.refused?.length ? "" : "The path is protected or not valid.",
-          res.clearance.advice,
-        ];
-        return { text: notes.filter(Boolean).join(" ") };
-      }
-      case "run_checks": {
-        if (st.checkSig && (st.writesSinceCheck ?? 0) === 0) {
-          return { text: `No file changed since the last run, so the result is the same:\n${st.checkSig}\nWrite a fix with write_file before you run the checks again.` };
-        }
-        const run = await h.check(c.attemptId);
-        const failed = run.cases.filter((x) => !x.ok).slice(0, 8);
-        const sig = failed.map((f) => `FAIL ${f.file} › ${f.name}: ${f.error ?? ""}`).join("\n");
-        st.writesSinceCheck = 0;
-        st.sameChecks = sig && sig === st.checkSig ? (st.sameChecks ?? 0) + 1 : 0;
-        st.checkSig = sig || undefined;
-        let text = `${run.passed}/${run.passed + run.failed} checks pass.${run.error ? ` Runner error: ${run.error}` : ""}\n${sig}`;
-        if ((st.sameChecks ?? 0) >= 1 && sig) {
-          text +=
-            "\nThe same checks fail again after your last change. Stop and compare: read each 'expected X to be Y'. " +
-            "Find the line of code that produces X. Check the units and the arithmetic step by step. Change that computation, then write the file.";
-        }
-        return { text };
-      }
+      case "write_file":
+        return this.writeFileTool(st, args);
+      case "run_checks":
+        return this.runChecksTool(st);
       case "log_progress": {
         const clr = await h.log({ attemptId: c.attemptId, message: String(args.message ?? "progress"), files: Array.isArray(args.files) ? (args.files as string[]) : undefined });
         this.absorb(st, clr);
@@ -330,7 +312,49 @@ export class Vessel extends DurableObject<Env> {
     }
   }
 
-  /* ───────────────────────── shared ───────────────────────── */
+  /** The write_file tool: gitring writes the file, and the answer says what happened. */
+  private async writeFileTool(st: VesselState, args: Record<string, unknown>): Promise<{ text: string }> {
+    const c = st.config;
+    const h = this.harbor(c.projectId);
+    const res = await h.write({ attemptId: c.attemptId, files: [{ path: String(args.path ?? ""), content: String(args.content ?? "") }], message: String(args.note ?? "") });
+    this.absorb(st, res.clearance);
+    if (res.written.length) {
+      st.writesSinceCheck = (st.writesSinceCheck ?? 0) + 1;
+      for (const o of st.open ?? []) for (const f of res.written) if (!o.files.includes(f)) o.files.push(f);
+    }
+    const notes = [
+      `Written: ${res.written.join(", ") || "nothing"}.`,
+      res.merged?.length ? `Main moved after your last read: gitring merged your write with the landed changes in ${res.merged.join(", ")}. Read the file again before the next edit.` : "",
+      ...(res.refused ?? []).map((r) => `Not written: ${r.reason}`),
+      res.written.length || res.refused?.length ? "" : "The path is protected or not valid.",
+      res.clearance.advice,
+    ];
+    return { text: notes.filter(Boolean).join(" ") };
+  }
+
+  /** The run_checks tool. The same failure twice in a row, or no new write, gets a hint instead of a new run. */
+  private async runChecksTool(st: VesselState): Promise<{ text: string }> {
+    const c = st.config;
+    const h = this.harbor(c.projectId);
+    if (st.checkSig && (st.writesSinceCheck ?? 0) === 0) {
+      return { text: `No file changed since the last run, so the result is the same:\n${st.checkSig}\nWrite a fix with write_file before you run the checks again.` };
+    }
+    const run = await h.check(c.attemptId);
+    const failed = run.cases.filter((x) => !x.ok).slice(0, 8);
+    const sig = failed.map((f) => `FAIL ${f.file} › ${f.name}: ${f.error ?? ""}`).join("\n");
+    st.writesSinceCheck = 0;
+    st.sameChecks = sig && sig === st.checkSig ? (st.sameChecks ?? 0) + 1 : 0;
+    st.checkSig = sig || undefined;
+    let text = `${run.passed}/${run.passed + run.failed} checks pass.${run.error ? ` Runner error: ${run.error}` : ""}\n${sig}`;
+    if ((st.sameChecks ?? 0) >= 1 && sig) {
+      text +=
+        "\nThe same checks fail again after your last change. Stop and compare: read each 'expected X to be Y'. " +
+        "Find the line of code that produces X. Check the units and the arithmetic step by step. Change that computation, then write the file.";
+    }
+    return { text };
+  }
+
+  // ───── Shared helpers ─────
 
   /** Keep the new corrections of an answer (gitring lists a correction again until the vessel acknowledges it). */
   private absorb(st: VesselState, clr: T.Clearance | undefined): void {
@@ -397,7 +421,7 @@ export class Vessel extends DurableObject<Env> {
   }
 }
 
-/* ───────────────────────── LLM helpers ───────────────────────── */
+// ───── Model helpers ─────
 
 const COURSE_REQUEST =
   "Send your plan before you write code. Reply with JSON only: " +
