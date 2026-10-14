@@ -55,6 +55,8 @@ const GO: Record<string, string> = {
   ...(import.meta.env.DEV ? { d: "/design" } : {}),
 };
 
+/* ───────────── shortcuts, toasts and sign-in return ───────────── */
+
 function useShortcuts() {
   useEffect(() => {
     let gAt = 0;
@@ -227,6 +229,8 @@ function useSignInReturn() {
   }, [ready, signedIn]);
 }
 
+/* ───────────── the page of each route ───────────── */
+
 function NotFound() {
   return (
     <div className="page">
@@ -303,6 +307,8 @@ function Booting({ route }: { route: Route }) {
   }
   return <ViewSkeleton route={route} />;
 }
+
+/* ───────────── the shell ───────────── */
 
 /**
  * With the waitlist gate on, a person that the gate keeps out sees the waitlist pages only. Everybody else

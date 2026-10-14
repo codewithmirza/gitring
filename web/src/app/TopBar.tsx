@@ -44,6 +44,8 @@ const NAV: NavItem[] = [
 
 const EMPTY_Q: JudgmentItem[] = [];
 
+/* ───────────── view tabs, search and connection ───────────── */
+
 /** The view tabs. In the top bar on wide screens; as a bottom bar on phones (one hand). */
 export function ViewNav({ route, className, label = "Views" }: { route: Route; className: string; label?: string }) {
   const refs = useRef<(HTMLAnchorElement | null)[]>([]);
@@ -152,6 +154,8 @@ function Connection() {
     </>
   );
 }
+
+/* ───────────── decisions ───────────── */
 
 /** A decision that is not a question for a yes: work that could not merge, a course check that asks, or old work. */
 function OtherRow({ item, first, onDone }: { item: OtherJudgmentItem; first: boolean; onDone: () => void }) {
@@ -326,6 +330,8 @@ function Decisions() {
   );
 }
 
+/* ───────────── inbox, stats and theme ───────────── */
+
 /** The inbox: what waits for the signed-in person in all projects. The count shows on every page. */
 function InboxButton({ route }: { route: Route }) {
   const n = useInboxCount();
@@ -389,6 +395,8 @@ function ThemeControl() {
     </>
   );
 }
+
+/* ───────────── the top bar ───────────── */
 
 export function TopBar({ route }: { route: Route }) {
   const sha = useStore((s) => s.state?.project.mainSha);
