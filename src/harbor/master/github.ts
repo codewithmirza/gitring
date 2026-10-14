@@ -8,10 +8,11 @@ import type * as T from "../../core/types";
 import { noTestRan } from "../../core/types";
 import { RepoConflictError } from "../../platform/repo/backend";
 import { syncToGithub } from "../../platform/github/sync";
-import { upstreamChanges } from "../../platform/github/upstream";
+import { upstreamChanges, type UpstreamResult } from "../../platform/github/upstream";
 import { type MainView } from "../views";
 import { GITRING_AUTHOR } from "../support/constants";
 import { errorLine } from "../support/helpers";
+import type { GithubRepoState } from "../support/types";
 import { HarborRebase } from "./rebase";
 
 export abstract class HarborGithub extends HarborRebase {
@@ -300,22 +301,7 @@ export abstract class HarborGithub extends HarborRebase {
       if (!rights.ok) return this.setPull(repo, { state: "error", message: rights.message, at: Date.now() });
       checkedNow = st0.private === true;
     }
-    const access = await this.directory()
-      .githubRepoAccess(repo)
-      .catch(() => ({ ok: false as const, state: "error" as const, message: "gitring could not ask GitHub for access.", installUrl: undefined as string | undefined }));
-    // Public repositories work without the app (GitHub's limits for anonymous calls apply).
-    const token = access.ok ? access.token : null;
-    const main = await this.loadMain();
-    const conflict = this.gh(repo).conflict;
-    const conflictIntent = conflict ? this.intents.get(conflict.intentId) : undefined;
-    // Only the files that the merged conflict task changed count as merged by hand.
-    let resolved: Record<string, string | null> | undefined;
-    if (conflict && conflictIntent?.status === "landed") {
-      const chosen = conflictIntent.chosenAttemptId ? this.attempts.get(conflictIntent.chosenAttemptId) : undefined;
-      const touched = new Set(Object.keys(chosen?.footprint.files ?? {}));
-      resolved = Object.fromEntries(Object.entries(conflict.files).filter(([path]) => touched.has(path)));
-    }
-    const res = await upstreamChanges({ repo, token, backend: this.backend, source: p.repo.name, main: main.snapshot, since, resolved, branch: p.settings.github.base });
+    const { access, main, conflict, conflictIntent, res } = await this.askUpstream(repo, p, since);
     if (!sameLink()) return;
     if (res.state === "error") {
       const hint = !access.ok && access.installUrl ? ` Install the gitring GitHub App on ${repo} for private repositories.` : "";
@@ -338,51 +324,92 @@ export abstract class HarborGithub extends HarborRebase {
     }
     // From here on, GitHub's content goes into the project (a task's text, or main).
     if (res.private) this.holdPrivate(repo);
-    if (res.state === "conflict") {
-      const files = Object.fromEntries(res.conflicts.map((c) => [c.path, c.theirs]));
-      const open = conflict && conflictIntent && !["landed", "parked", "merged-into"].includes(conflictIntent.status);
-      const same = open && Object.keys(files).every((f) => f in conflict!.files && conflict!.files[f] === files[f]);
-      let intentId = conflict?.intentId;
-      if (!same) {
-        if (open) this.closeConflictTask(repo, "GitHub has newer changes: a new task replaces this one.");
-        const diffs = res.conflicts.map((c) => c.diff).join("\n");
-        const intent = await this.createIntent(
-          {
-            title: `Merge GitHub changes into main (${res.conflicts.length} file${res.conflicts.length === 1 ? "" : "s"})`,
-            goal: [
-              `GitHub ${repo} ${res.branch} has ${res.commits} new commit${res.commits === 1 ? "" : "s"} (${res.compareUrl}).`,
-              `In ${res.conflicts.map((c) => c.path).join(", ")}, GitHub and main changed the same lines.`,
-              "Apply GitHub's change below to main's version of these files. Keep the work that is on main.",
-              "When this task merges, gitring brings the other GitHub changes in.",
-              "",
-              diffs.length > 2600 ? `${diffs.slice(0, 2600)}\n… (the full change: ${res.compareUrl})` : diffs,
-            ].join("\n"),
-            priority: "high",
-            source: { kind: "webhook", ref: `github:${repo}` },
-          },
-          { kind: "system", id: "github", name: "GitHub" },
-        );
-        intentId = intent.id;
-        this.setGh(repo, { conflict: { head: res.head, files, intentId } });
-      }
-      return this.setPull(repo, { state: "conflict", message: `${res.message} The task "Merge GitHub changes into main" asks an agent or a person to merge them.`, headSha: res.head, files: Object.keys(files), intentId, compareUrl: res.compareUrl, at: Date.now() });
-    }
+    if (res.state === "conflict") return this.openConflictTask(repo, res, conflict, conflictIntent);
     const n = `${res.commits} commit${res.commits === 1 ? "" : "s"}`;
     const links = Object.keys(res.gitlinks);
     // Main has exactly GitHub's files (GitHub merged gitring's pull request with a merge commit): no commit.
     // Main is GitHub's head from now on, so the next sync starts there and opens no empty pull request.
     if (!res.changes.length && !links.length && res.headTree === main.tree) {
-      const st = this.gh(repo);
-      this.setGh(repo, { known: { ...st.known, [main.sha]: res.head }, last: res.head });
-      this.closeConflictTask(repo, "GitHub has nothing new for this task: main has every GitHub change.");
-      this.addLog({ kind: "system", message: `GitHub ${repo} ${res.branch} has main's files at ${res.head.slice(0, 7)} (${n}). Nothing to merge.` });
-      this.setPull(repo, { state: "up-to-date", message: `main has the files of GitHub ${res.branch} (${res.head.slice(0, 7)}).`, headSha: res.head, mainSha: main.sha, at: Date.now() });
-      // The sync status follows (the pull request is merged: the branch moves, no new pull request opens).
-      if (p.settings.github.mode !== "off" && reason !== "sync") this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
-      return;
+      return this.markPullUpToDate(repo, reason, p, res, main, n);
     }
-    // New GitHub commits: one merge commit on main, also when main already had every change (then the
-    // commit is empty), so that GitHub's history joins main's and the next sync can fast-forward.
+    const message = this.upstreamMessage(repo, res, n, links);
+    let committed: { sha: string; tree: string };
+    try {
+      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes: res.changes, message, author: GITRING_AUTHOR });
+    } catch (err) {
+      // main moved while gitring read GitHub: read again on the new main.
+      if ((err instanceof RepoConflictError || String(err).includes("RepoConflict")) && again < 3) return this.githubPullOnce(repo, reason, again + 1);
+      throw err;
+    }
+    await this.recordPull(repo, reason, p, res, committed, links, n);
+  }
+
+  // ───── The steps of a pull ─────
+
+  /** Asks GitHub what changed since the commit that main came from. Answers the access, main, the open conflict task and GitHub's answer. */
+  protected async askUpstream(repo: string, p: T.Project, since: string) {
+    const access = await this.directory()
+      .githubRepoAccess(repo)
+      .catch(() => ({ ok: false as const, state: "error" as const, message: "gitring could not ask GitHub for access.", installUrl: undefined as string | undefined }));
+    // Public repositories work without the app (GitHub's limits for anonymous calls apply).
+    const token = access.ok ? access.token : null;
+    const main = await this.loadMain();
+    const conflict = this.gh(repo).conflict;
+    const conflictIntent = conflict ? this.intents.get(conflict.intentId) : undefined;
+    // Only the files that the merged conflict task changed count as merged by hand.
+    let resolved: Record<string, string | null> | undefined;
+    if (conflict && conflictIntent?.status === "landed") {
+      const chosen = conflictIntent.chosenAttemptId ? this.attempts.get(conflictIntent.chosenAttemptId) : undefined;
+      const touched = new Set(Object.keys(chosen?.footprint.files ?? {}));
+      resolved = Object.fromEntries(Object.entries(conflict.files).filter(([path]) => touched.has(path)));
+    }
+    const res = await upstreamChanges({ repo, token, backend: this.backend, source: p.repo.name, main: main.snapshot, since, resolved, branch: p.settings.github.base });
+    return { access, main, conflict, conflictIntent, res };
+  }
+
+  /** GitHub and main changed the same lines: one task asks an agent or a person to merge them. A new conflict replaces the old task. */
+  protected async openConflictTask(repo: string, res: Extract<UpstreamResult, { state: "conflict" }>, conflict: GithubRepoState["conflict"], conflictIntent: T.Intent | undefined): Promise<void> {
+    const files = Object.fromEntries(res.conflicts.map((c) => [c.path, c.theirs]));
+    const open = conflict && conflictIntent && !["landed", "parked", "merged-into"].includes(conflictIntent.status);
+    const same = open && Object.keys(files).every((f) => f in conflict!.files && conflict!.files[f] === files[f]);
+    let intentId = conflict?.intentId;
+    if (!same) {
+      if (open) this.closeConflictTask(repo, "GitHub has newer changes: a new task replaces this one.");
+      const diffs = res.conflicts.map((c) => c.diff).join("\n");
+      const intent = await this.createIntent(
+        {
+          title: `Merge GitHub changes into main (${res.conflicts.length} file${res.conflicts.length === 1 ? "" : "s"})`,
+          goal: [
+            `GitHub ${repo} ${res.branch} has ${res.commits} new commit${res.commits === 1 ? "" : "s"} (${res.compareUrl}).`,
+            `In ${res.conflicts.map((c) => c.path).join(", ")}, GitHub and main changed the same lines.`,
+            "Apply GitHub's change below to main's version of these files. Keep the work that is on main.",
+            "When this task merges, gitring brings the other GitHub changes in.",
+            "",
+            diffs.length > 2600 ? `${diffs.slice(0, 2600)}\n… (the full change: ${res.compareUrl})` : diffs,
+          ].join("\n"),
+          priority: "high",
+          source: { kind: "webhook", ref: `github:${repo}` },
+        },
+        { kind: "system", id: "github", name: "GitHub" },
+      );
+      intentId = intent.id;
+      this.setGh(repo, { conflict: { head: res.head, files, intentId } });
+    }
+    return this.setPull(repo, { state: "conflict", message: `${res.message} The task "Merge GitHub changes into main" asks an agent or a person to merge them.`, headSha: res.head, files: Object.keys(files), intentId, compareUrl: res.compareUrl, at: Date.now() });
+  }
+
+  /** Main has exactly GitHub's files: no commit, and main is GitHub's head from now on. */
+  protected markPullUpToDate(repo: string, reason: string, p: T.Project, res: Extract<UpstreamResult, { state: "changes" }>, main: MainView, n: string): void {
+    const st = this.gh(repo);
+    this.setGh(repo, { known: { ...st.known, [main.sha]: res.head }, last: res.head });
+    this.closeConflictTask(repo, "GitHub has nothing new for this task: main has every GitHub change.");
+    this.addLog({ kind: "system", message: `GitHub ${repo} ${res.branch} has main's files at ${res.head.slice(0, 7)} (${n}). Nothing to merge.` });
+    this.setPull(repo, { state: "up-to-date", message: `main has the files of GitHub ${res.branch} (${res.head.slice(0, 7)}).`, headSha: res.head, mainSha: main.sha, at: Date.now() });
+    // The sync status follows (the pull request is merged: the branch moves, no new pull request opens).
+    if (p.settings.github.mode !== "off" && reason !== "sync") this.ctx.waitUntil(this.githubSync().catch((e) => console.warn("github sync failed", String(e))));
+  }
+
+  protected upstreamMessage(repo: string, res: Extract<UpstreamResult, { state: "changes" }>, n: string, links: string[]): string {
     const message = [
       `Bring GitHub changes into main`,
       "",
@@ -392,14 +419,11 @@ export abstract class HarborGithub extends HarborRebase {
       "",
       `Gitring-Upstream: ${repo}@${res.head}`,
     ].join("\n");
-    let committed: { sha: string; tree: string };
-    try {
-      committed = await this.backend.commit({ repo: p.repo.name, branch: this.branch, parent: main.sha, changes: res.changes, message, author: GITRING_AUTHOR });
-    } catch (err) {
-      // main moved while gitring read GitHub: read again on the new main.
-      if ((err instanceof RepoConflictError || String(err).includes("RepoConflict")) && again < 3) return this.githubPullOnce(repo, reason, again + 1);
-      throw err;
-    }
+    return message;
+  }
+
+  /** After the commit of the GitHub changes: main, the GitHub state, the app, the webhooks, the work copies and the tests of the new main. */
+  protected async recordPull(repo: string, reason: string, p: T.Project, res: Extract<UpstreamResult, { state: "changes" }>, committed: { sha: string; tree: string }, links: string[], n: string): Promise<void> {
     const before = p.mainSha;
     p.mainSha = committed.sha;
     p.mainTree = committed.tree;

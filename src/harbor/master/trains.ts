@@ -13,7 +13,7 @@ import { withoutChanges } from "../../core/land/carry";
 import { findPassingTrain, selectTrain, type TrainCandidate } from "../../core/land/train";
 import { landingMessage, landingNote, intentFile, type TrainInfo } from "../../core/logbook";
 import { newId } from "../ids";
-import { failureSummary, vesselView } from "../views";
+import { failureSummary, vesselView, type MainView } from "../views";
 import { GITRING_AUTHOR, LANDING_LEASE_MS } from "../support/constants";
 import { errorLine, pairKey } from "../support/helpers";
 import { TestsWait } from "../support/types";
@@ -118,6 +118,44 @@ export abstract class HarborTrains extends HarborMerge {
    */
   protected async landTrain(train: T.Attempt[], outcomes: Map<string, TrainOutcome>): Promise<void> {
     const p = this.requireProject();
+    const members = await this.admitToTrain(train, outcomes);
+    if (members.length <= 1) {
+      for (const a of members) outcomes.set(a.id, await this.landOne(a));
+      return;
+    }
+    const intentBefore = this.markTrainLanding(members);
+    const main = await this.loadMain();
+    const pieces = await this.composeTrain(members, main, intentBefore, outcomes);
+    if (!pieces.length) return;
+    if (pieces.length === 1) {
+      outcomes.set(pieces[0].a.id, await this.landOne(pieces[0].a));
+      return;
+    }
+    const head = pieces[0].a;
+    const trainId = newId("tr");
+    const names = () => pieces.map((x) => this.callsign(x.a.id)).join(", ");
+    let merge = pieces;
+    let run: T.CheckRun | undefined;
+    // Post-merge test mode: every work copy of the train passed its own tests at submit, so the train merges now.
+    const testsAfter = pieces.every((x) => this.testsAfterMerge(x.a));
+    if (!testsAfter) {
+      const tested = await this.testTrain({ p, main, pieces, head, intentBefore, outcomes, names });
+      if (!tested) return;
+      ({ merge, run } = tested);
+    } else {
+      this.addLog({ kind: "system", attemptId: head.id, message: `A train of ${pieces.length} work copies merges: ${names()}. Main is tested after the merge.` });
+    }
+    const completed = await this.commitTrain({ p, main, merge, run, testsAfter, trainId, intentBefore, outcomes });
+    if (!completed) return;
+    this.stats.trains = (this.stats.trains ?? 0) + 1;
+    this.persistStats();
+    if (testsAfter) this.scheduleMainTests();
+  }
+
+  // ───── The steps of a train ─────
+
+  /** The same gates as a single merge, for each work copy of the train. Answers the work copies that go on in the train. */
+  protected async admitToTrain(train: T.Attempt[], outcomes: Map<string, TrainOutcome>): Promise<T.Attempt[]> {
     const members: T.Attempt[] = [];
     for (const a of train) {
       // The same gates as a single merge: a merge that a stopped run made, a question without an answer, a yes that does not count.
@@ -137,10 +175,11 @@ export abstract class HarborTrains extends HarborMerge {
       }
       members.push(a);
     }
-    if (members.length <= 1) {
-      for (const a of members) outcomes.set(a.id, await this.landOne(a));
-      return;
-    }
+    return members;
+  }
+
+  /** Marks each work copy and its task as "landing". Answers the status that each task had before. */
+  protected markTrainLanding(members: T.Attempt[]): Map<string, T.IntentStatus> {
     const intentBefore = new Map<string, T.IntentStatus>();
     for (const a of members) {
       const intent = this.intents.get(a.intentId)!;
@@ -150,7 +189,12 @@ export abstract class HarborTrains extends HarborMerge {
       this.putAttempt(a);
       this.putIntent(intent);
     }
-    const main = await this.loadMain();
+    return intentBefore;
+  }
+
+  /** Composes each work copy onto main. A work copy that conflicts, or that touches a file of another one, leaves the train. */
+  protected async composeTrain(members: T.Attempt[], main: MainView, intentBefore: Map<string, T.IntentStatus>, outcomes: Map<string, TrainOutcome>): Promise<TrainPiece[]> {
+    const p = this.requireProject();
     // Each work copy composes onto main itself: independent work touches different files, so the union is the train.
     const pieces: TrainPiece[] = [];
     const taken = new Set<string>();
@@ -177,78 +221,76 @@ export abstract class HarborTrains extends HarborMerge {
       for (const c of result.changes) taken.add(c.path);
       pieces.push({ a, view, result, left });
     }
-    if (!pieces.length) return;
-    if (pieces.length === 1) {
-      outcomes.set(pieces[0].a.id, await this.landOne(pieces[0].a));
-      return;
-    }
-    const head = pieces[0].a;
-    const trainId = newId("tr");
-    const names = () => pieces.map((x) => this.callsign(x.a.id)).join(", ");
+    return pieces;
+  }
+
+  /** Tests main plus all pieces once. A failing train is split. Undefined: no piece goes on to the commits. */
+  protected async testTrain(f: { p: T.Project; main: MainView; pieces: TrainPiece[]; head: T.Attempt; intentBefore: Map<string, T.IntentStatus>; outcomes: Map<string, TrainOutcome>; names: () => string }): Promise<{ merge: TrainPiece[]; run: T.CheckRun | undefined } | undefined> {
+    const { p, main, pieces, head, intentBefore, outcomes, names } = f;
     let merge = pieces;
     let run: T.CheckRun | undefined;
-    // Post-merge test mode: every work copy of the train passed its own tests at submit, so the train merges now.
-    const testsAfter = pieces.every((x) => this.testsAfterMerge(x.a));
-    if (!testsAfter) {
-      this.addLog({ kind: "system", attemptId: head.id, message: `A train of ${pieces.length} work copies merges: ${names()}. The tests run once on main plus all of them.` });
-      const runs = new Map<string, T.CheckRun>();
-      const failedIn = new Map<string, { size: number; run: T.CheckRun }>();
-      const keyOf = (set: readonly TrainPiece[]) => set.map((x) => x.a.id).sort().join(",");
-      const test = async (set: readonly TrainPiece[]): Promise<T.CheckRun> => {
-        const r = await this.testPieces(main, set, head.id);
-        if (r.wait) throw new TestsWait(r.wait);
-        runs.set(keyOf(set), r);
-        if (!r.ok) for (const x of set) if ((failedIn.get(x.a.id)?.size ?? Infinity) > set.length) failedIn.set(x.a.id, { size: set.length, run: r });
-        return r;
-      };
-      try {
-        run = await test(pieces);
-        if (!run.ok) {
-          // The train failed: split it, find the work that fails, keep the rest (tested together before it merges).
-          const found = await findPassingTrain(pieces, async (set) => (await test(set)).ok);
-          for (const x of found.bad) {
-            await this.markStale(x.a, `Tests fail on main plus this work. ${failureSummary(failedIn.get(x.a.id)!.run.cases, 3)}`);
-            this.endEarly(outcomes, x.a.id);
-          }
-          for (const x of found.later) {
-            this.leaveTrain(x.a, intentBefore.get(x.a.id)!, `The work of ${this.callsign(x.a.id)} passes its tests alone and fails with the other work of the train. It merges on its own next.`);
-            outcomes.set(x.a.id, "wait");
-          }
-          merge = found.good;
-          this.addLog({
-            kind: "system",
-            attemptId: head.id,
-            message: `The train split after ${found.runs + 1} test runs. Fails: ${found.bad.map((x) => this.callsign(x.a.id)).join(", ") || "none"}. Merges: ${merge.map((x) => this.callsign(x.a.id)).join(", ") || "none"}.`,
-          });
-          if (!merge.length) return;
-          run = runs.get(keyOf(merge))!;
-        }
-      } catch (err) {
-        if (!(err instanceof TestsWait)) throw err;
-        for (const x of pieces) {
-          if (outcomes.has(x.a.id)) continue;
-          this.waitForTests(x.a, err.wait, intentBefore.get(x.a.id)!);
-          outcomes.set(x.a.id, "wait");
-        }
-        return;
-      }
-      if (noTestRan(run) && !p.settings.allowUntested) {
-        for (const x of merge) {
-          if (this.pickedLineage(x.a)) continue;
-          await this.askBecauseNoTestRan(x.a);
+    this.addLog({ kind: "system", attemptId: head.id, message: `A train of ${pieces.length} work copies merges: ${names()}. The tests run once on main plus all of them.` });
+    const runs = new Map<string, T.CheckRun>();
+    const failedIn = new Map<string, { size: number; run: T.CheckRun }>();
+    const keyOf = (set: readonly TrainPiece[]) => set.map((x) => x.a.id).sort().join(",");
+    const test = async (set: readonly TrainPiece[]): Promise<T.CheckRun> => {
+      const r = await this.testPieces(main, set, head.id);
+      if (r.wait) throw new TestsWait(r.wait);
+      runs.set(keyOf(set), r);
+      if (!r.ok) for (const x of set) if ((failedIn.get(x.a.id)?.size ?? Infinity) > set.length) failedIn.set(x.a.id, { size: set.length, run: r });
+      return r;
+    };
+    try {
+      run = await test(pieces);
+      if (!run.ok) {
+        // The train failed: split it, find the work that fails, keep the rest (tested together before it merges).
+        const found = await findPassingTrain(pieces, async (set) => (await test(set)).ok);
+        for (const x of found.bad) {
+          await this.markStale(x.a, `Tests fail on main plus this work. ${failureSummary(failedIn.get(x.a.id)!.run.cases, 3)}`);
           this.endEarly(outcomes, x.a.id);
         }
-        merge = merge.filter((x) => !outcomes.has(x.a.id));
+        for (const x of found.later) {
+          this.leaveTrain(x.a, intentBefore.get(x.a.id)!, `The work of ${this.callsign(x.a.id)} passes its tests alone and fails with the other work of the train. It merges on its own next.`);
+          outcomes.set(x.a.id, "wait");
+        }
+        merge = found.good;
+        this.addLog({
+          kind: "system",
+          attemptId: head.id,
+          message: `The train split after ${found.runs + 1} test runs. Fails: ${found.bad.map((x) => this.callsign(x.a.id)).join(", ") || "none"}. Merges: ${merge.map((x) => this.callsign(x.a.id)).join(", ") || "none"}.`,
+        });
         if (!merge.length) return;
+        run = runs.get(keyOf(merge))!;
       }
-      for (const x of merge) {
-        x.a.mergeWait = undefined;
-        x.a.composedChecks = run;
-        this.putAttempt(x.a);
+    } catch (err) {
+      if (!(err instanceof TestsWait)) throw err;
+      for (const x of pieces) {
+        if (outcomes.has(x.a.id)) continue;
+        this.waitForTests(x.a, err.wait, intentBefore.get(x.a.id)!);
+        outcomes.set(x.a.id, "wait");
       }
-    } else {
-      this.addLog({ kind: "system", attemptId: head.id, message: `A train of ${pieces.length} work copies merges: ${names()}. Main is tested after the merge.` });
+      return;
     }
+    if (noTestRan(run) && !p.settings.allowUntested) {
+      for (const x of merge) {
+        if (this.pickedLineage(x.a)) continue;
+        await this.askBecauseNoTestRan(x.a);
+        this.endEarly(outcomes, x.a.id);
+      }
+      merge = merge.filter((x) => !outcomes.has(x.a.id));
+      if (!merge.length) return;
+    }
+    for (const x of merge) {
+      x.a.mergeWait = undefined;
+      x.a.composedChecks = run;
+      this.putAttempt(x.a);
+    }
+    return { merge, run };
+  }
+
+  /** One commit for each piece, each on the one before. False: the train stopped, and the rest waits. */
+  protected async commitTrain(f: { p: T.Project; main: MainView; merge: TrainPiece[]; run: T.CheckRun | undefined; testsAfter: boolean; trainId: string; intentBefore: Map<string, T.IntentStatus>; outcomes: Map<string, TrainOutcome> }): Promise<boolean> {
+    const { p, main, merge, run, testsAfter, trainId, intentBefore, outcomes } = f;
     // One commit per task, each on the one before, each with its own why-record.
     let parent = main.sha;
     const ids = merge.map((x) => x.a.id);
@@ -282,7 +324,7 @@ export abstract class HarborTrains extends HarborMerge {
             this.leaveTrain(y.a, intentBefore.get(y.a.id)!, `The merge of the work of ${this.callsign(a.id)} stopped. The work of ${this.callsign(y.a.id)} merges on its own next.`);
             outcomes.set(y.a.id, "wait");
           }
-          return;
+          return false;
         }
         // Main is not where gitring thinks. Catch up with it now, so the next round composes on the real main.
         // The rest of the train stays queued and merges one by one.
@@ -291,14 +333,12 @@ export abstract class HarborTrains extends HarborMerge {
           this.leaveTrain(y.a, intentBefore.get(y.a.id)!, `Main moved under the train. The work of ${this.callsign(y.a.id)} merges on its own next.`);
           outcomes.set(y.a.id, "wait");
         }
-        return;
+        return false;
       }
       await this.recordLanding(a, { committed, before: parent, method, applied, run: checks, message, note, touched: x.result.touched, left: x.left, train: { id: trainId, place: i + 1, size: merge.length }, testsWhen: testsAfter ? "after" : "before" });
       outcomes.set(a.id, "done");
       parent = committed.sha;
     }
-    this.stats.trains = (this.stats.trains ?? 0) + 1;
-    this.persistStats();
-    if (testsAfter) this.scheduleMainTests();
+    return true;
   }
 }
