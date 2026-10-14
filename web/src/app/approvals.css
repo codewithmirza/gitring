@@ -1,6 +1,7 @@
 /*
- * Approvals in the shell: the tray of chips (bottom right, centered on narrow screens) and the card that the
- * chips and the decisions list both show. Type sizes: 11, 13, 15. Colors come from the theme tokens only.
+ * The styles of the approval tray and of the card that the tray and the decisions list show.
+ * The tray is at the bottom right, and centered on narrow screens.
+ * Type sizes: 11, 13, 15. Colors come from the theme tokens only.
  */
 
 /* ───────────── the card ───────────── */

@@ -1,3 +1,6 @@
+/**
+ * The form controls: Field (label, help text, error), Input, Textarea, Select and Checkbox.
+ */
 import { cloneElement, isValidElement, useId, type ComponentPropsWithRef, type ReactElement, type ReactNode } from "react";
 import { Icon } from "../icons";
 

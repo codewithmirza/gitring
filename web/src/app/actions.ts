@@ -1,4 +1,7 @@
-/** Project actions that more than one view starts. Each one reports its result in a toast. */
+/**
+ * Project actions that more than one view starts.
+ * Each one reports its result in a toast.
+ */
 import { toast } from "../design/components";
 import { harbor } from "../state/api";
 

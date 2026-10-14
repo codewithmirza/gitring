@@ -1,6 +1,6 @@
 /**
- * Addresses that start a sign-in, and the order of the sign-in choices. A small module of its own: the
- * shell (main bundle) needs them, and it should not load the GitHub data module for that.
+ * The addresses that start a sign-in, and the order of the sign-in choices.
+ * A small module of its own: the shell (main bundle) needs them, and it should not load the GitHub data module for that.
  */
 import type { Provider, SignInKind } from "../../../src/core/accounts";
 

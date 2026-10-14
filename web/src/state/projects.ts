@@ -1,6 +1,6 @@
 /**
- * Projects for the web app, from any source: create a project (a template, a description, an upload, a
- * push, any git URL, or a GitHub repository), and clone one with plain git.
+ * Creates a project from any source, and clones one with plain git.
+ * The sources are a template, a description, an upload, a push, any git URL or a GitHub repository.
  */
 import type { ProjectInfo, Visibility } from "../../../src/core/accounts";
 import type { ProjectSettings, ProjectSource } from "../../../src/core/types";

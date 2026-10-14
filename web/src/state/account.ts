@@ -1,12 +1,14 @@
 /**
- * Accounts in the UI: who is signed in, the projects they can see, API keys, members, and project
- * creation. Every call goes to the Worker; nothing here keeps fake data.
+ * The account state of the UI: who is signed in, their projects, API keys, members and project creation.
+ * Every call goes to the Worker. Nothing here keeps fake data.
  */
 import type { ApiKeyInfo, MemberInfo, MeInfo, ProjectInfo, Role, Visibility } from "../../../src/core/accounts";
 import { atLeast } from "../../../src/core/accounts";
 import type { GithubSyncStatus, ProjectSettings, ProjectSource, SettingsAnswer } from "../../../src/core/types";
 import { store, useStore } from "./store";
 import { getJson, HttpError, invalidate, send } from "./http";
+
+/* ───────────── errors and the call helper ───────────── */
 
 export class AccountError extends Error {
   constructor(
@@ -33,6 +35,8 @@ async function call<T>(method: string, path: string, body?: unknown, maxAge = 0)
 export interface MeWithInstall extends MeInfo {
   githubInstallUrl?: string | null;
 }
+
+/* ───────────── session and projects ───────────── */
 
 /** Who is signed in. Asks the server unless `maxAge` allows an answer of that age (ms) from memory. */
 export async function loadMe(opts: { maxAge?: number } = {}): Promise<MeWithInstall> {
@@ -92,6 +96,8 @@ export function rememberedProject(): string | null {
   }
 }
 
+/* ───────────── project actions, keys and members ───────────── */
+
 export async function createProject(input: { name: string; visibility: Visibility; source: ProjectSource; files?: UploadFile[] }): Promise<ProjectInfo> {
   const res = await call<{ project: ProjectInfo }>("POST", "/api/projects", input);
   await loadProjects().catch(() => undefined);
@@ -116,6 +122,8 @@ export const pushToken = (project: string) =>
   call<{ remote: string; token: string; expiresAt: string }>("POST", `/api/projects/${encodeURIComponent(project)}/push-token`, {});
 export const checkImport = (project: string) =>
   call<{ importing: { url: string; error?: string } | null; mainSha: string }>("POST", `/api/projects/${encodeURIComponent(project)}/import/check`, {});
+
+/* ───────────── uploads ───────────── */
 
 /** A file of a folder the person picked, ready for an upload project. */
 export interface UploadFile {
@@ -171,6 +179,8 @@ export async function readUpload(list: { file: File; path: string }[]): Promise<
   return out;
 }
 
+/* ───────────── settings and GitHub sync ───────────── */
+
 export const getSettings = (project: string) => call<ProjectSettings>("GET", `/api/projects/${encodeURIComponent(project)}/settings`);
 /** Save part of the settings. The server merges the patch and answers the full settings (and the secrets of new webhooks, once). */
 export const putSettings = (project: string, patch: Partial<ProjectSettings>) =>
@@ -179,6 +189,8 @@ export const putSettings = (project: string, patch: Partial<ProjectSettings>) =>
 /** GitHub sync of main: the status (members) and Sync now (owners). */
 export const getGithubStatus = (project: string) => call<GithubSyncStatus>("GET", `/api/projects/${encodeURIComponent(project)}/github`);
 export const syncGithub = (project: string) => call<GithubSyncStatus>("POST", `/api/projects/${encodeURIComponent(project)}/github/sync`, {});
+
+/* ───────────── hooks ───────────── */
 
 /** The caller's role on the open project. */
 export function useAccess(): Role | null {

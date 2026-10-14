@@ -1,3 +1,6 @@
+/**
+ * A panel with a header row (title, count, action) and a hairline under it, and the small section label.
+ */
 import type { ReactNode } from "react";
 
 interface PanelProps {

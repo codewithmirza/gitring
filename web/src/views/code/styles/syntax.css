@@ -1,0 +1,80 @@
+/* The syntax colors of the code view in each theme. */
+
+/* ───────────── syntax colors ───────────── */
+:root,
+[data-theme="day"] {
+  --tk-com: oklch(50% .02 248);
+  --tk-str: oklch(46% .1 150);
+  --tk-num: oklch(48% .12 55);
+  --tk-kw: oklch(47% .17 325);
+  --tk-type: oklch(46% .09 200);
+  --tk-fn: oklch(47% .13 260);
+  --tk-prop: oklch(39% .022 252);
+  --tk-tag: oklch(46% .11 240);
+  --tk-re: oklch(50% .16 25);
+  --tk-key: oklch(46% .12 255);
+  --tk-sel: oklch(47% .15 300);
+  --tk-meta: oklch(47% .1 300);
+}
+[data-theme="dusk"] {
+  --tk-com: oklch(78% .016 242);
+  --tk-str: oklch(84% .1 150);
+  --tk-num: oklch(84% .1 65);
+  --tk-kw: oklch(83% .11 330);
+  --tk-type: oklch(84% .08 200);
+  --tk-fn: oklch(83% .09 255);
+  --tk-prop: oklch(88% .012 240);
+  --tk-tag: oklch(83% .09 240);
+  --tk-re: oklch(82% .1 25);
+  --tk-key: oklch(83% .09 255);
+  --tk-sel: oklch(83% .1 300);
+  --tk-meta: oklch(82% .08 300);
+}
+[data-theme="night"] {
+  --tk-com: oklch(70% .018 244);
+  --tk-str: oklch(80% .11 150);
+  --tk-num: oklch(80% .11 65);
+  --tk-kw: oklch(78% .12 330);
+  --tk-type: oklch(80% .08 200);
+  --tk-fn: oklch(78% .1 255);
+  --tk-prop: oklch(84% .014 240);
+  --tk-tag: oklch(78% .1 240);
+  --tk-re: oklch(76% .12 25);
+  --tk-key: oklch(78% .1 255);
+  --tk-sel: oklch(78% .11 300);
+  --tk-meta: oklch(76% .09 300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --tk-com: oklch(70% .018 244);
+    --tk-str: oklch(80% .11 150);
+    --tk-num: oklch(80% .11 65);
+    --tk-kw: oklch(78% .12 330);
+    --tk-type: oklch(80% .08 200);
+    --tk-fn: oklch(78% .1 255);
+    --tk-prop: oklch(84% .014 240);
+    --tk-tag: oklch(78% .1 240);
+    --tk-re: oklch(76% .12 25);
+    --tk-key: oklch(78% .1 255);
+    --tk-sel: oklch(78% .11 300);
+    --tk-meta: oklch(76% .09 300);
+  }
+}
+
+.tk-com { color: var(--tk-com); font-style: italic; }
+.tk-str, .tk-code { color: var(--tk-str); }
+.tk-num, .tk-lit, .tk-attr, .tk-esc { color: var(--tk-num); }
+.tk-kw { color: var(--tk-kw); }
+.tk-type, .tk-var { color: var(--tk-type); }
+.tk-fn { color: var(--tk-fn); }
+.tk-prop { color: var(--tk-prop); }
+.tk-op, .tk-punc { color: var(--ink-2); }
+.tk-tag { color: var(--tk-tag); }
+.tk-re { color: var(--tk-re); }
+.tk-key { color: var(--tk-key); }
+.tk-sel { color: var(--tk-sel); }
+.tk-meta { color: var(--tk-meta); }
+.tk-head { color: var(--tk-kw); font-weight: 600; }
+.tk-em { font-style: italic; }
+.tk-strong { font-weight: 600; }
+.tk-link { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklch, currentColor 45%, transparent); text-underline-offset: 2px; }

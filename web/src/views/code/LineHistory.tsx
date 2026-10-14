@@ -1,7 +1,8 @@
 /**
- * Two actions in the head of an open file: "Why line N?" (the change that wrote the selected line, with
- * the record of its merge: task, plan, change requests, tests and the decision of a person) and "History"
- * (the changes of the file on main). Both open an anchored panel; nothing is modal.
+ * Two actions in the head of an open file: "Why line N?" and "History".
+ * "Why line N?" shows the change that wrote the selected line, with the record of its merge: task, plan, change requests,
+ * tests and the decision of a person. "History" shows the changes of the file on main.
+ * Both open an anchored panel. Nothing is modal.
  */
 import { useRef, useState, type ReactNode } from "react";
 import { Button, Popover } from "../../design/components";

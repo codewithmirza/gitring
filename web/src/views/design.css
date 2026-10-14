@@ -1,4 +1,9 @@
-/* /design — the living style guide. This page shows the whole type scale on purpose. */
+/*
+ * The styles of the /design page, the living style guide.
+ * This page shows the whole type scale on purpose.
+ */
+
+/* ───────────── the page, the hero and the specimen frame ───────────── */
 
 .ds {
   display: grid;
@@ -66,7 +71,7 @@
 .ds-spec__note { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); }
 .ds-spec__body { min-width: 0; }
 
-/* principles */
+/* ───────────── principles ───────────── */
 .ds-principles { margin: var(--s-6) 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .ds-principles li {
   display: grid;
@@ -80,7 +85,7 @@
 .ds-pp { font-weight: 500; }
 .ds-pm { color: var(--ink-2); }
 
-/* themes */
+/* ───────────── themes ───────────── */
 .ds-themes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4); margin-top: var(--s-6); }
 .ds-theme {
   display: grid;
@@ -115,7 +120,7 @@
 .ds-rules li .b-icon { transform: translateY(2px); color: var(--ink-3); }
 .ds-rules li:first-child .b-icon { color: var(--magenta); }
 
-/* voices */
+/* ───────────── voices ───────────── */
 .ds-voices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-6); margin-top: var(--s-6); }
 .ds-voice { display: grid; gap: var(--s-3); align-content: start; padding-top: var(--s-4); border-top: 2px solid var(--ink-1); }
 .ds-voice__who { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-3); font-weight: 500; }
@@ -125,12 +130,12 @@
 .ds-voice__small.voice-agent { font-size: var(--t-xs); line-height: var(--lh-xs); }
 .ds-voice__use { font-size: var(--t-xs); color: var(--ink-3); }
 
-/* type scale */
+/* ───────────── type scale ───────────── */
 .ds-type { width: 100%; margin-top: var(--s-6); }
 .ds-type td { padding: var(--s-3) var(--s-4) var(--s-3) 0; border-top: 1px solid var(--line); vertical-align: baseline; font-size: var(--t-xs); }
 .ds-type__tok { color: var(--ink-1); white-space: nowrap; }
 
-/* space */
+/* ───────────── space ───────────── */
 .ds-space { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .ds-space li { display: grid; grid-template-columns: 64px 1fr 32px; align-items: center; gap: var(--s-3); font-size: var(--t-xs); }
 .ds-space__bar { height: 8px; background: var(--accent); border-radius: 1px; }
@@ -160,14 +165,14 @@
 .ds-tokens { width: 100%; font-size: var(--t-xs); }
 .ds-tokens td { padding: var(--s-2) var(--s-3) var(--s-2) 0; border-top: 1px solid var(--line); }
 
-/* motion */
+/* ───────────── motion ───────────── */
 .ds-motion { display: grid; gap: var(--s-3); }
 .ds-motion__track { width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-2); background: var(--bg); }
 .ds-motion__track * { vector-effect: non-scaling-stroke; }
 .ds-motion__vessel { transition: transform var(--dur-track) var(--ease-in-out); }
 .ds-motion__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 
-/* icons */
+/* ───────────── icons ───────────── */
 .ds-hulls { display: flex; flex-wrap: wrap; gap: var(--s-6); margin-top: var(--s-6); }
 .ds-hull { display: grid; justify-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-3); }
 .ds-icons {
@@ -192,7 +197,7 @@
 }
 .ds-icons li .b-icon { color: var(--ink-1); }
 
-/* components */
+/* ───────────── components ───────────── */
 .ds-states { width: 100%; border-collapse: collapse; }
 .ds-states th { padding: var(--s-2) var(--s-3) var(--s-2) 0; font-size: var(--t-xs); font-weight: 500; color: var(--ink-3); text-align: left; white-space: nowrap; }
 .ds-states td { padding: var(--s-2) var(--s-3) var(--s-2) 0; }
@@ -204,14 +209,14 @@
 .ds-rowdemo { gap: var(--s-3); }
 .ds-toasts { display: grid; gap: var(--s-2); margin-top: var(--s-4); }
 
-/* chart primitives */
+/* ───────────── chart primitives ───────────── */
 .ds-prims { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-4); margin-top: var(--s-6); }
 .ds-prim { margin: 0; display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-3); }
 .ds-prim svg { width: 100%; height: auto; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-2); }
 .ds-prim svg * { vector-effect: non-scaling-stroke; }
 .ds-prim figcaption { display: grid; gap: 4px; font-size: var(--t-xs); line-height: var(--lh-xs); }
 
-/* patterns */
+/* ───────────── patterns ───────────── */
 .ds-patterns { margin: var(--s-6) 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-6) var(--s-8); }
 .ds-patterns li { display: grid; grid-template-columns: 32px 1fr; gap: var(--s-3); }
 .ds-patterns p { margin: 4px 0; font-size: var(--t-sm); }

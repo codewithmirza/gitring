@@ -1,13 +1,16 @@
 /**
- * The lines of one file: line numbers, a gutter with the marks of agents and change requests, syntax
- * colors, and soft wrap. Without wrap only the lines on screen exist in the page (fast for large files);
- * with wrap the lines render in blocks that the browser skips while they are off screen.
+ * The lines of one file: line numbers, the marks of agents in the gutter, syntax colors and soft wrap.
+ * The gutter also shows the lines that change requests keep agents out of.
+ * Without wrap, only the lines on screen exist in the page (fast for large files). With wrap, the lines render in blocks
+ * that the browser skips while they are off screen.
  * Highlighting runs in small steps when the browser is idle, so a large file never blocks the page.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { LineRange } from "../../../../src/core/types";
 import { CLASS_NAMES, highlighterFor, LineHighlighter, type LangInfo } from "./highlight";
 import type { HeadChanges, LineMark } from "./annotations";
+
+/* ───────────── constants and types ───────────── */
 
 export const LINE_H = 20;
 /** Soft wrap renders every line; above this many lines it is off. */
@@ -46,6 +49,8 @@ interface Props {
   focusMark: { line: number; n: number } | null;
 }
 
+/* ───────────── helpers ───────────── */
+
 export function splitLines(text: string): string[] {
   const lines = text.split(/\r\n|\r|\n/);
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
@@ -73,6 +78,8 @@ const cancelIdle = (id: number) => {
   if (typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(id);
   else clearTimeout(id);
 };
+
+/* ───────────── lines and static code ───────────── */
 
 function Code({ text, tokens }: { text: string; tokens: number[] | undefined }): ReactNode {
   if (!text) return "​";
@@ -196,6 +203,8 @@ export function StaticCode({ text, info, max = 300 }: { text: string; info: Lang
     </pre>
   );
 }
+
+/* ───────────── the file view ───────────── */
 
 export function CodeLines({ text, info, label, wrap, lanes, byLine, head, selected, flash, onLines, onMark, jump, markStarts, focusMark }: Props) {
   const lines = useMemo(() => splitLines(text), [text]);

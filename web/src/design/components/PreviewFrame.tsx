@@ -1,3 +1,7 @@
+/**
+ * The real running work copy in a sandboxed iframe, with a URL bar, reload and open.
+ * It shows real code, not a picture.
+ */
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "./Button";
 

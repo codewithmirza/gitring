@@ -1,3 +1,6 @@
+/**
+ * A block of monospace text with a button that copies it, for commands and settings.
+ */
 import { useState, type ReactNode } from "react";
 import { Button } from "./Button";
 

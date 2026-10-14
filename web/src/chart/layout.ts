@@ -9,6 +9,8 @@
 import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
 import type { FileNode } from "../../../src/core/types";
 
+/* ───────────── types ───────────── */
+
 export interface Rect {
   x0: number;
   y0: number;
@@ -42,6 +44,8 @@ export interface ChartLayout {
   signature: string;
 }
 
+/* ───────────── constants ───────────── */
+
 const SCALE = 40; // world units² per weight unit
 const GAP = 46; // open water between islands
 const PAD = 8; // inner padding of an island
@@ -49,6 +53,8 @@ const LABEL = 24; // label band at the top of an island
 const MARGIN = 44;
 
 const weight = (size: number) => Math.max(320, size) ** 0.9;
+
+/* ───────────── helpers ───────────── */
 
 function hash(s: string): number {
   let h = 2166136261;
@@ -93,6 +99,8 @@ function buildTree(files: FileNode[], island: string): TreeNode {
 
 const overlaps = (a: Rect, b: Rect, gap: number) =>
   a.x0 < b.x1 + gap && a.x1 + gap > b.x0 && a.y0 < b.y1 + gap && a.y1 + gap > b.y0;
+
+/* ───────────── the layout ───────────── */
 
 export function layoutChart(files: FileNode[]): ChartLayout {
   const groups = new Map<string, FileNode[]>();
@@ -213,6 +221,8 @@ export function layoutChart(files: FileNode[]): ChartLayout {
   const signature = islands.map((i) => `${i.id}:${i.parcels.length}`).join("|");
   return { islands, parcels, islandById: new Map(islands.map((i) => [i.id, i])), bounds, rose: { ...rose, r: R }, signature };
 }
+
+/* ───────────── anchors ───────────── */
 
 /** Where a file sits on the chart; files not on main yet sit at their island's label band. */
 export function anchorOf(layout: ChartLayout, path: string): { x: number; y: number; onMain: boolean } | null {

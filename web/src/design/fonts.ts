@@ -1,5 +1,6 @@
 /**
- * Fonts (all SIL OFL 1.1), self-hosted through @fontsource:
+ * The self-hosted fonts of the three voices.
+ * All use the SIL OFL 1.1 license, through @fontsource.
  *   System voice — Atkinson Hyperlegible Next (400, 500, 600)
  *   Agent voice  — Atkinson Hyperlegible Mono (400, 500)
  *   Human voice  — Source Serif 4, variable, italic with the optical size axis (opsz)

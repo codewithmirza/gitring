@@ -1,3 +1,6 @@
+/**
+ * A hook for the current time, refreshed on an interval, for words like "4 min ago".
+ */
 import { useEffect, useState } from "react";
 
 /** The current time, refreshed every `ms` (for relative times like "4 min ago"). */

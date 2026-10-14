@@ -1,0 +1,155 @@
+/* The generic page, the responsive rules (tablets, phones, touch) and the shared back link. */
+
+/* generic page */
+.page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--s-8) var(--s-8) var(--s-11);
+}
+.page__eyebrow { font-size: var(--t-xs); color: var(--ink-3); display: flex; align-items: center; gap: var(--s-2); }
+.page__title { font-size: var(--t-xl); line-height: var(--lh-xl); font-weight: 500; letter-spacing: -.005em; }
+.page__lede { margin-top: var(--s-3); max-width: 66ch; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); }
+.page__section { margin-top: var(--s-10); }
+.page__h2 { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 500; }
+.page__h2 + p { margin-top: var(--s-2); color: var(--ink-2); max-width: 70ch; }
+.rule { height: 0; border: 0; border-top: 1px solid var(--line); margin: var(--s-8) 0; }
+
+/* ───────────── responsive ───────────── */
+@media (max-width: 1320px) {
+  .topbar__themelabel { display: none; }
+  .substrip__note { display: none; }
+}
+@media (max-width: 1180px) {
+  .topbar__nav .viewnav__label { display: none; }
+  .topbar__nav .viewnav__opt { padding: 0 var(--s-2); }
+  .topbar__search { min-width: 0; }
+  .topbar__searchtext { display: none; }
+  .chartview { grid-template-columns: 272px minmax(0, 1fr); }
+  .chartview__right {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, 92vw);
+    z-index: var(--z-rail);
+    box-shadow: var(--shadow-overlay);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform var(--dur-2) var(--ease-out), visibility 0s linear var(--dur-2);
+  }
+  .chartview[data-traffic="open"] .chartview__right {
+    transform: none;
+    visibility: visible;
+    transition: transform var(--dur-2) var(--ease-out);
+  }
+  .chartview__traffic-toggle { display: block; }
+}
+@media (max-width: 900px) {
+  .topbar__conntext { display: none; }
+  .topbar__searchkey { display: none; }
+  .topbar__search { padding: 0 var(--s-2); }
+  /* Narrow screens keep the project switcher as a chevron button next to the mark. */
+  .topbar__project { padding-left: 0; border-left: 0; }
+  .topbar__sha { display: none; }
+  .topbar__projname { max-width: 140px; }
+}
+.topbar__themecycle { display: none; }
+@media (max-width: 760px) {
+  .topbar__theme { display: none; }
+  .topbar__themecycle { display: inline-flex; }
+  .topbar__row { gap: var(--s-2); padding: 0 var(--s-3); }
+  .topbar__right { gap: var(--s-1); }
+  .topbar__wordmark { display: none; }
+  .topbar__nav { margin-left: 0; }
+  .topbar__queuetext { display: none; }
+  .topbar__queue { padding: 0 var(--s-2); }
+  .topbar__queue.has-items .topbar__queuecount { display: inline; font-variant-numeric: tabular-nums; }
+  .substrip { padding: 0 var(--s-3); }
+  .substrip__right { display: none; }
+
+  .chartview { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .chartview__tabs { display: flex; padding: 0 var(--s-3); background: var(--bg); }
+  .chartview__left,
+  .chartview__right,
+  .chartview__center { grid-row: 2; grid-column: 1; }
+  .chartview__left,
+  .chartview__right {
+    display: none;
+    position: static;
+    width: auto;
+    transform: none;
+    visibility: visible;
+    box-shadow: none;
+    border: 0;
+  }
+  .chartview[data-tab="intents"] .chartview__left,
+  .chartview[data-tab="traffic"] .chartview__right { display: flex; }
+  .chartview[data-tab="intents"] .chartview__center,
+  .chartview[data-tab="traffic"] .chartview__center { display: none; }
+  .chartview[data-tab="log"] .chartview__chart { display: none; }
+  .chartview[data-tab="log"] .chartview__center { grid-template-rows: minmax(0, 1fr); }
+  .chartview[data-tab="log"] .radio { grid-template-rows: auto minmax(0, 1fr); }
+  .chartview[data-tab="log"] .radio__body { height: auto; }
+  .chartview[data-tab="chart"] .chartview__log { display: none; }
+  .chartview__traffic-toggle { display: none; }
+  .chartview__selbar { display: flex; }
+  .chartview__selbar ~ .c-zoom, .chartview__chart:has(.chartview__selbar) .c-zoom { bottom: 68px; }
+  .rail--traffic.has-detail .traffic__list { max-height: 30%; }
+  .page { padding: var(--s-6) var(--s-5) var(--s-10); }
+  .shortcuts__row { grid-template-columns: 96px minmax(0, 1fr); }
+}
+/* Phones: the views move to a bottom bar (reachable with one thumb); the number strip goes away. */
+@media (max-width: 600px) {
+  .topbar__nav { display: none; }
+  .substrip { display: none; }
+  .bottomnav {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .bottomnav .viewnav__opt {
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    height: 52px;
+    padding: 0 2px;
+    border-radius: 0;
+    font-size: var(--t-2xs);
+    line-height: 12px;
+  }
+  .bottomnav .viewnav__opt .b-icon { width: 18px; height: 18px; }
+  .bottomnav .viewnav__opt[aria-current="page"] { background: transparent; box-shadow: inset 0 2px 0 var(--ink-1); }
+  /* Toasts stay above the bottom bar. */
+  .app--nav .b-toasts { bottom: calc(52px + var(--s-4) + env(safe-area-inset-bottom)); right: var(--s-3); }
+  .topbar .topbar__conn, .topbar .topbar__queue, .topbar .topbar__search, .topbar .topbar__themecycle { min-width: 40px; height: 40px; justify-content: center; }
+  /* Room for the name and Sign in: the theme follows the system, a live connection needs no badge, and
+     people who only watch get no decisions button (the decisions page still lists them). */
+  .topbar .topbar__themecycle { display: none; }
+  .topbar .topbar__conn--clear { display: none; }
+  .topbar .topbar__queue--watch { display: none; }
+  .topbar__projname { max-width: 120px; }
+  .topbar .acct-me { width: 40px; height: 40px; }
+  .topbar .acct-switch { min-height: 40px; }
+  .palette__foot { display: none; }
+}
+/* Touch screens: controls in panels get room for a finger. */
+@media (pointer: coarse) {
+  .b-pop .b-btn, .b-inline .b-btn, .composer .b-btn { min-height: 40px; }
+  .chip { min-height: 36px; }
+  .pick__opt, .palette__opt, .pick__action { min-height: 44px; }
+}
+
+/* shared back link */
+.backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  font-size: var(--t-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+}

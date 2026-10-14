@@ -1,3 +1,6 @@
+/**
+ * Buttons: Button (variants, sizes, icons, a busy state) and IconButton (a square button with a label and a tooltip).
+ */
 import type { ComponentPropsWithRef, MouseEvent, ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 import { Tooltip } from "./Tooltip";

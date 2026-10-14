@@ -1,3 +1,6 @@
+/**
+ * Shows the distance of two plans (0 to 5) with an icon, text and an arrow when they close in.
+ */
 import type { Range } from "../../../../src/core/types";
 import { distanceLabel, RANGE_TEXT } from "../../state/format";
 import { rangeTone } from "../../state/selectors";

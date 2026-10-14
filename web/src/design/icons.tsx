@@ -1,6 +1,6 @@
 /**
- * gitring icons. Drawn for gitring: 16px grid, 1.5px stroke,
- * square caps, currentColor. No icon library.
+ * The gitring icons and the hull shapes of agents, drawn for gitring.
+ * They use a 16px grid, a 1.5px stroke, square caps and currentColor. There is no icon library.
  */
 import type { CSSProperties, ReactNode } from "react";
 

@@ -1,7 +1,7 @@
 /**
- * A work copy against its base: one file, or every changed file. Unified rows with old and new line
- * numbers, colors for the code, and collapsed unchanged lines. Long diffs show their first rows and a
- * button for the rest.
+ * A work copy against its base, as one file or as every changed file.
+ * It shows unified rows with old and new line numbers, colors for the code, and collapsed unchanged lines.
+ * Long diffs show their first rows and a button for the rest.
  */
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { inSelection, LineRequestForm, parseUnified, pickLine, type LineRequestInput, type LineSelection } from "../../design/components";
@@ -11,10 +11,14 @@ import { CLASS_NAMES, languageOf, tokenizeAll } from "./highlight";
 import { CodeLink } from "./CodeLink";
 import type { CodeLocation } from "./links";
 
+/* ───────────── constants and types ───────────── */
+
 const STATUS_TEXT = { A: "Added", M: "Changed", D: "Deleted" } as const;
 const FIRST_ROWS = 1200;
 
 type DiffRow = ReturnType<typeof parseUnified>[number];
+
+/* ───────────── helpers ───────────── */
 
 function Code({ text, tokens }: { text: string; tokens: number[] | undefined }): ReactNode {
   if (!text) return "​";
@@ -50,6 +54,8 @@ function diffTokens(rows: DiffRow[], path: string): (number[] | undefined)[] {
   oldIdx.forEach((ri, k) => (out[ri] = ot[k]));
   return out;
 }
+
+/* ───────────── the diff ───────────── */
 
 /**
  * `onRequest`: a person may ask the agent to change lines of this work copy. The new line numbers become

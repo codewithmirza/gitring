@@ -1,9 +1,9 @@
 /**
- * The person's connections: the GitHub connection, the apps they allowed through OAuth (MCP clients such
- * as Claude, Claude Code, Cursor and Codex) and their personal API keys.
+ * The connections of the person: GitHub, the apps allowed through OAuth, and personal API keys.
+ * The apps are MCP clients such as Claude, Claude Code, Cursor and Codex.
  *
- * Requests: a GET answer stays in a short cache, identical GETs in flight share one request, and a view
- * that closes aborts its requests (the shared request stops when no view waits for it any more).
+ * Requests: a GET answer stays in a short cache, and identical GETs in flight share one request. A view that closes
+ * aborts its requests (the shared request stops when no view waits for it any more).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiKeyInfo, OAuthGrantInfo } from "../../../src/core/accounts";

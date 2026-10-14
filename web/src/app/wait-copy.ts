@@ -1,4 +1,7 @@
-/** Plain words for the moments when the page waits (STE: no "-ing" forms). Pure, so tests can read them. */
+/**
+ * Plain words for the moments when the page waits.
+ * They follow STE (no "-ing" forms). The module is pure, so tests can read it.
+ */
 
 /** The short label of a busy button or a placeholder. */
 export const PLEASE_WAIT = "Please wait";

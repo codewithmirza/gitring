@@ -1,3 +1,8 @@
+/**
+ * The app shell: the top bar, the page of each route, the shortcuts, the toasts and the first load.
+ * Views load lazily through ./views.ts. Never import a lazy view here.
+ * Read next: ./router.tsx (the paths), ./views.ts (the lazy views) and ./TopBar.tsx.
+ */
 import { Suspense, useEffect, useRef } from "react";
 import { Button, EmptyState, SkeletonPage, SkeletonSplit, ToastHost, toast } from "../design/components";
 import { store, useStore } from "../state/store";
@@ -49,6 +54,8 @@ const GO: Record<string, string> = {
   i: "/inbox",
   ...(import.meta.env.DEV ? { d: "/design" } : {}),
 };
+
+/* ───────────── shortcuts, toasts and sign-in return ───────────── */
 
 function useShortcuts() {
   useEffect(() => {
@@ -222,6 +229,8 @@ function useSignInReturn() {
   }, [ready, signedIn]);
 }
 
+/* ───────────── the page of each route ───────────── */
+
 function NotFound() {
   return (
     <div className="page">
@@ -298,6 +307,8 @@ function Booting({ route }: { route: Route }) {
   }
   return <ViewSkeleton route={route} />;
 }
+
+/* ───────────── the shell ───────────── */
 
 /**
  * With the waitlist gate on, a person that the gate keeps out sees the waitlist pages only. Everybody else

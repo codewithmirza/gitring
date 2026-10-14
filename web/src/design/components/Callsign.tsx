@@ -1,3 +1,6 @@
+/**
+ * The callsign of an agent: a colored pennant, a shape and the agent name, for color-blind readers too.
+ */
 import type { CSSProperties } from "react";
 import { Hull, hullName, type HullName } from "../icons";
 import { modelShort } from "../../state/format";

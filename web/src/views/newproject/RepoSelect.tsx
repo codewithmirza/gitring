@@ -1,7 +1,7 @@
 /**
- * A GitHub repository field with a list of the person's repositories (WAI-ARIA combobox with a popup
- * listbox). Typing filters the list; ↓ opens it; Enter picks; Escape closes it, then puts the saved
- * value back. The person can also type "owner/name" or a github.com URL.
+ * A GitHub repository field with a list of the person's repositories.
+ * It is a WAI-ARIA combobox with a popup listbox. Typing filters the list; ↓ opens it; Enter picks; Escape closes it,
+ * then puts the saved value back. The person can also type "owner/name" or a github.com URL.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { GithubRepo } from "../../../../src/core/accounts";
@@ -13,6 +13,8 @@ import { GithubMark } from "./marks";
 import { rankRepos } from "./match";
 import { RepoRow } from "./RepoRow";
 import "./newproject.css";
+
+/* ───────────── types ───────────── */
 
 type Opt = { key: string; kind: "repo"; repo: GithubRepo } | { key: string; kind: "typed"; repo: string } | { key: string; kind: "connect" } | { key: string; kind: "install"; url: string };
 
@@ -29,6 +31,8 @@ interface RepoSelectProps {
   /** The repository from the list, when the person picks one (for push rights and privacy). */
   onRepoInfo?: (repo: GithubRepo | null) => void;
 }
+
+/* ───────────── the field ───────────── */
 
 export function RepoSelect({ id, value, onChange, me, returnTo, disabled, describedBy, invalid, onRepoInfo }: RepoSelectProps) {
   const uid = useId().replace(/:/g, "");

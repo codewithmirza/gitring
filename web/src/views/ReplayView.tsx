@@ -1,13 +1,10 @@
 /**
- * Replay: the real history of a project, played back on the map with the inside of gitring visible.
- *
- * Tasks appear, plans draw their course, each conflict check shows its candidates on the distance ladder
- * with the facts, the rule, the model and the verdict, change requests fly to their agents, tests run
- * alone and then on main plus the work, the merge queue gives its lease, the work composes onto main, the
- * commit gets its why-record, and the other work moves onto the new main. One plain caption per step.
- *
- * Address: /replay?project=<id>. For a recording: &autoplay=1&speed=<1–120>&kiosk=1 (kiosk hides the app
- * bar and the controls; &theme=night picks a theme).
+ * The replay page: the real history of a project, played back on the map.
+ * It shows the inside of gitring. Tasks appear, plans draw their course, and each conflict check shows its candidates on
+ * the distance ladder with the facts, the rule, the model and the verdict. Change requests fly to their agents, tests run,
+ * the merge queue gives its lease, the work composes onto main, the commit gets its why-record, and the other work moves
+ * onto the new main. One plain caption for each step.
+ * Address: /replay?project=<id>. For a recording: &autoplay=1&speed=<1–120>&kiosk=1 (kiosk hides the app bar and the controls; &theme=night picks a theme).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileNode } from "../../../src/core/types";
@@ -27,6 +24,8 @@ import { endLine, introLine, STAGE_NAME, STAGES, type Stage } from "./replay/cap
 import { SPEEDS } from "./replay/model";
 import "./replay/replay.css";
 
+/* ───────────── constants ───────────── */
+
 /** The title card before the first step (autoplay only). */
 const INTRO_MS = 2600;
 /** Without autoplay the replay opens before the first step, with the prompt to press play. */
@@ -34,6 +33,8 @@ const LEAD_MS = 500;
 const NO_FILES: FileNode[] = [];
 
 type Load = { state: "loading"; records: number } | { state: "error"; message: string } | { state: "ready"; history: History };
+
+/* ───────────── the page ───────────── */
 
 export function ReplayView() {
   const projectId = useStore((s) => s.projectId);
@@ -86,6 +87,8 @@ export function ReplayView() {
     </div>
   );
 }
+
+/* ───────────── the player and its parts ───────────── */
 
 function Player({ history, files, name, kiosk, autoplay, speed }: { history: History; files: FileNode[]; name: string; kiosk: boolean; autoplay: boolean; speed: number }) {
   const script = useMemo(() => buildScript(history.records, history.agents), [history]);
@@ -239,4 +242,3 @@ function useReplayKeys(clock: ReplayClock) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onKey]);
 }
-

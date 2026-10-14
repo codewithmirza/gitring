@@ -1,6 +1,7 @@
 /**
- * Marks of the sign-in providers. gitring uses them only on the "Continue with …" buttons and next to the
- * provider name on the Account page, never as its own mark, and smaller than the gitring name.
+ * The marks of the sign-in providers.
+ * gitring uses them only on the "Continue with …" buttons and next to the provider name on the Account page.
+ * It never uses one as its own mark, and it draws them smaller than the gitring name.
  */
 import googleG from "./google-g.svg";
 

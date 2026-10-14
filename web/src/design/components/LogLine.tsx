@@ -1,3 +1,6 @@
+/**
+ * One row of the activity log: the time, the agent, an icon for the kind and the message.
+ */
 import { memo } from "react";
 import type { AgentInfo, LogEntry, LogKind } from "../../../../src/core/types";
 import { clock } from "../../state/format";

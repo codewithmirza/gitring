@@ -1,6 +1,6 @@
 /**
- * "/" — the start page. Visitors read what gitring is, how it works and how to add it to their agent as an
- * MCP connector, then sign in. Signed-in people go to their remembered project, else their first project,
+ * The start page ("/"): visitors read what gitring is, how it works and how to add it to their agent.
+ * Then they sign in. Signed-in people go to their remembered project, else their first project,
  * else to their projects. With "/?home" they can read this page too.
  */
 import { useEffect, useState, type CSSProperties } from "react";
@@ -13,6 +13,8 @@ import { Link, navigate, useSearchParam } from "../app/router";
 import { openSignIn } from "../app/ui";
 import { copyMcpUrl, mcpUrl } from "../app/actions";
 import "./home.css";
+
+/* ───────────── constants and the remembered client ───────────── */
 
 const STEPS: { title: string; text: string }[] = [
   { title: "You write a task.", text: "A task has a goal. You can add test files that prove it." },
@@ -51,6 +53,8 @@ export function homeProject(projects: ProjectInfo[], asked: string | null, loade
   if (remembered && ids.has(remembered)) return remembered;
   return projects.find((p) => p.role === "owner")?.id ?? projects.find((p) => p.role === "member")?.id ?? null;
 }
+
+/* ───────────── parts of the page ───────────── */
 
 /** Two agents work at the same time; one gets a change request; both merge into main when the tests pass. */
 function HeroArt() {
@@ -183,6 +187,8 @@ function ConnectorSteps({ signedIn }: { signedIn: boolean }) {
     </div>
   );
 }
+
+/* ───────────── the page ───────────── */
 
 export function HomeView() {
   const accountReady = useStore((s) => s.accountReady);

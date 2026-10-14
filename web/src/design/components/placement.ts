@@ -1,9 +1,8 @@
 /**
- * Where an anchored popover goes. A pure function, so that tests can check it without a browser.
- *
+ * Decides where an anchored popover goes.
+ * It is a pure function, so tests need no browser.
  * Rules:
- *   - The popover opens under its trigger. It flips above when the space under the trigger is too small
- *     and the space above is larger.
+ *   - The popover opens under its trigger. It flips above when the space under is too small and the space above is larger.
  *   - It stays 8 px inside the viewport. When it is too tall, it gets a max height and scrolls.
  *   - The tail points at the middle of the trigger. It keeps 14 px from the rounded corners.
  *   - Under `sheetBelow` px of viewport width, the popover becomes a full-width sheet under (or above) the trigger.

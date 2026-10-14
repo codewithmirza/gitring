@@ -1,14 +1,10 @@
 /**
  * Requests to the gitring Worker: one place for fetch, errors, shared requests, caches and aborts.
- *
- *   - GET requests for the same URL that run at the same time share one fetch.
- *   - Each caller can pass an AbortSignal. It stops the wait of that caller only; the fetch stops when no
- *     caller waits any more (a view that closes does not cancel the request of a view that stays).
- *   - An answer can stay in a memory cache for `maxAge` ms. A write through this module removes the cached
- *     answers that it can change (see WRITE_RULES); `invalidate()` does the same for other writers.
- *   - ETag: with `etag: true` the answer and its ETag stay in the cache; the next GET sends If-None-Match
- *     and a 304 answer reuses the cached value (no body on the wire).
- *
+ *   - GET requests for the same URL that run at the same time share one fetch. Each caller can pass an AbortSignal:
+ *     it stops the wait of that caller only (a view that closes does not cancel the request of a view that stays).
+ *   - An answer can stay in a memory cache for `maxAge` ms. A write through this module removes the answers it can change
+ *     (see WRITE_RULES). `invalidate()` does the same for other writers.
+ *   - With `etag: true` the next GET sends If-None-Match, and a 304 answer reuses the cached value (no body on the wire).
  * Cached values are shared between callers: never change them in place.
  */
 

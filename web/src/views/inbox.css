@@ -1,4 +1,7 @@
-/* Inbox page: one column, made for a phone. Type sizes here: 11, 13, 15, 28. */
+/*
+ * The styles of the inbox page: one column, made for a phone.
+ * Type sizes here: 11, 13, 15, 28.
+ */
 
 .inbox { max-width: 640px; }
 .inbox .page__lede a { font-weight: 500; }

@@ -1,6 +1,6 @@
 /**
- * The draft of a new project. The page that shows the picker keeps it, so a closed panel keeps what the
- * person typed and chose, and a link (?new=…) can open the picker at one source.
+ * The draft of a new project, kept by the page that shows the picker.
+ * A closed panel keeps what the person typed and chose, and a link (?new=…) can open the picker at one source.
  */
 import type { GithubRepo, Visibility } from "../../../../src/core/accounts";
 import type { GithubSyncMode } from "../../../../src/core/types";

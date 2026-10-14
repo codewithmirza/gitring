@@ -1,6 +1,7 @@
 /**
- * The interest page: a survey, not a shop. The person picks the pack they would use and says "Count me in".
- * No payment, no card field. A person who chose already sees the confirmation and may change the choice.
+ * The interest page: a survey, not a shop.
+ * The person picks a pack and says "Count me in". There is no payment and no card field.
+ * A person who chose already sees the confirmation and may change the choice.
  */
 import { useId, useState, type FormEvent } from "react";
 import { Button } from "../../design/components";

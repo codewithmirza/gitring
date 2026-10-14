@@ -1,7 +1,7 @@
 /**
- * Small pickers that grow from their button (no modal): the ref switcher, the file finder and "go to
- * line". The lists follow the WAI-ARIA combobox pattern: focus stays in the text field, ↑/↓ move the
- * active option, Enter chooses it, Escape closes the panel and focus goes back to the button.
+ * Small pickers that grow from their button: the ref switcher, the file finder and "go to line".
+ * None is modal. The lists follow the WAI-ARIA combobox pattern: focus stays in the text field, ↑/↓ move the active option,
+ * Enter chooses it, Escape closes the panel and focus goes back to the button.
  */
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Popover } from "../../design/components";

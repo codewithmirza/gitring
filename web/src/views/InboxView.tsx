@@ -1,8 +1,8 @@
 /**
- * /inbox — everything that waits for the signed-in person, in all their projects: merges that wait for a yes,
- * merges that stopped, questions after an escalated conflict check or work that did not merge, and tasks that
- * wait for a person. Made for a phone: one column, big answers in place, no modal. The list loads again every
- * 20 seconds while the page shows (see state/inbox). A switch turns on push notifications for this device.
+ * The /inbox page: everything that waits for the signed-in person, in all their projects.
+ * It lists merges that wait for a yes, merges that stopped, questions after an escalated conflict check or work that did
+ * not merge, and tasks that wait for a person. Made for a phone: one column, big answers in place, no modal.
+ * The list loads again every 20 seconds while the page shows (see state/inbox). A switch turns on push notifications for this device.
  */
 import { useEffect, useId, useState } from "react";
 import { Button, EmptyState, SkeletonRows, Textarea } from "../design/components";
@@ -29,6 +29,8 @@ import { SignInChoices } from "../app/Account";
 import { answerApproval, useAnswering } from "../app/approvalActions";
 import { QuestionCard } from "../app/QuestionCard";
 import "./inbox.css";
+
+/* ───────────── parts of the page ───────────── */
 
 /** The age of an item: "5 min" (no "ago": the meta line reads "shop · 5 min"). */
 function age(at: number, now: number): string {
@@ -181,6 +183,8 @@ function PushSwitch() {
     </div>
   );
 }
+
+/* ───────────── the page ───────────── */
 
 export function InboxView() {
   const me = useMe();

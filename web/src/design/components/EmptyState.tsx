@@ -1,3 +1,6 @@
+/**
+ * An empty state: a small chart-frame drawing, one plain sentence and one action.
+ */
 import type { ReactNode } from "react";
 
 /** A small chart-frame drawing: double rule, a compass tick and a dashed course. */

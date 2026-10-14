@@ -1,7 +1,7 @@
 /**
- * History of a file in the code view: "Why is this line here?" and the changes of the file. The answers
- * come from the REST twins of the history tools (src/worker/history-routes.ts); the shapes are in
- * src/core/history.ts.
+ * History of a file in the code view: "Why is this line here?" and the changes of the file.
+ * The answers come from the REST twins of the history tools (src/worker/history-routes.ts).
+ * The shapes are in src/core/history.ts.
  *
  * Pure parts (addresses and words) are here, so a unit test can check them without a browser.
  */

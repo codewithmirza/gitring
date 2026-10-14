@@ -1,6 +1,7 @@
 /**
- * Replay controls: play and pause, one step back or forward, the speed, and a scrub bar with a tick for
- * each step (colored by stage). The play head moves in the frame callback of the clock, not by renders.
+ * The replay controls: play and pause, one step back or forward, the speed and a scrub bar.
+ * The scrub bar has a tick for each step, colored by stage.
+ * The play head moves in the frame callback of the clock, not by renders.
  */
 import { useEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Button, IconButton, Segmented, Tooltip } from "../../design/components";

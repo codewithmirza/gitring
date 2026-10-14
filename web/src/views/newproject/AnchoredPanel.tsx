@@ -1,11 +1,9 @@
 /**
  * A non-modal panel that grows from the button that opened it, with a tail that points at that button.
  * Under 600 px it is a full-width sheet directly under the button (the tail still points at it).
- *
  * - The panel follows the trigger in the DOM, so Tab moves from the trigger into the panel and on to the page.
- * - Focus moves into the panel when it opens ([data-autofocus] first).
- * - Escape closes it and returns focus to the trigger. An inner control that uses Escape itself calls
- *   preventDefault() on the key event, and the panel stays open.
+ * - Focus moves into the panel when it opens ([data-autofocus] first). Escape closes it and returns focus to the trigger.
+ *   An inner control that uses Escape itself calls preventDefault() on the key event, and the panel stays open.
  * - A click outside, or Tab past the end, closes it. The parent keeps the draft, so nothing typed is lost.
  * - The trigger sets aria-expanded and aria-controls={id}; the panel is role="dialog" (not modal).
  */

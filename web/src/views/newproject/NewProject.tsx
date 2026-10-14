@@ -1,8 +1,8 @@
 /**
- * New project: a description on top, then the sources (template, empty, upload, push, any git URL, and
- * the person's GitHub repositories last), then one short step with gitring's guesses and one "Create
- * project" button. The same content shows in the panel of the "New project" button and, for a person
- * without projects, right on the page.
+ * The new-project panel: a description on top, then the sources, then one short step.
+ * The sources are a template, empty, upload, push, any git URL, and the person's GitHub repositories last.
+ * The short step shows the guesses of gitring and one "Create project" button.
+ * The same content shows in the panel of the "New project" button and, for a person without projects, right on the page.
  */
 import { useRef, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import type { MeWithInstall } from "../../state/account";

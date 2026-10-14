@@ -1,9 +1,11 @@
 /**
- * Pan and zoom for the chart: pointer drag, two-finger pinch, wheel (mouse wheel zooms,
- * trackpad scroll pans, trackpad pinch zooms), double click, and keyboard.
+ * Pan and zoom for the chart: pointer drag, two-finger pinch, wheel, double click and keyboard.
+ * The mouse wheel zooms, the trackpad scroll pans and the trackpad pinch zooms.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type RefObject } from "react";
 import type { Rect } from "./layout";
+
+/* ───────────── types and constants ───────────── */
 
 export interface Transform {
   x: number;
@@ -14,6 +16,8 @@ export interface Transform {
 export const MIN_K = 0.2;
 export const MAX_K = 5;
 const clamp = (k: number) => Math.max(MIN_K, Math.min(MAX_K, k));
+
+/* ───────────── fit and focus ───────────── */
 
 export function fitTransform(b: Rect, w: number, h: number, pad = 0.94): Transform {
   const bw = Math.max(1, b.x1 - b.x0);
@@ -36,6 +40,8 @@ export function focusTransform(all: Rect, focus: Rect | null, w: number, h: numb
   const cy = (focus.y0 + focus.y1) / 2;
   return { k, x: w / 2 - cx * k, y: h / 2 - cy * k };
 }
+
+/* ───────────── the hook ───────────── */
 
 /**
  * Gestures preview on a composited layer (`live`): the browser moves the painted chart on the

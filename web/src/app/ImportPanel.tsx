@@ -1,8 +1,8 @@
 /**
- * Shown on the overview while main is empty: a new project that waits for its first task, an import in
- * progress, an import error, or a push project that waits for its first `git push` (with the command and a
- * one-day token for the owner). The live socket fills the overview when main changes; "Check now" asks
- * the server at once.
+ * The panel that the overview shows while main is empty.
+ * It covers four cases: a new project that waits for its first task, an import in progress, an import error, and a push
+ * project that waits for its first `git push` (with the command and a one-day token for the owner).
+ * The live socket fills the overview when main changes. "Check now" asks the server at once.
  */
 import { useState } from "react";
 import { Button, CodeBlock, toast } from "../design/components";

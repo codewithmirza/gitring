@@ -1,6 +1,8 @@
 /** A small path router on the History API. */
 import { useSyncExternalStore, type ComponentPropsWithRef, type MouseEvent } from "react";
 
+/* ───────────── routes ───────────── */
+
 export type Route =
   | { name: "home" }
   | { name: "chart" }
@@ -70,6 +72,8 @@ export function parseRoute(pathname: string): Route {
   return { name: "notfound", path: pathname };
 }
 
+/* ───────────── aliases and addresses ───────────── */
+
 const ALIASES: Record<string, string> = { chart: "/overview", intents: "/tasks", logbook: "/history" };
 
 /** The current path for an old alias ("/chart" → "/overview", "/intents/x" → "/tasks/x"), else null. */
@@ -102,6 +106,8 @@ export function codeHref(ref = "main", path?: string, opts: { diff?: boolean; li
   const hash = opts.line ? `#L${opts.line}${opts.endLine && opts.endLine > opts.line ? `-L${opts.endLine}` : ""}` : "";
   return `/code/${encodeURIComponent(ref)}${file}${query}${hash}`;
 }
+
+/* ───────────── navigation and the location ───────────── */
 
 const EVENT = "gitring:navigate";
 /** Query params that belong to the session and survive navigation. */
@@ -166,6 +172,8 @@ export function setSearchParam(name: string, value: string | null) {
   window.dispatchEvent(new Event(EVENT));
 }
 
+/* ───────────── preload ───────────── */
+
 /* Preload: App registers a function that starts loading the code of a view; links call it on hover and focus. */
 let preloader: ((path: string) => void) | null = null;
 export function setPreloader(fn: (path: string) => void) {
@@ -174,6 +182,8 @@ export function setPreloader(fn: (path: string) => void) {
 export function preloadPath(to: string) {
   preloader?.(to);
 }
+
+/* ───────────── links ───────────── */
 
 interface LinkProps extends Omit<ComponentPropsWithRef<"a">, "href"> {
   to: string;

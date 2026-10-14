@@ -1,3 +1,6 @@
+/**
+ * A segmented control: a radio group where the arrow keys move and select.
+ */
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 

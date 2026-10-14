@@ -1,3 +1,7 @@
+/**
+ * The map legend: every symbol with one plain line.
+ * The overview and the style guide share it.
+ */
 import type { ReactNode } from "react";
 import { HULL_PATHS } from "../design/icons";
 

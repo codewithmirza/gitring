@@ -1,6 +1,7 @@
 /**
- * UI-only state shared across views: the sign-in panel, the task composer and its "Sending…" rows,
- * the command palette and the shortcut list. Nothing here goes to the server.
+ * UI-only state that views share.
+ * Nothing here goes to the server.
+ * It holds the sign-in panel, the task composer and its "Sending…" rows, the command palette and the shortcut list.
  */
 import { useSyncExternalStore } from "react";
 import { atLeast } from "../../../src/core/accounts";

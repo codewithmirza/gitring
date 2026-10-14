@@ -1,6 +1,6 @@
 /**
- * Answer a question that asks for a yes. A chip, the decisions list and the approve page all use this
- * one function, so every screen sends the same request and says the same words.
+ * One function that answers a question that asks for a yes.
+ * A chip, the decisions list and the approve page all use it, so every screen sends the same request and says the same words.
  */
 import { useSyncExternalStore } from "react";
 import { toast } from "../design/components";

@@ -1,4 +1,7 @@
-/** Plain words for trains, the test mode and reverts (Settings and History). Pure, so tests can read them. */
+/**
+ * Plain words for trains, the test mode and reverts (Settings and History).
+ * The module is pure, so tests can read it.
+ */
 import type { Landing, LandingMethod, TestsWhen } from "../../../src/core/types";
 
 export const TESTS_WHEN_OPTIONS: { value: TestsWhen; label: string }[] = [

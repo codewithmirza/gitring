@@ -1,0 +1,111 @@
+/*
+ * The styles of LogLine, Stat and Toast.
+ */
+
+/* ───────────── LogLine ───────────── */
+.b-logline {
+  display: grid;
+  grid-template-columns: 58px minmax(0, max-content) 14px minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--s-3);
+  min-height: 22px;
+  padding: 1px var(--s-4);
+  font-family: var(--font-agent);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+}
+.b-logline__time { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.b-logline__kind { display: flex; color: var(--ink-3); }
+.b-logline__kind .b-icon { width: 14px; height: 14px; }
+.b-logline__msg { color: var(--ink-1); min-width: 0; overflow-wrap: anywhere; }
+.b-logline.is-correction .b-logline__kind { color: var(--magenta); }
+.b-logline.is-land .b-logline__kind { color: var(--clear); }
+.b-logline.is-stale .b-logline__kind { color: var(--caution); }
+.b-logline.is-fail .b-logline__kind { color: var(--danger); }
+.b-logline.is-decision .b-logline__kind { color: var(--accent); }
+.b-logline__who { min-width: 0; display: flex; }
+.b-logline__sys {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+}
+
+/* ───────────── Stat ───────────── */
+.b-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  row-gap: var(--s-4);
+}
+.b-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--s-6);
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.b-stat:first-child { padding-left: 0; border-left: 0; }
+.b-stat__value {
+  font-family: var(--font-agent);
+  font-size: var(--t-xl);
+  line-height: var(--lh-xl);
+  font-weight: 400;
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.b-stat__value small {
+  font-size: var(--t-sm);
+  color: var(--ink-3);
+  margin-left: 3px;
+}
+.b-stat__label { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-3); white-space: nowrap; }
+.b-stat--hero .b-stat__value { font-size: var(--t-2xl); line-height: var(--lh-2xl); }
+.b-stat--inline {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 var(--s-4);
+}
+.b-stat--inline .b-stat__value { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; }
+.b-stat--inline .b-stat__label { order: 2; }
+.b-stat--good .b-stat__value { color: var(--clear); }
+
+/* ───────────── Toast ───────────── */
+.b-toasts {
+  position: fixed;
+  right: var(--s-5);
+  bottom: var(--s-5);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.b-toast {
+  --tone: var(--accent);
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-2) var(--s-3) var(--s-4);
+  border: 1px solid var(--overlay-border);
+  border-left: 2px solid var(--tone);
+  border-radius: var(--r-3);
+  background: var(--bg);
+  box-shadow: var(--shadow-overlay);
+  animation: b-toast-in var(--dur-2) var(--ease-out);
+}
+.b-toast__icon { color: var(--tone); padding-top: 2px; }
+.b-toast__body { flex: 1; min-width: 0; font-size: var(--t-sm); line-height: var(--lh-sm); }
+.b-toast__title { font-weight: 500; }
+.b-toast__text { color: var(--ink-2); }
+.b-toast--clear { --tone: var(--clear); }
+.b-toast--correction { --tone: var(--magenta); }
+.b-toast--danger { --tone: var(--danger); }
+.b-toast--info { --tone: var(--accent); }

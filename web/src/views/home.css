@@ -1,4 +1,7 @@
-/* Start page. Type sizes here: 11, 13, 15, 20, 44 (28 on phones). */
+/*
+ * The styles of the start page.
+ * Type sizes here: 11, 13, 15, 20, 44 (28 on phones).
+ */
 
 .home {
   max-width: 880px;

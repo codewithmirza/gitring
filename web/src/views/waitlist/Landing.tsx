@@ -1,6 +1,7 @@
 /**
- * The page for people who are signed out while the waitlist gate is on. Step 1: what gitring is, what it
- * solves, how it works and the product video. Step 2 ("Join the waitlist"): Continue with Google or GitHub.
+ * The page for people who are signed out while the waitlist gate is on.
+ * Step 1: what gitring is, what it solves, how it works and the product video.
+ * Step 2 ("Join the waitlist"): Continue with Google or GitHub.
  */
 import { useEffect, useState } from "react";
 import { Button } from "../../design/components";

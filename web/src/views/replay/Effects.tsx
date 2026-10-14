@@ -1,14 +1,16 @@
 /**
- * Map effects of the replay, in screen space above the map: a plan draws its course, a conflict check
- * sweeps and reaches its candidates, a change request flies to its agent as a magenta diamond, tests ring
- * the work copy, a commit ripples over the files it changed.
+ * The map effects of the replay, in screen space above the map.
+ * A plan draws its course. A conflict check sweeps and reaches its candidates. A change request flies to its agent as a
+ * magenta diamond. Tests ring the work copy. A commit ripples over the files it changed.
  *
- * React renders an effect once when it starts and once when it ends. In between, the frame callback of the
- * replay clock paints it: it writes a few geometry and paint attributes on the effect's own elements.
+ * React renders an effect once when it starts and once when it ends. In between, the frame callback of the replay clock paints
+ * it: it writes a few geometry and paint attributes on the effect's own elements.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ReplayClock } from "./clock";
 import { easeInOut, easeOut, effectsAt, type Effect, type ReplayScript } from "./model";
+
+/* ───────────── types ───────────── */
 
 export interface Point {
   x: number;
@@ -33,6 +35,8 @@ export interface Geo {
 
 type Paint = (p: number) => void;
 type Register = (id: string, paint: Paint | null) => void;
+
+/* ───────────── small helpers ───────────── */
 
 const TONE: Record<Effect["tone"], string> = { accent: "var(--accent)", magenta: "var(--magenta)", clear: "var(--clear)", danger: "var(--danger)", caution: "var(--caution)" };
 
@@ -67,6 +71,8 @@ function reducedMotion(): boolean {
     return false;
   }
 }
+
+/* ───────────── the effects layer ───────────── */
 
 /** The effects layer. */
 export function Effects({ script, clock, geo }: { script: ReplayScript; clock: ReplayClock; geo: Geo }) {
@@ -108,6 +114,8 @@ export function Effects({ script, clock, geo }: { script: ReplayScript; clock: R
     </svg>
   );
 }
+
+/* ───────────── shared parts of the effects ───────────── */
 
 const EffectShape = memo(function EffectShape({ e, geo, register }: { e: Effect; geo: Geo; register: Register }) {
   switch (e.kind) {
@@ -158,6 +166,8 @@ function along(points: Point[], lengths: number[], total: number, t: number): Po
   }
   return points[points.length - 1];
 }
+
+/* ───────────── one component for each effect ───────────── */
 
 /** A plan draws its course: from the agent through the files of the plan. */
 function Course({ e, geo, register }: ShapeProps) {

@@ -1,14 +1,9 @@
 /**
- * Code view addresses.
- *
- *   /code                              main, no file
- *   /code/<ref>                        a ref: main, a work copy id ("at_x7k2m9") or a commit id
- *   /code/<ref>/<file path>            a file on that ref
- *   ?view=diff                         a work copy against its base (with or without a file)
- *   #L12 or #L10-L20                   a line or a range of lines
- *
+ * Reads and writes the addresses of the code page, such as /code/<ref>/<file path>?view=diff#L10-L20.
+ * A ref is main, the id of a work copy ("at_x7k2m9") or a commit id. /code alone means main with no file.
+ * ?view=diff shows a work copy against its base. #L12 or #L10-L20 selects a line or a range of lines.
  * Older links with ?ref=<ref>&path=<path> open too. ?project= stays as the router keeps it.
- * This is the same format as codeHref() in the shell's router, so both make the same links.
+ * The format is the same as codeHref() in the shell's router, so both make the same links.
  */
 import { useSyncExternalStore } from "react";
 

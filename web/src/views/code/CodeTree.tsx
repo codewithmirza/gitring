@@ -1,12 +1,14 @@
 /**
- * The file tree: a virtual list (only the rows on screen exist in the page), so thousands of files stay
- * fast. WAI-ARIA tree pattern: one tab stop; ↑/↓ move, → opens a folder or moves into it, ← closes a
- * folder or moves to its parent, Home/End, Enter or Space opens a file or toggles a folder.
+ * The file tree: a virtual list, so thousands of files stay fast.
+ * Only the rows on screen exist in the page. It follows the WAI-ARIA tree pattern: one tab stop; ↑/↓ move, → opens a folder
+ * or moves into it, ← closes a folder or moves to its parent, Home/End, Enter or Space opens a file or toggles a folder.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import type { FileTouch } from "../../../../src/core/types";
 import type { FileMarks, FolderMarks } from "./annotations";
 import { hitRuns, type TreeRow } from "./tree";
+
+/* ───────────── types ───────────── */
 
 export interface RowMarks {
   /** Agent colors of work copies that change the file (filled dots). */
@@ -35,6 +37,8 @@ interface Props {
   revealKey?: string;
   emptyText: string;
 }
+
+/* ───────────── helpers ───────────── */
 
 /** Row height in px: 28 with a mouse, 40 with touch (larger targets). */
 function useRowHeight(): number {
@@ -75,6 +79,8 @@ function marksLabel(m: RowMarks | null, f: FolderMarks | undefined): string {
   if (f && f.keepOut) parts.push(`${f.keepOut} ${f.keepOut === 1 ? "change request" : "change requests"}`);
   return parts.length ? `, ${parts.join(", ")}` : "";
 }
+
+/* ───────────── one row ───────────── */
 
 const Row = memo(function Row({
   row,
@@ -180,6 +186,8 @@ const Row = memo(function Row({
     </a>
   );
 });
+
+/* ───────────── the tree ───────────── */
 
 export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle, onOpen, hrefOf, onPrefetch, label, revealKey, emptyText }: Props) {
   const rowH = useRowHeight();
@@ -396,6 +404,8 @@ export function CodeTree({ rows, selectedPath, fileMarks, folderMarks, onToggle,
     </div>
   );
 }
+
+/* ───────────── marks of a file ───────────── */
 
 /** Marks of a file on main from the live marks (agents that change or plan it, change requests). */
 export function rowMarksOf(fm: FileMarks | undefined): RowMarks | null {

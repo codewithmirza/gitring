@@ -1,8 +1,8 @@
 /**
- * "/projects": the person's projects and the public ones. "New project" grows a panel from the button
- * (a description, then the sources); a person without projects sees that picker right on the page.
- * The project list comes from the boot request; this page asks again only when the tab comes back
- * after a minute or more.
+ * The /projects page: the projects of the person, and the public ones.
+ * The "New project" button grows a panel from the button (a description, then the sources). A person without projects
+ * sees that picker right on the page.
+ * The project list comes from the boot request. This page asks again only when the tab comes back after a minute or more.
  */
 import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { Button, EmptyState } from "../design/components";
@@ -18,6 +18,8 @@ import { NEW_PROJECT_LEDE, NewProject } from "./newproject/NewProject";
 import { draftFromLink, EMPTY_DRAFT, LINK_PARAMS, type NewProjectDraft } from "./newproject/draft";
 import { GithubMark, LockIcon, RepoIcon } from "./newproject/marks";
 import "./projects.css";
+
+/* ───────────── helpers ───────────── */
 
 const RETURN_TO = "/projects?new=1";
 
@@ -53,6 +55,8 @@ function clearLinkParams() {
   const params = new URLSearchParams(location.search);
   for (const k of LINK_PARAMS) if (params.has(k)) setSearchParam(k, null);
 }
+
+/* ───────────── the page ───────────── */
 
 export function ProjectsView() {
   const me = useMe();
@@ -190,6 +194,8 @@ export function ProjectsView() {
     </div>
   );
 }
+
+/* ───────────── parts of the page ───────────── */
 
 function GridSkeleton() {
   return (

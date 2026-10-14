@@ -1,3 +1,7 @@
+/**
+ * A radio group where each choice has a help text under its name.
+ * Used by the Merging section of the settings. The choices come from ./approval-copy.ts.
+ */
 import { useId } from "react";
 import { Badge } from "../design/components";
 import type { Choice } from "./approval-copy";

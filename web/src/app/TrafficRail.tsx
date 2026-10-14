@@ -1,3 +1,7 @@
+/**
+ * The traffic rail of the overview: one row for each active agent, and the detail of the selected agent.
+ * It reads the vessels from the selectors. It never changes them: a click only selects.
+ */
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { AgentInfo, Correction, LogEntry } from "../../../src/core/types";
 import { AttemptBadge, Badge, Callsign, CorrectionNotice, EmptyState, IconButton, LogLine, Panel, RangeIndicator, SectionLabel } from "../design/components";
@@ -9,9 +13,13 @@ import { codeHref, Link } from "./router";
 import { useNow } from "./useNow";
 import { useCanAct } from "../state/account";
 
+/* ───────────── constants ───────────── */
+
 const EMPTY: VesselModel[] = [];
 
 const KIND_TEXT: Record<AgentInfo["kind"], string> = { builtin: "Built-in", mcp: "MCP", git: "Git" };
+
+/* ───────────── rows and detail ───────────── */
 
 const VesselRow = memo(function VesselRow({
   v,
@@ -208,6 +216,8 @@ function VesselDetail({ v, onClose, focusCorrection }: { v: VesselModel; onClose
     </div>
   );
 }
+
+/* ───────────── the rail ───────────── */
 
 export function TrafficRail({
   selected,

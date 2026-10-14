@@ -1,3 +1,7 @@
+/**
+ * The task rail: the composer, then the tasks grouped by status, each with a tick for every work copy.
+ * Read by the overview and the tasks page. The composer is in ./Composer.tsx.
+ */
 import { memo, type CSSProperties } from "react";
 import type { AgentInfo, Attempt, Intent } from "../../../src/core/types";
 import { Button, IconButton, Panel, SectionLabel } from "../design/components";
@@ -11,9 +15,13 @@ import { LaunchButton } from "./LaunchControl";
 import { useCanAct } from "../state/account";
 import { readDraft, TaskComposer, writeDraft } from "./Composer";
 
+/* ───────────── constants ───────────── */
+
 const EMPTY_GROUPS: IntentGroup[] = [];
 const EMPTY_ATTEMPTS: Attempt[] = [];
 const EMPTY_AGENTS = new Map<string, AgentInfo>();
+
+/* ───────────── parts of the rail ───────────── */
 
 /** Lane ticks: one tick per work copy, in the agent's identity color; shape shows the status. */
 export function LaneTicks({ attempts, agents }: { attempts: Attempt[]; agents: Map<string, AgentInfo> }) {
@@ -149,6 +157,8 @@ function PendingRow({ p, projectId }: { p: PendingTask; projectId: string }) {
     </li>
   );
 }
+
+/* ───────────── the rail ───────────── */
 
 export function IntentsRail({ selectedId }: { selectedId?: string }) {
   const groups = useStore((s) => (s.state ? selectIntentGroups(s.state) : EMPTY_GROUPS));

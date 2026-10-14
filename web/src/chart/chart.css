@@ -1,4 +1,9 @@
-/* Chart primitives. Hairlines are non-scaling. */
+/*
+ * The styles of the map: sea, land, parcels, vessels, course lines, distance lines, buoys and the HTML overlays.
+ * Hairlines are non-scaling.
+ */
+
+/* ───────────── the chart and its frame ───────────── */
 
 .c-chart {
   position: relative;
@@ -25,7 +30,7 @@
 .c-svg * { vector-effect: non-scaling-stroke; }
 .c-water { fill: var(--bg); }
 
-/* graticule + frame (screen space) */
+/* ───────────── graticule and frame (screen space) ───────────── */
 .c-grat line { stroke: var(--graticule); stroke-width: 1; }
 .c-frame__rule { fill: none; stroke: var(--line-strong); stroke-width: 1; }
 .c-frame__bar { fill: var(--line-strong); }
@@ -40,7 +45,7 @@
   stroke-linejoin: round;
 }
 
-/* sea */
+/* ───────────── sea ───────────── */
 .c-depth {
   fill: none;
   stroke: color-mix(in oklch, var(--accent) 22%, var(--line));
@@ -53,7 +58,7 @@
   stroke-width: 1;
 }
 
-/* land */
+/* ───────────── land ───────────── */
 .c-island { fill: var(--land); stroke: var(--land-edge); stroke-width: 1; }
 .c-island-label {
   font-family: var(--font-agent);
@@ -80,10 +85,10 @@
   pointer-events: none;
 }
 
-/* activity contours */
+/* ───────────── activity contours ───────────── */
 .c-contour { fill: none; stroke: var(--contour); stroke-width: 1; }
 
-/* landing ripple */
+/* ───────────── landing ripple ───────────── */
 .c-ripple {
   fill: var(--clear);
   opacity: 0;
@@ -95,7 +100,7 @@
   100% { opacity: 0; }
 }
 
-/* compass rose */
+/* ───────────── compass rose ───────────── */
 .c-rose { pointer-events: none; }
 .c-rose circle { fill: none; stroke: var(--line-strong); stroke-width: 1; opacity: .75; }
 .c-rose .c-rose__inner { stroke-dasharray: 1 2; opacity: .6; }
@@ -104,7 +109,7 @@
 .c-rose__light { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1; opacity: .8; }
 .c-rose__n { font-family: var(--font-agent); font-size: 12px; font-weight: 500; fill: var(--ink-3); }
 
-/* course, wake, waypoints */
+/* ───────────── course, wake, waypoints ───────────── */
 .c-tracks { pointer-events: none; }
 .c-wake {
   fill: none;
@@ -125,7 +130,7 @@
 .c-wake.is-dim, .c-course.is-dim, .c-course-pending.is-dim, .c-waypoint.is-dim { opacity: .25; }
 .c-course.is-quiet { opacity: .3; }
 
-/* range lines */
+/* ───────────── range lines ───────────── */
 .c-range { --tone: var(--caution); pointer-events: none; }
 .c-range--caution { --tone: var(--caution); }
 .c-range--correction { --tone: var(--magenta); }
@@ -142,7 +147,7 @@
 }
 .c-range.is-dim { opacity: .25; }
 
-/* closing pulse: once, never looping */
+/* ───────────── closing pulse: once, never looping ───────────── */
 .c-pulse {
   fill: none;
   stroke: var(--caution);
@@ -157,7 +162,7 @@
   100% { opacity: 0; transform: scale(1.7); }
 }
 
-/* buoys */
+/* ───────────── buoys ───────────── */
 .c-buoy { cursor: pointer; outline: none; }
 .c-buoy__hit { fill: transparent; }
 .c-buoy__mark { fill: var(--magenta); stroke: var(--bg); stroke-width: 1.5; paint-order: stroke; }
@@ -176,7 +181,7 @@
 .c-buoy:focus-visible .c-buoy__hit { stroke: var(--focus); stroke-width: 2; }
 .c-buoy.is-dim { opacity: .35; }
 
-/* vessels */
+/* ───────────── vessels ───────────── */
 .c-vessel {
   cursor: pointer;
   outline: none;
@@ -213,7 +218,7 @@
 .c-vessel.is-selected .c-tag__bg { stroke: var(--accent); stroke-width: 1.5; }
 .c-vessel:focus-visible .c-tag__bg { stroke: var(--focus); stroke-width: 2; }
 
-/* overlays (HTML) */
+/* ───────────── overlays (HTML) ───────────── */
 .c-overlay { position: absolute; z-index: var(--z-chart-overlay); cursor: auto; }
 .c-tip {
   pointer-events: none;
@@ -302,7 +307,7 @@
   .c-zoom { right: var(--s-3); bottom: var(--s-3); }
 }
 
-/* Push / import panel on an empty chart */
+/* ───────────── push and import panel on an empty chart ───────────── */
 .importpanel { display: grid; gap: var(--s-3); width: min(640px, calc(100% - 32px)); box-sizing: border-box; padding: var(--s-5); border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); text-align: left; pointer-events: auto; }
 .importpanel__title { margin: 0; font-size: var(--t-lg); }
 .importpanel__text, .importpanel__note { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); }
