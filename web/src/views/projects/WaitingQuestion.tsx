@@ -29,9 +29,12 @@ export function WaitingQuestion({ item, more }: { item: InboxItem; more: number 
       <p className="pj-ask__title voice-human" id={titleId}>
         {item.title}
       </p>
-      <p className="pj-ask__line">
-        {item.agent && <span className="voice-agent">{item.agent}</span>} {item.line ?? item.headline}
-      </p>
+      <p className="pj-ask__question">{item.headline}</p>
+      {item.line && (
+        <p className="pj-ask__line">
+          {item.agent && <span className="voice-agent">{item.agent}</span>} {item.line}
+        </p>
+      )}
       <div className="pj-ask__acts">
         {isMerge ? (
           <>

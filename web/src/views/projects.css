@@ -57,6 +57,7 @@
 /* The question that waits, with its answer, on the card. */
 .pj-ask { position: relative; z-index: 1; display: grid; gap: var(--s-2); padding: var(--s-3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .pj-ask__title { margin: 0; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-1); overflow-wrap: anywhere; }
+.pj-ask__question { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 500; color: var(--ink-1); }
 .pj-ask__line { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .pj-ask__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
 .pj-ask__link, .pj-ask__more { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 32px; font-size: var(--t-sm); font-weight: 500; }

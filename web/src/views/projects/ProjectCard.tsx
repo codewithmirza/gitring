@@ -36,7 +36,7 @@ export function ProjectGrid({ list, current }: { list: ProjectInfo[]; current: s
         const questions = waiting?.get(p.id) ?? [];
         return (
           <li key={p.id} className={["pj-card", isOpen && "is-current", questions.length > 0 && "has-question"].filter(Boolean).join(" ")}>
-            <a className="pj-card__link" href={`/overview?project=${encodeURIComponent(p.id)}`} aria-current={isOpen ? "true" : undefined} onClick={(e) => open(e, p.id)}>
+            <a className="pj-card__link" href={`/overview?project=${encodeURIComponent(p.id)}`} title={p.name} aria-current={isOpen ? "true" : undefined} onClick={(e) => open(e, p.id)}>
               <span className="pj-card__top">
                 <SourceIcon p={p} />
                 <span className="pj-card__name">{p.name}</span>
