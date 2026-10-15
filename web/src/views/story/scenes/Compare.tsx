@@ -16,7 +16,7 @@ export function Compare() {
         <span className="story-mono">src/price.js</span>
       </div>
       <span className="story-distance story-wide story-place" style={{ "--x": 224, "--y": 45, "--h": 28 } as React.CSSProperties} data-at={224} data-reveal="thread" aria-hidden="true" />
-      <span className="story-chip story-wide story-place" {...spot({ x: 228, y: 53.5, thread: true, at: 226 })}>
+      <span className="story-chip story-wide story-place" {...spot({ x: 225, y: 53.5, thread: true, at: 226 })}>
         {check.distance}
       </span>
       <span className="story-mono story-label story-clear story-wide story-place" {...spot({ x: 228, y: 41, thread: true, at: 228 })}>

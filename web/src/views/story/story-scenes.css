@@ -62,14 +62,15 @@
 /* The code and the record (chapter 07). */
 .story-code { padding: var(--s-3) var(--s-2); }
 .story-code ol { list-style: none; font-size: var(--t-xs); line-height: 20px; }
-.story-code li { display: flex; align-items: baseline; gap: var(--s-3); padding: 0 var(--s-2); border-radius: var(--r-1); white-space: pre; }
-.story-code li:empty, .story-code li > code:empty { min-height: 20px; }
-.story-code code { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; color: var(--ink-1); }
+.story-code li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-3); padding: 0 var(--s-2); border-radius: var(--r-1); }
+.story-code li > code:empty { min-height: 20px; }
+/* A long line wraps in the stacked layout, so nothing is cut on a phone. */
+.story-code code { flex: 1 1 0; min-width: 0; font: inherit; color: var(--ink-1); white-space: pre-wrap; overflow-wrap: anywhere; }
 .story-code__n { flex: none; width: 2ch; text-align: right; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .story-code li[data-chosen] { background: var(--accent-tint); }
 .story-code li[data-chosen] .story-code__n { color: var(--accent); font-weight: 500; }
 .story-code__ask {
-  flex: none; margin-left: auto; padding: 0 var(--s-2); border: 1px solid var(--accent); border-radius: var(--r-2);
+  flex: none; margin: var(--s-1) 0 var(--s-1) calc(2ch + var(--s-3)); padding: 0 var(--s-2); border: 1px solid var(--accent); border-radius: var(--r-2);
   font-family: var(--font-system); font-size: var(--t-xs); line-height: 18px; color: var(--accent);
 }
 .story-record__task { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 500; }
@@ -87,8 +88,12 @@
 .story[data-mode="horizontal"] .story-request { width: calc(30 * var(--u)); }
 .story[data-mode="horizontal"] .story-request .story-mono { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
 .story[data-mode="horizontal"] .story-question { width: calc(26 * var(--u)); }
-.story[data-mode="horizontal"] .story-place-option { width: calc(12 * var(--u)); }
+.story[data-mode="horizontal"] .story-place-option { width: max-content; min-width: calc(12 * var(--u)); }
+.story-place-option .story-label { white-space: nowrap; }
 .story[data-mode="horizontal"] .story-code { width: calc(36 * var(--u)); }
+.story[data-mode="horizontal"] .story-code li { flex-wrap: nowrap; white-space: pre; }
+.story[data-mode="horizontal"] .story-code code { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.story[data-mode="horizontal"] .story-code__ask { margin: 0 0 0 auto; }
 .story[data-mode="horizontal"] .story-record { width: calc(36 * var(--u)); }
 .story[data-mode="horizontal"] .story-caption { width: max-content; max-width: calc(32 * var(--u)); margin: 0; z-index: 3; background: var(--bg); }
 .story[data-mode="horizontal"] .story-places + .story-caption { width: calc(10 * var(--u)); }
@@ -137,5 +142,6 @@
   .story[data-mode="horizontal"] .story-question__acts,
   .story[data-mode="horizontal"] .story-places + .story-caption { display: none; }
   .story[data-mode="horizontal"] .story-request .story-mono { -webkit-line-clamp: 3; line-clamp: 3; }
+  .story[data-mode="horizontal"] .story-note__files { display: none; }
   .story[data-mode="horizontal"] .story-stem { height: calc(var(--h) * .6%); }
 }

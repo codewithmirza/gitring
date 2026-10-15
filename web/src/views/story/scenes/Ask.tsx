@@ -11,7 +11,7 @@ import { spot } from "../place";
 import { GateMark, JoinDot } from "./art";
 
 /** The three places where a person can answer, one under the other at the right of the question. */
-const PLACE_Y = [61, 68, 75];
+const PLACE_Y = [61, 68.5, 76];
 
 export function Ask() {
   const { ask } = EXAMPLE;

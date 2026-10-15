@@ -19,7 +19,7 @@ function PlanNote({ plan, tool, ...place }: { plan: Plan; tool?: string; x: numb
     <div className="story-plate story-note story-place" {...spot({ ...place, thread: true })}>
       {tool && <span className="story-mono story-note__tool">{tool}</span>}
       <span className="story-serif story-note__title">{plan.title}</span>
-      <span className="story-mono">files: {plan.files}</span>
+      <span className="story-mono story-note__files">files: {plan.files}</span>
       <span className="story-mono">symbols: {plan.symbols}</span>
     </div>
   );
