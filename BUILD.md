@@ -44,6 +44,19 @@ Mirza asked for two things: every file easy to read, and better UX and UI throug
 
 Next, if there is time: the "Left for a person" list at the end of the review (server fields for the inbox card, `CorrectionNotice`, small links), a second review pass with `node scripts/shots.mjs --full`, and the states that the shots do not cover yet.
 
+## Landing story (done, 15 Oct 2026)
+
+The landing page for visitors (`web/src/views/waitlist/Landing.tsx`, shown while the waitlist gate is on) keeps the hero and the video, then tells the user flow as a scroll story: seven chapters from "Start a project" to "Every merge records why it happened", then the join button. Code: `web/src/views/story/` (engine adapted from Mirza's portfolio, scenes, copy, README). Plan, final copy, critique and review notes: `docs/design/landing-story.md`.
+
+- Three layouts: pinned and horizontal on a wide screen, stacked on a phone or a short window, static with reduced motion. Native scroll only. The story code loads lazily; the first script of the landing grew by about 1.6 KB gzipped.
+- Every quoted string in a picture is real output of the shop example of `scripts/meet.mjs`. A test (`test/web/story-example.test.ts`) fails if a string drifts.
+- Look at it with `node scripts/shots.mjs --waitlist --only landing-story` (a local app with the gate on; no Workers AI).
+- Left for a person: preload two fonts to remove a 120 px growth on a phone after fonts load; the lone word "clear" in chapter 04; line 6 of the code in chapter 07 is cut with an ellipsis on stages narrower than about 1700 px; not measured on a real GPU or weak phone.
+
+**Workers AI credits are used up (15 Oct 2026).** Do not run anything that calls Workers AI: no built-in agents, no live conflict-check model, no `meet`, `smoke` or `load` against the live site. Test on a local run (`npm run dev:local`), which has no AI binding. The conflict check then uses its fixed rules.
+
+**Addresses.** The Worker answers on `gitring.tech` (custom domain) and `gitring.manwaarullahb.workers.dev`. Keep both on: passkeys, sessions and MCP sign-ins belong to one address each. A deploy that names a custom domain on the command line switches `workers.dev` off, so add domains in the dashboard or keep deploying through the push to `main`.
+
 ## Open items
 
 1. `test/harbor/concurrency.test.ts` passes on its own (15 passed, 48 s for the file). It timed out once inside the full suite on a busy machine. Keep an eye on it.
