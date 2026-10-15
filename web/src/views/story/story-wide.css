@@ -9,6 +9,9 @@
 
 .story:not([data-mode="horizontal"]) .story-wide { display: none; }
 
+/* The pinned layout is for the screen. Print shows the stacked layout (see the end of this file). */
+@media screen {
+
 /* ───── The stage ───── */
 
 .story[data-mode="horizontal"] { max-width: none; padding: 0; margin-top: var(--s-11); }
@@ -96,15 +99,12 @@
 .story[data-ready] [data-reveal] { transition: opacity var(--dur-3) var(--ease-out), translate var(--dur-3) var(--ease-out); }
 .story[data-ready] [data-reveal]:not([data-shown]) { opacity: 0; translate: 0 8px; }
 
+}
+
 /* ───── Print: the stacked story, every part visible ───── */
 
 @media print {
-  .story[data-mode] { height: auto !important; max-width: 1040px; padding: 0 var(--s-5); }
-  .story .story-stage { position: static; height: auto; border: 0; }
-  .story .story-window { position: static; overflow: visible; }
-  .story .story-canvas { position: relative; left: auto; width: auto; height: auto; padding-left: 32px; transform: none !important; }
-  .story .story-canvas::before, .story .story-spine, .story .story-node { display: block; }
-  .story .story-place { position: static !important; }
-  .story .story-wide, .story .story-rail { display: none !important; }
+  .story[data-mode] { height: auto !important; }
+  .story .story-wide, .story .story-rail, .story-skip-row { display: none !important; }
   .story [data-reveal] { opacity: 1 !important; translate: none !important; }
 }

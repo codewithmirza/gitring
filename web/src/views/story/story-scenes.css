@@ -77,6 +77,8 @@
 .story-record__requests { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-1); }
 .story-record__requests .story-diamond { flex: none; }
 
+@media screen {
+
 /* ───── The pinned layout: place the parts on the canvas ───── */
 
 .story[data-mode="horizontal"] :is(.story-inputs, .story-apps, .story-places) { display: contents; }
@@ -148,4 +150,6 @@
 /* A narrow stage holds less text in the same type, so the plan notes keep the task and the function. */
 @media (max-height: 699px), (max-width: 1100px) {
   .story[data-mode="horizontal"] .story-note__files { display: none; }
+}
+
 }
