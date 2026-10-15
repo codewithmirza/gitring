@@ -7,6 +7,7 @@ import {
   clamp,
   progressAtTip,
   railChapters,
+  pointAt,
   sampleAt,
   sampleThread,
   threadPath,
@@ -90,6 +91,35 @@ describe("sampleThread and sampleAt", () => {
     expect(i === 0 || reach[i - 1] < 200).toBe(true);
     expect(sampleAt(reach, 99999)).toBe(xs.length - 1);
     expect(sampleAt(reach, -5)).toBe(0);
+  });
+});
+
+describe("pointAt", () => {
+  const samples = sampleThread(threadSegments(POINTS));
+
+  it("finds the point of the thread at an x, between two samples", () => {
+    for (const x of [0, 37, 120.5, 200, 333.3, 400]) {
+      const [px, py] = pointAt(samples, x);
+      expect(px).toBeCloseTo(x, 0);
+      expect(py).toBeGreaterThan(300);
+      expect(py).toBeLessThan(700);
+    }
+  });
+
+  it("moves smoothly: a small step in x makes a small step in y", () => {
+    let [, last] = pointAt(samples, 100);
+    for (let x = 100.5; x < 300; x += 0.5) {
+      const [, y] = pointAt(samples, x);
+      expect(Math.abs(y - last)).toBeLessThan(2);
+      last = y;
+    }
+  });
+
+  it("stays at the ends before the start and after the end", () => {
+    expect(pointAt(samples, -50)).toEqual([samples.xs[0], samples.ys[0]]);
+    const [x, y] = pointAt(samples, 99999);
+    expect(x).toBeCloseTo(400, 3);
+    expect(y).toBeCloseTo(500, 3);
   });
 });
 

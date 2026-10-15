@@ -93,6 +93,13 @@ export const DIAMOND: Waypoint = [224, 73];
 /** The label "main moved" stands to the right of the merge of agent A, because that merge is its cause. */
 export const MAIN_MOVED = { x: 322, y: 79, at: 320 } as const;
 
+/** The three ways to start a project (chapter 01) join the first point of main. Each line starts at the right edge of an input. */
+export const INPUT_LINES: Waypoint[][] = [
+  [[40, 43], [43, 46], [45.5, 53], START],
+  [[40, 57], [44, 58.5], START],
+  [[40, 71], [43, 68], [45.5, 64], START],
+];
+
 // ───── Built geometry ─────
 
 const mainSegments = threadSegments(MAIN);
@@ -110,6 +117,7 @@ export const GEOMETRY: StoryGeometry = {
 
 /** The path strings of main and of the strands. They are the same text on a server and in a browser. */
 export const MAIN_PATH = threadPath(mainSegments);
+export const INPUT_PATHS = INPUT_LINES.map((points) => threadPath(threadSegments(points)));
 export const STRAND_PATHS = STRANDS.map((strand) => ({ ...strand, d: threadPath(threadSegments(strand.points)) }));
 
 /** One rail part for each chapter, in order, with the progress range that fills it. */

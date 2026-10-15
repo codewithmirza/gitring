@@ -11,6 +11,7 @@ import {
   DIAMOND,
   GEOMETRY,
   GRATICULE_PATH,
+  INPUT_LINES,
   MAIN,
   MAIN_MOVED,
   MAIN_PATH,
@@ -18,6 +19,7 @@ import {
   MERGES,
   RAIL,
   SCROLL_U,
+  START,
   STRANDS,
   STRAND_PATHS,
   TRAVEL_U,
@@ -95,6 +97,16 @@ describe("main", () => {
   it("draws a graticule path inside the canvas", () => {
     expect(GRATICULE_PATH.startsWith("M0 0V1000")).toBe(true);
     expect(GRATICULE_PATH).toContain(`M${CANVAS_U * 10 - (CANVAS_U % 20) * 10} 0V1000`);
+  });
+});
+
+describe("the three ways to start", () => {
+  it("joins each input line to the first point of main, moving right", () => {
+    expect(INPUT_LINES).toHaveLength(3);
+    for (const line of INPUT_LINES) {
+      expect(line.at(-1)).toEqual(START);
+      for (let i = 1; i < line.length; i += 1) expect(line[i][0]).toBeGreaterThan(line[i - 1][0]);
+    }
   });
 });
 

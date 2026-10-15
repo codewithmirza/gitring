@@ -120,6 +120,16 @@ export function sampleAt(reach: Float32Array, x: number): number {
   return low;
 }
 
+/** The point of the thread at x (path units), between two samples, so the tip moves smoothly. */
+export function pointAt(samples: ThreadSamples, x: number): [x: number, y: number] {
+  const { xs, ys, reach } = samples;
+  const i = sampleAt(reach, x);
+  if (i === 0) return [xs[0], ys[0]];
+  const span = reach[i] - reach[i - 1];
+  const t = span > 0 ? clamp((x - reach[i - 1]) / span) : 1;
+  return [xs[i - 1] + (xs[i] - xs[i - 1]) * t, ys[i - 1] + (ys[i] - ys[i - 1]) * t];
+}
+
 // ───── Tip and progress ─────
 
 export const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
