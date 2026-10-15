@@ -659,10 +659,10 @@ Where the build differs from sections 3 to 9, and why. Each change was made afte
 
 | | Before | After |
 |---|---|---|
-| First scripts | `index` 36.42, `router` 102.29, `react` 68.27, `rolldown-runtime` 0.42: 207.40 kB | `index` 37.70, `components` 96.40, `router` 6.20, `react` 68.27, `rolldown-runtime` 0.42: 208.99 kB |
-| The story (own chunks) | none | script 7.22 kB, styles 2.74 kB |
+| First scripts | `index` 36.42, `router` 102.29, `react` 68.27, `rolldown-runtime` 0.42: 207.40 kB | `index` 37.69, `components` 96.40, `router` 6.20, `react` 68.27, `rolldown-runtime` 0.42: 208.98 kB |
+| The story (own chunks) | none | script 7.23 kB, styles 2.76 kB |
 
-The first scripts grow by 1.59 kB (the limit is 2.0 kB). The new chunk `components` is the design components that the story and the first script share. Rolldown cut it out of `router`, so the sum is what counts.
+The first scripts grow by 1.58 kB (the limit is 2.0 kB). The new chunk `components` is the design components that the story and the first script share. Rolldown cut it out of `router`, so the sum is what counts.
 
 **Not done, left for a person**
 
