@@ -44,7 +44,7 @@ export function Ask() {
           </li>
         ))}
       </ul>
-      <p className="story-caption story-place" {...spot({ x: 405, y: 67.5, thread: true, at: 388 })}>
+      <p className="story-caption story-place" {...spot({ x: 408, y: 67.5, thread: true, at: 388 })}>
         {CAPTIONS.noAgent}
       </p>
       <span className="story-join story-wide story-place" {...spot({ x: MERGES[3][0], y: MERGES[3][1], thread: true, at: MERGES[3][0] })}>
