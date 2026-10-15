@@ -19,6 +19,7 @@ export function Waitlist() {
   const entry = me?.waitlist?.entry ?? null;
   const joining = useSearchParam("join") === "1";
   const errorCode = useSearchParam("signin_error");
+  const onLanding = !user && !joining && !errorCode;
 
   useEffect(() => {
     document.title = user ? "Pick your pack · gitring" : "gitring · Many agents, one codebase";
@@ -52,7 +53,7 @@ export function Waitlist() {
           </span>
         )}
       </header>
-      <main id="wl-main" className="wl-main">
+      <main id="wl-main" className={onLanding ? "wl-main wl-main--wide" : "wl-main"}>
         {user ? <Interest entry={entry} /> : joining || error ? <JoinStep error={error} onBack={() => setSearchParam("join", null)} /> : <Landing onJoin={() => setSearchParam("join", "1")} />}
       </main>
       <footer className="wl-foot">

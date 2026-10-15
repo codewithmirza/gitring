@@ -1,6 +1,6 @@
 /**
  * The page for people who are signed out while the waitlist gate is on.
- * Step 1: what gitring is, what it solves, how it works and the product video.
+ * Step 1: what gitring is, the product video, the scroll story of the flow (views/story) and the join button.
  * Step 2 ("Join the waitlist"): Continue with Google or GitHub.
  */
 import { useEffect, useState } from "react";
@@ -9,6 +9,7 @@ import { GitHubMark, GoogleG } from "../../design/brand/marks";
 import { useStore } from "../../state/store";
 import { githubSignInUrl, googleSignInUrl } from "../../state/signin";
 import { SignInChoices } from "../../app/Account";
+import { StorySection } from "../story";
 import { JOIN, LANDING, SIGN_IN_ERRORS } from "./copy";
 import { PLACEHOLDER_URL, POSTER_URL, VIDEO_URL, videoExists } from "./video";
 
@@ -36,60 +37,51 @@ function ProductVideo() {
   );
 }
 
+/** The address may name a part of the page. The page is made by script, so the browser cannot find the target by itself. */
+function useScrollToHash() {
+  useEffect(() => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (id) document.getElementById(id)?.scrollIntoView();
+  }, []);
+}
+
 export function Landing({ onJoin }: { onJoin: () => void }) {
+  useScrollToHash();
   return (
     <>
-      <section className="wl-hero">
-        <h1 className="wl-title" tabIndex={-1}>
-          {LANDING.title}
-        </h1>
-        <p className="wl-lede">{LANDING.lede}</p>
+      <div className="wl-col">
+        <section className="wl-hero">
+          <h1 className="wl-title" tabIndex={-1}>
+            {LANDING.title}
+          </h1>
+          <p className="wl-lede">{LANDING.lede}</p>
+          <div className="wl-actions">
+            <Button variant="primary" onClick={onJoin}>
+              {LANDING.join}
+            </Button>
+            <span className="wl-muted">{LANDING.closed}</span>
+          </div>
+        </section>
+        <section className="wl-sec" aria-labelledby="wl-video-h">
+          <h2 id="wl-video-h" className="wl-h2">
+            {LANDING.videoTitle}
+          </h2>
+          <ProductVideo />
+        </section>
+      </div>
+      <StorySection />
+      <section className="wl-col wl-closing" aria-labelledby="wl-closing">
+        <h2 id="wl-closing" className="wl-closing__title" tabIndex={-1}>
+          {LANDING.closingTitle}
+        </h2>
+        <p className="wl-closing__text">{JOIN.text}</p>
         <div className="wl-actions">
           <Button variant="primary" onClick={onJoin}>
             {LANDING.join}
           </Button>
           <span className="wl-muted">{LANDING.closed}</span>
         </div>
-      </section>
-      <section className="wl-sec" aria-labelledby="wl-video-h">
-        <h2 id="wl-video-h" className="wl-h2">
-          {LANDING.videoTitle}
-        </h2>
-        <ProductVideo />
-      </section>
-      <section className="wl-sec" aria-labelledby="wl-solves-h">
-        <h2 id="wl-solves-h" className="wl-h2">
-          {LANDING.solvesTitle}
-        </h2>
-        <ul className="wl-grid">
-          {LANDING.solves.map((s) => (
-            <li key={s.title} className="wl-card">
-              <h3 className="wl-h3">{s.title}</h3>
-              <p>{s.text}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section className="wl-sec" aria-labelledby="wl-how-h">
-        <h2 id="wl-how-h" className="wl-h2">
-          {LANDING.howTitle}
-        </h2>
-        <ol className="wl-steps">
-          {LANDING.how.map((s, i) => (
-            <li key={s.title} className="wl-step">
-              <span className="wl-step__n" aria-hidden="true">
-                {i + 1}
-              </span>
-              <h3 className="wl-h3">{s.title}</h3>
-              <p>{s.text}</p>
-            </li>
-          ))}
-        </ol>
-        <div className="wl-actions">
-          <Button variant="primary" onClick={onJoin}>
-            {LANDING.join}
-          </Button>
-        </div>
+        <p className="wl-muted wl-closing__note">{LANDING.closingNote}</p>
       </section>
     </>
   );

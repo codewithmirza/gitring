@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { copyProblems } from "../coord/copy-scan";
 import { steViolations } from "../coord/ste";
 import { PLANS } from "../../src/core/plans";
+import { CHAPTERS } from "../../web/src/views/story/copy";
 import { INTEREST, JOIN, LANDING, SIGN_IN_ERRORS } from "../../web/src/views/waitlist/copy";
 
 /** Words that end in "ing" but are not verb forms (the same list as test/coord/copy-scan.ts). */
@@ -39,7 +40,18 @@ describe("plain words on the waitlist pages", () => {
   });
 
   it("checks the words inside the views and the server pages", () => {
-    for (const file of ["web/src/views/waitlist/Interest.tsx", "web/src/views/waitlist/Landing.tsx", "web/src/views/waitlist/Waitlist.tsx", "src/worker/waitlist.ts", "src/worker/gate.ts"]) {
+    const files = [
+      "web/src/views/waitlist/Interest.tsx",
+      "web/src/views/waitlist/Landing.tsx",
+      "web/src/views/waitlist/Waitlist.tsx",
+      "web/src/views/story/Chapter.tsx",
+      "web/src/views/story/StaticStory.tsx",
+      "web/src/views/story/StorySection.tsx",
+      "web/src/views/story/Story.tsx",
+      "src/worker/waitlist.ts",
+      "src/worker/gate.ts",
+    ];
+    for (const file of files) {
       expect(copyProblems(file), file).toEqual([]);
     }
   });
@@ -60,9 +72,18 @@ describe("plain words on the waitlist pages", () => {
     expect(view).not.toMatch(/autocomplete="cc-|type="(?:tel|number)"/);
   });
 
-  it("names the five points of the landing page and the three steps", () => {
-    expect(LANDING.solves).toHaveLength(5);
-    expect(LANDING.how).toHaveLength(3);
-    expect(LANDING.solves.map((s) => s.title).join(" ")).toMatch(/first-class[\s\S]*Conflicts[\s\S]*person[\s\S]*GitHub is optional[\s\S]*Cloudflare/);
+  it("tells the flow in the story and ends in the join button", () => {
+    expect(CHAPTERS).toHaveLength(7);
+    expect(CHAPTERS.map((c) => c.heading).join(" ")).toMatch(/Start a project[\s\S]*Connect your agents[\s\S]*plan first[\s\S]*checks plans[\s\S]*Tested work[\s\S]*yes[\s\S]*records why/);
+    expect(LANDING.closingTitle).toBe("Join the waitlist");
+    expect(LANDING.join).toBe("Join the waitlist");
+    expect(JOIN.text).toBe("Sign in so we know who you are. Then you pick the pack you would use.");
+  });
+
+  it("has no card grid and no numbered list of steps any more", () => {
+    expect("solves" in LANDING).toBe(false);
+    expect("how" in LANDING).toBe(false);
+    const css = readFileSync("web/src/views/waitlist/waitlist.css", "utf8");
+    expect(css).not.toMatch(/\.wl-(grid|card|step)/);
   });
 });
