@@ -1,6 +1,6 @@
 # Landing story: the plan
 
-Status: plan only (15 October 2026, branch `ws/story`), revised after a critique (see section 11). No product code exists yet. This file is the contract for the build. The design agent reviews the finished page against it.
+Status: built (15 October 2026, branch `ws/story`), after a critique (section 11). The code is in `web/src/views/story/`. Section 12 lists where the build differs from the plan. Where a number of this file and a number of the code differ, the code and its tests rule.
 
 The landing page for signed-out visitors (the waitlist version, `web/src/views/waitlist/Landing.tsx`) keeps its hero and its product video. Everything after the video becomes one scroll-driven story. A pinned stage shows one line, main. Agents leave the line, work on their own lines, and rejoin it as merged work. The story ends in the join button and the footer. The grid of five cards and the numbered list of three steps go away: the story tells their content.
 
@@ -627,3 +627,44 @@ An editor's pass on 15 October 2026. Method: I checked every claim against the c
 - Section 10 holds the open questions. The critique answers question 4: no link to the repository.
 - The word "pack" (in `JOIN.text` and on the interest page) is a name that the landing page does not explain. The story reuses it so that the words match. A person can change it in `JOIN` and in the closing at once.
 - The strings of the story are checked by the build only after the code exists. Until then the truth test of section 7 is a plan, and the editor's run above is the only proof.
+
+## 12. Build notes
+
+Where the build differs from sections 3 to 9, and why. Each change was made after a picture showed the problem.
+
+**Engine**
+
+- One clip draws every line. Main and all agent lines only move right, so `clip-path: inset(...)` on the thread SVG at the x of the tip draws them together. The dash offsets, the masks and the `from` and `to` of a strand are gone. A plan line is a dashed path, a work line is a solid one, and both show up to the tip.
+- The thread uses a fixed `viewBox` (10 path units for each u and each %) and `vector-effect: non-scaling-stroke`. The path text is the same on every screen. The engine writes no path and measures no length.
+- `pointAt` in `thread.ts` finds the point of main between two samples. Without it the tip moved in steps of about 10 px.
+- The engine has one more file, `engine/paint.ts` (the DOM writes of one frame). `place.ts` holds `spot()`. `measure.ts` also writes `--v` (1% of the stage height in px) and the height of the section, from `pinnedScrollPx` of `geometry.ts`, so the number lives in one place.
+- The skip link sits in a sticky row of zero height inside the section, so it shows at the top of the page box also while the stage is pinned. It carries the class `skip-link` too, so the tools of `scripts/shots` know it.
+- The pinned layout is inside `@media screen`. Print shows the stacked story with every part.
+- `engine/scroll-root.ts` is part of the first script (the landing needs it to watch the section). The first script is now five files (see the numbers below).
+
+**Scenes**
+
+- `main moved` stands at (318, 75), under the line of PETREL-9, and not at (322, 79): the picture showed the label far from anything.
+- The three inputs are 30 u wide (not 34), the request plate is 30 u wide and shows four lines (the real text goes on after "block."), and the request plate hangs from the diamond at x 224. The parcel is 24 u wide, so the chip fits inside it.
+- Hulls on main point right (heading 90), along the line. On the spine they point down.
+- The plan notes keep the files line only on a stage that is at least 700 px tall and 1100 px wide. A big stage (1700 by 960 and more) sets its small type to 13 px, and chapter headings use 28 px from 820 px of height.
+- The code block of chapter 07 is 36 u wide. Line 6 is cut with an ellipsis on a stage narrower than about 1700 px. In the stacked layout the line wraps.
+
+**Tools**
+
+- `scripts/shots.mjs --waitlist` shoots eight scroll positions of the story (`landing-story-000` to `-100`), with motion allowed. The measure of the tool skips parts that are faded out.
+- `test/web/story-e2e.mjs` runs the browser checks by hand. `test/web/story-example.test.ts` is the truth test and runs with the other tests.
+
+**Numbers** (`npx vite build`, gzip as vite prints it)
+
+| | Before | After |
+|---|---|---|
+| First scripts | `index` 36.42, `router` 102.29, `react` 68.27, `rolldown-runtime` 0.42: 207.40 kB | `index` 37.70, `components` 96.40, `router` 6.20, `react` 68.27, `rolldown-runtime` 0.42: 208.99 kB |
+| The story (own chunks) | none | script 7.22 kB, styles 2.74 kB |
+
+The first scripts grow by 1.59 kB (the limit is 2.0 kB). The new chunk `components` is the design components that the story and the first script share. Rolldown cut it out of `router`, so the sum is what counts.
+
+**Not done, left for a person**
+
+- The questions of section 10 are open. The closing note still names `npm run meet` with no link.
+- The pinned story was measured with software rendering only. The first pass through it has one slow frame (300 ms); a second pass runs at 16.6 ms for each frame. A check on a real GPU and on a weak phone is still open.
