@@ -1,5 +1,6 @@
 /**
- * The animation frame loop of the story. It eases toward the scroll position and paints; React does not render while you scroll.
+ * The animation frame loop of the story: it eases toward the scroll position and paints.
+ * React does not render while you scroll.
  * Used by engine/useStoryEngine.ts. It chooses the layout (horizontal, vertical or static) and keeps data-mode on the section.
  * It reads the layout once for each frame, before it writes, so it never thrashes. Native scroll only: it never moves the page by itself.
  */

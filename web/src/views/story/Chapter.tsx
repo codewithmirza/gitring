@@ -1,5 +1,6 @@
 /**
- * The opening and one chapter of the story: number, heading and text. The markup is the same in every layout.
+ * The opening and one chapter of the story: number, heading and text.
+ * The markup is the same in every layout.
  * Used by StaticStory (stacked, no drawings) and by Story (the pinned stage with scenes). It has no state.
  */
 import type { ReactNode } from "react";

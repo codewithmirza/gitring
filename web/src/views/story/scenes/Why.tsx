@@ -1,5 +1,5 @@
 /**
- * Chapter 07: seven real lines of src/price.js, line 4 chosen, and the merge record that answers why the line is there.
+ * Chapter 07: seven real lines of src/price.js, and the merge record that says why line 4 is there.
  * Used by Story.tsx. The code and the record are real (example.ts). The record uses the diamond for the count of change requests.
  */
 import { EXAMPLE } from "../example";

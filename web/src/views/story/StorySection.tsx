@@ -1,5 +1,5 @@
 /**
- * The story section of the landing page. It shows the plain story first and loads the pinned story when it is near.
+ * The story section of the landing page: plain text first, then the pinned story when it is near.
  * Used by waitlist/Landing.tsx. It must stay small: it is part of the first script of the page.
  * The section element and the skip link stay when the story replaces the plain text, so keyboard focus is not lost.
  */

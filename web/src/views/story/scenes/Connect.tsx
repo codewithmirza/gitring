@@ -1,5 +1,6 @@
 /**
- * Chapter 02: one URL connects each agent. Three hulls sit on main, named by the apps that scripts play in this example.
+ * Chapter 02: one URL connects each agent, and three hulls sit on main.
+ * The hulls are named by the apps that scripts play in this example.
  * Used by Story.tsx. The apps and the address are real strings (example.ts). The stems and the hulls on main are wide only.
  */
 import { CAPTIONS } from "../copy";

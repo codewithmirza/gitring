@@ -1,5 +1,5 @@
 /**
- * The small drawings of the scenes: the diamond of a change request, an agent hull, the glyph of a node and the mark of a gate.
+ * The small drawings of the scenes: the diamond, a hull, a node glyph, a gate mark and a join dot.
  * Used by Story.tsx and the scenes. They use the hulls and icons of the design system, so they are the objects that the map shows.
  */
 import { Hull, Icon, hullName, type IconName } from "../../../design/icons";

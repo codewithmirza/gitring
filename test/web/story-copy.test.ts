@@ -1,5 +1,6 @@
 /**
- * The words of the landing story keep the plain-word rules: short sentences, no code names, no hype words, no em dashes.
+ * The words of the landing story keep the plain-word rules.
+ * They use short sentences, no code names, no hype words and no em dashes.
  * It also checks that the files of the first script of the landing import nothing heavy.
  */
 import { readFileSync } from "node:fs";

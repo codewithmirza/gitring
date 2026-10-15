@@ -1,5 +1,6 @@
 /**
- * Chapter 03: two agents leave main on dashed plan lines. Each plan note names the task and the function, so the visitor sees the plans will collide.
+ * Chapter 03: two agents leave main on dashed plan lines, each with a plan note.
+ * A note names the task and the function, so the visitor sees that the plans will collide.
  * Used by Story.tsx. The notes are real plans (example.ts). The tags are the callsign component of the map.
  */
 import { Callsign } from "../../../design/components";

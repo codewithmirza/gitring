@@ -1,5 +1,6 @@
 /**
- * Finds the box that scrolls the story (on the waitlist pages it is .wl, not the window) and reads its size.
+ * Finds the box that scrolls the story and reads its size.
+ * On the waitlist pages the box is .wl, not the window.
  * Used by StorySection (the near-viewport watch) and by the engine. It must stay small: the landing loads it first.
  */
 

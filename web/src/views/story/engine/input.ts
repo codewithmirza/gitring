@@ -1,5 +1,5 @@
 /**
- * The inputs of the story: rail clicks, scroll and resize, links to a chapter, and the browser scrolling the clipped window.
+ * The inputs of the story: rail clicks, scroll, links to a chapter, and find-in-page.
  * Used by engine/useStoryEngine.ts. Scroll and touch stay native: no listener here stops them or moves the page against the person.
  */
 import type { StoryGeometry } from "../thread";

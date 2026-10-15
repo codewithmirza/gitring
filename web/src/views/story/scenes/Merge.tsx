@@ -1,5 +1,6 @@
 /**
- * Chapter 05: tests are a gate on each agent line. HERON-2 joins main first. Then main has moved, and PETREL-9 joins after it.
+ * Chapter 05: tests are a gate on each agent line, and the merges come one after the other.
+ * HERON-2 joins main first. Then main has moved, and PETREL-9 joins after it.
  * Used by Story.tsx. A merge is a dot on main with no label. The test lines are real answers (example.ts).
  */
 import { Callsign } from "../../../design/components";

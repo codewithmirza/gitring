@@ -1,5 +1,6 @@
 /**
- * Chapter 01: the three ways to start a project (a sentence, a template, one tool call) join the first point of main.
+ * Chapter 01: three ways to start a project join the first point of main.
+ * The ways are a sentence, a template and one tool call.
  * Used by Story.tsx. The words in the plates are real strings (example.ts). The lines that join them are in the thread.
  */
 import { EXAMPLE } from "../example";

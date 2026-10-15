@@ -1,5 +1,6 @@
 /**
- * Chapter 06: TERN-7 stops at a gate. The real question waits for a person, who can answer in the chat, in the app, or in both.
+ * Chapter 06: TERN-7 stops at a gate, and a real question waits for a person.
+ * A person can answer in the chat, in the app, or in both.
  * Used by Story.tsx. The question and the answer places are real strings (example.ts). The buttons are a drawing and do nothing.
  */
 import { Callsign } from "../../../design/components";

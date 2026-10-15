@@ -1,5 +1,6 @@
 /**
- * Writes the state of the story to the DOM: the canvas, the tip, the clip of the thread, the reveals and the rail.
+ * Writes the state of the story to the DOM, once for each animation frame.
+ * It paints the canvas, the tip, the clip of the thread, the reveals and the rail.
  * Used by engine/frame.ts, once for each animation frame. It reads nothing from the layout, so it never forces one.
  */
 import { clamp, pointAt, tipX, PATH_UNITS, type StoryGeometry } from "../thread";

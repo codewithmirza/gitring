@@ -1,5 +1,6 @@
 /**
- * Puts a part of a scene on the canvas by x (u) and y (%), and tells the engine when to show it.
+ * Puts a part of a scene on the canvas and tells the engine when to show it.
+ * A part sits at x (in u) and y (in %).
  * Used by the scenes. The CSS reads --x and --y; the engine reads data-at and data-reveal.
  */
 import type { CSSProperties } from "react";

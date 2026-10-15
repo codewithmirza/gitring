@@ -1,4 +1,5 @@
-// Browser checks of the landing story, run by hand like shell-e2e.mjs. They are ported from the checks of the founder's portfolio.
+// Browser checks of the landing story, run by hand like shell-e2e.mjs.
+// They are ported from the checks of the founder's portfolio.
 //   node test/web/story-e2e.mjs                       builds the app when it is old, starts a local gitring with the waitlist gate on
 //   BASE=http://localhost:8787 node test/web/story-e2e.mjs    uses a gitring that runs already, with the gate on
 // Checks: the stage pins and the tip stays at 55% of the width; "Skip the story" is the first stop of the section and leads to the

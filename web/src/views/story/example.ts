@@ -1,5 +1,6 @@
 /**
- * The real strings of the shop example, each with the file it comes from. They are output of the product, not our words.
+ * The real strings of the shop example, each with the file it comes from.
+ * They are output of the product, not our words.
  * Used by the scenes. test/web/story-example.test.ts runs the shop story in process and fails when a string drifts.
  * Our own captions are in copy.ts. Read scenes/README.md next.
  */

@@ -1,5 +1,6 @@
 /**
- * Chapter 04, the peak of the story: both plans end on one parcel, a magenta distance line joins them, and the request reaches one agent.
+ * Chapter 04, the peak of the story: two plans collide, and one agent gets the change request.
+ * Both plans end on one parcel, and a magenta distance line joins them.
  * Used by Story.tsx. Magenta is for change requests only, so this is the one place that holds it. The request text is real (example.ts).
  */
 import { CAPTIONS } from "../copy";

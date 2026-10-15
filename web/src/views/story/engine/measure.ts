@@ -1,5 +1,6 @@
 /**
- * Reads the size of the stage and turns it into units: u (1% of the stage width) and v (1% of its height), in px.
+ * Reads the size of the stage as units: u (1% of its width) and v (1% of its height).
+ * Both are in px.
  * Used by engine/frame.ts. It writes only --u, --v and the height of the section. Measure rarely: it forces a layout.
  */
 import { pinnedScrollPx } from "../geometry";

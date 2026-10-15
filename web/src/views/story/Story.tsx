@@ -1,5 +1,6 @@
 /**
- * The pinned story: a stage, a canvas that slides left while the page scrolls, the thread, the chapters with their scenes, and the rail.
+ * The pinned story: a stage, a sliding canvas, the thread, the chapters with their scenes, and the rail.
+ * The canvas slides left while the page scrolls.
  * A separate chunk: StorySection loads it when the section is near. Read engine/ for the motion and scenes/ for the drawings.
  * Reading order is the order of the chapters. Every drawing is hidden from a screen reader; every chapter has its text in the DOM.
  */

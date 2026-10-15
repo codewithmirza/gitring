@@ -1,5 +1,5 @@
 /**
- * The numbers of the story: the size of the canvas, the line called main, the lines of the agents and the rail.
+ * The numbers of the story: the canvas, the line called main, the agent lines and the rail.
  * Used by Story.tsx (draws the paths), engine/ (moves the tip) and the geometry test. It has no DOM and no React.
  * Units: 1 u is 1% of the stage width. A y value is a percent of the stage height. The plan is docs/design/landing-story.md.
  */
