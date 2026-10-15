@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Gives the design agent eyes: one picture of every screen, theme and size, with real work in the project.
-// Run it: node scripts/shots.mjs   (flags: --only, --themes, --sizes, --out, --full, --no-start; see --help).
+// Run it: node scripts/shots.mjs   (flags: --only, --themes, --sizes, --out, --full, --no-start, --waitlist; see --help).
 // Steps: build the app if it is old and start gitring; sign up a test person with a virtual passkey; make a project
 // with real agents (scripts/meet.mjs and three more); shoot each screen, theme and size into tmp/shots/ with index.json.
 // It stops what it started. It never prints or saves the key of the run.
@@ -13,7 +13,7 @@ import { parseArgs } from "./shots/args.mjs";
 import { launchBrowser, newContext, addPasskey } from "./shots/browser.mjs";
 import { checkState, openScreen, saveErrorPicture, savePictures } from "./shots/capture.mjs";
 import { inspectPage, tabStops } from "./shots/inspect.mjs";
-import { SCREENS, SCREEN_IDS, idsFrom } from "./shots/screens.mjs";
+import { SCREENS, SCREEN_IDS, WAITLIST_IDS, idsFrom } from "./shots/screens.mjs";
 import { seedProject } from "./shots/seed.mjs";
 import { buildApp, isBuildStale, startLocal } from "./shots/server.mjs";
 
@@ -94,7 +94,8 @@ async function shootPhase(browser, phase, screens, ids, run) {
   const records = [];
   for (const size of run.sizes) {
     for (const theme of run.themes) {
-      const context = await newContext(browser, size, phase === "out" ? undefined : run.storageState);
+      // A stranger has no cookies. The story of the landing page is the one screen that moves, so its context allows motion.
+      const context = await newContext(browser, size, phase === "out" || phase === "story" ? undefined : run.storageState, { motion: phase === "story" });
       await presetTheme(context, theme);
       const page = await context.newPage();
       page.setDefaultTimeout(15_000);
@@ -130,14 +131,14 @@ async function setUpPerson(browser, run, chosen, key) {
 /** The whole run: server, browser, person, seed, shots. Returns the records. It stops what it started, also after an error. */
 async function runShots(options, chosen) {
   const out = path.resolve(ROOT, options.out);
-  const needsAccount = chosen.some((screen) => screen.phase !== "out" || screen.id === "approve-signed-out");
+  const needsAccount = chosen.some((screen) => !["out", "story"].includes(screen.phase) || screen.id === "approve-signed-out");
   await clearOutput(out);
   let server = null;
   let browser = null;
   try {
     if (options.start) {
       if (isBuildStale(ROOT)) buildApp(ROOT, say);
-      server = await startLocal(ROOT, say);
+      server = await startLocal(ROOT, say, { waitlist: options.waitlist });
     }
     const run = { baseUrl: server?.url ?? options.url, out, full: options.full, sizes: options.sizes, themes: options.themes, storageState: undefined };
     browser = await launchBrowser();
@@ -148,7 +149,7 @@ async function runShots(options, chosen) {
       records.push(...setup.records);
       ids = setup.ids;
     }
-    for (const phase of ["out", "project"]) {
+    for (const phase of ["out", "story", "project"]) {
       records.push(...(await shootPhase(browser, phase, chosen.filter((screen) => screen.phase === phase), ids, run)));
     }
     return records;
@@ -159,7 +160,7 @@ async function runShots(options, chosen) {
 }
 
 async function main() {
-  const parsed = parseArgs(process.argv.slice(2), process.env, SCREEN_IDS);
+  const parsed = parseArgs(process.argv.slice(2), process.env, SCREEN_IDS, WAITLIST_IDS);
   if (!parsed.options) {
     for (const line of parsed.lines) say(line);
     return parsed.code ?? 2;

@@ -17,6 +17,7 @@ Pages:
 - `AccountView.tsx`: the account of the person; its sections are in `account/`.
 - `ReplayView.tsx`: the replay of a project; its parts are in `replay/`.
 - `DesignView.tsx`: the style guide (development only); its parts are in `design/`.
+- `story/`: the scroll story of the landing page of the waitlist (`waitlist/Landing.tsx` shows it after the product video).
 
 Shared parts and words:
 

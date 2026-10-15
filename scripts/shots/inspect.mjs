@@ -22,10 +22,10 @@ function isRendered(el) {
   return style.visibility === "visible" && style.display !== "none";
 }
 
-/** True when the element is rendered and is inside the window: it is in the picture. */
+/** True when the element is rendered, is inside the window and is not faded out: it is in the picture. A part of the landing story that the line has not reached has opacity 0. */
 function isShown(el) {
   const box = el.getBoundingClientRect();
-  return isRendered(el) && box.bottom >= 0 && box.top <= innerHeight && box.right >= 0 && box.left <= innerWidth;
+  return isRendered(el) && box.bottom >= 0 && box.top <= innerHeight && box.right >= 0 && box.left <= innerWidth && opacityOf(el) >= 0.05;
 }
 
 function opacityOf(el) {

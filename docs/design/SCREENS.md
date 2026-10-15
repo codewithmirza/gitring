@@ -25,6 +25,16 @@ The shots show the states `tasks-loading` (loading), `overview-offline` (error),
 - **See first:** the headline "Many agents. One codebase. No merge fights." and the drawing of two agents that merge into main.
 - **States:** the page has no loading or error state of its own (it shows at once). It is 1,880 px tall on a desktop: "How it works", "Add gitring to your agent", "Where your code goes". Not seen: the waitlist form of a gitring with a waitlist gate.
 
+### Landing with the waitlist gate
+
+`landing-story-000` to `landing-story-100` · route `/` (signed out, a gitring with the waitlist gate on). Shot with `node scripts/shots.mjs --waitlist`, which starts the local gitring with the gate on and allows motion. The plan is `landing-story.md`.
+
+- **Purpose:** show how work moves through gitring, in the order a person meets it: start a project, connect agents, send plans, check plans, merge tested work, ask a person only when it matters, record why. The page keeps the hero and the product video, and the story follows the video.
+- **Main action:** Join the waitlist. It stands in the hero and in the closing. "Skip the story" is the first stop inside the story and leads to the closing.
+- **See first:** the heading "Three agents change one shop at the same time" and one thin line, main, that agents leave and rejoin. On a wide screen the stage is pinned while native scroll draws the line (four screens of scroll at most). On a phone, in a narrow or short window, and with reduced motion, the same chapters stack on a spine.
+- **States:** wide and pinned (1440 by 900, seen at eight scroll positions); stacked with a growing spine (phone, seen); stacked and still (reduced motion, seen by hand); before the story code loads, the plain text of the story (seen by hand). The pictures are named `landing-story-<percent>-<theme>-<size>`. Not seen: a slow network that keeps the plain text on screen, and a failed load of the story chunk.
+- **Real material:** every quoted string in a drawing is real output of the shop run of `npm run meet` (`test/web/story-example.test.ts` checks them). The agents in the example are scripts, and the page says so.
+
 ### Sign-in panel
 
 `sign-in`, `sign-in-create` · a panel that grows from "Sign in" in the top bar, on every page.

@@ -47,8 +47,11 @@ export function launchBrowser() {
   });
 }
 
-/** A context of one size. Without `storageState` it has no cookies (a stranger). Reduced motion keeps the shots still. */
-export function newContext(browser, sizeName, storageState) {
+/**
+ * A context of one size. Without `storageState` it has no cookies (a stranger). Reduced motion keeps the shots still,
+ * except for a screen that shows motion on purpose (the scroll story of the landing page): it passes `motion: true`.
+ */
+export function newContext(browser, sizeName, storageState, { motion = false } = {}) {
   const size = SIZES[sizeName];
   return browser.newContext({
     viewport: { width: size.width, height: size.height },
@@ -56,7 +59,7 @@ export function newContext(browser, sizeName, storageState) {
     isMobile: size.phone,
     hasTouch: size.phone,
     colorScheme: "light",
-    reducedMotion: "reduce",
+    reducedMotion: motion ? "no-preference" : "reduce",
     storageState,
     acceptDownloads: false,
   });

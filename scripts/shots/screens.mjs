@@ -1,6 +1,7 @@
 // The list of screens to shoot: each route, and the clicks that make the state a person sees.
 // Used by: scripts/shots.mjs. A prepare step must act like a person (click, type, press a key). It must not call the API.
 // A screen needs one phase: "out" (signed out), "empty" (signed in, no project yet) or "project" (signed in, with the seed).
+// The phase "story" is for the landing story: signed out, with the waitlist gate on, and with motion allowed (node scripts/shots.mjs --waitlist).
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,7 +54,7 @@ const lostState = async (page) => {
 /**
  * A screen: its id, its phase, its route, an optional `prepare` (clicks), an optional `before` (changes the network, returns a function that
  * puts it back), `loading` (shoot while the content loads), and a sentence that says what it is.
- * @type {{ id: string, phase: "out" | "empty" | "project", route: (ids: Record<string, string>) => string, prepare?: (page: import("playwright").Page, ids: Record<string, string>) => Promise<void>, before?: (page: import("playwright").Page, ids: Record<string, string>) => Promise<() => Promise<unknown>>, loading?: boolean, about: string }[]}
+ * @type {{ id: string, phase: "out" | "story" | "empty" | "project", waitlist?: boolean, route: (ids: Record<string, string>) => string, prepare?: (page: import("playwright").Page, ids: Record<string, string>) => Promise<void>, before?: (page: import("playwright").Page, ids: Record<string, string>) => Promise<() => Promise<unknown>>, loading?: boolean, about: string }[]}
  */
 export const SCREENS = [
   { id: "landing", phase: "out", route: () => "/", about: "The start page for a stranger." },
@@ -203,7 +204,39 @@ export const SCREENS = [
   { id: "code-new-project", phase: "project", route: (ids) => inProject("/code", ids, ids.quiet), about: "The code of a project that has only its first files." },
 ];
 
+// ───── The landing story ─────
+
+/** The scroll positions of the story, as a share of the pinned part (or of the stacked part on a phone). */
+const STORY_STEPS = [0, 0.14, 0.28, 0.42, 0.56, 0.7, 0.84, 1];
+
+/** Scrolls the box of the page (.wl) so that the story is at a progress, then waits until the engine has caught up. */
+const storyAt = (progress) => async (page) => {
+  await page.waitForSelector(".story[data-ready]");
+  await page.evaluate((share) => {
+    const root = document.querySelector(".wl");
+    const section = document.querySelector("#story");
+    const stage = section.querySelector(".story-stage");
+    const top = section.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
+    const pinned = section.dataset.mode === "horizontal" ? section.offsetHeight - stage.offsetHeight : section.offsetHeight - root.clientHeight;
+    root.scrollTop = top + share * pinned;
+  }, progress);
+  await page.waitForTimeout(900);
+};
+
+SCREENS.push(
+  ...STORY_STEPS.map((progress) => ({
+    id: `landing-story-${String(Math.round(progress * 100)).padStart(3, "0")}`,
+    phase: "story",
+    waitlist: true,
+    route: () => "/",
+    prepare: storyAt(progress),
+    about: `The scroll story of the landing page at ${Math.round(progress * 100)} percent (the gate of the waitlist is on).`,
+  })),
+);
+
 export const SCREEN_IDS = SCREENS.map((screen) => screen.id);
+/** The screens that need the gate of the waitlist. The tool shoots them only with --waitlist. */
+export const WAITLIST_IDS = SCREENS.filter((screen) => screen.waitlist).map((screen) => screen.id);
 
 // ───── The ids that the screens need ─────
 
