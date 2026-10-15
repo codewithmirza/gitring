@@ -19,12 +19,12 @@ export function Connect() {
         <span className="story-mono">{connect.url}</span>
       </div>
       {HULL_X.map((x) => (
-        <span key={x} className="story-stem story-wide story-place" style={{ "--x": x, "--y": 46.5, "--h": 10 } as React.CSSProperties} data-at={x - 2} data-reveal="thread" aria-hidden="true" />
+        <span key={x} className="story-stem story-wide story-place" style={{ "--x": x, "--y": 44.4, "--h": 13.4 } as React.CSSProperties} data-at={x - 2} data-reveal="thread" aria-hidden="true" />
       ))}
       <ul className="story-apps" role="list">
         {connect.apps.map((name, index) => (
           <li key={name} className="story-app story-place" {...spot({ x: HULL_X[index], y: MAIN_Y, thread: true, at: HULL_X[index] - 2 })}>
-            <AgentHull agent={(index + 1) as AgentIndex} size={22} />
+            <AgentHull agent={(index + 1) as AgentIndex} size={22} heading={90} />
             <span className="story-label">{name}</span>
           </li>
         ))}

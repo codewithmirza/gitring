@@ -5,7 +5,7 @@
 import { EXAMPLE } from "../example";
 import { spot } from "../place";
 
-/** The inputs start at x 6 and are 34 u wide, so their right edge is at 40, where the lines of INPUT_LINES start. Their centres are at 43, 57 and 71 %. */
+/** The inputs start at x 6 and are 30 u wide, so their right edge is at 36, where the lines of INPUT_LINES start. Their centres are at 43, 57 and 71 %. */
 const X = 6;
 /** The inputs show with the first point of main. */
 const AT = 48;

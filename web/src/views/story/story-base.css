@@ -26,7 +26,7 @@
 .story-text { max-width: 60ch; background: var(--bg); }
 .story-title { margin-bottom: var(--s-3); font-size: var(--t-xl); line-height: var(--lh-xl); font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
 .story-heading { margin-bottom: var(--s-2); font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; text-wrap: balance; }
-.story-text p { font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); }
+.story-text p { font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); text-wrap: pretty; }
 .story-text p + p { margin-top: var(--s-3); }
 .story-text .story-cue { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-3); }
 /* The number is page furniture: a screen reader reads the heading only. */

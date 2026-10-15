@@ -17,9 +17,9 @@ export function Diamond({ size = 15 }: { size?: number }) {
   );
 }
 
-/** The hull of an agent, in the colour that the map gives the agent. Agent 1 is a chevron, 2 a dart, 3 a kite. */
-export function AgentHull({ agent, size = 20 }: { agent: AgentIndex; size?: number }) {
-  return <Hull hull={hullName(agent)} size={size} color={`var(--v${agent})`} />;
+/** The hull of an agent, in the colour that the map gives the agent. Agent 1 is a chevron, 2 a dart, 3 a kite. Heading 90 points right, along main. */
+export function AgentHull({ agent, size = 20, heading = 0 }: { agent: AgentIndex; size?: number; heading?: number }) {
+  return <Hull hull={hullName(agent)} size={size} heading={heading} color={`var(--v${agent})`} />;
 }
 
 /** The glyph on the spine of the stacked layout. It is page furniture, so it is hidden from a screen reader. */

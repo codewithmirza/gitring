@@ -32,11 +32,11 @@ export function Plans() {
       <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 162, y: 56, thread: true, at: 162 })}>
         main
       </span>
-      <div className="story-tag story-place" {...spot({ x: 158, y: 48.5, thread: true, at: 172 })}>
+      <div className="story-tag story-place" {...spot({ x: 163, y: 49, thread: true, at: 172 })}>
         <Callsign callsign={plans.first.callsign} color={1} />
       </div>
       <PlanNote plan={plans.first} tool={plans.tool} x={188} y={29} at={186} />
-      <div className="story-tag story-place" {...spot({ x: 158, y: 66, thread: true, at: 172 })}>
+      <div className="story-tag story-place" {...spot({ x: 163, y: 66, thread: true, at: 172 })}>
         <Callsign callsign={plans.second.callsign} color={2} />
       </div>
       <PlanNote plan={plans.second} x={188} y={78} at={186} />

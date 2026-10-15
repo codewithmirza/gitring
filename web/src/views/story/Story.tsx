@@ -33,10 +33,10 @@ const SCENES: ComponentType[] = [Start, Connect, Plans, Compare, Merge, Ask, Why
 const NODES: ReactNode[] = [
   null,
   <SpineNode key="connect">
-    <AgentHull agent={1} size={14} />
+    <AgentHull agent={1} size={14} heading={180} />
   </SpineNode>,
   <SpineNode key="plans">
-    <AgentHull agent={2} size={14} />
+    <AgentHull agent={2} size={14} heading={180} />
   </SpineNode>,
   <SpineNode key="check">
     <Diamond size={14} />

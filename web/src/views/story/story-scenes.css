@@ -57,9 +57,10 @@
 .story-button--primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .story-place-option { flex-direction: row; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); }
 .story-place-option svg { color: var(--ink-3); flex: none; }
+.story-place-option .story-label { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-1); }
 
 /* The code and the record (chapter 07). */
-.story-code { padding: var(--s-3) var(--s-2); overflow: hidden; }
+.story-code { padding: var(--s-3) var(--s-2); }
 .story-code ol { list-style: none; font-size: var(--t-xs); line-height: 20px; }
 .story-code li { display: flex; align-items: baseline; gap: var(--s-3); padding: 0 var(--s-2); border-radius: var(--r-1); white-space: pre; }
 .story-code li:empty, .story-code li > code:empty { min-height: 20px; }
@@ -80,17 +81,17 @@
 .story[data-mode="horizontal"] :is(.story-inputs, .story-apps, .story-places) { display: contents; }
 .story[data-mode="horizontal"] .story-narrow-only, .story[data-mode="horizontal"] .story-distance-text { display: none; }
 .story[data-mode="horizontal"] .story-plate { margin: 0; z-index: 3; }
-.story[data-mode="horizontal"] .story-input { width: calc(34 * var(--u)); transform: translateY(-50%); }
+.story[data-mode="horizontal"] .story-input { width: calc(30 * var(--u)); transform: translateY(-50%); }
 .story[data-mode="horizontal"] .story-url { width: calc(32 * var(--u)); }
 .story[data-mode="horizontal"] .story-note { width: calc(28 * var(--u)); }
 .story[data-mode="horizontal"] .story-request { width: calc(30 * var(--u)); }
 .story[data-mode="horizontal"] .story-request .story-mono { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
 .story[data-mode="horizontal"] .story-question { width: calc(26 * var(--u)); }
-.story[data-mode="horizontal"] .story-place-option { width: calc(16 * var(--u)); }
-.story[data-mode="horizontal"] .story-code { width: calc(34 * var(--u)); }
+.story[data-mode="horizontal"] .story-place-option { width: calc(12 * var(--u)); }
+.story[data-mode="horizontal"] .story-code { width: calc(36 * var(--u)); }
 .story[data-mode="horizontal"] .story-record { width: calc(36 * var(--u)); }
 .story[data-mode="horizontal"] .story-caption { width: max-content; max-width: calc(32 * var(--u)); margin: 0; z-index: 3; background: var(--bg); }
-.story[data-mode="horizontal"] .story-places + .story-caption { width: calc(9 * var(--u)); }
+.story[data-mode="horizontal"] .story-places + .story-caption { width: calc(10 * var(--u)); }
 .story[data-mode="horizontal"] .story-main-label { transform: translateY(-100%); z-index: 3; }
 .story[data-mode="horizontal"] .story-clear { transform: translateY(-100%); z-index: 3; background: var(--bg); padding: 0 var(--s-1); }
 .story[data-mode="horizontal"] .story-tag { margin: 0; z-index: 3; transform: translateY(-50%); }
@@ -111,7 +112,7 @@
 
 /* The parcel is the land of the map: the one warm patch of the page. Main runs over it. */
 .story-parcel {
-  display: flex; align-items: flex-start; width: calc(20 * var(--u)); height: 14%; padding: var(--s-2) var(--s-3);
+  display: flex; align-items: flex-start; width: calc(24 * var(--u)); height: 14%; padding: var(--s-2) var(--s-3);
   border: 1px solid var(--land-edge); border-radius: var(--r-1); background: var(--land); z-index: 1;
 }
 .story-parcel .story-mono { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--ink-1); }

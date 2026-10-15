@@ -91,13 +91,13 @@ export const DEPARTURES = { first: 172, second: 350 } as const;
 export const DIAMOND: Waypoint = [224, 73];
 
 /** The label "main moved" stands to the right of the merge of agent A, because that merge is its cause. */
-export const MAIN_MOVED = { x: 322, y: 79, at: 320 } as const;
+export const MAIN_MOVED = { x: 318, y: 75, at: 320 } as const;
 
-/** The three ways to start a project (chapter 01) join the first point of main. Each line starts at the right edge of an input. */
+/** The three ways to start a project (chapter 01) join the first point of main. Each line starts at the right edge of an input (x 36). */
 export const INPUT_LINES: Waypoint[][] = [
-  [[40, 43], [43, 46], [45.5, 53], START],
-  [[40, 57], [44, 58.5], START],
-  [[40, 71], [43, 68], [45.5, 64], START],
+  [[36, 43], [41, 46], [45, 53], START],
+  [[36, 57], [42, 58.2], START],
+  [[36, 71], [41, 68], [45, 64], START],
 ];
 
 // ───── Built geometry ─────
