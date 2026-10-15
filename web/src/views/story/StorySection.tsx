@@ -52,7 +52,7 @@ export function StorySection() {
   return (
     <section id="story" className="story" ref={section} aria-labelledby="story-h">
       <div className="story-skip-row">
-        <a className="skip-link" href="#wl-closing">
+        <a className="story-skip" href="#wl-closing">
           {SMALL.skip}
         </a>
       </div>
