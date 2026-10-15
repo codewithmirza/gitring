@@ -11,7 +11,7 @@ export function Why() {
   return (
     <>
       <div className="story-plate story-code story-place" {...spot({ x: 438, y: 14 })}>
-        <ol className="story-mono">
+        <ol className="story-mono" aria-label="Lines of src/price.js">
           {why.code.map((text, index) => (
             <li key={index} data-chosen={index + 1 === why.line ? "" : undefined}>
               <span className="story-code__n" aria-hidden="true">
@@ -39,7 +39,7 @@ export function Why() {
         </span>
         <span>{why.tests}</span>
       </div>
-      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 452, y: 56, thread: true, at: 452 })}>
+      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 452, y: 56, thread: true, at: 452 })} aria-hidden="true">
         main
       </span>
     </>

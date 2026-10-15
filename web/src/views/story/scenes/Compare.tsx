@@ -13,14 +13,14 @@ export function Compare() {
   const { check } = EXAMPLE;
   return (
     <>
-      <div className="story-parcel story-wide story-place" {...spot({ x: 214, y: 52, thread: true, at: 212 })}>
+      <div className="story-parcel story-wide story-place" {...spot({ x: 214, y: 52, thread: true, at: 212 })} aria-hidden="true">
         <span className="story-mono">src/price.js</span>
       </div>
       <span className="story-distance story-wide story-place" style={{ "--x": 224, "--y": 45, "--h": 28 } as React.CSSProperties} data-at={224} data-reveal="thread" aria-hidden="true" />
-      <span className="story-chip story-wide story-place" {...spot({ x: 225, y: 53.5, thread: true, at: 226 })}>
+      <span className="story-chip story-wide story-place" {...spot({ x: 225, y: 53.5, thread: true, at: 226 })} aria-hidden="true">
         {check.distance}
       </span>
-      <span className="story-mono story-label story-clear story-wide story-place" {...spot({ x: 228, y: 41, thread: true, at: 228 })}>
+      <span className="story-mono story-label story-clear story-wide story-place" {...spot({ x: 228, y: 41, thread: true, at: 228 })} aria-hidden="true">
         {check.clear}
       </span>
       <span className="story-flag story-wide story-place" {...spot({ x: DIAMOND[0], y: DIAMOND[1], thread: true, at: 228 })}>

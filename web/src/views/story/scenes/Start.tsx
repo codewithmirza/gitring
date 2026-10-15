@@ -15,7 +15,7 @@ export function Start() {
   const { start } = EXAMPLE;
   return (
     <>
-      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 48, y: 56, thread: true, at: AT })}>
+      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 48, y: 56, thread: true, at: AT })} aria-hidden="true">
         main
       </span>
       <ul className="story-inputs" role="list">

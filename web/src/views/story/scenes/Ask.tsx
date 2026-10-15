@@ -18,7 +18,7 @@ export function Ask() {
   const { ask } = EXAMPLE;
   return (
     <>
-      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 340, y: 56, thread: true, at: 340 })}>
+      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 340, y: 56, thread: true, at: 340 })} aria-hidden="true">
         main
       </span>
       <div className="story-gate story-gate--person story-place" {...spot({ x: 378, y: 45, thread: true, at: 377 })}>

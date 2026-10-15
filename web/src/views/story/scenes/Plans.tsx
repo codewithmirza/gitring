@@ -30,7 +30,7 @@ export function Plans() {
   const { plans } = EXAMPLE;
   return (
     <>
-      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 162, y: 56, thread: true, at: 162 })}>
+      <span className="story-mono story-label story-main-label story-wide story-place" {...spot({ x: 162, y: 56, thread: true, at: 162 })} aria-hidden="true">
         main
       </span>
       <div className="story-tag story-place" {...spot({ x: 163, y: 49, thread: true, at: 172 })}>

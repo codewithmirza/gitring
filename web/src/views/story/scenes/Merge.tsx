@@ -30,7 +30,7 @@ export function Merge() {
       <span className="story-join story-wide story-place" {...spot({ x: MERGES[1][0], y: MERGES[1][1], thread: true, at: MERGES[1][0] })}>
         <JoinDot />
       </span>
-      <span className="story-mono story-label story-wide story-place" {...spot({ x: MAIN_MOVED.x, y: MAIN_MOVED.y, thread: true, at: MAIN_MOVED.at })}>
+      <span className="story-mono story-label story-wide story-place" {...spot({ x: MAIN_MOVED.x, y: MAIN_MOVED.y, thread: true, at: MAIN_MOVED.at })} aria-hidden="true">
         {merge.moved}
       </span>
       <TestGate callsign={plans.second.callsign} color={2} text={merge.second} label="below" x={325} y={66} at={324} />

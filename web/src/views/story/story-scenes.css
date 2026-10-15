@@ -82,7 +82,8 @@
 /* ───── The pinned layout: place the parts on the canvas ───── */
 
 .story[data-mode="horizontal"] :is(.story-inputs, .story-apps, .story-places) { display: contents; }
-.story[data-mode="horizontal"] .story-narrow-only, .story[data-mode="horizontal"] .story-distance-text { display: none; }
+.story[data-mode="horizontal"] .story-narrow-only { display: none; }
+.story[data-mode="horizontal"] .story-distance-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .story[data-mode="horizontal"] .story-plate { margin: 0; z-index: 3; }
 .story[data-mode="horizontal"] .story-input { width: calc(30 * var(--u)); transform: translateY(-50%); }
 .story[data-mode="horizontal"] .story-url { width: calc(32 * var(--u)); }
