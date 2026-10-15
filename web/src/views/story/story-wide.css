@@ -44,7 +44,8 @@
 .story[data-mode="horizontal"] .story-title { font-size: var(--t-lg); line-height: var(--lh-lg); }
 .story[data-mode="horizontal"] .story-text p { font-size: var(--t-md); line-height: var(--lh-md); }
 @media (min-height: 820px) {
-  .story[data-mode="horizontal"] .story-title { font-size: var(--t-xl); line-height: var(--lh-xl); }
+  .story[data-mode="horizontal"] .story-title,
+  .story[data-mode="horizontal"] .story-heading { font-size: var(--t-xl); line-height: var(--lh-xl); }
 }
 @media (max-height: 699px) {
   .story[data-mode="horizontal"] .story-text p { font-size: var(--t-sm); line-height: var(--lh-sm); }

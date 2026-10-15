@@ -147,6 +147,14 @@
   .story[data-mode="horizontal"] .story-stem { height: calc(var(--h) * .6%); }
 }
 
+/* A big stage: the small type steps up one size (11 to 13 px). A view still has four sizes. */
+@media (min-width: 1700px) and (min-height: 960px) {
+  .story[data-mode="horizontal"] :is(.story-note, .story-request, .story-question) .story-mono,
+  .story[data-mode="horizontal"] :is(.story-label, .story-caption, .story-chip, .story-gate__label, .story-parcel .story-mono, .story-code ol, .story-request__label, .story-code__ask) {
+    font-size: var(--t-sm); line-height: var(--lh-sm);
+  }
+}
+
 /* A narrow stage holds less text in the same type, so the plan notes keep the task and the function. */
 @media (max-height: 699px), (max-width: 1100px) {
   .story[data-mode="horizontal"] .story-note__files { display: none; }
