@@ -668,3 +668,20 @@ The first scripts grow by 1.58 kB (the limit is 2.0 kB). The new chunk `componen
 
 - The questions of section 10 are open. The closing note still names `npm run meet` with no link.
 - The pinned story was measured with software rendering only. The first pass through it has one slow frame (300 ms); a second pass runs at 16.6 ms for each frame. A check on a real GPU and on a weak phone is still open.
+
+## 13. Review after the build
+
+A second designer read the build with fresh eyes, on a local gitring with the gate on. The pictures were at 320, 390, 768, 901, 1024, 1280, 1440 and 1920 px, in Day, Dusk and Night, with and without reduced motion. The numbers above held: the first scripts grow by 1.58 kB, and `test/web/story-e2e.mjs` passes. A run at 4 times slower CPU showed no long task during scroll.
+
+**Fixed**
+
+- A link to the end of the page (`#wl-closing`, a reload after "Skip the story", or the skip link before the story code arrived) put the reader in the middle of the story. The story is much taller than the plain text that it replaces, and the page did not move with it. `engine/useStoryEngine.ts` now keeps the end of the section where it was, and starts in a layout effect so the stacked layout never paints before the pinned one.
+- The address plate of chapter 02 was cut ("https://your-gitring.example.com/") on a stage narrower than 1100 px and on a 320 px phone. It now grows to the whole address on a narrow stage, and wraps on a phone.
+- Space, Page Down, Home and End did nothing on a fresh load, because the page scrolls inside `.wl`, not in the window. `waitlist/Waitlist.tsx` now gives that box the focus on load. The first Tab still reaches "Skip to the content".
+
+**Left for a person**
+
+- When the story code arrives, fonts load a moment later and the stacked story grows by about 120 px on a 390 px phone. A reader at the end of the page moves down by that much. A preload of the two fonts would remove it.
+- A first Tab into the rail, from before the story, scrolls the page to about 12% of the story, because the browser centers the focused button. Nothing is lost, but the first chapter has already moved.
+- The word "clear" on the plan of HERON-2 (chapter 04) stands alone. It is the real answer of the product, but a stranger may not link it to the plan.
+- Line 6 of the code in chapter 07 is cut with an ellipsis on a stage narrower than about 1700 px (known, section 12).
