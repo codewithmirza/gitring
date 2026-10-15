@@ -25,7 +25,7 @@
 :is(.story-note, .story-request, .story-question) .story-mono { font-size: var(--t-xs); line-height: var(--lh-xs); }
 .story-inputs, .story-apps, .story-places { display: grid; gap: var(--s-3); max-width: 60ch; margin-top: var(--s-4); list-style: none; }
 .story-inputs .story-plate, .story-places .story-plate { margin-top: 0; }
-.story-url { white-space: nowrap; overflow-x: auto; }
+/* The address is the one mono plate in full ink. It wraps in the stacked layout, so no part is cut on a 320 px phone. */
 .story-url .story-mono { color: var(--ink-1); }
 .story-note__title { font-size: var(--t-sm); font-weight: 500; }
 
@@ -86,7 +86,8 @@
 .story[data-mode="horizontal"] .story-distance-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .story[data-mode="horizontal"] .story-plate { margin: 0; z-index: 3; }
 .story[data-mode="horizontal"] .story-input { width: calc(30 * var(--u)); transform: translateY(-50%); }
-.story[data-mode="horizontal"] .story-url { width: calc(32 * var(--u)); }
+/* The pinned plate is at least 32 u wide and grows to the whole address on a narrow stage. */
+.story[data-mode="horizontal"] .story-url { width: max-content; min-width: calc(32 * var(--u)); white-space: nowrap; }
 .story[data-mode="horizontal"] .story-note { width: calc(28 * var(--u)); }
 .story[data-mode="horizontal"] .story-request { width: calc(30 * var(--u)); }
 .story[data-mode="horizontal"] .story-request .story-mono { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }

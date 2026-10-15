@@ -83,8 +83,8 @@ function Rail() {
   );
 }
 
-export default function Story({ section, onReady }: { section: RefObject<HTMLElement | null>; onReady?: () => void }) {
-  useStoryEngine(section, onReady);
+export default function Story({ section }: { section: RefObject<HTMLElement | null> }) {
+  useStoryEngine(section);
   return (
     <div className="story-stage">
       <div className="story-window">
