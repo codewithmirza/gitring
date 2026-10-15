@@ -3,7 +3,7 @@
  * Used by waitlist/Landing.tsx. It must stay small: it is part of the first script of the page.
  * The section element and the skip link stay when the story replaces the plain text, so keyboard focus is not lost.
  */
-import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { SMALL } from "./copy";
 import { readScrollRoot } from "./engine/scroll-root";
 import { StaticStory } from "./StaticStory";
@@ -25,8 +25,11 @@ class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, {
   }
 }
 
-/** True once the section is near the visible part of its scroll box. It never turns false again. */
-function useNearViewport(ref: React.RefObject<HTMLElement | null>): boolean {
+/**
+ * True once the section is near the visible part of its scroll box. It never turns false again.
+ * `onNear` runs just before it turns true, while the section still shows the plain text.
+ */
+function useNearViewport(ref: React.RefObject<HTMLElement | null>, onNear: () => void): boolean {
   const [near, setNear] = useState(false);
   useEffect(() => {
     const section = ref.current;
@@ -35,19 +38,40 @@ function useNearViewport(ref: React.RefObject<HTMLElement | null>): boolean {
       setNear(true);
       return;
     }
-    const watch = new IntersectionObserver((entries) => entries.some((entry) => entry.isIntersecting) && setNear(true), {
-      root: readScrollRoot(section).element,
-      rootMargin: LOAD_MARGIN,
-    });
+    const watch = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        onNear();
+        setNear(true);
+      },
+      { root: readScrollRoot(section).element, rootMargin: LOAD_MARGIN },
+    );
     watch.observe(section);
     return () => watch.disconnect();
-  }, [ref, near]);
+  }, [ref, near, onNear]);
   return near;
 }
 
 export function StorySection() {
   const section = useRef<HTMLElement>(null);
-  const near = useNearViewport(section);
+  const plainHeight = useRef(0);
+  const rememberHeight = useCallback(() => {
+    plainHeight.current = section.current?.offsetHeight ?? 0;
+  }, []);
+  /**
+   * The story is much taller than the plain text. A reader who is below the section (a link to the end of the page,
+   * or "Skip the story" before the code arrived) must stay at the same place, so the page moves by the growth.
+   */
+  const keepPlace = useCallback(() => {
+    const element = section.current;
+    const before = plainHeight.current;
+    plainHeight.current = 0;
+    if (!element || !before) return;
+    const root = readScrollRoot(element);
+    const growth = element.offsetHeight - before;
+    if (growth && element.getBoundingClientRect().bottom - growth <= root.top()) root.scrollTo(root.scrollTop() + growth, "auto");
+  }, []);
+  const near = useNearViewport(section, rememberHeight);
   const plain = <StaticStory />;
   return (
     <section id="story" className="story" ref={section} aria-labelledby="story-h">
@@ -59,7 +83,7 @@ export function StorySection() {
       {near ? (
         <Boundary fallback={plain}>
           <Suspense fallback={plain}>
-            <Story section={section} />
+            <Story section={section} onReady={keepPlace} />
           </Suspense>
         </Boundary>
       ) : (

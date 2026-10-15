@@ -10,7 +10,8 @@ import { watchMode } from "./mode";
 import { readParts } from "./paint";
 import { readScrollRoot } from "./scroll-root";
 
-export function useStoryEngine(section: RefObject<HTMLElement | null>): void {
+/** `onReady` runs once the layout is chosen and measured, so the section has its final height. */
+export function useStoryEngine(section: RefObject<HTMLElement | null>, onReady?: () => void): void {
   useEffect(() => {
     const element = section.current;
     const parts = element && readParts(element);
@@ -20,10 +21,11 @@ export function useStoryEngine(section: RefObject<HTMLElement | null>): void {
     const stopInput = bindInput(parts, frame, root, GEOMETRY);
     frame.refresh();
     const stopWatch = watchMode(frame.refresh);
+    onReady?.();
     return () => {
       stopWatch();
       stopInput();
       frame.destroy();
     };
-  }, [section]);
+  }, [section, onReady]);
 }
