@@ -76,6 +76,8 @@ export const CAPTIONS = {
   scripts: "In this example, scripts play the apps.",
   request: "Change request to PETREL-9",
   noAgent: "No agent can answer for you.",
+  /** Under the request in the stacked layout, where the distance line is not drawn. */
+  distance: "Distance 0, same lines.",
 } as const;
 
 /** The two-digit number of a chapter, from its index. */

@@ -1,6 +1,6 @@
 /**
- * Reads the size of the stage and turns it into units: u (1% of the stage width) in px, and the scale of the path.
- * Used by engine/frame.ts. It writes only --u and the height of the section. Measure rarely: it forces a layout.
+ * Reads the size of the stage and turns it into units: u (1% of the stage width) and v (1% of its height), in px.
+ * Used by engine/frame.ts. It writes only --u, --v and the height of the section. Measure rarely: it forces a layout.
  */
 import { pinnedScrollPx } from "../geometry";
 import { PATH_UNITS } from "../thread";
@@ -9,6 +9,8 @@ import { PATH_UNITS } from "../thread";
 export interface Layout {
   /** px for 1 u. */
   unit: number;
+  /** px for 1 % of the height of the canvas. */
+  height: number;
   /** px for 1 path unit along x and along y. */
   scaleX: number;
   scaleY: number;
@@ -25,13 +27,16 @@ export function measureStage(section: HTMLElement, stage: HTMLElement, canvas: H
   const stageWidth = stage.clientWidth;
   const stageHeight = stage.offsetHeight;
   const unit = stageWidth / 100;
+  const height = canvas.clientHeight / 100;
   section.style.setProperty("--u", `${unit.toFixed(3)}px`);
+  section.style.setProperty("--v", `${height.toFixed(3)}px`);
   // One screen of stage plus the pinned scroll: the page scrolls for as long as the canvas travels.
   section.style.height = `${(stageHeight + pinnedScrollPx(stageWidth, stageHeight)).toFixed(1)}px`;
   return {
     unit,
+    height,
     scaleX: unit / PATH_UNITS,
-    scaleY: canvas.clientHeight / (PATH_UNITS * 100),
+    scaleY: height / PATH_UNITS,
     stageWidth,
     stageHeight,
     canvasWidth: canvas.clientWidth,
@@ -42,5 +47,6 @@ export function measureStage(section: HTMLElement, stage: HTMLElement, canvas: H
 /** Takes back what measureStage wrote. */
 export function clearMeasure(section: HTMLElement): void {
   section.style.removeProperty("--u");
+  section.style.removeProperty("--v");
   section.style.removeProperty("height");
 }

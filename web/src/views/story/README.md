@@ -15,4 +15,7 @@ Units: 1 u is 1% of the stage width. A y value is a percent of the stage height.
 - `index.ts`: the public surface of the folder.
 - `story-base.css`: the stacked layout (spine, nodes, text), which is also the layout before the story loads.
 - `story-wide.css`: the pinned layout (stage, canvas, thread, rail, reveals, print).
+- `story-scenes.css`: the look of the parts of the scenes (plates, gates, parcel, diamond, record).
+- `example.ts`: the real strings of the shop example, each with its source.
 - `engine/`: the motion (see its README).
+- `scenes/`: one drawing for each chapter (see its README).
