@@ -14,6 +14,9 @@ const Story = lazy(() => import("./Story"));
 /** How early the story code loads: when the section is this far (of the box height) below the visible part. */
 const LOAD_MARGIN = "150% 0px";
 
+/** The page keeps its place only if the story code arrives within this time (ms) of the request. */
+const KEEP_PLACE_MS = 2500;
+
 /** Shows the fallback when the story code fails to load (for example offline). The plain story stays readable. */
 class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -54,24 +57,30 @@ function useNearViewport(ref: React.RefObject<HTMLElement | null>, onNear: () =>
 
 export function StorySection() {
   const section = useRef<HTMLElement>(null);
-  const plainHeight = useRef(0);
-  const rememberHeight = useCallback(() => {
-    plainHeight.current = section.current?.offsetHeight ?? 0;
+  const endBefore = useRef<{ end: number; at: number } | null>(null);
+  /** Where the end of the section stands in the scroll box, when the reader can see that end or the page below it. */
+  const rememberEnd = useCallback(() => {
+    const element = section.current;
+    if (!element) return;
+    const root = readScrollRoot(element);
+    const end = element.getBoundingClientRect().bottom - root.top();
+    endBefore.current = end <= root.height() ? { end, at: performance.now() } : null;
   }, []);
   /**
-   * The story is much taller than the plain text. A reader who is below the section (a link to the end of the page,
-   * or "Skip the story" before the code arrived) must stay at the same place, so the page moves by the growth.
+   * The story is much taller than the plain text. A reader at the end of the page (a link to the end, or "Skip the story"
+   * before the code arrived) stays at the same place: the page moves so that the end of the section is where it was.
+   * A reader above the section does not move. A reader who had time to scroll is not moved back.
    */
   const keepPlace = useCallback(() => {
     const element = section.current;
-    const before = plainHeight.current;
-    plainHeight.current = 0;
-    if (!element || !before) return;
+    const before = endBefore.current;
+    endBefore.current = null;
+    if (!element || !before || performance.now() - before.at > KEEP_PLACE_MS) return;
     const root = readScrollRoot(element);
-    const growth = element.offsetHeight - before;
-    if (growth && element.getBoundingClientRect().bottom - growth <= root.top()) root.scrollTo(root.scrollTop() + growth, "auto");
+    const moved = element.getBoundingClientRect().bottom - root.top() - before.end;
+    if (moved) root.scrollTo(root.scrollTop() + moved, "auto");
   }, []);
-  const near = useNearViewport(section, rememberHeight);
+  const near = useNearViewport(section, rememberEnd);
   const plain = <StaticStory />;
   return (
     <section id="story" className="story" ref={section} aria-labelledby="story-h">
