@@ -2,7 +2,7 @@
  * The whole app of a person that the waitlist gate keeps out.
  * Nothing else of gitring shows. A visitor sees the landing page and the sign-in step. A signed-in person sees the interest page.
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Button } from "../../design/components";
 import { Mark } from "../../design/icons";
 import { useStore } from "../../state/store";
@@ -20,6 +20,11 @@ export function Waitlist() {
   const joining = useSearchParam("join") === "1";
   const errorCode = useSearchParam("signin_error");
   const onLanding = !user && !joining && !errorCode;
+  const box = useRef<HTMLDivElement>(null);
+
+  // This box scrolls, not the window. Keys such as Space, Page Down and End scroll the box that has the focus,
+  // so without this they do nothing until the first click. The first Tab still reaches "Skip to the content".
+  useEffect(() => box.current?.focus({ preventScroll: true }), []);
 
   useEffect(() => {
     document.title = user ? "Pick your pack · gitring" : "gitring · Many agents, one codebase";
@@ -35,7 +40,7 @@ export function Waitlist() {
   }, [errorCode]);
 
   return (
-    <div className="wl">
+    <div className="wl" ref={box} tabIndex={-1}>
       <a href="#wl-main" className="skip-link">
         Skip to the content
       </a>

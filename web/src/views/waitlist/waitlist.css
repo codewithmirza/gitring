@@ -4,6 +4,7 @@
  */
 
 .wl { height: 100dvh; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; background: var(--bg); color: var(--ink-1); }
+.wl:focus { outline: none; }
 .wl-bar {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: var(--s-4);
