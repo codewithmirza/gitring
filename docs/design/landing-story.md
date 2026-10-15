@@ -1,6 +1,6 @@
 # Landing story: the plan
 
-Status: plan only (15 October 2026, branch `ws/story`). No product code exists yet. This file is the contract for the build. The design agent reviews the finished page against it.
+Status: plan only (15 October 2026, branch `ws/story`), revised after a critique (see section 11). No product code exists yet. This file is the contract for the build. The design agent reviews the finished page against it.
 
 The landing page for signed-out visitors (the waitlist version, `web/src/views/waitlist/Landing.tsx`) keeps its hero and its product video. Everything after the video becomes one scroll-driven story. A pinned stage shows one line, main. Agents leave the line, work on their own lines, and rejoin it as merged work. The story ends in the join button and the footer. The grid of five cards and the numbered list of three steps go away: the story tells their content.
 
@@ -15,15 +15,15 @@ The landing page for signed-out visitors (the waitlist version, `web/src/views/w
 
 **Purpose.** Show how work moves through gitring, in the order a person meets it, with the real material of the product. A visitor who watched the video sees the same ideas again, slowly. A visitor who skipped the video learns them here.
 
-**The one thing.** gitring warns the agent that would collide before any code exists, and only tested work reaches main, with a record of why.
+**The one thing.** gitring warns the agent that would collide before any code exists. Tested work reaches main with a record of why.
 
-**The 5-second test** (check 1 of `CRITIQUE.md`). After the story a stranger can say: "Agents send plans first. gitring warns one of two that collide. Only tested work merges, and every merge says why."
+**The 5-second test** (check 1 of `CRITIQUE.md`). After the story a stranger can say: "Agents send plans first. gitring warns one of two that collide. Tested work merges, risky work waits for a person, and every merge says why."
 
 **The one action.** Join the waitlist. The hero button, the closing button and the skip link all lead there. The `onJoin` flow does not change.
 
-**What the story is not.** It is not a feature list. It has no number about agents, users, speed or uptime, no customer, no quote, no price, and no claim about the future. It has no fake screenshot. Every drawing uses the visual words of the real map (lines, parcels, hulls, the magenta diamond of a change request). Every string in a drawing is a real string of the product (appendix A).
+**What the story is not.** It is not a feature list. It has no number about agents, users, speed or uptime, no customer, no quote, no price, and no claim about the future. It has no fake screenshot. Every drawing uses the visual words of the real map (parcels, hulls, the magenta diamond and the distance line of a change request) and of a git history (one line that agents leave and rejoin). Every quoted string in a drawing is a real string of the product (appendix A). A few small captions are our own words in the interface voice, and they follow the same word rules (section 4).
 
-**The one bold thing.** The thread and its scenes. The page around it stays quiet: sans text, hairlines, no card shadow, no gradient, no stock art.
+**The one bold thing.** The thread and its scenes. The page around it stays quiet: sans text, hairlines, no card shadow, no gradient, no stock art. Inside the story the peak is chapter 04. It holds the magenta (chapter 07 echoes it once, in the count of change requests), so the diamond is the one bold moment and the other scenes stay in ink and hairline.
 
 ## 2. What I looked at
 
@@ -32,7 +32,7 @@ The landing page for signed-out visitors (the waitlist version, `web/src/views/w
 - The wide story is one section about 4.7 screens tall (4,271 px at 900 px). One screen of it stays pinned while the page scrolls.
 - A thin line with a dot at its tip is drawn from the left. The tip stays at 55% of the screen width and the canvas slides under it. Text appears when the line gets near. Labels hang from the line on hairline stems.
 - A rail of chapter buttons sits at the bottom. A hairline above each label fills while the line crosses that chapter. The last item skips the story.
-- The last chapter splits the line into three agents and merges them into "main". This is almost gitring's picture already. We make it the spine of the whole story.
+- The last chapter splits the line into three agents and merges them into "main". This is the picture of a git history, and it fits gitring: agents work apart and merge into main. The real map of gitring has no main line (it draws islands, parcels and agents), so the thread is the story's device, and the parts on it come from the map. We make it the spine of the whole story.
 - On a phone the same chapters stack on a vertical line with ring nodes, and the line grows with the scroll.
 - What we do not take: the dot paper, the handwritten notes, the tracked all-caps labels, the arrow glyphs, the arrowhead at the end, and every word and drawing of his.
 
@@ -58,58 +58,69 @@ Seven chapters. The flow is a real sequence, so the numbers 01 to 07 are honest.
 
 | # | Heading | The beat, in one sentence | What the picture shows | Real source in the repo |
 |---|---|---|---|---|
-| 01 | Start a project | Anything can start a project, and GitHub is never first. | Three boxes feed the first point of main: a typed sentence (serif), a template name (sans), one tool call (mono). | `web/src/views/newproject/StartList.tsx` and `start-text.ts` (the describe field, the order of the sources, GitHub last); `src/worker/mcp-projects.ts` (`gitring_create_project`, start kinds `empty`, `template`, `files`, `git`); `src/core/templates.ts` (the templates); `src/core/types/settings-defaults.ts` (`github.mode` is `"off"`). |
-| 02 | Connect your agents | One URL connects an agent, and the agent signs in. | A URL plate over main. Three agent hulls sit on main, named by their apps: Claude Code, Cursor, Codex. | `web/src/views/ConnectView.tsx` and `connect/clients.ts` (the apps it names); `src/worker/mcp.ts` (the tool list); `src/directory/oauth.ts` (sign-in of agents); `src/harbor/ids.ts` (callsigns); `scripts/meet.mjs` (the URL shape). |
-| 03 | Each agent sends a plan first | A plan names files and functions before any code exists. | HERON-2 and PETREL-9 leave main on dashed plan lines. A note shows the real plan: `gitring_declare`, the files, the function. | `src/worker/mcp.ts` (`gitring_declare`: "Send your plan BEFORE you write code"); `scripts/meet-steps.mjs` (the real plans of the shop story). |
-| 04 | gitring checks plans before code exists | Two plans on one function collide. One agent gets a change request. The other continues. | Both plan lines end on the parcel `src/price.js`. A magenta dashed line between them carries the distance, 0. A magenta diamond sits on PETREL-9. The real request is beside it. A scale bar runs from 0 to 5. | `src/core/analysis/range.ts` (distance 0 to 5); `src/core/coord/facts.ts` (`MAX_CANDIDATES = 20`); `src/core/coord/corrections.ts` (the words of a request); the real run; `test/load/meet-run.test.ts` (pins the same sentences). |
-| 05 | Tested work merges into main | Tests run in the work copy and again on main plus the work. Merges happen one at a time. | Test gates on both agent lines. HERON-2 joins main. A "main moved" mark appears on PETREL-9. PETREL-9 joins after it. | `src/harbor/master/checks.ts` and `merge.ts` (tests before the merge, scope `composed`); `src/harbor/master/queue.ts` (one merge at a time); `src/core/land/compose.ts`; `src/core/types/settings-defaults.ts` (`testsWhen: "before"`). |
-| 06 | A person answers only when it matters | By default gitring asks when work looks risky or no test ran. The person picks where to answer. | TERN-7 stops at a gate. The real question sits under it. Three real answer places. TERN-7 joins main after the yes. | `src/core/approvals.ts` (the rules, the wording); `src/core/types/settings-defaults.ts` (`landing: "risky"`); `web/src/state/inbox.ts` (`APPROVALS_IN_TEXT`); `web/src/views/ApproveView.tsx` ("Yes, merge"); `web/src/views/InboxView.tsx`. |
-| 07 | Every merge keeps its record of why | Each merge keeps task, plan, change requests, tests and decision. A click on a line number shows them. | Seven real lines of `src/price.js`. Line 4 is chosen. A plate shows its real merge record. Main ends in a ring. | `src/core/history.ts` (`WhyRecord`); `web/src/views/code/LineHistory.tsx` ("Why line N?" and the labels); `src/harbor/master/merge-record.ts`; `examples/shop/src/price.js` and `scripts/meet-files.mjs` (the code). |
+| 01 | Start a project | A project starts from a sentence, a template or one tool call. GitHub is optional. | Three boxes feed the first point of main: a typed sentence (serif, under the label `Describe what you want to build`), a template name (sans, under `Template`) and one tool call (mono). | `web/src/views/newproject/StartList.tsx` and `start-text.ts` (the describe field, the order of the sources, GitHub last); `src/worker/mcp-projects.ts` (`gitring_create_project`, start kinds `empty`, `template`, `files`, `git`); `src/core/templates.ts` (the templates); `src/core/types/settings-defaults.ts` (`github.mode` is `"off"`). |
+| 02 | Connect your agents | One URL connects an agent, and the agent signs in. gitring names the agent at its first plan. | A URL plate over main. Three agent hulls sit on main, named by their apps: Claude Code, Cursor, Codex. A caption says that scripts play the apps. | `web/src/views/ConnectView.tsx` and `connect/clients.ts` (the apps it names); `src/worker/mcp.ts` (the tool list); `src/directory/oauth.ts` (sign-in of agents); `src/harbor/ids.ts` (callsigns); `scripts/meet.mjs` (the URL shape). |
+| 03 | Each agent sends a plan first | A plan names files and functions before any code exists. | HERON-2 and PETREL-9 leave main on dashed plan lines. Each line has a plan note with the task title (serif) and the function (mono). Both notes name `formatPrice`, so the visitor sees why the plans will collide. The tool name `gitring_declare` sits on the first note. | `src/worker/mcp.ts` (`gitring_declare`: "Send your plan BEFORE you write code"); `scripts/meet-steps.mjs` (the real plans of the shop story). |
+| 04 | gitring checks plans before code exists | Two plans on one function collide. One agent gets a change request. The other continues. | Both plan lines end on the parcel `src/price.js`. A magenta dashed line between them carries the distance, `0 same lines`. The plan of HERON-2 ends with the word `clear`. A magenta diamond sits at the end of the plan of PETREL-9, where the request arrives, and the real request hangs from it. | `src/core/analysis/range.ts` (distance 0 to 5); `src/core/coord/facts.ts` (`MAX_CANDIDATES = 20`); `src/core/coord/corrections.ts` (the words of a request); the real run; `test/load/meet-run.test.ts` (pins the same sentences). |
+| 05 | Tested work merges into main | Tests run in the work copy and again on main plus the work. Work on the same files merges one after the other. | Test gates on both agent lines. HERON-2 joins main. Then `main moved` appears on the line of PETREL-9. PETREL-9 joins after it. Each join is a dot on main. | `src/harbor/master/checks.ts` and `merge.ts` (tests before the merge, scope `composed`); `src/harbor/master/queue.ts` and `src/core/land/train.ts` (work on the same files cannot ride in one train, so it merges one after the other); `src/core/land/compose.ts`; `src/core/types/settings-defaults.ts` (`testsWhen: "before"`). |
+| 06 | Risky work waits for a yes | By default gitring asks when work looks risky or no test ran. The person picks where to answer. | TERN-7 stops at a gate. The real question sits under it. Three real answer places, and the caption `No agent can answer for you`. TERN-7 joins main after the yes. | `src/core/approvals.ts` (the rules, the wording); `src/core/types/settings-defaults.ts` (`landing: "risky"`); `web/src/state/inbox.ts` (`APPROVALS_IN_TEXT`); `web/src/views/ApproveView.tsx` ("Yes, merge"); `web/src/views/InboxView.tsx`. |
+| 07 | Every merge records why it happened | Each merge keeps task, plan, change requests, tests and decision. A click on a line number shows them. | Seven real lines of `src/price.js`. Line 4 is chosen. A plate shows its real merge record. Main ends at its last merge, with the label `main`. | `src/core/history.ts` (`WhyRecord`); `web/src/views/code/LineHistory.tsx` ("Why line N?" and the labels); `web/src/views/code/history.ts` (`stepWho`, `testsText`, `requestStatusText`); `src/harbor/master/merge-record.ts`; `examples/shop/src/price.js` and `scripts/meet-files.mjs` (the code). |
 
 **Claims I leave out on purpose.**
 
 - Sign-up with a passkey. The waitlist asks for Google or GitHub, so the story would contradict the join step. Passkeys belong to the open product.
-- Push notices on a phone. They need keys on the deployment (`src/worker/push.ts`: "Push is off when a key is absent"). The story says only that the inbox collects the questions of all projects. That is true everywhere (`InboxView.tsx`).
+- Push notices on a phone. They need keys on the deployment (`src/worker/push.ts`: "Push is off when a key is absent"). The story does not mention push. Its answer place "In the gitring app" is the inbox (`InboxView.tsx`), which every deployment has.
 - Built-in agents. They need Workers AI, whose credits are used up.
 - The words MCP, OAuth, "3-way merge", Artifacts and Durable Objects. `INTENT.md` keeps host names and protocols out of the first minute. The only trace is the URL ending `/mcp` and tool names in agent voice.
 - "Fast-forward" and "redo" as labels. The picture shows the effect (the line moves onto the new main), not the name.
 - Any number that is not a real output: no count of agents, users, merges or seconds.
+- "Only tested work merges". A person can say yes to work with no test, and a project can test after the merge (`testsWhen: "after"`). The story says that tested work merges and that risky work waits for a yes. It describes the default of `testsWhen`, which is "before".
+- "One merge at a time". Independent work copies can merge in one train (`maxTrain`, 8 by default). The story says only that work on the same files merges one after the other.
 
 ## 4. The final copy
 
-Every sentence below passed `steViolations` of `test/coord/ste.ts` (at most 20 words, no `-ing` form) and a list of banned words (the hype words, the intensifiers, the code names, em dashes, emoji). Each chapter text has two sentences or fewer. The build puts these strings in one file, `web/src/views/story/copy.ts`, and a test (`test/web/story-copy.test.ts`) keeps the rules.
+Every sentence below passed `steViolations` of `test/coord/ste.ts` (at most 20 words, no `-ing` form) and a list of banned words (the hype words, the intensifiers, the code names, em dashes, emoji). Each chapter text has two sentences or fewer. The critique ran the final copy through a copy of the same check again. The build puts these strings in one file, `web/src/views/story/copy.ts`, and a test (`test/web/story-copy.test.ts`) keeps the rules.
 
 **Opening** (the heading of the story section)
 
-- Heading: `How work moves through gitring`
-- Text: `Main is the line that runs through the whole story. Agents leave it to work on their own lines, and tested work merges back.`
-- Cue (small, ink-3, under the text): `The example is a small shop with three scripted agents. Scroll to follow the line.`
+- Heading: `Three agents change one shop at the same time`
+- Text: `Main is the shared version of the code. Each agent works on its own line, and tested work comes back to main.`
+- Cue (small, ink-3, under the text): `The agents in this example are scripts. Scroll to follow the line.`
 
 **Chapters** (heading, then the rail label, then the text)
 
 | # | Heading | Rail label | Text |
 |---|---|---|---|
-| 01 | Start a project | Start | `Describe the project, pick a template, or let your agent make it with one call. GitHub is optional and never the first step.` |
-| 02 | Connect your agents | Connect | `Each agent connects with one URL and signs in. gitring gives each agent a callsign when it sends its first plan.` |
+| 01 | Start a project | Start | `Describe what you want to build, pick a template, or let an agent make the project with one call. GitHub is optional.` |
+| 02 | Connect your agents | Connect | `Each agent connects with one URL and signs in. gitring gives each agent a short name, such as HERON-2, when it sends its first plan.` |
 | 03 | Each agent sends a plan first | Send plans | `A plan names the files and functions the agent will change. The agent sends it before it writes any code.` |
-| 04 | gitring checks plans before code exists | Check plans | `gitring compares each plan with the 20 nearest plans and gives each pair a distance from 0 to 5. When two plans collide, one agent gets a change request, and the other agent continues.` |
-| 05 | Tested work merges into main | Merge | `Tests run in each agent's own copy of main, and again on main plus the work. Work that passes merges into main, one merge at a time.` |
-| 06 | A person answers only when it matters | Ask a person | `By default, gitring asks a person when the work looks risky or no test ran. You choose where to answer: in the agent's chat, in the app, or in both.` |
-| 07 | Every merge keeps its record of why | Ask why | `The merge record keeps the task, the plan, the change requests, the tests and any decision. In the Code view, a click on a line number answers why the line is there.` |
+| 04 | gitring checks plans before code exists | Check plans | `gitring compares each plan with the 20 nearest active plans and gives each pair a distance from 0 to 5. When two plans collide, one agent gets a change request, and the other agent continues.` |
+| 05 | Tested work merges into main | Merge | `Tests run in the agent's copy of main, and again on main plus the work before a merge. Work that touches the same files merges one after the other.` |
+| 06 | Risky work waits for a yes | Say yes | `By default, gitring asks a person when the work looks risky or no test ran. You choose where to answer: in the agent's chat, in the app, or in both.` |
+| 07 | Every merge records why it happened | Ask why | `Click a line number in the Code view to ask why the line is there. The merge record answers with the task, the plan, the change requests, the tests and any decision.` |
 
 **Closing** (after the story, before the footer)
 
 - Heading: `Join the waitlist`
-- Text: `gitring is not open to the public yet. Sign in, then tell us which pack you would use.`
-- Button: `Join the waitlist` (the existing `LANDING.join`, the existing `onJoin`).
-- Note (small, ink-3): `The example comes from npm run meet in the gitring repository.`
+- Text: `Sign in so we know who you are. Then you pick the pack you would use.` These are the words of `JOIN.text`, so the page says the same thing as the next step.
+- Button: `Join the waitlist` (the existing `LANDING.join`, the existing `onJoin`). The muted line `gitring is not open to the public yet.` stands beside it (the existing `LANDING.closed`, as in the hero).
+- Note (small, ink-3): `The plans, messages and records in the pictures are real output of npm run meet in the gitring repository.`
 
 **Small words**
 
 - Skip link and last rail item: `Skip the story`. Rail name for screen readers: `Story chapters`.
 - Rail buttons show the number and the label: `01 Start`, `02 Connect`, and so on.
 
-**Strings inside the pictures** are real strings, not copy. They keep the voice of their owner: serif for words of people (the typed sentence, the task titles), mono for agents and machines (tool names, plans, requests, code), sans for the interface (answer places, button names). Appendix A lists all of them.
+**Strings inside the pictures** are of two kinds.
+
+- *Quoted strings* are real strings of the product. They keep the voice of their owner: serif for words of people (the typed sentence, the task titles), mono for agents and machines (tool names, plans, requests, code), sans for the interface (answer places, button names). Appendix A lists them with their sources.
+- *Captions* are our own words in the interface voice (sans, small, ink-3, sentence case). They follow the word rules of the chapter text, and the build keeps them in `copy.ts`.
+
+| Where | Caption |
+|---|---|
+| 02, under the three hulls | `In this example, scripts play the apps.` |
+| 04, label of the request plate | `Change request to PETREL-9` |
+| 06, right of the three answer places | `No agent can answer for you.` (a real help sentence of the app, `APPROVALS_IN_TEXT`) |
 
 ## 5. The geometry
 
@@ -120,8 +131,8 @@ Every sentence below passed `steViolations` of `test/coord/ste.ts` (at most 20 w
 | `CANVAS_U` | 478 | Width of the canvas in u. |
 | `TRAVEL_U` | 378 | How far the canvas slides left (`CANVAS_U` minus 100). |
 | `ANCHOR` | 55 | The tip of the line stays at 55 u on the stage. |
-| `START` | (48, 60) | First point of main. |
-| `END` | (470, 62) | Last point of main. A ring marks it. |
+| `START` | (48, 60) | First point of main. A dot marks it (the first commit). |
+| `END` | (470, 62) | Last point of main. The tip stops here. Nothing else marks it. |
 | `CATCH_UP` | 0.2 | The last 20% of the scroll lets the tip run ahead to the end (Mirza's value). |
 | `SPEED` | 1.5 | The canvas moves about 1.5 px for each px of scroll (up to 1.7 where the cap below decides). |
 | Pinned scroll | `min(TRAVEL_U / SPEED, 400dvh)` | 252 u of scroll, capped at four screens. |
@@ -130,7 +141,7 @@ Bands of the stage (y in %): text 9 to 34, scenes 38 to 89, rail 91 to 100. Lane
 
 ### 5.2 The wide layout (stage at least 901 px wide and 640 px tall, aspect at least 5 to 4, motion allowed)
 
-Boxes have their true size. `T1` to `T7` are the heading and text of the chapters (25 u wide, at most 38 characters of measure). `=` is main, `a`, `b`, `c` are the agent lines, `.` is a plan (dashed in the real drawing), `#` is a gate, `^` is a hull, `O` is the start and the end of main, `<>` is the diamond.
+Boxes have their true size. `T1` to `T7` are the heading and text of the chapters (25 u wide, at most 38 characters of measure). `=` is main, `a`, `b`, `c` are the agent lines, `.` is a plan (dashed in the real drawing), `#` is a gate, `^` is a hull, `O` is the start of main, `o` is a merge (a dot on main), `<>` is the diamond. `main` is the label of the line. Where a sketch and a table differ, the table rules.
 
 ```
 --- x 0 to 160 ---
@@ -145,10 +156,10 @@ Boxes have their true size. `T1` to `T7` are the heading and text of the chapter
    +---------------+                                    +url /mcp------+
    |describe       |                                    +--------------+
    +---------------+                                       |    |    |
-   |template       |                                       |    |    |
+   |template       |    main                               |    |    |
    +---------------+    O==================================^====^====^==========
    +---------------+                                      A    B    C
-   |one call       |
+   |one call       |                                    scripts play the apps
    +---------------+
 
 --- x 160 to 320 ---
@@ -158,19 +169,19 @@ Boxes have their true size. `T1` to `T7` are the heading and text of the chapter
  |T3 head + 2|               |T4 head + 2|                  |T5 head + 2|
  |           |               |           |                  |           |
  |           |               |           |                  |           |
- |           |               |           |                  |           |
- +-----------++plan note---+ +-----------+                  +-----------+
-              +------------+                                  3/3
+ |           |+------------+ |           |                  |           |
+ +-----------+|A note      | +-----------+                  +-----------+
+              +------------+      clear                       3/3
               ..................aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#aaaaa
-     A^    ....                 :     same lines                       aaa
-       .....               +--------+                                     aa  A in
-======...==================|price.js|======================================aa===
+     A^    ....                 : 0 same lines                         aaa
+ main  .....               +--------+                                     aa
+======...==================|price.js|======================================ao===
      B^  ....              +----:---+
             ........            :                                         bbbbbb
-                   .............bbbbbbbbbbb<>bbbbbbbbbbbbbbbbbb
-                                           +-----------+                    main moved
-                                           |request    |
-                             0 1 2 3 4 5   +-----------+
+                   ............<>bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+              +------------+        +-----------+
+              |B note      |        |request    |
+              +------------+        +-----------+
 
 --- x 320 to 480 ---
 320       340       360       380       400       420       440       460
@@ -184,12 +195,12 @@ Boxes have their true size. `T1` to `T7` are the heading and text of the chapter
                            H                                   :
                       ..ccccc#....cccc                         :
                    ....       waits  cc                        :
-         B in  ....                  ccC in                    :
-======bbbb=====..======================c=======================:===========O
+          main  ....                  cc                       :  main
+======bbbo=====..======================o=======================:============
   b#bbb             +-----------+  +chat--+            +----------------+
-b4/4                |question   |  +------+            |record of why   |
-                    |           |  +app---+            |                |
-                    |           |  +both--+            |                |
+bb  4/4             |question   |  +------+  No agent  |record of why   |
+                    |           |  +app---+  can answer|                |
+ main moved         |           |  +both--+  for you.  |                |
                     |           |  +------+            |                |
                     +-----------+                      +----------------+
 ```
@@ -199,13 +210,13 @@ Each chapter has a bay. The text sits at the top of its bay. The scene sits unde
 | Bay | Text x | Scene x | What fills it |
 |---|---|---|---|
 | Opening | 6 | 6 to 46 | Heading, text and cue at the top left. |
-| 01 | 52 | 6 to 104 | Three inputs at the left (y 38 to 73) converge on the start of main at (48, 60). |
-| 02 | 106 | 106 to 160 | URL plate at (112, 40), 32 u by 6%. Hulls on main at x 118, 128, 138. Short stems join plate and hulls. App names under the hulls. |
-| 03 | 162 | 162 to 218 | Departure of agent A and agent B at x 172. Callsign tags. A plan note at (188, 36), 28 u by 6%. Plan lines end at x 224. |
-| 04 | 218 | 214 to 278 | Parcel `src/price.js` on main at x 214 to 234. Distance line at x 224 from y 45 to y 73. Diamond at (250, 73). Request plate at (246, 77), 26 u by 11%. Scale bar at y 83. |
-| 05 | 280 | 280 to 344 | Gate of A at (291, 45). A joins at (312, 59). "main moved" at (296, 78). Gate of B at (325, 66). B joins at (338, 59). |
-| 06 | 346 | 346 to 406 | Agent C leaves at (350, 59). Gate at (378, 45). Question plate at (360, 64), 26 u by 24%. Three answer places at x 390 to 406. C joins at (398, 59). |
-| 07 | 408 | 406 to 470 | Code block at (438, 14), 28 u by 22%. Record plate at (430, 64), 36 u by 24%. A hairline leads from line 4 down to the plate. End ring at (470, 62). |
+| 01 | 52 | 6 to 104 | Three inputs at the left (y 38 to 73) converge on the start of main at (48, 60). The label `main` stands above the start, at (48, 56). |
+| 02 | 106 | 106 to 160 | URL plate at (112, 40), 32 u by 6%. Hulls on main at x 118, 128, 138. Short stems join plate and hulls. App names under the hulls. The caption under the app names, at (112, 70). |
+| 03 | 162 | 162 to 218 | Departure of agent A and agent B at x 172. Callsign tags. Two plan notes, 28 u by 8%: the note of A at (188, 31) over its lane, the note of B at (188, 78) under its lane. Each note has the task title (serif) and the function (mono). Plan lines end at x 224. Label `main` at (162, 56). |
+| 04 | 218 | 214 to 278 | Parcel `src/price.js` on main at x 214 to 234. Distance line at x 224 from y 45 to y 73, with the chip `0 same lines` at (228, 52). Label `clear` at (228, 42), by the end of the plan of A. Diamond at (224, 73), at the end of the plan of B. Request plate at (232, 78), 26 u by 11%. |
+| 05 | 280 | 280 to 344 | Gate of A at (291, 45). A joins at (312, 59). `main moved` at (322, 79), after A has joined. Gate of B at (325, 66), with `4/4 tests pass` at (328, 69). B joins at (338, 59). Each join is a dot on main. |
+| 06 | 346 | 346 to 406 | Agent C leaves at (350, 59). Gate at (378, 45). Question plate at (360, 64), 26 u by 24%. Three answer places at x 390 to 406, with the caption in three short lines at (409, 70). C joins at (398, 59). Label `main` at (340, 56). |
+| 07 | 408 | 406 to 470 | Code block at (438, 14), 28 u by 22%. Record plate at (430, 64), 36 u by 24%. A hairline leads from line 4 down to the plate. Main ends at (470, 62), with the label `main` at (452, 56). |
 
 ### 5.3 The thread
 
@@ -232,11 +243,12 @@ x only grows (a unit test checks it, as in Mirza's test). I ran the waypoints th
 | C after the yes | TERN-7, `--v3` | solid, 1.5 px | (388,45) (393,46.5) (398,59) | 388 to 398 |
 
 - **Splits.** Two agents leave main together at x 172. The third leaves at x 350.
-- **Merges.** HERON-2 joins at x 312. PETREL-9 joins at x 338. TERN-7 joins at x 398. They never join together: gitring merges one work copy at a time.
+- **Merges.** HERON-2 joins at x 312. PETREL-9 joins at x 338. TERN-7 joins at x 398. The three work copies change the same files, so they cannot ride in one train: each merge waits for the one before. A merge is a dot on main, with no label.
 - **Dashed strands.** The engine draws a line with a dash offset, so a visibly dashed line cannot use the dash itself. A dashed strand is a dashed path seen through a mask. A solid mask path inside the mask is the strand that the engine draws. The engine needs no change for this. If a browser fails the mask, the fallback is a thin grey line (weight and colour still differ from the work strand).
-- **The diamond.** One magenta diamond sits on PETREL-9 at (250, 73), the path of the map's change-request buoy (`M0 -7 L7 0 L0 7 L-7 0 Z`). The distance line is the vertical dashed magenta line at x 224 from the end of the plan of A (y 45) to the end of the plan of B (y 73), with the chip `0` where it crosses main. This is the `c-range--correction` look of the map.
+- **The diamond.** One magenta diamond sits at the end of the plan of PETREL-9, at (224, 73). The real change request arrives as the answer to the plan, before any code exists, so the diamond stands where the plan strand ends and not on the work strand. It uses the path of the map's change-request buoy (`M0 -7 L7 0 L0 7 L-7 0 Z`). The distance line is the vertical dashed magenta line at x 224 from the end of the plan of A (y 45) to the end of the plan of B (y 73), with the chip `0 same lines` beside it where it crosses main. HERON-2 has no diamond: its plan ends with the word `clear`. This is the `c-range--correction` look of the map.
 - **Gates.** A gate is a short hairline across a lane with a check mark (tests) or a person icon (a question). Gates stand at (291, 45), (325, 66) and (378, 45).
 - **The tip.** A 9 px dot in `--accent`, ringed in `--bg`. It stays at 55 u. Main shows only up to the tip.
+- **Dots and labels.** A small dot marks the first commit and each of the three merges on main. The word `main` (mono, `--ink-2`) labels the line at x 48, 162, 340 and 452, so a visitor sees the name where the agents leave and where the line ends. Nothing else marks the end of main.
 
 ### 5.4 What appears when
 
@@ -245,30 +257,32 @@ Two kinds of reveal, as in Mirza's engine. **Edge** reveals show when the item e
 | Item | Reveal | `at` or x |
 |---|---|---|
 | Opening text, cue | thread | 48 (visible from the start) |
-| Three inputs, converging hairlines | thread | 48 |
+| Three inputs, converging hairlines, label `main` | thread | 48 |
 | Text of chapters 01 to 07 | edge | their text x (52, 106, 162, 218, 280, 346, 408) |
 | URL plate | thread | 110 |
 | Hull A, hull B, hull C and their names | thread | 116, 126, 136 |
-| Tags HERON-2 and PETREL-9, plan note | thread | 172, 172, 186 |
+| Caption under the hulls | thread | 138 |
+| Label `main` at the two departures | thread | 162, 340 |
+| Tags HERON-2 and PETREL-9, plan notes of A and B | thread | 172, 172, 186, 186 |
 | Plan strands A and B | strand | 172 to 224 |
 | Parcel `src/price.js` | thread | 212 |
-| Distance line, chip `0`, `same lines` | thread | 224, 224, 228 |
-| Scale bar | thread | 216 |
-| Diamond, request plate | thread | 248, 250 |
+| Distance line, chip `0 same lines` | thread | 224, 226 |
+| Label `clear` at the end of A | thread | 228 |
+| Diamond, request plate | thread | 228, 232 |
 | Work strands A and B | strand | 224 to 312, 224 to 338 |
 | Gate and `3/3 tests pass` (A) | thread | 290 |
-| A joins, `HERON-2 merged` | thread | 312 |
-| `main moved` | thread | 300 |
+| A joins (a dot on main) | thread | 312 |
+| `main moved` | thread | 320 |
 | Gate and `4/4 tests pass` (B) | thread | 324 |
-| B joins, `PETREL-9 merged` | thread | 338 |
+| B joins (a dot on main) | thread | 338 |
 | Tag TERN-7, plan strand C | strand | 350 to 368 |
-| Question plate, three answer places | thread | 372, 386 |
+| Question plate, three answer places, caption | thread | 372, 386, 388 |
 | Gate, person icon, `waits for a person` | thread | 377, 377, 380 |
 | Strands C work, wait, after the yes | strand | 368 to 378, 378 to 388, 388 to 398 |
-| TERN-7 joins, `TERN-7 merged` | thread | 398 |
+| TERN-7 joins (a dot on main) | thread | 398 |
 | Code block, line 4 mark | edge, thread | 438, 440 |
 | Leader line, record plate | thread | 442, 444 |
-| End ring | thread | 470 |
+| Label `main` at the end | thread | 452 |
 
 ### 5.5 Rail ranges (computed with Mirza's `railChapters`)
 
@@ -281,7 +295,7 @@ Two kinds of reveal, as in Mirza's engine. **Edge** reveals show when the item e
 | 03 Send plans | 0.2831 | 0.4312 | 0.4074 |
 | 04 Check plans | 0.4312 | 0.5952 | 0.5556 |
 | 05 Merge | 0.5952 | 0.7698 | 0.7196 |
-| 06 Ask a person | 0.7698 | 0.8910 | 0.8890 |
+| 06 Say yes | 0.7698 | 0.8910 | 0.8890 |
 | 07 Ask why | 0.8910 | 1.0000 | 1.0000 |
 
 The two last parts are short (0.12 and 0.11) because of the catch-up at the end. The build may change `CATCH_UP` to 0.15 if the pictures show the end too fast.
@@ -310,14 +324,14 @@ The cap decides on every common window, so the pinned part always lasts four scr
   | below 700 px | `--t-lg` | `--t-sm` |
 
   A real 1440 by 900 screen has a window about 780 px tall, so the middle row is the common one.
-- Below 700 px the build hides the buttons row of the question plate and the end labels of the scale bar. Stems get shorter.
+- Below 700 px the build hides the buttons row of the question plate and the caption `No agent can answer for you`. Stems get shorter.
 - Text blocks have `max-width: min(25u, 38ch)`, so a 3440 px wide screen does not make long lines.
 - A very tall window (aspect below 5 to 4) uses the vertical layout. A tall but wide window (1920 by 1200) keeps the wide layout, and the scenes use y in %, so they stretch with it.
 - Zoom changes the CSS size of the window. At 150% on 1440 by 900 the window is 960 by 600, so the vertical layout starts. A `matchMedia` change and the `resize` event run `applyMode` and `measure` again.
 
 ### 5.8 The vertical layout (a phone, a narrow window, a short window)
 
-No pin, no canvas, no travel. The chapters stack in the page column of the landing (the same left edge as the hero). A spine runs down the left. The spine is main. It grows with the scroll, drawn by one custom property on the spine element. Each chapter has a node on the spine. The pictures become their real-material block, set as text: the three inputs, the URL and the app names, the plan, the request, the test lines, the question, the code and the record. The wide-only parts (hulls on lanes, parcel, distance line, diamond on a lane, gates, scale bar, end ring) are not drawn. The node of a chapter carries one small glyph from `design/icons.tsx`: a dot (01), a hull (02, 03), a magenta diamond (04), a check (05), a person (06), a logbook (07).
+No pin, no canvas, no travel. The chapters stack in the page column of the landing (the same left edge as the hero). A spine runs down the left. The spine is main. It grows with the scroll, drawn by one custom property on the spine element. Each chapter has a node on the spine. The pictures become their real-material block, set as text: the three inputs, the URL and the app names, the plan, the request, the test lines, the question, the code and the record. The wide-only parts (hulls on lanes, parcel, distance line, the diamond on a lane, gates, the labels `main`, `clear` and `main moved`) are not drawn. The distance shows as one line of text under the request (`distance 0, same lines`). The node of a chapter carries one small glyph from `design/icons.tsx`: a dot (01), a hull (02, 03), a magenta diamond (04), a check (05), a person (06), the record icon (07, named `logbook` in that file).
 
 One chapter at 390 px, chapter 04:
 
@@ -327,13 +341,13 @@ One chapter at 390 px, chapter 04:
   |    04
   <>   gitring checks plans before code exists        (node: magenta diamond)
   |    gitring compares each plan with the 20
-  |    nearest plans and gives each pair a distance
-  |    from 0 to 5. When two plans collide, one
-  |    agent gets a change request, and the other
-  |    agent continues.
+  |    nearest active plans and gives each pair a
+  |    distance from 0 to 5. When two plans collide,
+  |    one agent gets a change request, and the
+  |    other agent continues.
   |
   |    +----------------------------------------+
-  |    | change request to PETREL-9             |   magenta label, mono
+  |    | Change request to PETREL-9             |   magenta label, sans
   |    | (same lines; HERON-2 continues)        |   muted, mono
   |    | HERON-2 also changes formatPrice in    |
   |    | src/price.js. Do not rewrite           |   mono 12 px
@@ -341,7 +355,7 @@ One chapter at 390 px, chapter 04:
   |    | formatPrice small and in a separate    |
   |    | block. ...                             |
   |    +----------------------------------------+
-  |    distance   0 same lines ------- 5 no link      hairline scale, 6 ticks
+  |    distance 0, same lines
   |
   o    05
 ```
@@ -355,7 +369,7 @@ The plate is HTML, so the real text wraps at any width. At 320 px the plate keep
 ### 5.9 The look
 
 - **Plate.** The stage uses `--bg`. A hairline in `--line-strong` runs along its top and bottom edge, like the frame of a chart. A graticule of hairlines in `--graticule` (a line every 20 u and every 20%) is one SVG path with `vector-effect: non-scaling-stroke`. No gradient, no mask, no dot paper.
-- **Lines.** Main in `--accent`, 1.5 px. Agents in `--v1`, `--v2`, `--v3` (the colours the real map gives the second to fourth agent of a project; `colorFor(n)` is `n % 12`). Plans dashed at 1 px, work solid at 1.5 px. Neutral lines in `--line-strong`.
+- **Lines.** Main in `--accent`, 1.5 px. Agents in `--v1`, `--v2`, `--v3` (the colours the real map gives the second to fourth agent of a project; `colorFor(n)` is `n % 12`). Plans dashed at 1 px, work solid at 1.5 px. The map draws no main line and no strands: the thread is the story's device, and the parts on it (colours, hulls, parcels, buoy, distance line) come from the map. Neutral lines in `--line-strong`.
 - **Magenta** (`--magenta`) only for change requests: the diamond, the distance line and its chip, the label of the request plate, and the diamond glyph beside "2 change requests" in chapter 07. Nowhere else.
 - **Parcel.** `--land` fill and `--land-edge` outline, as the map draws land. It is the one warm patch of the page. Its name is mono, `--ink-1`.
 - **Hulls and tags.** `HULL_PATHS` of `design/icons.tsx` and the `Callsign` component of `design/components`, so the tag of HERON-2 is the same object that the map shows. The shapes are the real ones: chevron for A, dart for B, kite for C.
@@ -388,7 +402,7 @@ I read `src_components_storyThread.ts`, `StoryFrame.tsx`, `Story.tsx`, `Interest
 
 1. **The scroll box.** In gitring the page does not scroll: `.wl` does (`height: 100dvh; overflow-y: auto`). Every `window.scrollY`, `window.scrollTo`, `window.innerHeight`, `window` scroll listener and `IntersectionObserver` of his code moves to a scroll root found once by `scroll-root.ts` (the first ancestor with `overflow-y` auto or scroll, else the window). The observers use `root: scrollRoot`. With the implicit root, the box of `.wl` would clip the section and `rootMargin` would not reach it.
 2. **Units.** `u` and a matching height unit come from the stage (`--u` and `--v` in px, set on the section in `measure()`). CSS places things with `calc(var(--x) * var(--u))`. The `vw` and `svh` of his CSS go away.
-3. **No arrow, no handwritten notes, no cue arrow.** The end of main is a ring. The tip is a dot.
+3. **No arrow, no handwritten notes, no cue arrow.** The end of main is plain: the tip stops there. The tip is a dot.
 4. **Hash links.** `#story` and `#story-<chapter>` work: the engine scrolls to the progress of the chapter on mount and on `hashchange`.
 5. **`aria-current="step"`** on the rail button of the current chapter, next to `data-current`.
 6. **Dead code out.** The canvas holds no link or button, so his `focusIn` centring and the pointer guards go. His page has links in its chapters. Ours has none.
@@ -405,7 +419,7 @@ All paths are under `web/src/views/story/` unless a path says more. Each file st
 | File | Job | Lines |
 |---|---|---|
 | `index.ts` | The public surface: `StorySection` and the copy types. | 15 |
-| `copy.ts` | Every word of the story: opening, chapters, rail labels, closing, small words. | 110 |
+| `copy.ts` | Every word of the story: opening, chapters, rail labels, closing, captions, small words. | 120 |
 | `Chapter.tsx` | The number, heading and text of one chapter. The same markup in every mode. | 50 |
 | `StaticStory.tsx` | The readable story without drawings: skip link, opening, spine, seven chapters. | 80 |
 | `StorySection.tsx` | Waits until the section is near the viewport, loads `Story` with `React.lazy`, shows `StaticStory` until then and when the load fails. | 90 |
@@ -428,14 +442,14 @@ All paths are under `web/src/views/story/` unless a path says more. Each file st
 | `engine/input.ts` | Rail clicks, hash links, find-in-page, resize. | 100 |
 | `engine/useStoryEngine.ts` | The React hook that starts and stops the engine. | 45 |
 | `scenes/README.md` | One line per scene. | 12 |
-| `scenes/art.tsx` | Small drawings: hull, diamond, gate, parcel, chip. | 110 |
+| `scenes/art.tsx` | Small drawings: hull, diamond, gate, parcel, chip, commit dot. | 110 |
 | `scenes/Start.tsx` | Chapter 01: the three inputs and the start of main. | 100 |
 | `scenes/Connect.tsx` | Chapter 02: the URL plate and the three hulls. | 90 |
-| `scenes/Plans.tsx` | Chapter 03: the departures, the tags and the plan note. | 100 |
-| `scenes/Compare.tsx` | Chapter 04: parcel, distance line, diamond, request plate, scale bar. | 140 |
+| `scenes/Plans.tsx` | Chapter 03: the departures, the tags and the two plan notes. | 100 |
+| `scenes/Compare.tsx` | Chapter 04: parcel, distance line, `clear`, diamond, request plate. | 120 |
 | `scenes/Merge.tsx` | Chapter 05: gates, joins, "main moved". | 110 |
 | `scenes/Ask.tsx` | Chapter 06: gate, question plate, answer places. | 120 |
-| `scenes/Why.tsx` | Chapter 07: the code, line 4, the record plate, the end ring. | 130 |
+| `scenes/Why.tsx` | Chapter 07: the code, line 4, the record plate, the last label `main`. | 130 |
 | `story-wide.css` | The wide mode: sticky stage, canvas, thread, rail, reveals. | 420 |
 | `story-scenes.css` | The look of the parts of the scenes. | 420 |
 | `README.md` | One line per file of the folder. | 30 |
@@ -457,14 +471,14 @@ All paths are under `web/src/views/story/` unless a path says more. Each file st
 | File | What it checks |
 |---|---|
 | `test/web/story-thread.test.ts` (new, adapted from Mirza's) | `threadSegments` (count, ends), `threadPath` (stable string), `sampleThread` (reach never falls), `tipX` and `progressAtTip` (start, anchor, end, inverse), `railChapters` (contiguous, ends at 1, `go` inside 0 to 1, throws on a count mismatch). |
-| `test/web/story-geometry.test.ts` (new) | Seven chapters, titles equal to the copy. Main x grows. Every strand starts and ends on main (within 0.5%) and has `from` and `to` equal to its x extent. Merges are in order (312, 338, 398). Every `at` is inside the canvas. The pinned scroll at 1440 by 900 is at most four screens. The rail has seven parts and its numbers match 5.5. |
-| `test/web/story-copy.test.ts` (new) | `steViolations` on every string. At most two sentences in a chapter text. Heading in sentence case. The banned words, em dashes, emoji. No code name. The files of the initial bundle import only `story-base.css`. |
-| `test/web/story-example.test.ts` (new) | The truth test. It runs the shop story in process (the setup of `test/load/meet-run.test.ts`, with `approval: true` and `waitSec: 0`) and checks that each string of `example.ts` is in the real report or in the real answer of `/why`. It also checks the callsigns against `callsignFor`, the tool names against `toolNames()` of `connect-text.ts`, and the code lines against `EUROS` of `scripts/meet-files.mjs`. |
+| `test/web/story-geometry.test.ts` (new) | Seven chapters, titles equal to the copy. Main x grows. Each agent line (its strands in order) starts and ends on main (within 0.5%), each strand starts where the one before ends, and `from` and `to` equal the x extent of the strand. Merges are in order (312, 338, 398), and `main moved` stands right of the join of A. The diamond stands at the end of the plan strand of PETREL-9. Every `at` is inside the canvas. The pinned scroll at 1440 by 900 is at most four screens. The rail has seven parts and its numbers match 5.5. |
+| `test/web/story-copy.test.ts` (new) | `steViolations` on every string, captions included. At most two sentences in a chapter text. Heading in sentence case. The banned words, em dashes, emoji. No code name. The files of the initial bundle import only `story-base.css`. |
+| `test/web/story-example.test.ts` (new) | The truth test. It runs the shop story in process (the setup of `test/load/meet-run.test.ts`, with `approval: true` and `waitSec: 0`) and checks that each quoted string of `example.ts` is in the real report or in the real answer of `/why`. The third merge needs a person's yes, so this run has two merges. The test asks `/why` for the Free line at line 2 (it is line 4 after the third merge) and compares the record. The sentences that the web app builds (`Merged by PETREL-9`, `4 of 4 tests pass`, `The agent applied it`, `2 change requests`) are built from that answer with the web helpers `stepWho`, `testsText`, `requestStatusText` and `plural`. They are not searched as text. It also checks the callsigns against `callsignFor`, the tool names against `toolNames()` of `connect-text.ts`, and the code lines against `EUROS` of `scripts/meet-files.mjs`. |
 | `test/web/waitlist-copy.test.ts` (changed) | The last test names the five points and the three steps that I remove on purpose. It now checks the seven chapters and the closing. The list of views it scans gains the story `.tsx` files. |
 | `test/structure.test.ts` | Not edited. It must pass. |
-| `test/web/story-e2e.mjs` (new, run by hand like `shell-e2e.mjs`) | Ported from Mirza's specs: the stage pins and the tip stays at 55%; the rail fills in order; the last rail button shows the end; find-in-page moves the story; nothing overlaps at 1280 by 720, 1440 by 900, 1920 by 1080, 901 by 720, 1024 by 640 and 901 by 640; the phone and the reduced-motion layouts show every chapter with no sideways scroll. |
+| `test/web/story-e2e.mjs` (new, run by hand like `shell-e2e.mjs`) | Ported from Mirza's specs: the stage pins and the tip stays at 55%; `Skip the story` is the first stop of the section; the rail fills in order; the last rail button shows the end; find-in-page moves the story; nothing overlaps at 1280 by 720, 1440 by 900, 1920 by 1080, 901 by 720, 1024 by 640 and 901 by 640; the phone and the reduced-motion layouts show every chapter with no sideways scroll. |
 
-**The budget of the initial bundle.** The estimate: `copy.ts` about 1.0 kB gzip, `StorySection`, `StaticStory` and `Chapter` about 0.7 kB, the Landing changes 0.1 kB. The old cards and steps (copy and markup) free about 0.9 kB. The net growth is about 0.9 kB, under the 2.0 kB limit. The build measures it with `npx vite build` and compares with the table in section 2. The change is not done above 209.40 kB. The lazy chunk targets 14 kB gzip of script and 7 kB gzip of CSS, without a hard limit.
+**The budget of the initial bundle.** The estimate: `copy.ts` about 1.1 kB gzip, `StorySection`, `StaticStory` and `Chapter` about 0.7 kB, the Landing changes 0.1 kB. The old cards and steps (copy and markup) free about 0.9 kB. The net growth is about 1.0 kB, under the 2.0 kB limit. The build measures it with `npx vite build` and compares with the table in section 2. The change is not done above 209.40 kB. The lazy chunk targets 14 kB gzip of script and 7 kB gzip of CSS, without a hard limit.
 
 ## 8. Risks and how I handle them
 
@@ -496,7 +510,7 @@ The design agent scores the finished page with `CRITIQUE.md` and writes `docs/de
 - **Numbers**: no sideways scroll at 320, 390, 768, 1024, 1440 and 1920 px. Contrast of text 4.5 to 1 in three themes. Every control at least 24 px, the rail buttons 44 px.
 - **Bundle**: `npx vite build` before and after. The four first scripts grow by at most 2.0 kB gzip.
 - **Commands**: `npm run typecheck`, `npx vitest run test/web`, `npx vitest run test/structure.test.ts`, `npx vitest run test/worker`.
-- **Keyboard**: the skip link is the first stop. The rail buttons work with Enter and Space. The focus ring shows everywhere.
+- **Keyboard**: the page's own `Skip to the content` stays the first stop of the page. `Skip the story` is the first stop inside the story section, after the video. The rail buttons work with Enter and Space. The focus ring shows everywhere.
 
 **Build order, one commit each, typecheck green before each**
 
@@ -511,10 +525,10 @@ I push `ws/story` by name after each commit.
 
 ## 10. Questions for a person
 
-1. The cue says "three scripted agents", and the app names in chapter 02 are the labels that the scripts give themselves. Is that enough, or does Mirza want the same note as the video ("The agents in it are scripts, and the run is local")?
+1. The cue says "The agents in this example are scripts", and a caption under the app names in chapter 02 says that scripts play the apps. Is that enough, or does Mirza want the same note as the video ("The agents in it are scripts, and the run is local")?
 2. Is it right that the story leaves out passkeys and push notices, because the waitlist uses Google or GitHub and the live deployment may have no push keys?
 3. Four screens of pinned scroll: is that the pace he wants? It is the cap, and it is a one-line change.
-4. The closing note names `npm run meet` and the repository, without a link. Does he want a link to the repository?
+4. The closing note names `npm run meet` and the repository, without a link. The critique advises no link, because the story keeps host names out of the first minute. Does he agree?
 5. A small "Join the waitlist" button in a corner of the pinned stage is not planned. The page has three ways to the join step. Does he want a fourth?
 
 ## Appendix A. The real strings, and where they come from
@@ -525,28 +539,91 @@ Callsigns (`callsignFor(1)`, `(2)`, `(3)` in `src/harbor/ids.ts`): HERON-2, PETR
 |---|---|---|
 | 01 | `A JSON API for my shop, with tests` | The placeholder of the describe field, `web/src/views/newproject/StartList.tsx`. |
 | 01 | `Worker API` | A template title, `src/core/templates.ts`. |
+| 01 | `Describe what you want to build`, `Template` | The label of the describe field and the title of the first source, `web/src/views/newproject/start-text.ts`. |
 | 01 | `gitring_create_project` | Tool name, `src/worker/mcp-projects.ts`. |
 | 02 | `https://your-gitring.example.com/mcp` | The address shape of `MEET_USAGE`, `scripts/meet.mjs`. |
+| 02 | `In this example, scripts play the apps.` | A caption: our own words (section 4). |
 | 02 | Claude Code, Cursor, Codex | The apps the connect page names (`web/src/views/connect/clients.ts`) and the labels of the shop story (`scripts/meet-steps.mjs`). |
-| 03 | `gitring_declare`, `files: src/price.js, tests/price.test.js`, `symbols: src/price.js#formatPrice` | The real plan of agent A, `scripts/meet-steps.mjs`. |
-| 04 | `0`, `same lines`, `5`, `no link` | The distance scale, `src/core/analysis/range.ts`; the real run prints "same lines". |
+| 03 | `gitring_declare`, `files: src/price.js, tests/price.test.js`, `symbols: src/price.js#formatPrice` | The real plans of agent A and agent B, `scripts/meet-steps.mjs`. Both plans name the same function and the same files. |
+| 03 | `Show thousands separators in prices`, `Show Free for a price of zero` | The task titles of agent A and agent B (`newIntent.title` in `scripts/meet-steps.mjs`), in serif. |
+| 04 | `0 same lines`, `clear` | Distance 0 is "same lines" in `src/core/analysis/range.ts`. The real run prints "same lines" in the change request and "Conflict check: clear" to HERON-2. |
+| 04 | `Change request to PETREL-9` | A caption: our own words (section 4). |
 | 04 | `(same lines; HERON-2 continues)` and `HERON-2 also changes formatPrice in src/price.js. Do not rewrite formatPrice. Keep your change to formatPrice small and in a separate block. ...` | The first change request that PETREL-9 got in the real run. The dots mark a cut: the real text goes on. Built by `src/core/coord/corrections.ts`. |
 | 05 | `3/3 tests pass`, `4/4 tests pass` | The answers of `gitring_check` for HERON-2 and PETREL-9 in the real run. |
-| 05 | `main moved` | The real label of the second request of PETREL-9: "(main moved; HERON-2 continues)". |
+| 05 | `main moved` | The real label of the third request of PETREL-9: "(main moved; HERON-2 continues)". |
 | 06 | `Show euros in the EU` | The task title of agent C. |
 | 06 | `3 files, +7 -4. 5 of 5 tests pass. The code logic changes.` | The real question text, `src/core/approvals.ts` (`approvalLine`), as the real run prints it. |
 | 06 | `The parameters of cartTotal, formatPrice change. Other code can call them.` | `riskSigns` in `src/core/approvals.ts`, as the real run prints it. |
+| 06 | `No agent can answer for you.` | The help text of "In the gitring app", `APPROVALS_IN_TEXT`, `web/src/state/inbox.ts`. |
 | 06 | `waits for a person`, `Yes, merge`, `Send back…` | `APPROVAL_WORD` and `ApproveView.tsx`. |
 | 06 | `In the agent's chat`, `In the gitring app`, `In both` | `APPROVALS_IN_TEXT`, `web/src/state/inbox.ts`. |
 | 07 | The seven lines of `src/price.js` | The file on main after the three merges of the real run (`EUROS` in `scripts/meet-files.mjs`). |
 | 07 | `Why line 4?` | The button label of `web/src/views/code/LineHistory.tsx`. |
-| 07 | `Show Free for a price of zero`, `Merged by PETREL-9`, `Add a check at the top of formatPrice.`, `2 change requests`, `The agent applied it`, `4 of 4 tests pass` | The real answer of `GET /api/projects/:p/why?path=src/price.js&line=4` after the real run, and the labels of `LineHistory.tsx` and `history.ts`. |
+| 07 | `Show Free for a price of zero`, `Merged by PETREL-9`, `Add a check at the top of formatPrice.`, `2 change requests`, `The agent applied it`, `4 of 4 tests pass` | The real answer of `GET /api/projects/:p/why?path=src/price.js&line=4` after the real run, and the labels of `LineHistory.tsx` and `history.ts`. `Merged by PETREL-9` is the start of the sentence of `stepWho`: the app adds the time. |
 
-The change requests that PETREL-9 got in the real run are three; the record counts the two that were not replaced. The story shows the first request in chapter 04 and the count of the record in chapter 07. It does not claim that they are the same ones.
+PETREL-9 got three change requests in the real run. The first came with the answer to its plan. The second replaced it at the first write, and the third came when main moved. The record counts the second and the third (`2 change requests`). The story shows the first request in chapter 04, because it is the one that comes before any code exists, and the count of the record in chapter 07. It does not claim that they are the same ones.
 
 ## Appendix B. How this plan was checked
 
-- The copy ran through `steViolations` (a copy of `test/coord/ste.ts`) and the banned-word list: all 22 strings pass.
+- The copy ran through `steViolations` (a copy of `test/coord/ste.ts`) and the banned-word list: all 25 strings pass (the opening, the seven chapters, the closing, the captions and the small words).
 - The waypoints ran through Mirza's `threadSegments`, `sampleThread`, `tipX`, `progressAtTip` and `railChapters` (his file, cut to the pure part). Main is monotone. The rail and scroll numbers above are the output.
 - The wireframes are drawn by a script from the same waypoints and box sizes, so the sketch and the numbers agree.
 - Every file path in the chapter table exists in this branch.
+- The critique (section 11) ran the story in process again, read the report and the answer of `/why` line by line, and drew the wireframes again with the same script after its changes.
+
+## 11. Critique
+
+An editor's pass on 15 October 2026. Method: I checked every claim against the code (the files of section 3). I ran the shop story in process (`runMeet` with `approval: true` and `waitSec: 0`, the setup of `test/load/meet-run.test.ts`) and compared the whole report and the `/why` answers with Appendix A. I read the first author's run with the person's yes: line 4 of `src/price.js` belongs to the merge of PETREL-9, and line 6 belongs to TERN-7 with a decision. I computed the numbers of 5.5 and 5.6 again with the maths of Mirza's engine: they are right. I ran the final copy through a copy of `steViolations` and the banned-word list: every string passes. I did not look at a page, because no page exists yet.
+
+**Truth: false, too strong, or in the wrong order**
+
+- Chapter 05 said "merges happen one at a time". That is false in general: independent work copies merge in one train (`maxTrain`, 8 by default). It now says that work on the same files merges one after the other. Section 3 and 5.3 say the same.
+- "Only tested work merges" (the one thing, the 5-second test) is too strong. A person can say yes to work with no test, and a project can test after the merge. It now says "tested work merges, risky work waits for a person".
+- The diamond sat on the work strand of PETREL-9 (x 250), after the code started. The real request comes with the answer to the plan, and the heading says "before code exists". The diamond now sits at the end of the plan strand (x 224).
+- `main moved` stood at x 296, left of the join of HERON-2 (x 312), so it showed before its cause. It now stands at x 322 and reveals at 320.
+- The labels `HERON-2 merged`, `PETREL-9 merged` and `TERN-7 merged` were not real strings and not in Appendix A. A merge is now a dot on main.
+- The plan said that every string in a drawing is real, and it also had captions of our own. Section 4 now keeps the quoted strings (Appendix A) apart from three captions that follow the word rules.
+- "20 nearest plans" is now "20 nearest active plans", as the tool text says.
+- The thread was called "almost gitring's picture already". The real map draws islands and agents and has no main line. Sections 2 and 5.9 now say that the thread is the story's device and that its parts come from the map.
+- The end ring is not map vocabulary (on the map a ring means "selected"). It is gone, and main ends with its last merge and the label `main`. The 0 to 5 scale bar is gone too: the chip `0 same lines` and the chapter text already say it.
+- `Merged by PETREL-9` is not in the server answer, because the app builds the sentence from the callsign. The truth test now builds it with `stepWho`, `testsText`, `requestStatusText` and `plural`.
+- The truth test said that it asks `/why` for line 4, but the in-process run has two merges (the third needs a person's yes). It now asks for the Free line at line 2.
+- The geometry test said that every strand starts and ends on main. A plan strand ends off main. The test now checks each agent line as a chain of strands.
+- Section 9 said that the skip link is the first stop. The page's own "Skip to the content" is first. "Skip the story" is the first stop of the story.
+- Section 5.8 named the record icon "logbook", a code name. It now says "the record icon" and keeps the file name only as a pointer.
+
+**Words**
+
+- The opening heading "How work moves through gitring" was the old "How it works" again. It now names the example: "Three agents change one shop at the same time".
+- The opening text "Main is the line that runs through the whole story" talked about the page. It now says what main is.
+- Chapter 06 "A person answers only when it matters" used a stock phrase and an absolute. It now reads "Risky work waits for a yes", with the rail label "Say yes".
+- Chapter 07 "keeps its record of why" was clipped. It now reads "Every merge records why it happened", and its text starts with the act of the visitor, a click on a line number.
+- Chapter 02 taught the word "callsign", a nautical name that `INTENT.md` says a person must not have to learn. It now says "a short name, such as HERON-2".
+- Chapter 01 lost "never the first step", which sounded defensive. "GitHub is optional." is enough, and it varies the rhythm.
+- The closing wrote a new sentence that repeated the hero's line. It now reuses `JOIN.text` and `LANDING.closed`, so it says what the next step says. The word "pack" stays, because the next step uses it.
+- The closing note said that "the example comes from npm run meet". The plans, messages and records do, but the labels of the app do not. The note now names exactly those three.
+- The cue said "three scripted agents" once, at the top. A visitor who jumps by the rail would miss it. A caption in chapter 02 repeats it where "Claude Code", "Cursor" and "Codex" show.
+
+**Craft and structure**
+
+- Chapter 03 now shows both task titles (serif) and both functions. Without them a visitor cannot see why two plans collide.
+- The plan of HERON-2 ends with `clear`, a real answer. "The other agent continues" is now in the picture, not only in the text.
+- The line had no name in the picture. The label `main` now stands at the start, at the two departures and at the end.
+- Chapter 06 has the caption "No agent can answer for you", a real help sentence of the app and the strongest trust fact of the chapter. It stands right of the answer places, because the space under them belongs to the rail.
+- Chapter 04 is the named peak: it holds the magenta, and the other scenes stay in ink and hairline.
+- The chapter order follows a real project (start, connect, plan, check, test and merge, ask, record). I thought about moving "an agent makes the project with one call" to chapter 02. I left it: the three ways to start read best together.
+- The initial bundle estimate moves from 0.9 to 1.0 kB net growth, still under the 2.0 kB limit.
+
+**Checked and true (do not weaken)**
+
+- The callsigns HERON-2, PETREL-9 and TERN-7, and their hull shapes (chevron, dart, kite).
+- The first change request and its label `(same lines; HERON-2 continues)`, `3/3` and `4/4 tests pass`, and the question `3 files, +7 -4. 5 of 5 tests pass. The code logic changes.` with its reason.
+- The record of the Free line: 2 change requests, `The agent applied it`, `4 of 4 tests pass`.
+- The defaults `landing: risky`, `github.mode: off` and `testsWhen: before`, and the three answer places of `APPROVALS_IN_TEXT`.
+- `Why line N?`, the click on a line number, and the MIT notice of Mirza's file. Every path in section 3 exists.
+
+**Left for a person**
+
+- Section 10 holds the open questions. The critique answers question 4: no link to the repository.
+- The word "pack" (in `JOIN.text` and on the interest page) is a name that the landing page does not explain. The story reuses it so that the words match. A person can change it in `JOIN` and in the closing at once.
+- The strings of the story are checked by the build only after the code exists. Until then the truth test of section 7 is a plan, and the editor's run above is the only proof.
