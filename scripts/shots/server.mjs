@@ -67,11 +67,12 @@ function killTree(child) {
 
 /**
  * Starts `local/start.mjs` on free ports (the default ports may be busy: other agents run gitring too).
+ * With `waitlist` the gate of the waitlist is on, so a stranger sees the landing page of the waitlist.
  * Resolves with { url, key, stop }. The address uses `localhost`, because passkeys need a host name.
  */
-export async function startLocal(root, say) {
+export async function startLocal(root, say, { waitlist = false } = {}) {
   const [app, artifacts, inspector] = [await freePort(), await freePort(), await freePort()];
-  const child = spawn(process.execPath, [path.join(root, "local", "start.mjs"), "--port", String(app), "--inspector-port", String(inspector)], {
+  const child = spawn(process.execPath, [path.join(root, "local", "start.mjs"), "--port", String(app), "--inspector-port", String(inspector), ...(waitlist ? ["--var", "WAITLIST_ENABLED:true"] : [])], {
     cwd: root,
     env: { ...process.env, LOCAL_ARTIFACTS_PORT: String(artifacts) },
     stdio: ["ignore", "pipe", "pipe"],
@@ -104,6 +105,6 @@ export async function startLocal(root, say) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const url = `http://localhost:${app}`;
-  say(`The local gitring runs at ${url}`);
+  say(`The local gitring runs at ${url}${waitlist ? ", with the waitlist gate on" : ""}`);
   return { url, key, stop };
 }

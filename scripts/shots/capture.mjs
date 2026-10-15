@@ -54,7 +54,7 @@ export async function checkState(page, { theme, phase }) {
   const shown = await shownTheme(page);
   if (shown !== theme) throw new Error(`The page shows the theme ${shown}, not ${theme}.`);
   const isSignedOut = (await page.locator("[data-signin-anchor]").count()) > 0;
-  if (phase !== "out" && isSignedOut) throw new Error("The page is signed out. The sign-up did not hold.");
+  if (phase !== "out" && phase !== "story" && isSignedOut) throw new Error("The page is signed out. The sign-up did not hold.");
   return shown;
 }
 

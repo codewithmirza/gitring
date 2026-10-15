@@ -59,6 +59,7 @@ The tool needs Node 22, the dependencies of the repository (`npm ci`), `git`, an
 | `CRITIQUE.md` | The 11 checks, the severities and the report format. |
 | `SCREENS.md` | Every screen: its route, its one purpose, its one action, what a person must see first, its states. |
 | `reviews/` | The reviews, one file for each pass. |
+| `landing-story.md` | The plan of the scroll story on the landing page for signed-out visitors: chapters, copy, geometry, files, risks. |
 | `../../scripts/shots/README.md` | How the tool works, and how to add a screen to it. |
 | `../../.claude/agents/gitring-design.md` | The agent. |
 

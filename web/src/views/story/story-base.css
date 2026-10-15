@@ -1,0 +1,38 @@
+/*
+ * The stacked story: the layout of phones, narrow and short windows, reduced motion and print.
+ * It also shows before the pinned story loads. The pinned layout is in story-wide.css, the scenes in story-scenes.css.
+ * Type sizes here: 28, 20, 15 and 13. Plates add 11 (12 on a phone).
+ */
+
+.story { position: relative; max-width: 1040px; margin: var(--s-11) auto 0; padding: 0 var(--s-5); }
+
+/* The skip link is hidden until the keyboard reaches it. Its row sticks to the top of the scroll box, so the link shows also inside the pinned story. */
+.story-skip-row { position: sticky; top: 0; height: 0; z-index: 30; }
+.story-skip { position: absolute; left: var(--s-3); top: var(--s-3); padding: var(--s-2) var(--s-4); border: 1px solid var(--line-strong); border-radius: var(--r-2); background: var(--bg); color: var(--accent); white-space: nowrap; }
+.story-skip:not(:focus) { width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
+
+/* The spine is main. A hairline track shows the whole line, and the accent line grows over it in the stacked layout. */
+.story-canvas { position: relative; padding-left: 32px; }
+.story-canvas::before { content: ""; position: absolute; left: 8px; top: 8px; bottom: 0; width: 1px; background: var(--line-strong); }
+.story-spine { position: absolute; left: 8px; top: 8px; bottom: 0; width: 1px; background: var(--accent); transform-origin: top; }
+
+.story-chapter { position: relative; padding-bottom: var(--s-10); }
+.story-chapter:last-child { padding-bottom: 0; }
+.story-node { position: absolute; left: -32px; top: 5px; width: 17px; height: 17px; display: grid; place-items: center; background: var(--bg); color: var(--ink-2); }
+.story-node--dot::before { content: ""; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--accent); background: var(--bg); }
+.story-opening .story-node { top: 9px; }
+.story-opening .story-node--dot::before { background: var(--accent); }
+
+.story-text { max-width: 60ch; background: var(--bg); }
+.story-title { margin-bottom: var(--s-3); font-size: var(--t-xl); line-height: var(--lh-xl); font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
+.story-heading { margin-bottom: var(--s-2); font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; text-wrap: balance; }
+.story-text p { font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); text-wrap: pretty; }
+.story-text p + p { margin-top: var(--s-3); }
+.story-text .story-cue { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+/* The number is page furniture: a screen reader reads the heading only. */
+.story-num { margin-right: .6em; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+
+@media print {
+  .story-skip-row { display: none; }
+  .story-spine { transform: none; }
+}

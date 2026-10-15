@@ -1,0 +1,111 @@
+/*
+ * The pinned story: a sticky stage, a canvas that slides left, the thread, the rail, and the reveals.
+ * Every rule of the pinned layout needs data-mode="horizontal", which engine/frame.ts sets. The stacked layout is in story-base.css.
+ * Units: --u is 1% of the stage width in px (engine/measure.ts). A y value is a percent of the stage height.
+ * Type sizes here: 28 or 20, 15 or 13, and 11. Colors are tokens only. No gradient, no shadow on a card.
+ */
+
+/* ───── Parts that exist only in the pinned layout ───── */
+
+.story:not([data-mode="horizontal"]) .story-wide { display: none; }
+
+/* The pinned layout is for the screen. Print shows the stacked layout (see the end of this file). */
+@media screen {
+
+/* ───── The stage ───── */
+
+.story[data-mode="horizontal"] { max-width: none; padding: 0; margin-top: var(--s-11); }
+.story[data-mode="horizontal"] .story-stage {
+  position: sticky; top: 0; height: 100dvh;
+  background: var(--bg); border-block: 1px solid var(--line-strong);
+}
+/* The window clips the canvas. The rail sits outside it, so it never slides away. */
+.story[data-mode="horizontal"] .story-window { position: absolute; inset: 0; overflow: hidden; }
+/* The canvas rests one canvas width in, so the browser can scroll the window to show a find-in-page match. */
+.story[data-mode="horizontal"] .story-canvas {
+  position: absolute; top: 0; height: 100%; padding: 0; will-change: transform;
+  left: calc(var(--u) * 478); width: calc(var(--u) * 478);
+}
+.story[data-mode="horizontal"] .story-canvas::before,
+.story[data-mode="horizontal"] .story-spine,
+.story[data-mode="horizontal"] .story-node { display: none; }
+.story[data-mode="horizontal"] .story-chapter { position: static; padding: 0; }
+.story[data-mode="horizontal"] .story-place { position: absolute; left: calc(var(--x) * var(--u)); top: calc(var(--y) * 1%); margin: 0; }
+
+/* ───── Text ───── */
+
+.story[data-mode="horizontal"] .story-text { width: min(calc(25 * var(--u)), 38ch); max-width: none; z-index: 3; }
+.story[data-mode="horizontal"] .story-opening { width: min(calc(40 * var(--u)), 46ch); }
+.story[data-mode="horizontal"] .story-opening .story-text { width: auto; }
+/* The number hangs in the left margin of the heading. */
+.story[data-mode="horizontal"] .story-heading { position: relative; }
+.story[data-mode="horizontal"] .story-num { position: absolute; right: 100%; margin-right: var(--s-3); }
+.story[data-mode="horizontal"] .story-heading,
+.story[data-mode="horizontal"] .story-title { font-size: var(--t-lg); line-height: var(--lh-lg); }
+.story[data-mode="horizontal"] .story-text p { font-size: var(--t-md); line-height: var(--lh-md); }
+@media (min-height: 820px) {
+  .story[data-mode="horizontal"] .story-title,
+  .story[data-mode="horizontal"] .story-heading { font-size: var(--t-xl); line-height: var(--lh-xl); }
+}
+@media (max-height: 699px) {
+  .story[data-mode="horizontal"] .story-text p { font-size: var(--t-sm); line-height: var(--lh-sm); }
+}
+
+/* ───── The thread ───── */
+
+.story-graticule, .story-thread { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.story-graticule { z-index: 0; }
+.story-thread { z-index: 2; overflow: visible; }
+.story-graticule path { fill: none; stroke: var(--graticule); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.story-line { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.story-line--main { stroke: var(--accent); stroke-width: 1.5; }
+.story-line--input { stroke: var(--line-strong); stroke-width: 1; }
+.story-line--agent { stroke-width: 1.5; }
+.story-line--agent.is-dashed { stroke-width: 1; stroke-dasharray: 5 4; stroke-linecap: butt; }
+.story-line[data-agent="1"] { stroke: var(--v1); }
+.story-line[data-agent="2"] { stroke: var(--v2); }
+.story-line[data-agent="3"] { stroke: var(--v3); }
+
+/* The first commit and the tip of the thread: one dot, ringed in the page color. */
+.story-start, .story-tip {
+  position: absolute; z-index: 4; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--bg);
+}
+.story-tip { left: 0; top: 0; opacity: 0; will-change: transform; }
+.story[data-ready] .story-tip { opacity: 1; }
+
+/* ───── The rail ───── */
+
+.story-rail { display: none; }
+.story[data-mode="horizontal"] .story-rail {
+  display: flex; position: absolute; z-index: 20; gap: var(--s-5);
+  left: calc(var(--u) * 4); right: calc(var(--u) * 4); bottom: var(--s-3);
+}
+.story-rail button, .story-rail a {
+  position: relative; display: flex; align-items: flex-start; gap: var(--s-2); min-height: 44px; padding: var(--s-3) 0 0;
+  font-size: var(--t-sm); line-height: var(--lh-sm); text-align: left; text-decoration: none; color: var(--ink-3);
+  transition: color var(--dur-1) var(--ease-out);
+}
+.story-rail button { flex: 1 1 0; min-width: 0; }
+.story-rail a { flex: none; padding-left: var(--s-4); color: var(--accent); }
+.story-rail button::before, .story-rail button::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--line-strong); }
+.story-rail button::after { height: 2px; background: var(--accent); transform-origin: left; transform: scaleX(var(--fill, 0)); }
+.story-rail__n { font-variant-numeric: tabular-nums; }
+.story-rail button:hover, .story-rail button[data-current] { color: var(--ink-1); }
+.story-rail button[data-current] { font-weight: 500; }
+
+/* ───── Reveals ───── */
+/* Before the engine is ready everything shows. After it, a part waits for the thread (or the edge) and fades in once. */
+
+.story[data-ready] [data-reveal] { transition: opacity var(--dur-3) var(--ease-out), translate var(--dur-3) var(--ease-out); }
+.story[data-ready] [data-reveal]:not([data-shown]) { opacity: 0; translate: 0 8px; }
+
+}
+
+/* ───── Print: the stacked story, every part visible ───── */
+
+@media print {
+  .story[data-mode] { height: auto !important; }
+  .story .story-wide, .story .story-rail, .story-skip-row { display: none !important; }
+  .story [data-reveal] { opacity: 1 !important; translate: none !important; }
+}

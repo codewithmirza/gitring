@@ -5,13 +5,14 @@ import { SIZES } from "./browser.mjs";
 export const THEMES = ["day", "dusk", "night"];
 
 export const USAGE = [
-  "Usage: node scripts/shots.mjs [--only screen,screen] [--themes day,dusk,night] [--sizes desktop,phone] [--out folder] [--full] [--no-start]",
-  "  --only    the screens to shoot, by id (default: all). A project screen needs the seed: the tool makes it.",
+  "Usage: node scripts/shots.mjs [--only screen,screen] [--themes day,dusk,night] [--sizes desktop,phone] [--out folder] [--full] [--no-start] [--waitlist]",
+  "  --only    the screens to shoot, by id (default: all, or with --waitlist the screens of the landing story). A project screen needs the seed: the tool makes it.",
   "  --themes  day, dusk or night (default: all three).",
   "  --sizes   desktop is 1440x900, phone is 390x844 (default: both).",
   "  --out     the folder for the PNGs and index.json (default: tmp/shots).",
   "  --full    also save a tall PNG of the whole page (name ends with -full.png).",
   "  --no-start  use a gitring that runs already. The address comes from GITRING_URL and the key from GITRING_KEY.",
+  "  --waitlist  start gitring with the waitlist gate on, and shoot the landing story (scroll positions, with motion). It cannot shoot the other screens.",
   "Without --no-start the tool builds the app when it is old, starts gitring on free ports, and stops it at the end.",
 ];
 
@@ -27,8 +28,8 @@ function list(raw, allowed, name) {
 }
 
 /** Returns the options, or { code, lines } when the tool must print and stop. */
-export function parseArgs(argv, env, screenIds) {
-  const options = { only: [...screenIds], themes: [...THEMES], sizes: Object.keys(SIZES), out: "tmp/shots", full: false, start: true, url: "", key: "" };
+export function parseArgs(argv, env, screenIds, waitlistIds = []) {
+  const options = { only: [], themes: [...THEMES], sizes: Object.keys(SIZES), out: "tmp/shots", full: false, start: true, waitlist: false, url: "", key: "" };
   try {
     for (let i = 0; i < argv.length; i += 1) {
       const arg = argv[i];
@@ -41,9 +42,15 @@ export function parseArgs(argv, env, screenIds) {
       else if (flag === "--out") options.out = String(value() ?? "");
       else if (flag === "--full") options.full = true;
       else if (flag === "--no-start") options.start = false;
+      else if (flag === "--waitlist") options.waitlist = true;
       else throw new Error(`Unknown option ${arg}.`);
     }
     if (!options.out) throw new Error("--out needs a folder.");
+    // The screens of the landing story need the gate of the waitlist. The other screens need the app, so the two sets never mix.
+    const normalIds = screenIds.filter((id) => !waitlistIds.includes(id));
+    if (!options.only.length) options.only = options.waitlist ? [...waitlistIds] : normalIds;
+    const wrong = options.only.filter((id) => waitlistIds.includes(id) !== options.waitlist);
+    if (wrong.length) throw new Error(options.waitlist ? `With --waitlist the tool shoots only the landing story. ${wrong.join(", ")} needs the app.` : `${wrong.join(", ")} needs --waitlist.`);
     if (!options.start) {
       if (!env.GITRING_URL || !env.GITRING_KEY) throw new Error("--no-start needs GITRING_URL and GITRING_KEY in the environment.");
       // Passkeys need a host name, not an address.

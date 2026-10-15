@@ -4,6 +4,7 @@
  */
 
 .wl { height: 100dvh; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; background: var(--bg); color: var(--ink-1); }
+.wl:focus { outline: none; }
 .wl-bar {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: var(--s-4);
@@ -13,6 +14,9 @@
 .wl-who { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--t-sm); min-width: 0; }
 .wl-who .wl-muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 24ch; }
 .wl-main { flex: 1 0 auto; width: 100%; max-width: 1040px; margin: 0 auto; padding: var(--s-8) var(--s-5) var(--s-10); }
+/* The landing runs full width so the story can pin. The hero, the video and the closing sit in one column. */
+.wl-main--wide { max-width: none; padding-left: 0; padding-right: 0; }
+.wl-col { width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 var(--s-5); }
 .wl-foot {
   flex-shrink: 0;
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s-3);
@@ -29,25 +33,21 @@
 .wl-title:focus { outline: none; }
 .wl-lede { max-width: 60ch; font-size: var(--t-lg); line-height: var(--lh-lg); color: var(--ink-2); }
 .wl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4); margin-top: var(--s-3); }
-.wl-sec .wl-actions { margin-top: var(--s-7); }
 .wl-muted { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--ink-3); }
 
 .wl-sec { margin-top: var(--s-10); }
 .wl-h2 { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; margin-bottom: var(--s-5); }
-.wl-h3 { font-size: var(--t-md); line-height: var(--lh-md); font-weight: 600; margin-bottom: var(--s-2); }
 
 .wl-video { border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; background: var(--surface-1); aspect-ratio: 16 / 9; }
 .wl-video__el { display: block; width: 100%; height: 100%; background: #000; }
 .wl-video__missing { position: relative; width: 100%; height: 100%; background-size: cover; background-position: center; display: flex; align-items: flex-end; }
 .wl-video__note { margin: 0; padding: var(--s-4) var(--s-5); width: 100%; font-size: var(--t-sm); color: #e8eef2; background: linear-gradient(transparent, oklch(10% .02 250 / .8)); }
 
-.wl-grid, .wl-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-5); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.wl-card, .wl-step { border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface-1); padding: var(--s-5); }
-.wl-card p, .wl-step p { color: var(--ink-2); font-size: var(--t-sm); line-height: var(--lh-sm); margin: 0; }
-.wl-step__n {
-  display: inline-grid; place-items: center; width: 24px; height: 24px; margin-bottom: var(--s-3);
-  border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: var(--t-sm); font-weight: 600;
-}
+.wl-closing { display: grid; gap: var(--s-4); justify-items: start; margin-top: var(--s-11); }
+.wl-closing__title { font-size: var(--t-xl); line-height: var(--lh-xl); font-weight: 600; letter-spacing: -.01em; scroll-margin-top: var(--s-8); }
+.wl-closing__title:focus { outline: none; }
+.wl-closing__text { max-width: 60ch; font-size: var(--t-md); line-height: var(--lh-md); color: var(--ink-2); }
+.wl-closing__note { max-width: 60ch; margin-top: var(--s-5); }
 
 .wl-join { display: grid; gap: var(--s-5); justify-items: start; max-width: 520px; padding-top: var(--s-6); }
 .wl-providers { display: grid; gap: var(--s-3); width: 100%; max-width: 340px; }
@@ -92,8 +92,10 @@
 
 @media (max-width: 640px) {
   .wl-main { padding: var(--s-6) var(--s-5) var(--s-9); }
+  .wl-main--wide { padding-left: 0; padding-right: 0; }
   .wl-title { font-size: var(--t-xl); line-height: var(--lh-xl); }
   .wl-lede { font-size: var(--t-md); line-height: var(--lh-md); }
   .wl-plans { grid-template-columns: 1fr; }
   .wl-sec { margin-top: var(--s-9); }
+  .wl-closing { margin-top: var(--s-10); }
 }
