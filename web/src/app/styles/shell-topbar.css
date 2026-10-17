@@ -21,6 +21,17 @@
 .app__main--chart { overflow: hidden; }
 .app__main h1:focus { outline: none; }
 
+/* The first moment, before /api/me answers (App.tsx, Splash). The mark comes only when the wait is long enough to see. */
+.splash {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: var(--ink-3);
+}
+.splash .b-mark { opacity: 0; animation: splash-in 200ms ease-out 500ms forwards; }
+@keyframes splash-in { to { opacity: 1; } }
+
 .booting {
   display: grid;
   gap: var(--s-4);

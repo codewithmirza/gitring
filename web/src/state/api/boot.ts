@@ -82,7 +82,9 @@ async function run(): Promise<void> {
   const statePromise = early ? fetchState(early) : null;
   statePromise?.catch(() => undefined); // handled below
   if (!store.get().accountReady) {
-    await Promise.all([loadMe({ maxAge: ME_TTL }), loadProjects({ maxAge: PROJECTS_TTL })]).catch(() => undefined);
+    // Wait for both answers, also when one fails. With the waitlist gate on, /api/projects refuses a visitor at once
+    // while /api/me still runs. "Ready" before /api/me answers draws the app for a moment, and then the waitlist.
+    await Promise.allSettled([loadMe({ maxAge: ME_TTL }), loadProjects({ maxAge: PROJECTS_TTL })]);
     store.setAccountReady();
   }
   if (client || !needsProject()) return;

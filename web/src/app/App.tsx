@@ -19,6 +19,7 @@ import { ShortcutsPopover } from "./Shortcuts";
 import { canonicalPath, isProjectRoute, Link, navigate, setPreloader, setSearchParam, useLocationKey, useRoute, useSearchParam, type Route } from "./router";
 import { getUi, openNewIntent, openPalette, openShortcuts, openSignIn, setUi, takeAfterSignIn } from "./ui";
 import { typing } from "./keys";
+import { Mark } from "../design/icons";
 import * as V from "./views";
 import { HomeView } from "../views/HomeView";
 import { Waitlist } from "../views/waitlist/Waitlist";
@@ -336,12 +337,28 @@ function Booting({ route }: { route: Route }) {
 
 /* ───────────── the shell ───────────── */
 
+/** Before /api/me answers. It is neither the app nor the waitlist, so nobody sees a page that then goes away. */
+function Splash() {
+  return (
+    <div className="splash" role="status" aria-label="Please wait">
+      <Mark size={28} />
+    </div>
+  );
+}
+
 /**
  * With the waitlist gate on, a person that the gate keeps out sees the waitlist pages only. Everybody else
- * (and every gitring without a gate) gets the app.
+ * (and every gitring without a gate) gets the app. Until /api/me answers, nobody knows which of the two: the splash shows.
  */
 export function App() {
+  const route = useRoute();
+  const accountReady = useStore((s) => s.accountReady);
   const gated = useStore((s) => s.accountReady && Boolean(s.me?.waitlist) && s.me?.waitlist?.allowed === false);
+  // The code of the view for this route starts loading at once, in parallel with the account and the project state.
+  useEffect(() => {
+    V.preloadView(route.name);
+  }, [route.name]);
+  if (!accountReady) return <Splash />;
   return gated ? <Waitlist /> : <Shell />;
 }
 
@@ -360,10 +377,6 @@ function Shell() {
   useLocationSync();
   useSignInReturn();
 
-  // The code of the view for this route starts loading at once, in parallel with the project state.
-  useEffect(() => {
-    V.preloadView(route.name);
-  }, [route.name]);
   // When the project shows and the browser is idle, load the views people open next.
   useEffect(() => {
     if (!ready) return;
