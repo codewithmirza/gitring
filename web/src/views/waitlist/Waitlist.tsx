@@ -14,6 +14,7 @@ import { JoinStep, Landing, signInErrorText } from "./Landing";
 import "./waitlist.css";
 
 const AUTHOR_URL = "https://codewithmirza.github.io";
+const AUTHOR_X_URL = "https://x.com/m14z4";
 
 export function Waitlist() {
   const me = useStore((s) => s.me);
@@ -70,6 +71,10 @@ export function Waitlist() {
             {LANDING.builtBy}{" "}
             <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer">
               {LANDING.author}
+            </a>{" "}
+            ·{" "}
+            <a href={AUTHOR_X_URL} target="_blank" rel="noopener noreferrer" aria-label={LANDING.authorXLabel}>
+              {LANDING.authorX}
             </a>
           </span>
         )}

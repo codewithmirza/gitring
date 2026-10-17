@@ -16,6 +16,8 @@ export const LANDING = {
   footer: "gitring is built on Cloudflare.",
   builtBy: "Built by",
   author: "Mirza",
+  authorX: "@m14z4",
+  authorXLabel: "@m14z4 on X",
 } as const;
 
 export const JOIN = {
