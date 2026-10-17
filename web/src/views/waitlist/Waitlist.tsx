@@ -13,6 +13,8 @@ import { Interest } from "./Interest";
 import { JoinStep, Landing, signInErrorText } from "./Landing";
 import "./waitlist.css";
 
+const AUTHOR_URL = "https://codewithmirza.github.io";
+
 export function Waitlist() {
   const me = useStore((s) => s.me);
   const user = me?.user ?? null;
@@ -63,6 +65,14 @@ export function Waitlist() {
       </main>
       <footer className="wl-foot">
         <span>{LANDING.footer}</span>
+        {onLanding && (
+          <span>
+            {LANDING.builtBy}{" "}
+            <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer">
+              {LANDING.author}
+            </a>
+          </span>
+        )}
         <span>
           <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
         </span>

@@ -14,6 +14,8 @@ export const LANDING = {
   closingTitle: "Join the waitlist",
   closingNote: "The plans, messages and records in the pictures are real output of npm run meet in the gitring repository.",
   footer: "gitring is built on Cloudflare.",
+  builtBy: "Built by",
+  author: "Mirza",
 } as const;
 
 export const JOIN = {
